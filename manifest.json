@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "QuickNav（ChatGPT / Gemini Enterprise / Genspark）",
+  "version": "1.0.0",
+  "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
+  "permissions": ["scripting"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://business.gemini.google/*",
+    "https://www.genspark.ai/agents*"
+  ],
+  "background": {
+    "service_worker": "background/sw.js"
+  },
+  "action": {
+    "default_title": "QuickNav"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content/gm-menu-polyfill.js", "content/chatgpt-quicknav.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://business.gemini.google/*"],
+      "js": ["content/gm-menu-polyfill.js", "content/gemini-quicknav.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://www.genspark.ai/agents*"],
+      "js": ["content/gm-menu-polyfill.js", "content/genspark-quicknav.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

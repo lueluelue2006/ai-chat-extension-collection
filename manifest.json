@@ -13,7 +13,8 @@
     "service_worker": "background/sw.js"
   },
   "action": {
-    "default_title": "QuickNav"
+    "default_title": "QuickNav",
+    "default_popup": "popup/popup.html"
   },
   "content_scripts": [
     {

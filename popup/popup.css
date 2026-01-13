@@ -1,0 +1,88 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0b0f18;
+  --panel: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.14);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.68);
+  --accent: #7c3aed;
+  --accent2: rgba(124, 58, 237, 0.18);
+  --btn: rgba(255, 255, 255, 0.10);
+  --btnHover: rgba(255, 255, 255, 0.14);
+  --btnActive: rgba(255, 255, 255, 0.18);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fb;
+    --panel: rgba(0, 0, 0, 0.04);
+    --border: rgba(0, 0, 0, 0.10);
+    --text: rgba(0, 0, 0, 0.88);
+    --muted: rgba(0, 0, 0, 0.58);
+    --accent: #6d28d9;
+    --accent2: rgba(109, 40, 217, 0.10);
+    --btn: rgba(0, 0, 0, 0.06);
+    --btnHover: rgba(0, 0, 0, 0.09);
+    --btnActive: rgba(0, 0, 0, 0.12);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  width: 320px;
+  padding: 14px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.header { display: flex; flex-direction: column; gap: 10px; }
+.title { font-size: 20px; font-weight: 700; letter-spacing: 0.2px; }
+.meta {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.row + .row { margin-top: 6px; }
+.k { color: var(--muted); }
+.v { font-weight: 600; }
+
+.main { margin-top: 12px; }
+.actions { display: flex; gap: 8px; }
+.btn {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--btn);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.04s ease;
+}
+.btn:hover { background: var(--btnHover); }
+.btn:active { background: var(--btnActive); transform: translateY(1px); }
+.btn.secondary {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+}
+
+.status {
+  margin-top: 10px;
+  min-height: 18px;
+  color: var(--muted);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.status.ok { color: color-mix(in srgb, var(--text) 85%, #22c55e 15%); }
+.status.warn { color: color-mix(in srgb, var(--text) 85%, #f59e0b 15%); }
+.status.err { color: color-mix(in srgb, var(--text) 85%, #ef4444 15%); }
+
+a { color: var(--text); }

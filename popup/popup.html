@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>QuickNav</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="title">QuickNav</div>
+      <div class="meta">
+        <div class="row"><span class="k">作者</span><span class="v" id="author"></span></div>
+        <div class="row"><span class="k">版本</span><span class="v" id="version"></span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="actions">
+        <button class="btn" id="checkUpdate" type="button">检查更新</button>
+        <button class="btn secondary" id="openRepo" type="button">打开 GitHub</button>
+      </div>
+
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>

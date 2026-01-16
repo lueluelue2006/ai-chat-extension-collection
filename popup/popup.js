@@ -11,6 +11,7 @@
   const elStatus = document.getElementById('status');
   const btnCheck = document.getElementById('checkUpdate');
   const btnOpen = document.getElementById('openRepo');
+  const btnOptions = document.getElementById('openOptions');
 
   function setStatus(text, kind = '') {
     elStatus.textContent = text || '';
@@ -47,6 +48,19 @@
       chrome.tabs.create({ url });
     } catch {
       window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  function openOptions() {
+    try {
+      if (chrome?.runtime?.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+        return;
+      }
+      const url = chrome?.runtime?.getURL?.('options/options.html') || 'options/options.html';
+      openUrl(url);
+    } catch {
+      setStatus('打开配置失败', 'err');
     }
   }
 
@@ -95,4 +109,5 @@
 
   btnOpen?.addEventListener('click', () => openUrl(REPO_URL));
   btnCheck?.addEventListener('click', checkUpdate);
+  btnOptions?.addEventListener('click', openOptions);
 })();

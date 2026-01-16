@@ -24,6 +24,7 @@
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
   const STORE_NS = 'genspark-quicknav';
+  const QUICKNAV_SITE_ID = 'genspark';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -54,6 +55,7 @@
   let scrollLockRestoring = false;
   let scrollLockGuardUntil = 0;
   let scrollLockPointerActive = false;
+  let scrollLockUserTouched = false;
   let navAllowScrollDepth = 0;
   let ORIGINAL_SCROLL_INTO_VIEW = null;
   let ORIGINAL_SCROLL_TO = null;
@@ -264,7 +266,20 @@
   }
 
   function init() {
-    if (document.getElementById('cgpt-compact-nav')) return;
+    const existing = document.getElementById('cgpt-compact-nav');
+    if (existing) {
+      // 扩展“重新加载”后旧内容脚本上下文会消失，但 DOM 还在；此时需要清理并重新初始化
+      try {
+        if (!existing._ui) {
+          document.querySelectorAll('#cgpt-compact-nav').forEach((n) => { try { n.remove(); } catch {} });
+          document.querySelectorAll('#cgpt-compact-nav-style').forEach((n) => { try { n.remove(); } catch {} });
+        } else {
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
     const checkContentLoaded = () => {
       const turns = document.querySelectorAll('.conversation-statement, article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
       return turns.length > 0;
@@ -645,11 +660,82 @@
   }
 }
 
+/* Follow site theme when available (overrides OS prefers-color-scheme). */
+html.dark #cgpt-compact-nav,
+body.dark #cgpt-compact-nav,
 html[data-theme='dark'] #cgpt-compact-nav,
-body[data-theme='dark'] #cgpt-compact-nav { color-scheme: dark; }
+body[data-theme='dark'] #cgpt-compact-nav,
+html[data-color-mode='dark'] #cgpt-compact-nav,
+body[data-color-mode='dark'] #cgpt-compact-nav,
+html[data-color-scheme='dark'] #cgpt-compact-nav,
+body[data-color-scheme='dark'] #cgpt-compact-nav {
+  color-scheme: dark;
+  --cgpt-nav-panel-bg: var(--token-main-surface-tertiary, rgba(32,33,35,0.92));
+  --cgpt-nav-panel-border: var(--token-border-subtle, rgba(148,163,184,0.18));
+  --cgpt-nav-panel-shadow: var(--token-shadow-medium, 0 16px 32px rgba(0,0,0,0.4));
+  --cgpt-nav-text-strong: var(--token-text-primary, rgba(226,232,240,0.92));
+  --cgpt-nav-text-muted: var(--token-text-tertiary, rgba(148,163,184,0.78));
+  --cgpt-nav-scrollbar-thumb: var(--token-scrollbar-thumb, rgba(148,163,184,0.2));
+  --cgpt-nav-scrollbar-thumb-hover: var(--token-scrollbar-thumb-hover, rgba(148,163,184,0.35));
+  --cgpt-nav-item-bg: var(--token-interactive-surface, rgba(46,48,56,0.84));
+  --cgpt-nav-item-hover-bg: var(--token-interactive-surface-hover, rgba(63,65,74,0.92));
+  --cgpt-nav-item-shadow: var(--token-shadow-small, 0 1px 3px rgba(0,0,0,0.4));
+  --cgpt-nav-border-muted: var(--token-border-subtle, rgba(148,163,184,0.25));
+  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(49,51,60,0.9));
+  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(255,255,255,0.12));
+  --cgpt-nav-accent-subtle: var(--token-brand-accent-soft, rgba(147,51,234,0.2));
+  --cgpt-nav-accent-strong: var(--token-brand-accent-strong, rgba(147,51,234,0.45));
+  --cgpt-nav-arrow-color: #4ade80;
+  --cgpt-nav-arrow-bg: rgba(74,222,128,0.2);
+  --cgpt-nav-arrow-border: rgba(74,222,128,0.26);
+  --cgpt-nav-arrow-hover-bg: rgba(74,222,128,0.35);
+  --cgpt-nav-arrow-hover-border: rgba(74,222,128,0.4);
+  --cgpt-nav-arrow-hover-text: var(--token-text-on-accent, #ffffff);
+  --cgpt-nav-pin-color: #4ade80;
+  --cgpt-nav-positive: #2ef5a8;
+  --cgpt-nav-info: #4fc3ff;
+  --cgpt-nav-fav-color: #4ade80;
+  --cgpt-nav-fav-bg: rgba(74,222,128,0.2);
+  --cgpt-nav-fav-border: rgba(74,222,128,0.26);
+}
 
+html.light #cgpt-compact-nav,
+body.light #cgpt-compact-nav,
 html[data-theme='light'] #cgpt-compact-nav,
-body[data-theme='light'] #cgpt-compact-nav { color-scheme: light; }
+body[data-theme='light'] #cgpt-compact-nav,
+html[data-color-mode='light'] #cgpt-compact-nav,
+body[data-color-mode='light'] #cgpt-compact-nav,
+html[data-color-scheme='light'] #cgpt-compact-nav,
+body[data-color-scheme='light'] #cgpt-compact-nav {
+  color-scheme: light;
+  --cgpt-nav-panel-bg: var(--token-main-surface-tertiary, rgba(255,255,255,0.92));
+  --cgpt-nav-panel-border: var(--token-border-subtle, rgba(15,23,42,0.08));
+  --cgpt-nav-panel-shadow: var(--token-shadow-medium, 0 8px 24px rgba(15,23,42,0.12));
+  --cgpt-nav-text-strong: var(--token-text-primary, rgba(17,24,39,0.92));
+  --cgpt-nav-text-muted: var(--token-text-tertiary, rgba(71,85,105,0.78));
+  --cgpt-nav-scrollbar-thumb: var(--token-scrollbar-thumb, rgba(15,23,42,0.18));
+  --cgpt-nav-scrollbar-thumb-hover: var(--token-scrollbar-thumb-hover, rgba(15,23,42,0.3));
+  --cgpt-nav-item-bg: var(--token-interactive-surface, rgba(255,255,255,0.85));
+  --cgpt-nav-item-hover-bg: var(--token-interactive-surface-hover, rgba(255,255,255,0.95));
+  --cgpt-nav-item-shadow: var(--token-shadow-small, 0 1px 2px rgba(15,23,42,0.08));
+  --cgpt-nav-border-muted: var(--token-border-subtle, rgba(15,23,42,0.12));
+  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(255,255,255,0.92));
+  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(15,23,42,0.08));
+  --cgpt-nav-accent-subtle: var(--token-brand-accent-soft, rgba(147,51,234,0.12));
+  --cgpt-nav-accent-strong: var(--token-brand-accent-strong, rgba(147,51,234,0.28));
+  --cgpt-nav-arrow-color: var(--cgpt-nav-accent);
+  --cgpt-nav-arrow-bg: var(--cgpt-nav-accent-subtle);
+  --cgpt-nav-arrow-border: var(--cgpt-nav-accent-subtle);
+  --cgpt-nav-arrow-hover-bg: var(--cgpt-nav-accent-strong);
+  --cgpt-nav-arrow-hover-border: var(--cgpt-nav-accent-strong);
+  --cgpt-nav-arrow-hover-text: var(--token-text-on-accent, #ffffff);
+  --cgpt-nav-pin-color: var(--cgpt-nav-accent);
+  --cgpt-nav-positive: var(--token-text-positive, #00c896);
+  --cgpt-nav-info: var(--token-text-info, #2ea5ff);
+  --cgpt-nav-fav-color: var(--cgpt-nav-accent);
+  --cgpt-nav-fav-bg: var(--cgpt-nav-accent-subtle);
+  --cgpt-nav-fav-border: var(--cgpt-nav-accent-subtle);
+}
 
 #cgpt-compact-nav { position: fixed; top: 60px; right: 10px; width: var(--cgpt-nav-width, auto); min-width: 80px; max-width: var(--cgpt-nav-width, 210px); z-index: 2147483647 !important; font-family: var(--cgpt-nav-font); font-size: 13px; pointer-events: auto; background: transparent; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color: transparent; color: var(--cgpt-nav-text-strong); color-scheme: light dark; display:flex; flex-direction:column; align-items:stretch; box-sizing:border-box; --cgpt-nav-gutter: 0px; }
 #cgpt-compact-nav.cgpt-has-scrollbar { --cgpt-nav-gutter: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 32), 8px); }
@@ -2230,6 +2316,43 @@ body[data-theme='light'] #cgpt-compact-nav { color-scheme: light; }
     }, true);
   }
 
+  function hasSavedScrollLockState() {
+    try {
+      // Userscript 环境下无法区分“未设置/默认值”，避免覆写
+      if (typeof GM_getValue === 'function') return true;
+      return window.localStorage.getItem(SCROLL_LOCK_KEY) !== null;
+    } catch {
+      return true;
+    }
+  }
+
+  function fetchDefaultScrollLockFromExtension() {
+    return new Promise((resolve) => {
+      try {
+        if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return resolve(null);
+        chrome.runtime.sendMessage({ type: 'QUICKNAV_GET_SETTINGS' }, (resp) => {
+          const err = chrome.runtime?.lastError;
+          if (err) return resolve(null);
+          const v = resp?.settings?.scrollLockDefaults?.[QUICKNAV_SITE_ID];
+          resolve(typeof v === 'boolean' ? v : null);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  function applyDefaultScrollLockFromExtension(ui) {
+    fetchDefaultScrollLockFromExtension()
+      .then((val) => {
+        if (typeof val !== 'boolean') return;
+        if (scrollLockUserTouched) return;
+        if (hasSavedScrollLockState()) return;
+        setScrollLockEnabled(val, ui);
+      })
+      .catch(() => void 0);
+  }
+
   function loadScrollLockState() {
     try {
       if (typeof GM_getValue === 'function') return !!GM_getValue(SCROLL_LOCK_KEY, true);
@@ -2588,6 +2711,7 @@ body[data-theme='light'] #cgpt-compact-nav { color-scheme: light; }
   }
 
   function initScrollLock(ui) {
+    const hadSaved = hasSavedScrollLockState();
     scrollLockEnabled = loadScrollLockState();
     bindMainWorldScrollGuardHandshake();
     ensureScrollLockBindings();
@@ -2600,9 +2724,11 @@ body[data-theme='light'] #cgpt-compact-nav { color-scheme: light; }
       lockBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        scrollLockUserTouched = true;
         setScrollLockEnabled(!scrollLockEnabled, ui);
       });
     }
+    if (!hadSaved) applyDefaultScrollLockFromExtension(ui);
     if (!window.__cgptScrollLockBound) {
       window.addEventListener('resize', () => { if (scrollLockEnabled) ensureScrollLockBindings(); }, { passive: true });
       window.__cgptScrollLockBound = true;

@@ -23,14 +23,15 @@
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const STOP_BTN_SELECTOR =
+    '[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'qwen-quicknav';
+  const QUICKNAV_SITE_ID = 'qwen';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -287,8 +288,7 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      try { return qsTurns().length > 0; } catch { return false; }
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
@@ -387,6 +387,8 @@
       TURN_SELECTOR = null;
     }
     const selectors = [
+      // Qwen
+      '.qwen-chat-message',
       // 原有选择器
       'article[data-testid^="conversation-turn-"]',
       '[data-testid^="conversation-turn-"]',
@@ -515,16 +517,24 @@
       let isUser = role === 'user';
       let isAssistant = role === 'assistant';
       if (!isUser && !isAssistant) {
-        isUser = !!(
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-        isAssistant = !!(
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
+        // Qwen：消息节点本身有明确的 user/assistant class
+        if (el.classList && el.classList.contains('qwen-chat-message')) {
+          isUser = el.classList.contains('qwen-chat-message-user');
+          isAssistant = el.classList.contains('qwen-chat-message-assistant');
+        }
+
+        if (!isUser && !isAssistant) {
+          isUser = !!(
+            el.querySelector('[data-message-author-role="user"]') ||
+            el.querySelector('.text-message[data-author="user"]') ||
+            attrTestId.includes('user')
+          );
+          isAssistant = !!(
+            el.querySelector('[data-message-author-role="assistant"]') ||
+            el.querySelector('.text-message[data-author="assistant"]') ||
+            attrTestId.includes('assistant')
+          );
+        }
         role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
         if (role) roleCache.set(msgKey, role);
       }
@@ -558,10 +568,13 @@
       if (!preview || shouldRecalcPreview) {
         let block = null;
         if (isUser) {
-          block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
+          block = el.querySelector('.user-message-content') ||
+            el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
         } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
+          block = el.querySelector('.response-message-content') ||
+            el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
         }
+        if (!block) block = el;
         preview = getTextPreview(block);
         if (preview) previewCache.set(msgKey, preview);
       }
@@ -2364,6 +2377,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
+      const qwenScroll = document.getElementById('chat-messages-scroll-container');
+      if (qwenScroll) return qwenScroll;
       const turns = document.querySelector('[data-testid="conversation-turns"]');
       const msg = document.querySelector('[data-message-id]');
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');

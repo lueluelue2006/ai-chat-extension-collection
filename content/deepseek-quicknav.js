@@ -23,14 +23,15 @@
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const STOP_BTN_SELECTOR =
+    '[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'deepseek-quicknav';
+  const QUICKNAV_SITE_ID = 'deepseek';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -287,8 +288,7 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      try { return qsTurns().length > 0; } catch { return false; }
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
@@ -387,6 +387,8 @@
       TURN_SELECTOR = null;
     }
     const selectors = [
+      // DeepSeek
+      '.ds-message',
       // 原有选择器
       'article[data-testid^="conversation-turn-"]',
       '[data-testid^="conversation-turn-"]',
@@ -481,6 +483,19 @@
     return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
   }
 
+  function pickDeepSeekAssistantContent(el) {
+    try {
+      const blocks = el ? el.querySelectorAll?.('.ds-markdown') : null;
+      if (blocks && blocks.length) {
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const t = (blocks[i].textContent || '').trim();
+          if (t) return blocks[i];
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   function getTurnKey(el) {
     if (!el) return '';
     return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
@@ -515,16 +530,25 @@
       let isUser = role === 'user';
       let isAssistant = role === 'assistant';
       if (!isUser && !isAssistant) {
-        isUser = !!(
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-        isAssistant = !!(
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
+        // DeepSeek：用户消息一般是纯文本块；助手消息通常包含 icon/svg 等结构
+        if (el.classList && el.classList.contains('ds-message')) {
+          const hasRich = !!(el.querySelector('svg') || el.querySelector('.ds-icon'));
+          isUser = !hasRich;
+          isAssistant = hasRich;
+        }
+
+        if (!isUser && !isAssistant) {
+          isUser = !!(
+            el.querySelector('[data-message-author-role="user"]') ||
+            el.querySelector('.text-message[data-author="user"]') ||
+            attrTestId.includes('user')
+          );
+          isAssistant = !!(
+            el.querySelector('[data-message-author-role="assistant"]') ||
+            el.querySelector('.text-message[data-author="assistant"]') ||
+            attrTestId.includes('assistant')
+          );
+        }
         role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
         if (role) roleCache.set(msgKey, role);
       }
@@ -560,8 +584,11 @@
         if (isUser) {
           block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
         } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
+          // DeepSeek：思考/推理通常在前，最终回答在最后一个 .ds-markdown 块里
+          block = pickDeepSeekAssistantContent(el) ||
+            el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
         }
+        if (!block) block = el;
         preview = getTextPreview(block);
         if (preview) previewCache.set(msgKey, preview);
       }
@@ -2364,6 +2391,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
+      const dsScroll = document.querySelector('.ds-scroll-area');
+      if (dsScroll) return dsScroll;
       const turns = document.querySelector('[data-testid="conversation-turns"]');
       const msg = document.querySelector('[data-message-id]');
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');

@@ -1,16 +1,11 @@
 // ==UserScript==
-// @name         ChatGPT 对话导航
+// @name         文心一言（ERNIE）对话导航（QuickNav）
 // @namespace    http://tampermonkey.net/
 // @version      4.6.6
 // @description  紧凑导航 + 实时定位；修复边界误判；底部纯箭头按钮；回到顶部/到底部单击即用；禁用面板内双击选中；快捷键 Cmd+↑/↓（Mac）或 Alt+↑/↓（Windows）；修复竞态条件和流式输出检测问题；加入标记点📌功能和收藏夹功能（4.0大更新）。感谢loongphy佬适配暗色模式（3.0）+适配左右侧边栏自动跟随（4.1）
 // @author       schweigen, loongphy(在3.0版本帮忙加入暗色模式，在4.1版本中帮忙适配左右侧边栏自动跟随)
 // @license      MIT
-// @match        https://chatgpt.com/*
-// @match        https://chatgpt.com/?model=*
-// @match        https://chatgpt.com/?temporary-chat=*
-// @match        https://chatgpt.com/c/*
-// @match        https://chatgpt.com/g/*
-// @match        https://chatgpt.com/share/*
+// @match        https://ernie.baidu.com/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -23,14 +18,15 @@
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const STOP_BTN_SELECTOR =
+    'button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],[role="progressbar"]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'ernie-quicknav';
+  const QUICKNAV_SITE_ID = 'ernie';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -287,8 +283,7 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      try { return qsTurns().length > 0; } catch { return false; }
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
@@ -379,14 +374,30 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  function qsTurns(root = document) {
+  function sortTurnsByRectTop(els) {
+    try {
+      return Array.from(els).sort((a, b) => {
+        try { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; } catch { return 0; }
+      });
+    } catch {
+      return Array.from(els || []);
+    }
+  }
+
+  function getTurnsRoot() {
+    return document.getElementById('card_list_id') || document.getElementById('DIALOGUE_CONTAINER_ID') || document;
+  }
+
+  function qsTurns(root = getTurnsRoot()) {
     if (TURN_SELECTOR) {
       const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
+      if (els.length) return sortTurnsByRectTop(els);
       // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
       TURN_SELECTOR = null;
     }
     const selectors = [
+      // ERNIE
+      '.dialogue_card_item',
       // 原有选择器
       'article[data-testid^="conversation-turn-"]',
       '[data-testid^="conversation-turn-"]',
@@ -421,7 +432,7 @@
       if (els.length) {
         TURN_SELECTOR = selector;
         if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
+        return sortTurnsByRectTop(els);
       }
     }
 
@@ -481,6 +492,44 @@
     return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
   }
 
+  function getErnieAssistantPreview(el) {
+    if (!el) return '';
+    const raw = el.textContent || '';
+    if (!raw) return '';
+
+    // 文心一言：assistant 卡片常把 “Thinking/思考过程” 放在前面，最终回答在 “Finished thinking/思考结束” 之后
+    const markers = [
+      'Finished thinking.',
+      'Finished thinking',
+      '思考结束',
+      '思考完毕',
+      '推理结束',
+      '已完成思考'
+    ];
+    let bestIdx = -1;
+    let bestLen = 0;
+    for (const m of markers) {
+      const idx = raw.lastIndexOf(m);
+      if (idx > bestIdx) {
+        bestIdx = idx;
+        bestLen = m.length;
+      }
+    }
+
+    let slice = bestIdx >= 0 ? raw.slice(bestIdx + bestLen) : raw;
+    slice = slice.replace(/^[\s\u200b]+/, '');
+    slice = slice.replace(/^[\s.·•\-–—:：]+/, '');
+
+    // 只需要前几个字：避免对超长回答做全量 replace
+    const SLICE_CAP = 3200;
+    if (slice.length > SLICE_CAP) slice = slice.slice(0, SLICE_CAP);
+
+    const text = slice.replace(/\s+/g, ' ').trim();
+    if (!text) return '...';
+    const HARD_CAP = 600;
+    return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
+  }
+
   function getTurnKey(el) {
     if (!el) return '';
     return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
@@ -518,12 +567,16 @@
         isUser = !!(
           el.querySelector('[data-message-author-role="user"]') ||
           el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
+          attrTestId.includes('user') ||
+          el.querySelector('[class*="questionBox__"]') ||
+          el.querySelector('[class*="roleUser__"]')
         );
         isAssistant = !!(
           el.querySelector('[data-message-author-role="assistant"]') ||
           el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
+          attrTestId.includes('assistant') ||
+          el.querySelector('[class*="answerBox__"]') ||
+          el.querySelector('[class*="modelSign__"]')
         );
         role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
         if (role) roleCache.set(msgKey, role);
@@ -558,11 +611,14 @@
       if (!preview || shouldRecalcPreview) {
         let block = null;
         if (isUser) {
-          block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
+          block = el.querySelector('#question_text_id, [id="question_text_id"], [class*="questionText__"]') ||
+            el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
         } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
+          block = el.querySelector('[class*="answerBox__"], [class*="roleSystem__"], [class*="answerText__"]') ||
+            el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
         }
-        preview = getTextPreview(block);
+        if (!block) block = el;
+        preview = isAssistant ? getErnieAssistantPreview(block) : getTextPreview(block);
         if (preview) previewCache.set(msgKey, preview);
       }
       if (!preview) {
@@ -2364,6 +2420,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
+      const ernie = document.getElementById('DIALOGUE_CONTAINER_ID');
+      if (ernie) return ernie;
       const turns = document.querySelector('[data-testid="conversation-turns"]');
       const msg = document.querySelector('[data-message-id]');
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
@@ -3164,6 +3222,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function scheduleActiveUpdateNow() { requestAnimationFrame(updateActiveFromAnchor); }
 
   function getAnchorY() {
+    try {
+      const sc = getChatScrollContainer();
+      if (sc && sc.getBoundingClientRect && !isWindowScroller(sc)) {
+        const r = sc.getBoundingClientRect();
+        return Math.max(0, Math.min(window.innerHeight - 20, r.top + CONFIG.anchorOffset));
+      }
+    } catch {}
     const h = getFixedHeaderHeight();
     return Math.max(0, Math.min(window.innerHeight - 20, h + CONFIG.anchorOffset));
   }

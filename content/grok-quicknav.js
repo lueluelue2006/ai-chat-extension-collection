@@ -1,36 +1,30 @@
 // ==UserScript==
-// @name         ChatGPT 对话导航
+// @name         Grok 对话导航（QuickNav）
 // @namespace    http://tampermonkey.net/
 // @version      4.6.6
-// @description  紧凑导航 + 实时定位；修复边界误判；底部纯箭头按钮；回到顶部/到底部单击即用；禁用面板内双击选中；快捷键 Cmd+↑/↓（Mac）或 Alt+↑/↓（Windows）；修复竞态条件和流式输出检测问题；加入标记点📌功能和收藏夹功能（4.0大更新）。感谢loongphy佬适配暗色模式（3.0）+适配左右侧边栏自动跟随（4.1）
+// @description  Grok 版 QuickNav：紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键 Cmd/Alt+↑↓ 等。
 // @author       schweigen, loongphy(在3.0版本帮忙加入暗色模式，在4.1版本中帮忙适配左右侧边栏自动跟随)
 // @license      MIT
-// @match        https://chatgpt.com/*
-// @match        https://chatgpt.com/?model=*
-// @match        https://chatgpt.com/?temporary-chat=*
-// @match        https://chatgpt.com/c/*
-// @match        https://chatgpt.com/g/*
-// @match        https://chatgpt.com/share/*
+// @match        https://grok.com/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @run-at       document-end
-// @downloadURL  https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
-// @updateURL    https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 24 };
+  const STOP_BTN_SELECTOR =
+    'button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],[role="progressbar"]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'grok-quicknav';
+  const QUICKNAV_SITE_ID = 'grok';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -69,8 +63,84 @@
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
 
+  const GROK_FIX_STYLE_ID = 'grok-quicknav-fixes-style';
+  const GROK_THOUGHT_PREFIX_RE = /^Thought\s+for\s+(?:\d+\s*[dhms]\s*)+/i;
+
+  function ensureGrokFixes() {
+    try {
+      let style = document.getElementById(GROK_FIX_STYLE_ID);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = GROK_FIX_STYLE_ID;
+        (document.head || document.documentElement).appendChild(style);
+      }
+      const gap = Math.max(16, Number(CONFIG.anchorOffset) || 0);
+      const css = `
+.thinking-container{display:none!important;}
+[id^="response-"],[id^="response-"] p,[id^="response-"] li,[id^="response-"] pre,[id^="response-"] code,[id^="response-"] blockquote{scroll-margin-top:${gap}px!important;}
+`;
+      if (style.textContent !== css) style.textContent = css;
+    } catch {}
+  }
+
+  function stripGrokThoughtPrefix(text) {
+    let s = String(text || '').replace(/\u00a0/g, ' ');
+    s = s.replace(GROK_THOUGHT_PREFIX_RE, '');
+    return s.trim();
+  }
+
+  function patchGrokNavPreviews() {
+    const nav = document.getElementById('cgpt-compact-nav');
+    if (!nav) return false;
+    const spans = nav.querySelectorAll('.compact-item.assistant .compact-text');
+    for (const span of spans) {
+      const raw = (span.textContent || '').trim();
+      if (!raw) continue;
+      let cleaned = stripGrokThoughtPrefix(raw);
+      if (!cleaned && GROK_THOUGHT_PREFIX_RE.test(raw)) cleaned = '...';
+      if (cleaned && cleaned !== raw) {
+        span.textContent = cleaned;
+        try { span.setAttribute('title', cleaned); } catch {}
+      }
+    }
+    return true;
+  }
+
+  function bindGrokNavPreviewPatcher() {
+    try {
+      if (window.__grokQuickNavPreviewPatcherBound) return;
+      window.__grokQuickNavPreviewPatcherBound = true;
+
+      const tryBind = () => {
+        const nav = document.getElementById('cgpt-compact-nav');
+        if (!nav || nav.__grokQuickNavPreviewObserver) return !!nav;
+        patchGrokNavPreviews();
+        const list = nav.querySelector('.compact-list');
+        if (!list) return true;
+        const mo = new MutationObserver(() => {
+          try { patchGrokNavPreviews(); } catch {}
+        });
+        mo.observe(list, { childList: true, subtree: true, characterData: true });
+        nav.__grokQuickNavPreviewObserver = mo;
+        return true;
+      };
+
+      if (tryBind()) return;
+      const root = document.documentElement || document.body;
+      if (!root) return;
+      const mo = new MutationObserver(() => {
+        try { if (tryBind()) mo.disconnect(); } catch {}
+      });
+      mo.observe(root, { childList: true, subtree: true });
+      setTimeout(() => { try { mo.disconnect(); } catch {} }, 30000);
+    } catch {}
+  }
+
+  ensureGrokFixes();
+  bindGrokNavPreviewPatcher();
+
   // 全局调试函数，用户可在控制台调用
-  window.chatGptNavDebug = {
+  window.grokNavDebug = {
     forceRefresh: () => {
       console.log('ChatGPT Navigation: 手动强制刷新');
       TURN_SELECTOR = null;
@@ -287,8 +357,12 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      try {
+        const turns = document.querySelectorAll('[id^="response-"] .message-bubble, [id^="response-"]');
+        return turns.length > 0;
+      } catch {
+        return false;
+      }
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
@@ -380,101 +454,46 @@
   else init();
 
   function qsTurns(root = document) {
-    if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
-      // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
-      TURN_SELECTOR = null;
-    }
-    const selectors = [
-      // 原有选择器
-      'article[data-testid^="conversation-turn-"]',
-      '[data-testid^="conversation-turn-"]',
-      'div[data-message-id]',
-      'div[class*="group"][data-testid]',
-      // 新增备用选择器
-      '[data-testid*="conversation-turn"]',
-      '[data-testid*="message-"]',
-      'div[class*="turn"]',
-      'div[class*="message"]',
-      'div[class*="group"] div[data-message-author-role]',
-      'div[class*="conversation"] > div',
-      '[class*="chat"] > div',
-      '[role="presentation"] > div',
-      'main div[class*="group"]',
-      'main div[data-testid]'
-    ];
-
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 检测对话选择器');
-      for (const selector of selectors) {
-        const els = root.querySelectorAll(selector);
-        console.log(`- ${selector}: ${els.length} 个元素`);
-        if (els.length > 0) {
-          console.log('  样本元素:', els[0]);
-        }
+    // Grok: 每条消息容器通常形如 div#response-xxxx，内部包含 .message-bubble
+    const scope = (() => {
+      try {
+        const seed =
+          root.querySelector('#last-reply-container') ||
+          root.querySelector('[id^="response-"]') ||
+          root.querySelector('main') ||
+          root.body ||
+          root;
+        return findClosestScrollContainer(seed) || getScrollRoot(seed) || root;
+      } catch {
+        return root;
       }
-    }
+    })();
 
-    for (const selector of selectors) {
-      const els = root.querySelectorAll(selector);
-      if (els.length) {
-        TURN_SELECTOR = selector;
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
+    const candidates = Array.from(scope.querySelectorAll('[id^="response-"]')).filter((el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (!el.querySelector('.message-bubble')) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      } catch {
+        return false;
       }
-    }
+    });
 
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 所有预设选择器都失效，尝试智能检测');
-      console.log('页面中的所有可能对话元素:');
-      const potentialElements = [
-        ...root.querySelectorAll('div[class*="group"]'),
-        ...root.querySelectorAll('div[data-message-id]'),
-        ...root.querySelectorAll('article'),
-        ...root.querySelectorAll('[data-testid]'),
-        ...root.querySelectorAll('div[role="presentation"]')
-      ];
-      console.log('潜在元素数量:', potentialElements.length);
-    }
-
-    // 增强的fallback检测
-    const fallbackSelectors = [
-      'div[class*="group"], div[data-message-id]',
-      'div[class*="turn"], div[class*="message"]',
-      'main > div > div',
-      '[role="presentation"] > div'
-    ];
-
-    for (const fallbackSelector of fallbackSelectors) {
-      const candidates = [...root.querySelectorAll(fallbackSelector)].filter(el => {
-        // 检查是否包含消息相关的内容
-        return (
-          el.querySelector('div[data-message-author-role]') ||
-          el.querySelector('[data-testid*="user"]') ||
-          el.querySelector('[data-testid*="assistant"]') ||
-          el.querySelector('[data-author]') ||
-          el.querySelector('.markdown') ||
-          el.querySelector('.prose') ||
-          el.querySelector('.whitespace-pre-wrap') ||
-          (el.textContent && el.textContent.trim().length > 10)
-        );
-      });
-
-      if (candidates.length > 0) {
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: Fallback选择器 ${fallbackSelector} 找到 ${candidates.length} 个候选对话`);
-        return candidates;
-      }
-    }
-
-    if (DEBUG) console.log('ChatGPT Navigation: 所有检测方法均失效');
-    return [];
+    candidates.sort((a, b) => {
+      try { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; }
+      catch { return 0; }
+    });
+    return candidates;
   }
 
   function getTextPreview(el) {
     if (!el) return '';
     // 注意：innerText 会触发同步样式/布局计算（长对话非常慢），尽量只用 textContent
-    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    let text = (el.textContent || '').replace(/\u00a0/g, ''); // NBSP
+    // Grok: 过滤“Thought for Xm Ys”头部（保留后续正文，如“19”）
+    text = text.replace(/^Thought\s+for\s+(?:\d+\s*[dhms]\s*)+/i, '');
+    text = text.replace(/\s+/g, ' ').trim();
     if (!text) return '...';
     // 让 CSS 负责根据宽度省略，JS 只做上限裁剪以防极端超长文本
     const HARD_CAP = 600;
@@ -483,7 +502,7 @@
 
   function getTurnKey(el) {
     if (!el) return '';
-    return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
+    return el.id || el.getAttribute('data-message-id') || el.getAttribute('data-testid') || '';
   }
 
   function buildIndex(turnsOverride) {
@@ -515,17 +534,12 @@
       let isUser = role === 'user';
       let isAssistant = role === 'assistant';
       if (!isUser && !isAssistant) {
-        isUser = !!(
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-        isAssistant = !!(
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
-        role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
+        const cls = String(el.className || '');
+        isUser = cls.includes('items-end');
+        isAssistant = cls.includes('items-start');
+        role =
+          isUser ? 'user'
+            : (isAssistant ? 'assistant' : '');
         if (role) roleCache.set(msgKey, role);
       }
 
@@ -556,12 +570,7 @@
       const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS;
       let preview = previewCache.get(msgKey) || '';
       if (!preview || shouldRecalcPreview) {
-        let block = null;
-        if (isUser) {
-          block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
-        } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
-        }
+        const block = el.querySelector('.message-bubble') || el;
         preview = getTextPreview(block);
         if (preview) previewCache.set(msgKey, preview);
       }
@@ -821,6 +830,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   .compact-item { font-size:11px; padding:2px 5px; min-height:18px; }
   .nav-btn { padding:5px 6px; font-size:13px; }
 }
+
+.thinking-container { display: none !important; }
 
 .highlight-pulse { animation: pulse 1.5s ease-out; }
 @keyframes pulse { 0% { background-color: rgba(255,243,205,0); } 20% { background-color: rgba(168,218,255,0.3); } 100% { background-color: rgba(255,243,205,0); } }
@@ -1948,7 +1959,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function scrollToTurn(el) {
     const anchor = findTurnAnchor(el) || el;
-    const margin = Math.max(0, getFixedHeaderHeight());
+    const margin = Math.max(0, getAnchorY());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     try {
       anchor.style.scrollMarginTop = margin + 'px';

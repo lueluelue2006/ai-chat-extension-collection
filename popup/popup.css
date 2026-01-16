@@ -52,6 +52,7 @@ body {
 
 .main { margin-top: 12px; }
 .actions { display: flex; gap: 8px; }
+.actions + .actions { margin-top: 8px; }
 .btn {
   flex: 1;
   padding: 9px 10px;

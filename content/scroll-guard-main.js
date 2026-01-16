@@ -137,12 +137,26 @@
   function detectChatScrollerFallback() {
     const doc = document.scrollingElement || document.documentElement;
 
+    const deepseekScroller = (() => {
+      try {
+        const list = document.querySelectorAll?.('.ds-scroll-area');
+        if (!list || !list.length) return null;
+        for (const el of list) {
+          if (isScrollableY(el)) return el;
+        }
+      } catch {}
+      return null;
+    })();
+
+    const ernieScroller = document.getElementById?.('DIALOGUE_CONTAINER_ID') || null;
+    const zaiScroller = document.getElementById?.('messages-container') || null;
+    const geminiAppScroller = document.querySelector?.('infinite-scroller.chat-history') || null;
     const turns = document.querySelector?.('[data-testid="conversation-turns"]') || null;
     const msg = document.querySelector?.('[data-message-id]') || null;
     const gensparkTurn = document.querySelector?.('.conversation-statement') || null;
     const main = document.querySelector?.('main') || document.querySelector?.('[role="main"]') || document.getElementById?.('main') || null;
 
-    const seeds = [turns, msg, gensparkTurn, main, document.body].filter(Boolean);
+    const seeds = [deepseekScroller, ernieScroller, zaiScroller, geminiAppScroller, turns, msg, gensparkTurn, main, document.body].filter(Boolean);
     for (const s of seeds) {
       const closest = findClosestScrollContainer(s);
       if (closest) return closest;

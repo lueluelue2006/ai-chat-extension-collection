@@ -1,46 +1,39 @@
 // ==UserScript==
-// @name         ChatGPT 对话导航
+// @name         Gemini（gemini.google.com/app）对话导航（QuickNav）
 // @namespace    http://tampermonkey.net/
-// @version      4.6.6
-// @description  紧凑导航 + 实时定位；修复边界误判；底部纯箭头按钮；回到顶部/到底部单击即用；禁用面板内双击选中；快捷键 Cmd+↑/↓（Mac）或 Alt+↑/↓（Windows）；修复竞态条件和流式输出检测问题；加入标记点📌功能和收藏夹功能（4.0大更新）。感谢loongphy佬适配暗色模式（3.0）+适配左右侧边栏自动跟随（4.1）
-// @author       schweigen, loongphy(在3.0版本帮忙加入暗色模式，在4.1版本中帮忙适配左右侧边栏自动跟随)
+// @version      1.0.1
+// @description  Gemini（gemini.google.com/app）版 QuickNav：紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键 Cmd/Alt+↑↓ 等。
+// @author       schweigen
 // @license      MIT
-// @match        https://chatgpt.com/*
-// @match        https://chatgpt.com/?model=*
-// @match        https://chatgpt.com/?temporary-chat=*
-// @match        https://chatgpt.com/c/*
-// @match        https://chatgpt.com/g/*
-// @match        https://chatgpt.com/share/*
+// @match        https://gemini.google.com/app*
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @run-at       document-end
-// @downloadURL  https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
-// @updateURL    https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
+  const GEMINI_SIDEBAR_EXPANDED_MIN_WIDTH = 160; // px: show top header only when sidebar expanded
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'gemini-app-quicknav';
+  const QUICKNAV_SITE_ID = 'gemini_app';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
-  const CP_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 检查点保留 30 天
+  const CP_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 检查点保留 31 天
   let cpSet = new Set();          // 仅用于快速 membership（遗留）
   let cpMap = new Map();          // pinId -> meta
   // 收藏夹（favorites）
   const FAV_KEY_PREFIX = `${STORE_NS}:fav:`;         // + 会话 key
   const FAV_FILTER_PREFIX = `${STORE_NS}:fav-filter:`; // + 会话 key
-  const FAV_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 收藏保留 30 天
+  const FAV_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 收藏保留 31 天
   let favSet = new Set();         // 收藏的 key（消息 msgKey 或 图钉 pinId）
   let favMeta = new Map();        // key -> { created }
   let filterFav = false;          // 是否只显示收藏
@@ -69,12 +62,142 @@
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
 
+  // Gemini Enterprise 启用了 Trusted Types：innerHTML 需要 TrustedHTML
+  const TT_POLICY = (() => {
+    try {
+      if (!window.trustedTypes || typeof window.trustedTypes.createPolicy !== 'function') return null;
+      return window.trustedTypes.createPolicy(`gemini-quicknav-${Math.random().toString(36).slice(2)}`, {
+        createHTML: (s) => s
+      });
+    } catch {
+      return null;
+    }
+  })();
+
+  function setHTML(el, html) {
+    if (!el) return;
+    try {
+      el.innerHTML = TT_POLICY ? TT_POLICY.createHTML(String(html ?? '')) : String(html ?? '');
+    } catch {
+      // Fallback：尽量不崩（但会丢失结构）
+      try { while (el.firstChild) el.removeChild(el.firstChild); } catch {}
+      try { el.textContent = String(html ?? '').replace(/<[^>]*>/g, ''); } catch {}
+    }
+  }
+
+  function clearEl(el) {
+    if (!el) return;
+    try {
+      el.replaceChildren();
+    } catch {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
+  }
+
+  // === Gemini App DOM helpers ===
+  const GEMINI_HOST_SELECTOR = 'chat-app#app-root';
+  let __geminiScrollerCache = null;
+
+  function getGeminiHost() { return document.querySelector(GEMINI_HOST_SELECTOR); }
+  // gemini.google.com/app 主要是常规 DOM（非 open shadow），这里直接以根节点为查询范围
+  function getGeminiRoot() { return getGeminiHost() || null; }
+
+  function walkOpenShadows(start, visit) {
+    const stack = [start];
+    const seen = new Set();
+    while (stack.length) {
+      const root = stack.pop();
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      try { visit(root); } catch {}
+      if (!root.querySelectorAll) continue;
+      const all = root.querySelectorAll('*');
+      for (const el of all) {
+        if (el && el.shadowRoot) stack.push(el.shadowRoot);
+      }
+    }
+  }
+
+  function deepQueryFirst(start, selector) {
+    let found = null;
+    walkOpenShadows(start, (root) => {
+      if (found || !root.querySelector) return;
+      const hit = root.querySelector(selector);
+      if (hit) found = hit;
+    });
+    return found;
+  }
+
+  function deepQueryAll(start, selector) {
+    const out = [];
+    walkOpenShadows(start, (root) => {
+      if (!root.querySelectorAll) return;
+      out.push(...root.querySelectorAll(selector));
+    });
+    return out;
+  }
+
+  function cssEscape(s) {
+    const str = String(s ?? '');
+    if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') return CSS.escape(str);
+    return str.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
+  }
+
+  function getById(id) {
+    const direct = document.getElementById(id);
+    if (direct) return direct;
+    const root = getGeminiRoot();
+    if (!root) return null;
+    return deepQueryFirst(root, `#${cssEscape(id)}`);
+  }
+
+  function closestCrossShadow(node, selector) {
+    let el = node && node.nodeType === 1 ? node : (node?.parentElement || null);
+    while (el) {
+      try { if (el.matches && el.matches(selector)) return el; } catch {}
+      if (el.parentElement) { el = el.parentElement; continue; }
+      const rn = el.getRootNode && el.getRootNode();
+      el = rn && rn.host ? rn.host : null;
+    }
+    return null;
+  }
+
+  function getGeminiScroller() {
+    try {
+      if (__geminiScrollerCache && __geminiScrollerCache.isConnected && isScrollableY(__geminiScrollerCache)) return __geminiScrollerCache;
+    } catch {}
+    const root = getGeminiRoot();
+    if (!root) return null;
+    // gemini.google.com/app：实际滚动容器常见为 <infinite-scroller class="chat-history">，
+    // 而 #chat-history 有时只是外层壳（不可滚动）。这里优先选择“可滚动”的元素。
+    const candidates = [
+      root.querySelector?.('infinite-scroller.chat-history'),
+      root.querySelector?.('infinite-scroller'),
+      root.querySelector?.('#chat-history.chat-history-scroll-container'),
+      root.querySelector?.('#chat-history'),
+      deepQueryFirst(root, 'infinite-scroller.chat-history'),
+      deepQueryFirst(root, 'infinite-scroller'),
+      deepQueryFirst(root, '#chat-history.chat-history-scroll-container'),
+      deepQueryFirst(root, '#chat-history'),
+      deepQueryFirst(root, 'div.chat-history-scroll-container')
+    ].filter(Boolean);
+
+    let scroller = null;
+    for (const el of candidates) {
+      try {
+        if (isScrollableY(el)) { scroller = el; break; }
+      } catch {}
+    }
+    __geminiScrollerCache = scroller;
+    return __geminiScrollerCache;
+  }
+
   // 全局调试函数，用户可在控制台调用
-  window.chatGptNavDebug = {
+  window.geminiNavDebug = {
     forceRefresh: () => {
-      console.log('ChatGPT Navigation: 手动强制刷新');
+      console.log('Gemini Navigation: 手动强制刷新');
       TURN_SELECTOR = null;
-      const ui = document.getElementById('cgpt-compact-nav')?._ui;
+      const ui = getById('cgpt-compact-nav')?._ui;
       if (ui) scheduleRefresh(ui);
       else console.log('导航面板未找到');
     },
@@ -141,7 +264,7 @@
   };
 
   GM_registerMenuCommand("重置问题栏位置", resetPanelPosition);
-  GM_registerMenuCommand("清理过期检查点（30天）", cleanupExpiredCheckpoints);
+  GM_registerMenuCommand("清理过期检查点（31天）", cleanupExpiredCheckpoints);
   GM_registerMenuCommand("清理无效收藏", cleanupInvalidFavorites);
   function resetPanelPosition() {
     const nav = document.getElementById('cgpt-compact-nav');
@@ -173,7 +296,7 @@
         renderList(nav._ui);
       }
       if (typeof alert === 'function') {
-        alert(removed > 0 ? `已清理 ${removed} 条过期检查点（>30天）` : '无过期检查点需要清理');
+        alert(removed > 0 ? `已清理 ${removed} 条过期检查点（>31天）` : '无过期检查点需要清理');
       } else {
         console.log('清理结果：', removed > 0 ? `清理 ${removed} 条` : '无过期检查点');
       }
@@ -189,7 +312,7 @@
       const valid = new Set();
       try { const base = buildIndex(); base.forEach(i => valid.add(i.key)); } catch {}
       try { loadCPSet(); cpMap.forEach((_, pid) => valid.add(pid)); } catch {}
-      const removed = runFavoritesGC(true, valid);
+      const removed = runFavoritesGC(true, valid, false, true);
       const nav = document.getElementById('cgpt-compact-nav');
       if (nav && nav._ui) { updateStarBtnState(nav._ui); renderList(nav._ui); }
       if (typeof alert === 'function') {
@@ -218,6 +341,18 @@
   let refreshTimer = 0; // 新的尾随去抖定时器
   let lastStopCheckTs = 0;
   let lastHasStop = null;
+  let activeScrollEl = null; // Gemini scroller 绑定用
+
+  // Gemini Enterprise 顶栏（header）自动显隐：仅在左侧边栏展开时显示
+  let headerAutoHideStarted = false;
+  const headerAutoHide = {
+    rafId: 0,
+    intervalId: 0,
+    ro: null,
+    sidebarEl: null,
+    headerEl: null,
+    lastExpanded: null
+  };
 
   // 性能缓存：避免长对话频繁扫描/强制重排
   const previewCache = new Map(); // msgKey -> preview
@@ -261,7 +396,29 @@
     const now = Date.now();
     if (!force && now - lastStopCheckTs < 250) return lastHasStop;
     lastStopCheckTs = now;
-    const hasStop = !!document.querySelector(STOP_BTN_SELECTOR);
+    const hasStop = (() => {
+      const root = getGeminiRoot();
+      if (!root) return false;
+      const scope = getGeminiScroller() || root;
+      // 多重启发式：进度条/停止按钮/Thinking 状态
+      const selectors = [
+        '[role="progressbar"]',
+        'md-circular-progress',
+        'md-linear-progress',
+        'button[aria-label*="Stop" i]',
+        'button[title*="Stop" i]',
+        'button[aria-label*="Cancel" i]',
+        'button[title*="Cancel" i]',
+        '[aria-label*="Thinking" i]',
+        '[title*="Thinking" i]',
+        'ucs-text-streamer[aria-busy="true"]'
+      ];
+      for (const sel of selectors) {
+        const hit = deepQueryFirst(scope, sel);
+        if (hit) return true;
+      }
+      return false;
+    })();
     if (lastHasStop === null) {
       lastHasStop = hasStop;
       return hasStop;
@@ -272,6 +429,7 @@
   }
 
   function init() {
+    initGeminiHeaderAutoHide();
     const existing = document.getElementById('cgpt-compact-nav');
     if (existing) {
       // 扩展“重新加载”后旧内容脚本上下文会消失，但 DOM 还在；此时需要清理并重新初始化
@@ -287,8 +445,7 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      return !!getGeminiRoot() && (!!getGeminiScroller() || qsTurns().length > 0);
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
@@ -317,13 +474,46 @@
         __cgptBooting = false;
       }
     };
-    if (checkContentLoaded()) boot();
-    else {
-      const observer = new MutationObserver(() => {
-        if (checkContentLoaded()) { observer.disconnect(); boot(); }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
+    const tryBoot = () => {
+      if (document.getElementById('cgpt-compact-nav')) return true;
+      if (checkContentLoaded()) { boot(); return true; }
+      return false;
+    };
+
+    if (tryBoot()) return;
+
+    // Gemini Enterprise 的关键 DOM 多在 open shadow roots 内，单靠监听 document.body 可能捕捉不到。
+    // 这里加一个轮询兜底，确保 scroller / turn 出现后可以启动。
+    // 注意：用户可能在页面停留很久后才打开某个会话，因此不要在 60 秒后停止（否则会“永远不启动”）。
+    let timer = 0;
+    let observer = null;
+    let stopped = false;
+    const cleanup = () => {
+      stopped = true;
+      if (timer) { clearTimeout(timer); timer = 0; }
+      if (observer) { try { observer.disconnect(); } catch {} observer = null; }
+    };
+
+    let attempts = 0;
+    const tick = () => {
+      if (stopped) return;
+      attempts++;
+      try {
+        if (tryBoot()) { cleanup(); return; }
+      } catch (e) {
+        if (DEBUG || window.DEBUG_TEMP) console.error('Gemini Navigation: boot tick error:', e);
+      }
+
+      // 逐步退避：前期更积极，后期降低频率以减少长期驻留开销
+      const delay = attempts < 120 ? 500 : (attempts < 600 ? 2000 : 5000);
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, 500);
+
+    observer = new MutationObserver(() => {
+      try { if (tryBoot()) cleanup(); } catch {}
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   let currentUrl = location.href;
@@ -361,6 +551,7 @@
       window.__cgptKeysBound = false;
       lastTurnCount = 0;
       TURN_SELECTOR = null; // 同时重置选择器缓存
+      __geminiScrollerCache = null;
       previewCache.clear();
       roleCache.clear();
       turnIdToPos.clear();
@@ -375,100 +566,30 @@
   const originalReplaceState = history.replaceState;
   history.pushState = function (...args) { originalPushState.apply(this, args); setTimeout(detectUrlChange, 0); };
   history.replaceState = function (...args) { originalReplaceState.apply(this, args); setTimeout(detectUrlChange, 0); };
+  // 兜底：部分站点/隔离环境下 pushState/replaceState hook 可能不稳定，周期检测 URL 变化更可靠
+  setInterval(detectUrlChange, 1000);
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  function qsTurns(root = document) {
-    if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
-      // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
-      TURN_SELECTOR = null;
-    }
-    const selectors = [
-      // 原有选择器
-      'article[data-testid^="conversation-turn-"]',
-      '[data-testid^="conversation-turn-"]',
-      'div[data-message-id]',
-      'div[class*="group"][data-testid]',
-      // 新增备用选择器
-      '[data-testid*="conversation-turn"]',
-      '[data-testid*="message-"]',
-      'div[class*="turn"]',
-      'div[class*="message"]',
-      'div[class*="group"] div[data-message-author-role]',
-      'div[class*="conversation"] > div',
-      '[class*="chat"] > div',
-      '[role="presentation"] > div',
-      'main div[class*="group"]',
-      'main div[data-testid]'
-    ];
-
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 检测对话选择器');
-      for (const selector of selectors) {
-        const els = root.querySelectorAll(selector);
-        console.log(`- ${selector}: ${els.length} 个元素`);
-        if (els.length > 0) {
-          console.log('  样本元素:', els[0]);
-        }
+  function qsTurns() {
+    const scroller = getGeminiScroller();
+    if (!scroller) return [];
+    const turns = Array.from(scroller.querySelectorAll('.conversation-container'));
+    // 只保留可见节点，避免误把模板/隐藏节点算进去
+    const visible = turns.filter((el) => {
+      try {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      } catch {
+        return false;
       }
-    }
-
-    for (const selector of selectors) {
-      const els = root.querySelectorAll(selector);
-      if (els.length) {
-        TURN_SELECTOR = selector;
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
-      }
-    }
-
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 所有预设选择器都失效，尝试智能检测');
-      console.log('页面中的所有可能对话元素:');
-      const potentialElements = [
-        ...root.querySelectorAll('div[class*="group"]'),
-        ...root.querySelectorAll('div[data-message-id]'),
-        ...root.querySelectorAll('article'),
-        ...root.querySelectorAll('[data-testid]'),
-        ...root.querySelectorAll('div[role="presentation"]')
-      ];
-      console.log('潜在元素数量:', potentialElements.length);
-    }
-
-    // 增强的fallback检测
-    const fallbackSelectors = [
-      'div[class*="group"], div[data-message-id]',
-      'div[class*="turn"], div[class*="message"]',
-      'main > div > div',
-      '[role="presentation"] > div'
-    ];
-
-    for (const fallbackSelector of fallbackSelectors) {
-      const candidates = [...root.querySelectorAll(fallbackSelector)].filter(el => {
-        // 检查是否包含消息相关的内容
-        return (
-          el.querySelector('div[data-message-author-role]') ||
-          el.querySelector('[data-testid*="user"]') ||
-          el.querySelector('[data-testid*="assistant"]') ||
-          el.querySelector('[data-author]') ||
-          el.querySelector('.markdown') ||
-          el.querySelector('.prose') ||
-          el.querySelector('.whitespace-pre-wrap') ||
-          (el.textContent && el.textContent.trim().length > 10)
-        );
-      });
-
-      if (candidates.length > 0) {
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: Fallback选择器 ${fallbackSelector} 找到 ${candidates.length} 个候选对话`);
-        return candidates;
-      }
-    }
-
-    if (DEBUG) console.log('ChatGPT Navigation: 所有检测方法均失效');
-    return [];
+    });
+    visible.sort((a, b) => {
+      try { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; }
+      catch { return 0; }
+    });
+    return visible;
   }
 
   function getTextPreview(el) {
@@ -483,7 +604,68 @@
 
   function getTurnKey(el) {
     if (!el) return '';
-    return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
+    return el.getAttribute('data-gq-key') || el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
+  }
+
+  function fnv1a32(input) {
+    const str = String(input ?? '');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  function getComposedAncestors(el, max = 60) {
+    const chain = [];
+    let cur = el;
+    while (cur && max-- > 0) {
+      chain.push(cur);
+      if (cur.parentElement) {
+        cur = cur.parentElement;
+        continue;
+      }
+      const rn = cur.getRootNode && cur.getRootNode();
+      cur = rn && rn.host ? rn.host : null;
+    }
+    return chain;
+  }
+
+  function classifyMarkdownDoc(docEl) {
+    const chain = getComposedAncestors(docEl, 50);
+    const hasTag = (tag) => chain.some((n) => n && n.tagName === tag);
+    const classContains = (substr) =>
+      chain.some((n) => {
+        if (!n) return false;
+        if (n.classList && n.classList.contains(substr)) return true;
+        const cn = typeof n.className === 'string' ? n.className : '';
+        return cn.includes(substr);
+      });
+
+    const isQuestion =
+      classContains('question-wrapper') ||
+      classContains('question-block') ||
+      chain.some((n) => typeof n?.className === 'string' && /\bquestion\b/.test(n.className));
+    const isAnswer =
+      hasTag('UCS-SUMMARY') ||
+      hasTag('UCS-RESPONSE-MARKDOWN') ||
+      classContains('summary-container') ||
+      classContains('summary-contents') ||
+      chain.some((n) => typeof n?.className === 'string' && /\bsummary\b/.test(n.className));
+
+    return { isQuestion, isAnswer };
+  }
+
+  function extractGeminiTurnParts(turnEl) {
+    // gemini.google.com/app：一个 conversation-container 内通常包含 user-query + model-response
+    const uq = turnEl.querySelector('user-query');
+    const mr = turnEl.querySelector('model-response');
+    const qDoc = uq?.querySelector('.query-text') || uq || null;
+    const aDoc = mr?.querySelector('message-content') || mr || null;
+    const questionText = qDoc ? getTextPreview(qDoc) : '';
+    const answerText = aDoc ? getTextPreview(aDoc) : '';
+    return { qDoc, aDoc: aDoc || null, answerFallback: aDoc || null, questionText, answerText };
   }
 
   function buildIndex(turnsOverride) {
@@ -494,87 +676,108 @@
     lastDomLastKey = turns.length ? getTurnKey(turns[turns.length - 1]) : '';
     turnIdToPos.clear();
     if (!turns.length) {
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 没有找到任何对话元素');
+      if (DEBUG || window.DEBUG_TEMP) console.log('Gemini Navigation: 没有找到任何对话元素');
       return [];
     }
 
-    if (DEBUG) console.log(`ChatGPT Navigation: 开始分析 ${turns.length} 个对话元素`);
+    if (DEBUG) console.log(`Gemini Navigation: 开始分析 ${turns.length} 个 turn`);
 
+    const hashMaxOcc = new Map(); // hash -> max occurrence
     let u = 0, a = 0;
     const list = [];
+
     for (let i = 0; i < turns.length; i++) {
-      const el = turns[i];
-      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-      const attrTestId = el.getAttribute('data-testid') || '';
-      if (!el.id) el.id = `cgpt-turn-${i + 1}`;
-      turnIdToPos.set(el.id, i);
-
-      const msgKey = getTurnKey(el);
-      let role = roleCache.get(msgKey) || '';
-
-      let isUser = role === 'user';
-      let isAssistant = role === 'assistant';
-      if (!isUser && !isAssistant) {
-        isUser = !!(
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-        isAssistant = !!(
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
-        role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
-        if (role) roleCache.set(msgKey, role);
-      }
-
-      if (DEBUG && i < 3) {
-        console.log(`ChatGPT Navigation Debug - 元素 ${i}:`, {
-          element: el,
-          testId: attrTestId,
-          isUser,
-          isAssistant,
-          userSelectors: {
-            authorRole: !!el.querySelector('[data-message-author-role="user"]'),
-            textMessage: !!el.querySelector('.text-message[data-author="user"]'),
-            testIdMatch: attrTestId.includes('user')
-          },
-          assistantSelectors: {
-            authorRole: !!el.querySelector('[data-message-author-role="assistant"]'),
-            textMessage: !!el.querySelector('.text-message[data-author="assistant"]'),
-            testIdMatch: attrTestId.includes('assistant')
-          }
-        });
-      }
-
-      if (!isUser && !isAssistant) {
-        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 角色识别失败`);
-        continue;
-      }
+      const turn = turns[i];
+      if (turn.getAttribute('data-cgpt-turn') !== '1') turn.setAttribute('data-cgpt-turn', '1');
+      if (!turn.id) turn.id = `cgpt-turn-${i + 1}`;
 
       const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS;
-      let preview = previewCache.get(msgKey) || '';
-      if (!preview || shouldRecalcPreview) {
-        let block = null;
-        if (isUser) {
-          block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
-        } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
+
+      let baseKey = turn.getAttribute('data-gq-key') || '';
+      if (baseKey) {
+        const m = /^([0-9a-f]+):(\d+)$/.exec(baseKey);
+        if (m) {
+          const h = m[1];
+          const occ = parseInt(m[2], 10) || 0;
+          const cur = hashMaxOcc.get(h) || 0;
+          if (occ > cur) hashMaxOcc.set(h, occ);
         }
-        preview = getTextPreview(block);
-        if (preview) previewCache.set(msgKey, preview);
-      }
-      if (!preview) {
-        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 无法提取预览文本`);
-        continue;
       }
 
-      const seq = isUser ? ++u : ++a;
-      list.push({ id: el.id, key: msgKey, idx: i, role: isUser ? 'user' : 'assistant', preview, seq });
+      let qid = turn.getAttribute('data-gq-qid') || '';
+      let aid = turn.getAttribute('data-gq-aid') || '';
+      let qPreview = turn.getAttribute('data-gq-qpreview') || '';
+      let aPreview = turn.getAttribute('data-gq-apreview') || '';
+
+      let parts = null;
+      const needRecalc = shouldRecalcPreview || !baseKey || !qid || !aid || !qPreview || !aPreview;
+      if (needRecalc) {
+        parts = extractGeminiTurnParts(turn);
+
+        // baseKey：优先使用 turn 的稳定 id（Gemini App 的 conversation-container 通常自带 id）
+        if (!baseKey) {
+          const tid = String(turn.id || '');
+          if (tid && !/^cgpt-turn-\d+$/.test(tid)) {
+            baseKey = `r_${tid}`;
+          } else {
+            const basis = parts.questionText || parts.answerText || getTextPreview(turn);
+            const h = fnv1a32(basis);
+            const nextOcc = (hashMaxOcc.get(h) || 0) + 1;
+            hashMaxOcc.set(h, nextOcc);
+            baseKey = `${h}:${nextOcc}`;
+          }
+          turn.setAttribute('data-gq-key', baseKey);
+        }
+
+        const qAnchor = parts.qDoc;
+        const aAnchor = parts.aDoc || parts.answerFallback;
+
+        if (!qid) {
+          if (qAnchor && qAnchor !== turn) {
+            qid = `${turn.id}-q`;
+            try { qAnchor.id = qid; } catch {}
+          } else {
+            qid = turn.id;
+          }
+          turn.setAttribute('data-gq-qid', qid);
+        } else if (shouldRecalcPreview && qAnchor && qAnchor !== turn) {
+          try { qAnchor.id = qid; } catch {}
+        }
+
+        if (!aid) {
+          if (aAnchor && aAnchor !== turn) {
+            aid = `${turn.id}-a`;
+            try { aAnchor.id = aid; } catch {}
+          } else {
+            aid = turn.id;
+          }
+          turn.setAttribute('data-gq-aid', aid);
+        } else if (shouldRecalcPreview && aAnchor && aAnchor !== turn) {
+          try { aAnchor.id = aid; } catch {}
+        }
+
+        if (!qPreview || shouldRecalcPreview) {
+          qPreview = parts.questionText || (qAnchor ? getTextPreview(qAnchor) : '') || '...';
+          turn.setAttribute('data-gq-qpreview', qPreview);
+        }
+        if (!aPreview || shouldRecalcPreview) {
+          aPreview = parts.answerText || (aAnchor ? getTextPreview(aAnchor) : '') || '...';
+          turn.setAttribute('data-gq-apreview', aPreview);
+        }
+      }
+
+      // 让 turn 和两个锚点 id 都能映射回 turn 的位置（用于边界扫描优化）
+      turnIdToPos.set(turn.id, i);
+      if (qid) turnIdToPos.set(qid, i);
+      if (aid) turnIdToPos.set(aid, i);
+
+      // Gemini 一个 turn 内包含“问题+答案”，这里拆成两条，保持与原脚本一致
+      const userKey = `${baseKey}:q`;
+      list.push({ id: qid || turn.id, key: userKey, idx: i, role: 'user', preview: qPreview || '...', seq: ++u });
+      list.push({ id: aid || turn.id, key: baseKey, idx: i, role: 'assistant', preview: aPreview || '...', seq: ++a });
     }
 
-    if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
+    if (DEBUG) console.log(`Gemini Navigation: 生成 ${list.length} 条索引 (用户: ${u}, 助手: ${a})`);
     return list;
   }
 
@@ -853,7 +1056,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     const nav = document.createElement('div');
     nav.id = 'cgpt-compact-nav';
-    nav.innerHTML = `
+    setHTML(nav, `
       <div class="compact-header">
         <div class="compact-actions">
           <button class="compact-toggle" type="button" title="收起/展开"><span class="toggle-text">−</span></button>
@@ -869,7 +1072,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         <button class="nav-btn arrow" type="button" id="cgpt-nav-next" title="下一条（Cmd+↓ / Alt+↓）">↓</button>
         <button class="nav-btn" type="button" id="cgpt-nav-bottom" title="回到底部">⤓</button>
       </div>
-    `;
+    `);
     document.body.appendChild(nav);
     applySavedPosition(nav);
     let layout = {
@@ -1261,19 +1464,146 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function findLeftSidebarElement() {
-    const candidates = [
-      document.getElementById('stage-slideover-sidebar'),
-      document.querySelector('nav[aria-label="Chat history"]'),
-      document.querySelector('[data-testid="chat-history"]')
-    ];
-    for (const el of candidates) {
-      if (el) return el;
+    // Gemini Enterprise: left sidebar lives inside `ucs-nav-panel` (open shadow root).
+    try {
+      const root = getGeminiRoot();
+      if (!root) return null;
+      const navHost = root.querySelector('ucs-nav-panel');
+      const navRoot = navHost?.shadowRoot || null;
+      const panel = navRoot?.querySelector('.nav-panel') || null;
+      if (panel) return panel;
+      return deepQueryFirst(root, '.nav-panel') || null;
+    } catch {
+      return null;
     }
-    return null;
   }
 
   function findRightPanelElement() {
-    return document.querySelector('section[data-testid="screen-threadFlyOut"]');
+    // Gemini Enterprise: right panel lives inside `ucs-results` -> `ucs-sources-panel` / `.desktop-sources-panel`.
+    try {
+      const root = getGeminiRoot();
+      if (!root) return null;
+      const resultsHost = root.querySelector('ucs-results');
+      const resultsRoot = resultsHost?.shadowRoot || null;
+      const direct =
+        resultsRoot?.querySelector('.panel-container.desktop-sources-panel') ||
+        resultsRoot?.querySelector('.desktop-sources-panel') ||
+        resultsRoot?.querySelector('ucs-sources-panel') ||
+        null;
+      if (direct) return direct;
+      return (
+        deepQueryFirst(root, '.panel-container.desktop-sources-panel') ||
+        deepQueryFirst(root, '.desktop-sources-panel') ||
+        deepQueryFirst(root, 'ucs-sources-panel') ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function findGeminiTopHeaderElement() {
+    // Gemini Enterprise: header bar container is inside `ucs-standalone-app.shadowRoot`.
+    try {
+      const root = getGeminiRoot();
+      if (!root) return null;
+      const direct = root.querySelector('div.ucs-standalone-header');
+      if (direct) return direct;
+      return deepQueryFirst(root, 'div.ucs-standalone-header') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setGeminiTopHeaderHidden(headerEl, hidden) {
+    if (!headerEl) return;
+    if (hidden) {
+      try {
+        if (headerEl.dataset.gqnHeaderHidden !== '1') {
+          headerEl.dataset.gqnHeaderRestoreDisplay = headerEl.style.display || '';
+          headerEl.dataset.gqnHeaderHidden = '1';
+        }
+      } catch {}
+      headerEl.style.display = 'none';
+      return;
+    }
+
+    let restore = '';
+    try { restore = headerEl.dataset.gqnHeaderRestoreDisplay || ''; } catch {}
+    headerEl.style.display = restore || '';
+    try { delete headerEl.dataset.gqnHeaderHidden; } catch {}
+  }
+
+  function scheduleGeminiHeaderAutoHideSync(reason) {
+    if (headerAutoHide.rafId) return;
+    const schedule = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (cb) => setTimeout(cb, 16);
+    headerAutoHide.rafId = schedule(() => {
+      headerAutoHide.rafId = 0;
+      try { syncGeminiHeaderAutoHide(reason); } catch {}
+    });
+  }
+
+  function syncGeminiHeaderAutoHide(reason) {
+    // Poll-based + ResizeObserver based; keep light and safe across SPA navigations.
+    const root = getGeminiRoot();
+    if (!root) return;
+
+    const sidebar = findLeftSidebarElement();
+    const header = findGeminiTopHeaderElement();
+
+    if (header && header !== headerAutoHide.headerEl) headerAutoHide.headerEl = header;
+
+    if (sidebar !== headerAutoHide.sidebarEl) {
+      if (headerAutoHide.ro) {
+        try { headerAutoHide.ro.disconnect(); } catch {}
+        headerAutoHide.ro = null;
+      }
+      headerAutoHide.sidebarEl = sidebar;
+      if (sidebar && window.ResizeObserver) {
+        try {
+          headerAutoHide.ro = new ResizeObserver(() => scheduleGeminiHeaderAutoHideSync('sidebar-resize'));
+          headerAutoHide.ro.observe(sidebar);
+        } catch {
+          headerAutoHide.ro = null;
+        }
+      }
+    }
+
+    if (!header || !sidebar) return;
+
+    let expanded = null;
+    try {
+      const r = sidebar.getBoundingClientRect();
+      expanded = !!r && (r.width >= GEMINI_SIDEBAR_EXPANDED_MIN_WIDTH);
+    } catch {
+      expanded = null;
+    }
+    if (expanded === null) return;
+
+    const shouldHide = !expanded;
+    if (headerAutoHide.lastExpanded === expanded) {
+      // Keep consistent even if something else touched styles.
+      if (shouldHide && header.style.display !== 'none') setGeminiTopHeaderHidden(header, true);
+      return;
+    }
+
+    headerAutoHide.lastExpanded = expanded;
+    setGeminiTopHeaderHidden(header, shouldHide);
+
+    if (DEBUG || window.DEBUG_TEMP) console.log('Gemini header auto-hide:', { reason, expanded, shouldHide });
+  }
+
+  function initGeminiHeaderAutoHide() {
+    if (headerAutoHideStarted) {
+      scheduleGeminiHeaderAutoHideSync('re-init');
+      return;
+    }
+    headerAutoHideStarted = true;
+    scheduleGeminiHeaderAutoHideSync('init');
+    headerAutoHide.intervalId = setInterval(() => {
+      try { syncGeminiHeaderAutoHide('poll'); } catch {}
+    }, 1200);
+    window.addEventListener('resize', () => scheduleGeminiHeaderAutoHideSync('resize'), { passive: true });
   }
 
   function overlapsLeft(navRect, panelRect) {
@@ -1652,18 +1982,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     };
     const removed = runCheckpointGC(false);
     if (removed) { saveCPSet(); }
-    // 清理已失效的收藏（不再存在的消息或图钉）
+    // 自动清理收藏：仅按 TTL 清理（避免 Gemini 虚拟列表导致“未加载即被当成无效”）
     const nextFull = cacheIndex;
-    const validKeys = new Set(nextFull.map(i => i.key));
-    const favRemoved = runFavoritesGC(false, validKeys);
+    const favRemoved = runFavoritesGC(true, null, false, false);
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {
-      list.innerHTML = `<div class="compact-empty">${filterFav ? '暂无收藏' : '暂无对话'}</div>`;
+      setHTML(list, `<div class="compact-empty">${filterFav ? '暂无收藏' : '暂无对话'}</div>`);
       queueScrollbarState();
       return;
     }
-    list.innerHTML = '';
+    clearEl(list);
     const frag = document.createDocumentFragment();
     for (const item of next) {
       const node = document.createElement('div');
@@ -1674,19 +2003,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (item.role === 'pin') {
         node.classList.add('pin');
         node.title = 'Option+单击删除📌';
-        node.innerHTML = `<span class="pin-label">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
+        setHTML(node, `<span class="pin-label">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`);
       } else {
-        node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
+        const label = item.role === 'user' ? `U${item.seq}` : (item.role === 'assistant' ? `A${item.seq}` : String(item.idx + 1));
+        setHTML(node, `<span class="compact-number">${escapeHtml(label)}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`);
       }
       node.setAttribute('draggable', 'false');
       frag.appendChild(node);
     }
     list.appendChild(frag);
     queueScrollbarState();
-    // 重新渲染会丢失 active class：根据 currentActiveId 立即恢复一次，避免闪烁/丢失高亮
-    if (currentActiveId) {
-      try { setActiveTurn(currentActiveId); } catch {}
-    }
     if (!list._eventBound) {
       list.addEventListener('click', (e) => {
         // 行内收藏切换
@@ -1710,7 +2036,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           if (pinId && cpMap.has(pinId)) {
             const meta = cpMap.get(pinId);
             // 尝试移除旧锚点
-            try { const old = document.getElementById(meta.anchorId); if (old) old.remove(); } catch {}
+            try { const old = getById(meta.anchorId); if (old) old.remove(); } catch {}
             cpMap.delete(pinId);
             if (favSet.has(pinId)) { favSet.delete(pinId); favMeta.delete(pinId); saveFavSet(); updateStarBtnState(ui); }
             saveCPSet();
@@ -1718,7 +2044,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             return;
           }
         }
-        const el = document.getElementById(item.dataset.id);
+        const el = getById(item.dataset.id);
         if (el) {
           setActiveTurn(item.dataset.id);
           scrollToTurn(el);
@@ -1756,12 +2082,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const msgKey = meta.msgKey;
       if (!msgKey) return;
       let anchorId = meta.anchorId;
-      if (!anchorId || !document.getElementById(anchorId)) {
+      if (!anchorId || !getById(anchorId)) {
         anchorId = resolvePinAnchor(meta);
         if (anchorId) { meta.anchorId = anchorId; needSave = true; }
       }
       if (!anchorId) return; // 无法解析，跳过
-      try { const ae = document.getElementById(anchorId); if (ae) ae.setAttribute('data-pin-id', pinId); } catch {}
+      try {
+        const ae = getById(anchorId);
+        if (ae) {
+          ae.setAttribute('data-pin-id', pinId);
+          ensurePinAnchorStyled(ae);
+        }
+      } catch {}
       const created = meta.created || 0;
       pins.push({ pinId, msgKey, anchorId, created });
     });
@@ -1778,7 +2110,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const combined = [];
     // 先预计算锚点y用于排序
     const getY = (id) => {
-      const el = document.getElementById(id);
+      const el = getById(id);
       if (!el) return Infinity;
       const r = el.getBoundingClientRect();
       return r ? r.top : Infinity;
@@ -1822,6 +2154,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const span = document.createElement('span');
       span.id = id;
       span.className = 'cgpt-pin-anchor';
+      ensurePinAnchorStyled(span);
 
       let rx = null, ry = null;
       if (rel && typeof rel.x === 'number' && typeof rel.y === 'number') {
@@ -1864,7 +2197,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function findTurnByKey(key) {
     const turns = qsTurns();
     for (const t of turns) {
-      const k = t.getAttribute('data-message-id') || t.getAttribute('data-testid') || t.id;
+      const k = getTurnKey(t);
       if (k === key) return t;
     }
     return null;
@@ -1901,6 +2234,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function getScrollRoot(start) {
+    const geminiScroller = getGeminiScroller();
+    if (geminiScroller) return geminiScroller;
     const closest = findClosestScrollContainer(start);
     if (closest) return closest;
     const doc = document.scrollingElement || document.documentElement;
@@ -1927,20 +2262,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function findTurnAnchor(root) {
     if (!root) return null;
     if (root.classList && root.classList.contains('cgpt-pin-anchor')) return root;
+    if (root.classList && root.classList.contains('markdown-document')) return root;
     const selectors = [
-      '[data-message-author-role] .whitespace-pre-wrap',
-      '[data-message-content-part]',
-      '.deep-research-result .markdown',
-      '.border-token-border-sharp .markdown',
-      '[data-message-author-role] .markdown',
-      '[data-message-author-role] .prose',
-      '.text-message',
-      'article .markdown',
-      '.prose p',
+      // Gemini App
+      '.query-text',
+      'message-content',
+      // 兜底
       'p','li','pre','code','blockquote'
     ];
     for (const s of selectors) {
-      const n = root.querySelector(s);
+      const n = deepQueryFirst(root, s) || root.querySelector?.(s);
       if (n && n.offsetParent !== null && n.offsetHeight > 0) return n;
     }
     return root;
@@ -1948,27 +2279,31 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function scrollToTurn(el) {
     const anchor = findTurnAnchor(el) || el;
-    const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
+    const scroller = getScrollRoot(anchor);
+    const isWindow = isWindowScroller(scroller);
+    // Gemini App：自定义 scroller + smooth scroll 时，后续再做 postScrollNudge 容易造成“抽搐/回弹”。
+    // 自定义 scroller 分支已经按 anchorOffset 精确对齐，通常不需要二次 nudge。
+    let needNudge = true;
+    markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
     try {
-      anchor.style.scrollMarginTop = margin + 'px';
-      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
-      requestAnimationFrame(() => {
-        markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
+      if (!isWindow && scroller && scroller.getBoundingClientRect) {
+        const scRect = scroller.getBoundingClientRect();
+        const aRect = anchor.getBoundingClientRect();
+        const top = scroller.scrollTop + (aRect.top - scRect.top) - (CONFIG.anchorOffset || 8);
+        scroller.scrollTo({ top: Math.max(0, top), behavior });
+        needNudge = false;
+      } else {
+        const margin = Math.max(0, getFixedHeaderHeight());
+        try { anchor.style.scrollMarginTop = margin + 'px'; } catch {}
         anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior });
-        postScrollNudge(el);
-      });
+      }
     } catch {
-      const scroller = getScrollRoot(anchor);
-      const scRect = scroller.getBoundingClientRect ? scroller.getBoundingClientRect() : { top: 0 };
-      const isWindow = (scroller === document.documentElement || scroller === document.body);
-      const base = isWindow ? window.scrollY : scroller.scrollTop;
-      const top = base + anchor.getBoundingClientRect().top - scRect.top - margin;
-      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
-      if (isWindow) window.scrollTo({ top, behavior });
-      else scroller.scrollTo({ top, behavior });
-      postScrollNudge(el);
+      // 最后兜底：不崩溃
+      try { anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' }); } catch {}
     }
+    if (needNudge) postScrollNudge(el);
+    else scheduleActiveUpdateNow();
     el.classList.add('highlight-pulse');
     anchor.classList.add('highlight-pulse');
     setTimeout(() => { el.classList.remove('highlight-pulse'); anchor.classList.remove('highlight-pulse'); }, 1600);
@@ -2126,13 +2461,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch {}
   }
 
-  // 移除不存在于 validKeys 的收藏，返回移除数量
-  function runFavoritesGC(saveAfter = false, validKeys = null, onlyPins = false) {
+  // 收藏 GC：默认只按 TTL 清理；当 removeInvalid=true 时再清理不在 validKeys 的条目
+  function runFavoritesGC(saveAfter = false, validKeys = null, onlyPins = false, removeInvalid = false) {
     try {
       if (!favSet || !(favSet instanceof Set) || favSet.size === 0) return 0;
-      const valid = validKeys instanceof Set ? validKeys : new Set();
-      // 如果没提供 validKeys，就尽量构造一个
-      if (!(validKeys instanceof Set)) {
+      const valid = removeInvalid ? (validKeys instanceof Set ? validKeys : new Set()) : null;
+      // 仅当需要清理 invalid 时才构造 validKeys，避免 Gemini 虚拟渲染误伤
+      if (removeInvalid && !(validKeys instanceof Set)) {
         try { const base = buildIndex(); base.forEach(i => valid.add(i.key)); } catch {}
         try { loadCPSet(); cpMap.forEach((_, pid) => valid.add(pid)); } catch {}
       }
@@ -2141,7 +2476,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       for (const k of Array.from(favSet.values())) {
         if (onlyPins && !(typeof k === 'string' && k.startsWith('pin-'))) continue;
         const meta = favMeta.get(k) || { created: 0 };
-        if (!valid.has(k) || !meta.created || (now - meta.created) > FAV_TTL_MS) { favSet.delete(k); favMeta.delete(k); removed++; }
+        const expired = !meta.created || (now - meta.created) > FAV_TTL_MS;
+        const invalid = !!(removeInvalid && valid && !valid.has(k));
+        if (expired || invalid) { favSet.delete(k); favMeta.delete(k); removed++; }
       }
       if (removed && saveAfter) saveFavSet();
       return removed;
@@ -2153,7 +2490,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const listNow = cacheIndex;
     if (listNow && listNow.length) {
       const targetItem = which === 'top' ? listNow[0] : listNow[listNow.length - 1];
-      const el = document.getElementById(targetItem.id) || qsTurns()[targetItem.idx] || null;
+      const el = getById(targetItem.id) || qsTurns()[targetItem.idx] || null;
       if (el) {
         if (!el.id) el.id = `cgpt-turn-edge-${which}`;
         setActiveTurn(el.id);
@@ -2173,37 +2510,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function getTurnsContainer() {
-    const nodes = qsTurns();
-    if (!nodes.length) {
-      // 如果没有找到对话节点，尝试找到可能的对话容器
-      const potentialContainers = [
-        document.querySelector('[data-testid="conversation-turns"]'),
-        document.querySelector('main[role="main"]'),
-        document.querySelector('main'),
-        document.querySelector('[role="main"]'),
-        document.querySelector('div[class*="conversation"]'),
-        document.querySelector('div[class*="chat"]'),
-        document.body
-      ].filter(Boolean);
-
-      if (DEBUG && potentialContainers.length > 1) {
-        console.log('ChatGPT Navigation: 没有找到对话，使用备用容器:', potentialContainers[0]);
-      }
-
-      return potentialContainers[0] || document.body;
+    const scroller = getGeminiScroller();
+    if (scroller) {
+      const convo = deepQueryFirst(scroller, 'ucs-conversation');
+      if (convo && convo.shadowRoot) return convo.shadowRoot;
+      return scroller;
     }
-
-    // 找到包含所有对话节点的最小公共父元素
-    let a = nodes[0];
-    while (a) {
-      if (nodes.every(n => a.contains(n))) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 对话容器:', a);
-        return a;
-      }
-      a = a.parentElement;
-    }
-
-    return document.body;
+    return getGeminiRoot() || document.body;
   }
 
   function observeChat(ui) {
@@ -2215,25 +2528,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const isLongChat = (lastDomTurnCount || 0) > 120;
       const hasStop = checkStreamingState(ui);
       const useSoft = isLongChat && !!hasStop;
-      // 只要涉及消息区域的变更，就触发去抖刷新
-      for (const mut of muts) {
-        const t = mut.target && mut.target.nodeType === 1 ? mut.target : null;
-        if (!t) continue;
-
-        // 尽量廉价地判断：在主区域/turn/markdown/消息块内的任何变更都算
-        if (
-          t.closest('[data-testid="conversation-turns"]') ||
-          t.closest('[data-message-author-role]') ||
-          t.closest('[data-testid*="conversation-turn"]') ||
-          t.closest('[data-message-id]') ||
-          t.closest('.markdown') || t.closest('.prose')
-        ) {
-          handleScrollLockMutations(muts);
-          scheduleRefresh(ui, { delay: isLongChat ? 200 : 80, soft: useSoft });
-          return;
-        }
-      }
       handleScrollLockMutations(muts);
+      scheduleRefresh(ui, { delay: isLongChat ? 200 : 80, soft: useSoft });
     });
 
     mo.observe(target, {
@@ -2364,13 +2660,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
-      const turns = document.querySelector('[data-testid="conversation-turns"]');
-      const msg = document.querySelector('[data-message-id]');
-      const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
-      const target = turns || msg || main || document.body;
-      const closest = findClosestScrollContainer(target);
-      if (closest) return closest;
-      return getScrollRoot(target);
+      const scroller = getGeminiScroller();
+      if (scroller) return scroller;
+      const root = getGeminiRoot();
+      if (root && root.host) {
+        const closest = findClosestScrollContainer(root.host);
+        if (closest) return closest;
+        return getScrollRoot(root.host);
+      }
+      return getScrollRoot(document.body);
     } catch { return getScrollRoot(document.body); }
   }
 
@@ -2690,7 +2988,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scrollLockLastUserTs = Date.now();
     scrollLockLastPos = getScrollPos(sc || scrollLockScrollEl || getChatScrollContainer());
     scrollLockStablePos = scrollLockLastPos;
-    updateLockBtnState(ui?.nav || document.getElementById('cgpt-compact-nav'));
+    updateLockBtnState(ui?.nav || getById('cgpt-compact-nav'));
     installScrollGuards();
     postScrollLockStateToMainWorld();
     if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
@@ -2731,9 +3029,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function mutationTouchesConversation(node) {
     if (!node || node.nodeType !== 1) return false;
-    if (node.matches('[data-testid^="conversation-turn-"], [data-testid*="conversation-turn"], [data-message-id], [data-message-author-role]')) return true;
-    if (node.matches('.markdown, .prose, article')) return true;
-    if (node.querySelector?.('[data-message-author-role], [data-message-id], .markdown, .prose')) return true;
+    // Gemini Enterprise: 主要在 open shadow DOM 内
+    if (node.matches('div.turn, .markdown-document, ucs-text-streamer, ucs-summary, ucs-response-markdown, div.summary, div.summary-contents')) return true;
+    if (node.querySelector?.('div.turn, .markdown-document, ucs-text-streamer, ucs-summary, ucs-response-markdown, div.summary, div.summary-contents')) return true;
     return false;
   }
 
@@ -2778,6 +3076,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function bindActiveTracking() {
     document.addEventListener('scroll', onAnyScroll, { passive: true, capture: true });
     window.addEventListener('resize', onAnyScroll, { passive: true });
+    const sc = getGeminiScroller();
+    if (sc && sc !== activeScrollEl) {
+      try { if (activeScrollEl) activeScrollEl.removeEventListener('scroll', onAnyScroll); } catch {}
+      activeScrollEl = sc;
+      try { sc.addEventListener('scroll', onAnyScroll, { passive: true }); }
+      catch { sc.addEventListener('scroll', onAnyScroll); }
+    }
     scheduleActiveUpdateNow();
   }
 
@@ -2786,7 +3091,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (window.__cgptPinBound) return;
     // 非 Alt 点击锚点：阻止默认，避免文本选中/抖动
     document.addEventListener('mousedown', (e) => {
-      const anc = e.target && e.target.closest && e.target.closest('.cgpt-pin-anchor');
+      const path = (e && typeof e.composedPath === 'function') ? e.composedPath() : [];
+      const hit = (Array.isArray(path) ? path : []).find((n) => n && n.nodeType === 1 && (
+        (n.classList && n.classList.contains('cgpt-pin-anchor')) ||
+        (n.closest && n.closest('.cgpt-pin-anchor'))
+      ));
+      const anc = hit && hit.nodeType === 1 ? (hit.classList && hit.classList.contains('cgpt-pin-anchor') ? hit : hit.closest('.cgpt-pin-anchor')) : null;
       if (anc && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
@@ -2796,11 +3106,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const onClick = (e) => {
       try {
         if (!e.altKey || e.button !== 0) return;
-        const nt = e.target;
+        const path = (e && typeof e.composedPath === 'function') ? e.composedPath() : [];
+        const nt = (Array.isArray(path) ? path : []).find((n) => n && n.nodeType === 1) || e.target;
         if (!nt) return;
-        if (nt.closest && nt.closest('#cgpt-compact-nav')) return; // 忽略在面板内
+        if (Array.isArray(path) && path.some((n) => n && n.nodeType === 1 && (n.id === 'cgpt-compact-nav' || (n.closest && n.closest('#cgpt-compact-nav'))))) return; // 忽略在面板内
         // 若点击在内容中的📌图标上，则删除该📌
-        const anc = nt.closest && nt.closest('.cgpt-pin-anchor');
+        const hit = (Array.isArray(path) ? path : []).find((n) => n && n.nodeType === 1 && (
+          (n.classList && n.classList.contains('cgpt-pin-anchor')) ||
+          (n.closest && n.closest('.cgpt-pin-anchor'))
+        ));
+        const anc = hit && hit.nodeType === 1 ? (hit.classList && hit.classList.contains('cgpt-pin-anchor') ? hit : hit.closest('.cgpt-pin-anchor')) : (nt.closest && nt.closest('.cgpt-pin-anchor'));
         if (anc) {
           let pid = anc.getAttribute('data-pin-id') || '';
           if (!pid) {
@@ -2825,7 +3140,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         // 找到所属消息
         const turn = findTurnFromNode(nt);
         if (!turn) return;
-        const msgKey = turn.getAttribute('data-message-id') || turn.getAttribute('data-testid') || turn.id;
+        if (!turn.getAttribute('data-gq-key')) {
+          try { refreshIndex(ui, { force: true }); } catch {}
+        }
+        const msgKey = getTurnKey(turn) || turn.id;
         if (!msgKey) return;
 
         // 在点击位置插入隐形锚点
@@ -2837,7 +3155,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const meta = { msgKey, anchorId: anchor.id, frac: anchor.frac, created: Date.now(), ctx: anchor.ctx || null, rel: anchor.rel || null };
         try { if (!cpMap || !(cpMap instanceof Map)) loadCPSet(); } catch {}
         cpMap.set(pinId, meta);
-        try { const ae = document.getElementById(meta.anchorId); if (ae) ae.setAttribute('data-pin-id', pinId); } catch {}
+        try { const ae = getById(meta.anchorId); if (ae) ae.setAttribute('data-pin-id', pinId); } catch {}
         // 新增：图钉默认自动加入收藏夹
         try {
           if (!favSet || !(favSet instanceof Set)) loadFavSet();
@@ -2860,10 +3178,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function findTurnFromNode(node) {
     if (!node || node.nodeType !== 1) node = node?.parentElement || null;
     if (!node) return null;
-    let el = node.closest('[data-cgpt-turn="1"]');
+    let el = closestCrossShadow(node, '[data-cgpt-turn="1"]');
     if (el) return el;
     // 兜底：尝试已知选择器
-    el = node.closest('article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],div[data-message-id],div[class*="group"][data-testid]');
+    el = closestCrossShadow(node, '.conversation-container') ||
+      closestCrossShadow(node, 'div.turn') ||
+      node.closest?.('article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],div[data-message-id],div[class*="group"][data-testid]') ||
+      null;
     return el;
   }
 
@@ -2958,6 +3279,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const span = document.createElement('span');
     span.id = id;
     span.className = 'cgpt-pin-anchor';
+    ensurePinAnchorStyled(span);
     const rect = host.getBoundingClientRect();
     const w = Math.max(1, rect.width);
     const h = Math.max(1, rect.height);
@@ -2971,6 +3293,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getTurnMeasureEl(turnEl) {
     const sels = [
+      // Gemini App
+      'message-content',
+      '.query-text',
       '[data-message-author-role] .markdown',
       '[data-message-author-role] .prose',
       '.deep-research-result .markdown',
@@ -3003,6 +3328,50 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       try { host.style.position = 'relative'; } catch {}
     }
     return host;
+  }
+
+  function ensurePinAnchorStyled(el) {
+    if (!el || el.nodeType !== 1) return;
+    const span = /** @type {HTMLElement} */ (el);
+    if (!span.classList || !span.classList.contains('cgpt-pin-anchor')) return;
+    // NOTE: 📌锚点经常被插入到 Gemini 的 open shadow roots 内，document.head 的 CSS 无法穿透，
+    // 因此必须给锚点写入必要的 inline style，保证“可见 + 可定位”。（否则会出现“图钉不显示/定位不准”）
+    try {
+      if (!span.textContent || !span.textContent.trim()) span.textContent = '📌';
+      span.style.position = 'absolute';
+      span.style.width = '48px';
+      span.style.height = '48px';
+      span.style.display = 'flex';
+      span.style.alignItems = 'center';
+      span.style.justifyContent = 'center';
+      span.style.transform = 'translate(-50%,-50%)';
+      span.style.pointerEvents = 'auto';
+      span.style.userSelect = 'none';
+      span.style.webkitUserSelect = 'none';
+      span.style.caretColor = 'transparent';
+      span.style.cursor = 'default';
+      span.style.zIndex = '2';
+      span.style.fontSize = '40px';
+      span.style.lineHeight = '1';
+      span.style.opacity = '0.95';
+      span.style.filter = 'drop-shadow(0 3px 3px rgba(0,0,0,0.5))';
+      // 取面板的 CSS 变量作为颜色（有值则跟随主题），否则用亮色兜底。
+      let color = '';
+      try {
+        const nav = document.getElementById('cgpt-compact-nav');
+        if (nav) color = getComputedStyle(nav).getPropertyValue('--cgpt-nav-pin-color').trim();
+      } catch {}
+      span.style.color = color || '#4ade80';
+    } catch {}
+
+    // 绝对定位需要父级作为定位上下文
+    try {
+      const p = span.parentElement;
+      if (p) {
+        const cs = getComputedStyle(p);
+        if (cs.position === 'static') p.style.position = 'relative';
+      }
+    } catch {}
   }
 
   function extractRangeInfo(range, turnEl) {
@@ -3095,49 +3464,69 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function watchSendEvents(ui) {
-    const isComposerForm = (form) => {
+    const getPath = (e) => {
       try {
-        if (!form || typeof form.querySelector !== 'function') return false;
-        return !!(form.querySelector('#prompt-textarea') || form.querySelector('textarea[name="prompt-textarea"]'));
+        const p = e && typeof e.composedPath === 'function' ? e.composedPath() : null;
+        return Array.isArray(p) ? p : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const isSendButton = (el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.tagName !== 'BUTTON') return false;
+        const label = (el.getAttribute('aria-label') || '').trim();
+        const title = (el.getAttribute('title') || '').trim();
+        const text = (el.textContent || '').trim();
+        const hay = `${label} ${title} ${text}`.trim();
+        // Gemini Enterprise uses aria-label="Submit" on the send button.
+        return /^(submit|send|发送|提交)$/i.test(label) || /^(submit|send|发送|提交)$/i.test(text) || /\bsubmit\b/i.test(hay);
       } catch {
         return false;
       }
     };
 
-    // 点击发送按钮
+    // Click send
     document.addEventListener('click', (e) => {
-      if (e.target && e.target.closest && e.target.closest('[data-testid="send-button"]')) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
-        armScrollLockGuard(2200);
-        startBurstRefresh(ui);
-      }
-    }, true);
-
-    // 表单提交（覆盖 Enter 发送等路径）
-    document.addEventListener('submit', (e) => {
-      const form = e?.target;
-      if (!isComposerForm(form)) return;
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到表单提交，启动突发刷新');
+      const path = getPath(e);
+      const hit = path.find(isSendButton);
+      if (!hit) return;
+      if (DEBUG || window.DEBUG_TEMP) console.log('Gemini Navigation: 检测到发送按钮点击，启动突发刷新');
       armScrollLockGuard(2200);
       startBurstRefresh(ui);
     }, true);
 
-    // ⌘/Ctrl + Enter 发送
+    // Keyboard send: Enter (common), Cmd/Ctrl+Enter (power users)
     document.addEventListener('keydown', (e) => {
-      const t = e.target;
-      if (!t) return;
-      const isTextarea = t.tagName === 'TEXTAREA' || t.isContentEditable;
-      if (isTextarea && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
-        armScrollLockGuard(2200);
-        startBurstRefresh(ui);
-      }
+      if (e.key !== 'Enter') return;
+      if (e.isComposing) return;
+      if (e.shiftKey) return; // Shift+Enter usually means newline
+
+      // Avoid accidental triggers for navigation shortcuts
+      if (e.altKey) return;
+
+      // Shadow DOM retargeting: rely on composedPath() instead of e.target.
+      const path = getPath(e);
+      const isEditable = path.some((node) => {
+        if (!node || node.nodeType !== 1) return false;
+        const el = /** @type {HTMLElement} */ (node);
+        const tag = el.tagName;
+        return tag === 'TEXTAREA' || tag === 'INPUT' || !!el.isContentEditable;
+      });
+      if (!isEditable) return;
+
+      // Heuristic: plain Enter or Cmd/Ctrl+Enter
+      if (DEBUG || window.DEBUG_TEMP) console.log('Gemini Navigation: 检测到输入区回车，启动突发刷新');
+      armScrollLockGuard(2200);
+      startBurstRefresh(ui);
     }, true);
 
     // 回到前台时强制跑一次
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Gemini Navigation: 页面重新可见，强制刷新');
         scheduleRefresh(ui, { force: true });
       }
     });
@@ -3164,40 +3553,91 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function scheduleActiveUpdateNow() { requestAnimationFrame(updateActiveFromAnchor); }
 
   function getAnchorY() {
+    const sc = getGeminiScroller();
+    if (sc && sc.getBoundingClientRect) {
+      const r = sc.getBoundingClientRect();
+      return Math.max(0, Math.min(window.innerHeight - 20, r.top + (CONFIG.anchorOffset || 8)));
+    }
     const h = getFixedHeaderHeight();
-    return Math.max(0, Math.min(window.innerHeight - 20, h + CONFIG.anchorOffset));
+    return Math.max(0, Math.min(window.innerHeight - 20, h + (CONFIG.anchorOffset || 8)));
   }
 
   function updateActiveFromAnchor() {
     if (!cacheIndex.length) return;
     const y = getAnchorY();
-    const xs = [Math.floor(window.innerWidth * 0.40), Math.floor(window.innerWidth * 0.60)];
-    let activeEl = null;
 
-    for (const x of xs) {
-      const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : []);
-      if (!stack || !stack.length) continue;
-      for (const el of stack) {
-        if (!el) continue;
-        if (el.id === 'cgpt-compact-nav' || (el.closest && el.closest('#cgpt-compact-nav'))) continue;
-        const t = el.closest && el.closest('[data-cgpt-turn="1"]');
-        if (t) { activeEl = t; break; }
+    // Gemini Enterprise 的主要内容位于 open shadow DOM 内，document.elementsFromPoint()
+    // 往往只能拿到 shadow host（无法直接命中 turn 内部元素）。
+    // 因此这里改为基于 turn.getBoundingClientRect()（shadow-safe）定位 active turn。
+    const turns = cachedTurns && cachedTurns.length ? cachedTurns : qsTurns();
+    if (!turns || !turns.length) return;
+
+    // 仅用 top + next.top 推进，避免 y 落在 turn 之间的空隙时发生“来回震荡”导致定位不稳
+    let idx = Math.max(0, Math.min(turns.length - 1, currentActiveTurnPos || 0));
+    let steps = 0;
+    const maxSteps = 480;
+    while (steps < maxSteps) {
+      steps++;
+      const t = turns[idx];
+      if (!t || !t.getBoundingClientRect) break;
+      const r = t.getBoundingClientRect();
+      if (r.top > y) {
+        if (idx > 0) { idx--; continue; }
+        break;
       }
-      if (activeEl) break;
+      const next = turns[idx + 1];
+      if (next && next.getBoundingClientRect) {
+        const rn = next.getBoundingClientRect();
+        if (rn.top <= y) { idx++; continue; }
+      }
+      break;
+    }
+    // 极端跳转：兜底全量扫描一次（选 top <= y 的最后一个）
+    if (steps >= maxSteps) {
+      idx = 0;
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        if (!t || !t.getBoundingClientRect) continue;
+        const r = t.getBoundingClientRect();
+        if (r.top <= y) idx = i;
+      }
     }
 
-    const nearNext = findNearNextTop(y, BOUNDARY_EPS);
-    if (nearNext) activeEl = nearNext;
+    const activeTurn = turns[idx] || null;
+    if (!activeTurn) return;
 
-    if (!activeEl) {
-      const sinceScroll = Date.now() - (lastScrollTs || 0);
-      if (sinceScroll < 160) return;
-      const turns = qsTurns();
-      for (const t of turns) { const r = t.getBoundingClientRect(); if (r.bottom >= y) { activeEl = t; break; } }
-      if (!activeEl && turns.length) activeEl = turns[0];
-    }
+    const qid = activeTurn.getAttribute('data-gq-qid') || '';
+    const aid = activeTurn.getAttribute('data-gq-aid') || '';
 
-    if (activeEl) setActiveTurn(activeEl.id);
+    const qEl = qid ? getById(qid) : null;
+    const aEl = aid ? getById(aid) : null;
+
+    const dist = (node) => {
+      if (!node || !node.getBoundingClientRect) return Infinity;
+      const r = node.getBoundingClientRect();
+      if (r.top <= y && r.bottom >= y) return 0;
+      return Math.min(Math.abs(r.top - y), Math.abs(r.bottom - y));
+    };
+    const containsY = (node) => {
+      if (!node || !node.getBoundingClientRect) return false;
+      const r = node.getBoundingClientRect();
+      return r.top <= y && r.bottom >= y;
+    };
+
+    const id = (() => {
+      if (qEl && aEl) {
+        const aIn = containsY(aEl);
+        const qIn = containsY(qEl);
+        if (aIn && !qIn) return aid || activeTurn.id;
+        if (qIn && !aIn) return qid || activeTurn.id;
+        return dist(aEl) <= dist(qEl) ? (aid || activeTurn.id) : (qid || activeTurn.id);
+      }
+      if (aEl) return aid || activeTurn.id;
+      if (qEl) return qid || activeTurn.id;
+      return activeTurn.id;
+    })();
+
+    setActiveTurn(id);
   }
 
   function findNearNextTop(y, eps) {
@@ -3219,28 +3659,24 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function setActiveTurn(id) {
     const list = document.querySelector('#cgpt-compact-nav .compact-list');
     if (!id) return;
-    // 同一条目：如果 active class 仍然存在就直接返回；否则继续走恢复逻辑
+    // 允许在列表重渲染后“补涂”active（避免 currentActiveId 已设置但 DOM 高亮丢失）
     if (currentActiveId === id && list) {
-      const existing = list.querySelector(`.compact-item[data-id="${id}"]`);
-      if (existing && existing.classList.contains('active')) return;
-    } else if (currentActiveId === id) {
-      return;
+      const already = list.querySelector(`.compact-item[data-id="${id}"]`);
+      if (already && already.classList.contains('active')) return;
     }
 
     currentActiveId = id;
     currentActiveTurnPos = turnIdToPos.get(id) ?? currentActiveTurnPos;
     if (!list) return;
-
+    list.querySelectorAll('.compact-item.active').forEach(n => n.classList.remove('active'));
     const n = list.querySelector(`.compact-item[data-id="${id}"]`);
-    // 过滤模式下可能找不到对应项：清掉旧高亮，避免残留
-    list.querySelectorAll('.compact-item.active').forEach(node => node.classList.remove('active'));
-    if (!n) return;
-
-    n.classList.add('active');
-    const r = n.getBoundingClientRect();
-    const lr = list.getBoundingClientRect();
-    if (r.top < lr.top) list.scrollTop += (r.top - lr.top - 4);
-    else if (r.bottom > lr.bottom) list.scrollTop += (r.bottom - lr.bottom + 4);
+    if (n) {
+      n.classList.add('active');
+      const r = n.getBoundingClientRect();
+      const lr = list.getBoundingClientRect();
+      if (r.top < lr.top) list.scrollTop += (r.top - lr.top - 4);
+      else if (r.bottom > lr.bottom) list.scrollTop += (r.bottom - lr.bottom + 4);
+    }
   }
 
   function jumpActiveBy(delta) {
@@ -3254,7 +3690,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
     const nextIdx = Math.max(0, Math.min(listNow.length - 1, idx + delta));
     const id = listNow[nextIdx].id;
-    const el = document.getElementById(id);
+    const el = getById(id);
     if (el) { setActiveTurn(id); scrollToTurn(el); }
   }
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/cover.png" width="320" alt="QuickNav" />
+</p>
+
 # QuickNav MV3
 
 把现有的 QuickNav 油猴脚本封装成了一个 Chrome MV3 扩展

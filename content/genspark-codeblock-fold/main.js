@@ -10,13 +10,16 @@
   const STYLE_ID = '__aichat_genspark_codeblock_fold_style_v1__';
   const ATTR_PROCESSED = 'data-aichat-gs-codefold';
   const ATTR_STATE = 'data-aichat-gs-codefold-state';
-  const ATTR_STICKY_COPY = 'data-aichat-gs-stickycopy';
+  const ATTR_CODEWRAP = 'data-aichat-gs-codewrap';
+  const ATTR_EXT_COPY = 'data-aichat-gs-extcopy';
 
   const COLLAPSED_CLASS = 'aichat-gs-codefold-collapsed';
   const TOGGLE_BAR_CLASS = 'aichat-gs-codefold-togglebar';
   const TOGGLE_BTN_CLASS = 'aichat-gs-codefold-togglebtn';
   const LINE_HINT_CLASS = 'aichat-gs-codefold-linehint';
-  const STICKY_COPY_CLASS = 'aichat-gs-stickycopy';
+  const CODE_WRAP_CLASS = 'aichat-gs-codewrap';
+  const TOOLBAR_CLASS = 'aichat-gs-code-toolbar';
+  const EXT_COPY_BTN_CLASS = 'aichat-gs-code-copybtn';
 
   const MAX_HEIGHT_PX = 420;
   const MIN_LINES = 40;
@@ -61,6 +64,18 @@
     const styleSheet = document.createElement('style');
     styleSheet.id = STYLE_ID;
     styleSheet.textContent = `
+      .${CODE_WRAP_CLASS} {
+        position: relative;
+      }
+
+      .${TOOLBAR_CLASS} {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+
       pre.${COLLAPSED_CLASS} {
         max-height: ${MAX_HEIGHT_PX}px !important;
         overflow: auto !important;
@@ -80,7 +95,8 @@
         user-select: none;
       }
 
-      .${TOGGLE_BTN_CLASS} {
+      .${TOGGLE_BTN_CLASS},
+      .${EXT_COPY_BTN_CLASS} {
         appearance: none;
         border: 1px solid rgba(255, 255, 255, 0.18);
         background: rgba(0, 0, 0, 0.18);
@@ -94,14 +110,14 @@
         transition: background 0.15s ease, border-color 0.15s ease;
       }
 
-      .${TOGGLE_BTN_CLASS}:hover {
+      .${TOGGLE_BTN_CLASS}:hover,
+      .${EXT_COPY_BTN_CLASS}:hover {
         background: rgba(0, 0, 0, 0.28);
         border-color: rgba(255, 255, 255, 0.26);
       }
 
-      pre .hljs-copy-button.${STICKY_COPY_CLASS} {
-        z-index: 50 !important;
-        will-change: transform;
+      pre[${ATTR_EXT_COPY}="1"] button.hljs-copy-button {
+        display: none !important;
       }
     `;
 
@@ -211,57 +227,110 @@
     return null;
   }
 
-  function enableStickyCopy(pre) {
-    const btn = findCopyButton(pre);
-    if (!btn) return false;
+  function ensureCodeWrap(pre) {
+    if (!pre || !(pre instanceof Element)) return null;
+    const parent = pre.parentElement;
+    if (parent && parent.getAttribute(ATTR_CODEWRAP) === '1') return parent;
+
+    const existingToggleBar =
+      pre.nextElementSibling && pre.nextElementSibling.classList?.contains(TOGGLE_BAR_CLASS) ? pre.nextElementSibling : null;
+
+    const wrap = document.createElement('div');
+    wrap.className = CODE_WRAP_CLASS;
+    wrap.setAttribute(ATTR_CODEWRAP, '1');
+    pre.insertAdjacentElement('beforebegin', wrap);
+    wrap.appendChild(pre);
+    if (existingToggleBar) wrap.appendChild(existingToggleBar);
+    return wrap;
+  }
+
+  function ensureToolbar(wrap) {
+    if (!wrap || !(wrap instanceof Element)) return null;
+    const first = wrap.firstElementChild;
+    if (first && first.classList?.contains(TOOLBAR_CLASS)) return first;
+    const toolbar = document.createElement('div');
+    toolbar.className = TOOLBAR_CLASS;
+    wrap.insertBefore(toolbar, wrap.firstElementChild);
+    return toolbar;
+  }
+
+  function getCodeText(pre) {
+    const codeEl = pre?.querySelector?.('code');
+    const raw = String(codeEl?.innerText || pre?.innerText || '');
+    if (!raw) return '';
+    const lines = raw.split(/\r?\n/);
+    const first = String(lines[0] || '').trim().toLowerCase();
+    if (first === 'copy' || first === '复制') lines.shift();
+    return lines.join('\n').replace(/\s+$/, '');
+  }
+
+  async function copyText(text) {
+    const v = String(text || '');
+    if (!v) return false;
+
+    try {
+      await navigator.clipboard.writeText(v);
+      return true;
+    } catch {}
+
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = v;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return Boolean(ok);
+    } catch {
+      return false;
+    }
+  }
+
+  function ensureExternalCopy(pre) {
+    if (!pre || !(pre instanceof Element)) return false;
+    if (!isLong(pre)) return false;
+
+    const internal = findCopyButton(pre);
+    if (!internal) return false;
 
     injectStyles();
 
-    // Keep a reference so the scroll handler can follow DOM replacements.
-    try {
-      pre.__aichatStickyCopyBtn = btn;
-    } catch {}
+    const wrap = ensureCodeWrap(pre);
+    if (!wrap) return false;
 
-    if (btn.getAttribute(ATTR_STICKY_COPY) !== '1') {
-      btn.setAttribute(ATTR_STICKY_COPY, '1');
-      btn.classList.add(STICKY_COPY_CLASS);
+    const toolbar = ensureToolbar(wrap);
+    if (!toolbar) return false;
 
-      try {
-        const s = getComputedStyle(btn);
-        if (s.position !== 'absolute' && s.position !== 'fixed' && s.position !== 'sticky') {
-          btn.style.position = 'absolute';
-        }
-      } catch {}
-
-      if (!btn.style.top) btn.style.top = '8px';
-      if (!btn.style.right) btn.style.right = '8px';
-      if (!btn.style.zIndex) btn.style.zIndex = '50';
+    let extBtn = toolbar.querySelector(`button.${EXT_COPY_BTN_CLASS}`);
+    if (!extBtn) {
+      extBtn = document.createElement('button');
+      extBtn.type = 'button';
+      extBtn.className = EXT_COPY_BTN_CLASS;
+      extBtn.textContent = 'Copy';
+      toolbar.appendChild(extBtn);
     }
 
-    if (!pre.__aichatStickyCopyBound) {
-      Object.defineProperty(pre, '__aichatStickyCopyBound', { value: true });
+    if (pre.getAttribute(ATTR_EXT_COPY) !== '1') pre.setAttribute(ATTR_EXT_COPY, '1');
+    try {
+      internal.style.display = 'none';
+    } catch {}
 
-      let raf = 0;
-      const sync = () => {
-        raf = 0;
-        const curBtn = pre.__aichatStickyCopyBtn;
-        if (!curBtn || !(curBtn instanceof Element)) return;
-        const x = Number(pre.scrollLeft) || 0;
-        const y = Number(pre.scrollTop) || 0;
-        curBtn.style.transform = `translate(${x}px, ${y}px)`;
-      };
-
-      const onScroll = () => {
-        if (raf) return;
-        raf = requestAnimationFrame(sync);
-      };
-
-      pre.addEventListener('scroll', onScroll, { passive: true });
-      sync();
-    } else {
-      const x = Number(pre.scrollLeft) || 0;
-      const y = Number(pre.scrollTop) || 0;
-      btn.style.transform = `translate(${x}px, ${y}px)`;
+    if (!extBtn.__aichatBound) {
+      Object.defineProperty(extBtn, '__aichatBound', { value: true });
+      extBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const ok = await copyText(getCodeText(pre));
+        const old = extBtn.textContent;
+        extBtn.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(() => {
+          extBtn.textContent = old || 'Copy';
+        }, ok ? 900 : 1400);
+      });
     }
 
     return true;
@@ -298,7 +367,7 @@
 
     for (const pre of pres) {
       if (pre.getAttribute(ATTR_PROCESSED) !== '1') fold(pre);
-      enableStickyCopy(pre);
+      ensureExternalCopy(pre);
     }
   }
 

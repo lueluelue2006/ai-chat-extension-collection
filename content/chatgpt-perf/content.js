@@ -1036,18 +1036,6 @@
       true,
     );
 
-    document.addEventListener(
-      'keydown',
-      (e) => {
-        if (e.key.toLowerCase?.() !== 'b') return;
-        if (!(e.ctrlKey && e.altKey) || e.metaKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-        armBench('快捷键');
-      },
-      true,
-    );
-
     document.addEventListener('focusin', schedule, true);
     document.addEventListener('focusout', schedule, true);
 

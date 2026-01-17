@@ -6,6 +6,7 @@
   "permissions": ["scripting", "storage"],
   "host_permissions": [
     "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
     "https://ernie.baidu.com/*",
     "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",

@@ -28,14 +28,25 @@
       genspark: true
     },
     siteModules: {
-      chatgpt: { quicknav: true, chatgpt_perf: false, chatgpt_thinking_toggle: false },
+      chatgpt: {
+        quicknav: true,
+        chatgpt_perf: true,
+        chatgpt_thinking_toggle: true,
+        chatgpt_cmdenter_send: true,
+        chatgpt_readaloud_speed_controller: true,
+        chatgpt_download_file_fix: true,
+        chatgpt_strong_highlight_lite: true,
+        chatgpt_quick_deep_search: true,
+        chatgpt_hide_feedback_buttons: true,
+        chatgpt_tex_copy_quote: true
+      },
       ernie: { quicknav: true },
       deepseek: { quicknav: true },
       qwen: { quicknav: true },
       zai: { quicknav: true },
       grok: { quicknav: true },
       gemini_app: { quicknav: true },
-      gemini_business: { quicknav: true, gemini_math_fix: false },
+      gemini_business: { quicknav: true, gemini_math_fix: true },
       genspark: { quicknav: true }
     }
   };
@@ -130,6 +141,65 @@
       matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-thinking-toggle/main.js'],
       runAt: 'document_idle',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_cmdenter_send',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_chatgpt_readaloud_speed_controller',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_readaloud_speed_controller',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-readaloud-speed-controller/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_chatgpt_download_file_fix',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_download_file_fix',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-download-file-fix/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_strong_highlight_lite',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_strong_highlight_lite',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-strong-highlight-lite/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_chatgpt_quick_deep_search',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_quick_deep_search',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-quick-deep-search/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_hide_feedback_buttons',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_hide_feedback_buttons',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-hide-feedback-buttons/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_chatgpt_tex_copy_quote',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_tex_copy_quote',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-tex-copy-quote/main.js'],
+      runAt: 'document_start',
       world: 'MAIN'
     },
     {

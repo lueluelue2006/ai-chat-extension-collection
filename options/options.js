@@ -14,7 +14,23 @@
   const elModuleSettings = document.getElementById('moduleSettings');
 
   const SITES = [
-    { id: 'chatgpt', name: 'ChatGPT', sub: 'chatgpt.com', modules: ['quicknav', 'chatgpt_perf', 'chatgpt_thinking_toggle'] },
+    {
+      id: 'chatgpt',
+      name: 'ChatGPT',
+      sub: 'chatgpt.com',
+      modules: [
+        'quicknav',
+        'chatgpt_perf',
+        'chatgpt_thinking_toggle',
+        'chatgpt_cmdenter_send',
+        'chatgpt_readaloud_speed_controller',
+        'chatgpt_download_file_fix',
+        'chatgpt_strong_highlight_lite',
+        'chatgpt_quick_deep_search',
+        'chatgpt_hide_feedback_buttons',
+        'chatgpt_tex_copy_quote'
+      ]
+    },
     { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav'] },
     { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav'] },
     { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav'] },
@@ -29,22 +45,68 @@
     quicknav: {
       id: 'quicknav',
       name: 'QuickNav',
-      sub: '对话导航 / 📌 标记 / 收藏 / 快捷键'
+      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
+      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/']
     },
     chatgpt_perf: {
       id: 'chatgpt_perf',
       name: 'ChatGPT 性能优化',
-      sub: '离屏虚拟化 + CSS contain'
+      sub: '离屏虚拟化 + CSS contain',
+      hotkeys: []
     },
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
       name: 'ChatGPT 推理强度快捷切换',
-      sub: '⌘O：Light ↔ Heavy / Standard ↔ Extended'
+      sub: 'Light ↔ Heavy / Standard ↔ Extended',
+      hotkeys: ['⌘O']
+    },
+    chatgpt_cmdenter_send: {
+      id: 'chatgpt_cmdenter_send',
+      name: 'ChatGPT ⌘Enter 发送',
+      sub: 'Enter/Shift+Enter 换行（强制）',
+      hotkeys: ['⌘Enter', 'Ctrl+Enter']
+    },
+    chatgpt_readaloud_speed_controller: {
+      id: 'chatgpt_readaloud_speed_controller',
+      name: 'ChatGPT 朗读速度控制器',
+      sub: '控制 ChatGPT 朗读音频播放速度（0.01–100x）',
+      hotkeys: []
+    },
+    chatgpt_download_file_fix: {
+      id: 'chatgpt_download_file_fix',
+      name: 'ChatGPT 下载修复',
+      sub: '修复文件下载失败（sandbox_path 解码）',
+      hotkeys: []
+    },
+    chatgpt_strong_highlight_lite: {
+      id: 'chatgpt_strong_highlight_lite',
+      name: 'ChatGPT 回复粗体高亮（Lite）',
+      sub: '高亮粗体 + 隐藏免责声明',
+      hotkeys: []
+    },
+    chatgpt_quick_deep_search: {
+      id: 'chatgpt_quick_deep_search',
+      name: 'ChatGPT 快捷深度搜索（自用版）',
+      sub: '译 / 搜 / 思（按钮 + 快捷键）并强制下一次请求模型为 gpt-5',
+      hotkeys: ['Ctrl+S', 'Ctrl+T', 'Ctrl+Y', 'Ctrl+Z']
+    },
+    chatgpt_hide_feedback_buttons: {
+      id: 'chatgpt_hide_feedback_buttons',
+      name: 'ChatGPT 隐藏点赞/点踩',
+      sub: '隐藏回复下方反馈按钮（👍/👎）',
+      hotkeys: []
+    },
+    chatgpt_tex_copy_quote: {
+      id: 'chatgpt_tex_copy_quote',
+      name: 'ChatGPT TeX Copy & Quote',
+      sub: '复制/引用含 KaTeX 的选区时优先还原 LaTeX，并支持悬停提示/双击复制',
+      hotkeys: []
     },
     gemini_math_fix: {
       id: 'gemini_math_fix',
       name: 'Gemini Enterprise 数学修复',
-      sub: 'KaTeX / inline math 修复'
+      sub: 'KaTeX / inline math 修复',
+      hotkeys: []
     }
   };
 
@@ -60,11 +122,21 @@
     rootMarginPx: 1200
   });
 
+  const CGPT_READALOUD_SPEED_STORAGE_KEY = 'aichat_chatgpt_readaloud_speed_v1';
+  const CGPT_READALOUD_SPEED_DEFAULT = 1.8;
+  const CGPT_READALOUD_SPEED_MIN = 0.01;
+  const CGPT_READALOUD_SPEED_MAX = 100;
+
   function setStatus(text, kind = '') {
     if (!elStatus) return;
     elStatus.textContent = text || '';
     elStatus.classList.remove('ok', 'warn', 'err');
     if (kind) elStatus.classList.add(kind);
+  }
+
+  function formatHotkeys(hotkeys) {
+    const arr = Array.isArray(hotkeys) ? hotkeys.filter((v) => typeof v === 'string' && v.trim()) : [];
+    return arr.join(' / ');
   }
 
   function cloneJsonSafe(obj) {
@@ -128,6 +200,12 @@
     };
   }
 
+  function sanitizeCgptReadaloudSpeed(raw) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return CGPT_READALOUD_SPEED_DEFAULT;
+    return Math.max(CGPT_READALOUD_SPEED_MIN, Math.min(CGPT_READALOUD_SPEED_MAX, n));
+  }
+
   function storageGet(area, defaults) {
     return new Promise((resolve) => {
       try {
@@ -160,6 +238,17 @@
   async function saveCgptPerfSettings(next) {
     const sanitized = sanitizeCgptPerfSettings(next);
     await storageSet(chrome.storage.sync, { [CGPT_PERF_STORAGE_KEY]: sanitized });
+    return sanitized;
+  }
+
+  async function loadCgptReadaloudSpeed() {
+    const res = await storageGet(chrome.storage.sync, { [CGPT_READALOUD_SPEED_STORAGE_KEY]: CGPT_READALOUD_SPEED_DEFAULT });
+    return sanitizeCgptReadaloudSpeed(res?.[CGPT_READALOUD_SPEED_STORAGE_KEY]);
+  }
+
+  async function saveCgptReadaloudSpeed(next) {
+    const sanitized = sanitizeCgptReadaloudSpeed(next);
+    await storageSet(chrome.storage.sync, { [CGPT_READALOUD_SPEED_STORAGE_KEY]: sanitized });
     return sanitized;
   }
 
@@ -300,8 +389,14 @@
       sub.className = 'triSub';
       sub.textContent = def.sub || '';
 
+      const hotkeysText = formatHotkeys(def.hotkeys);
+      const hotkeys = document.createElement('div');
+      hotkeys.className = 'triSub triHotkeys';
+      hotkeys.textContent = hotkeysText ? `快捷键：${hotkeysText}` : '';
+
       btn.appendChild(name);
       btn.appendChild(sub);
+      if (hotkeysText) btn.appendChild(hotkeys);
       btn.addEventListener('click', () => {
         selectedModuleId = moduleId;
         renderAll();
@@ -343,6 +438,17 @@
     }
   }
 
+  function addPanelHotkeys(moduleId) {
+    const def = MODULES[moduleId];
+    if (!def) return;
+    const hotkeysText = formatHotkeys(def.hotkeys);
+    if (!hotkeysText) return;
+    const s = document.createElement('div');
+    s.className = 'panelSubtitle';
+    s.textContent = `快捷键：${hotkeysText}`;
+    elModuleSettings.appendChild(s);
+  }
+
   function addPanelDivider() {
     const d = document.createElement('div');
     d.className = 'panelGroup';
@@ -351,6 +457,7 @@
 
   function renderQuickNavModuleSettings(siteId) {
     addPanelTitle('QuickNav', '该模块负责对话导航面板、📌标记点、收藏夹、防自动滚动与快捷键。');
+    addPanelHotkeys('quicknav');
     addPanelDivider();
 
     const rowEnabled = document.createElement('label');
@@ -401,6 +508,7 @@
 
   async function renderChatGPTPerfModuleSettings(siteId, token) {
     addPanelTitle('ChatGPT 性能优化', '离屏虚拟化与 CSS contain，减少长对话卡顿（设置写入 storage.sync）。');
+    addPanelHotkeys('chatgpt_perf');
     addPanelDivider();
 
     const rowInject = document.createElement('label');
@@ -525,6 +633,7 @@
 
   function renderGeminiMathFixModuleSettings(siteId) {
     addPanelTitle('Gemini Enterprise 数学修复', '在 business.gemini.google 上修复 KaTeX / inline math 显示问题。');
+    addPanelHotkeys('gemini_math_fix');
     addPanelDivider();
 
     const rowInject = document.createElement('label');
@@ -555,6 +664,7 @@
 
   function renderChatGPTThinkingToggleModuleSettings(siteId) {
     addPanelTitle('ChatGPT 推理强度快捷切换', '在 chatgpt.com 使用 ⌘O 切换：Light ↔ Heavy / Standard ↔ Extended。');
+    addPanelHotkeys('chatgpt_thinking_toggle');
     addPanelDivider();
 
     const rowInject = document.createElement('label');
@@ -584,6 +694,285 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderChatGPTCmdEnterSendModuleSettings(siteId) {
+    addPanelTitle('ChatGPT ⌘Enter 发送', '把 Enter/Shift+Enter 变为换行，⌘/Ctrl+Enter 才发送消息。');
+    addPanelHotkeys('chatgpt_cmdenter_send');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_cmdenter_send');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_cmdenter_send = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '注意：开启后会拦截输入框 Enter 行为（只允许 ⌘/Ctrl+Enter 发送）。若你习惯 Enter 直接发送，请不要开启。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  async function renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token) {
+    addPanelTitle('ChatGPT 朗读速度控制器', '控制 ChatGPT “朗读/Read aloud”音频播放速度（HTMLAudioElement.playbackRate）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_readaloud_speed_controller');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_readaloud_speed_controller = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    let speed;
+    try {
+      speed = await loadCgptReadaloudSpeed();
+    } catch (e) {
+      if (token !== renderSeq) return;
+      const err = document.createElement('div');
+      err.className = 'smallHint';
+      err.textContent = `读取模块设置失败：${e instanceof Error ? e.message : String(e)}`;
+      elModuleSettings.appendChild(err);
+      return;
+    }
+    if (token !== renderSeq) return;
+
+    addPanelDivider();
+
+    const rowSpeed = document.createElement('label');
+    rowSpeed.className = 'formRow';
+    const leftSpeed = document.createElement('span');
+    leftSpeed.textContent = '朗读速度倍速（0.01–100）';
+    const inputSpeed = document.createElement('input');
+    inputSpeed.type = 'number';
+    inputSpeed.min = String(CGPT_READALOUD_SPEED_MIN);
+    inputSpeed.max = String(CGPT_READALOUD_SPEED_MAX);
+    inputSpeed.step = '0.01';
+    inputSpeed.value = String(speed);
+    inputSpeed.addEventListener('change', async () => {
+      const next = Number(inputSpeed.value);
+      setStatus('正在保存模块设置…');
+      try {
+        speed = await saveCgptReadaloudSpeed(next);
+        inputSpeed.value = String(speed);
+        setStatus('模块设置已保存', 'ok');
+      } catch (e) {
+        inputSpeed.value = String(speed);
+        setStatus(`模块设置保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      }
+    });
+    rowSpeed.appendChild(leftSpeed);
+    rowSpeed.appendChild(inputSpeed);
+    elModuleSettings.appendChild(rowSpeed);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'btn secondary';
+    resetBtn.textContent = '恢复默认速度（1.8x）';
+    resetBtn.addEventListener('click', async () => {
+      setStatus('正在恢复模块默认…');
+      resetBtn.disabled = true;
+      try {
+        await saveCgptReadaloudSpeed(CGPT_READALOUD_SPEED_DEFAULT);
+        renderAll();
+        setStatus('已恢复默认速度', 'ok');
+      } catch (e) {
+        setStatus(`恢复失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        resetBtn.disabled = false;
+      }
+    });
+    elModuleSettings.appendChild(resetBtn);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '说明：该模块会监听 audio 的 play/ratechange，并保持你设置的倍速；修改后无需刷新，正在播放的音频会自动更新。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTDownloadFileFixModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 下载修复', '修复 chatgpt.com 下载文件失败：自动解码 download URL 的 sandbox_path。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_download_file_fix');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_download_file_fix = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块会在页面主世界（MAIN world）拦截 fetch / XMLHttpRequest 的 GET 请求，仅对 /backend-api/conversation/.../interpreter/download 且包含 sandbox_path 的 URL 进行修复。关闭模块后已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTStrongHighlightLiteModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 回复粗体高亮（Lite）', '高亮 ChatGPT 回复中的粗体文字，并隐藏底部免责声明提示。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_strong_highlight_lite');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_strong_highlight_lite = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '说明：暗色主题下把 .markdown strong 设为亮绿；亮色主题（.light）下设为紫色；并通过 CSS 隐藏底部 “ChatGPT can make mistakes...” 免责声明。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
+    addPanelTitle(
+      'ChatGPT 快捷深度搜索（自用版）',
+      '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧；找不到时回退为可拖动悬浮按钮），并支持快捷键触发。'
+    );
+    addPanelHotkeys('chatgpt_quick_deep_search');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_quick_deep_search');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_quick_deep_search = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块会在页面主世界（MAIN world）拦截 fetch，把 “译/搜/思” 触发的下一次 /backend-api/conversation（含 /backend-api/f/conversation）请求的 body.model 强制改为 gpt-5。关闭模块后已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTHideFeedbackButtonsModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 隐藏点赞/点踩', '隐藏 ChatGPT 回复下方的反馈按钮（点赞 / 点踩）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_hide_feedback_buttons');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_hide_feedback_buttons = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块通过 CSS 隐藏 button[data-testid="good-response-turn-action-button"] 和 button[data-testid="bad-response-turn-action-button"]。若关闭模块，已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTTexCopyQuoteModuleSettings(siteId) {
+    addPanelTitle('ChatGPT TeX Copy & Quote', '增强 ChatGPT 的复制/引用：优先复制 KaTeX 的原始 LaTeX。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_tex_copy_quote');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_tex_copy_quote = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块在页面主世界（MAIN world）重载 Range/Selection 的复制逻辑：选区中遇到 .katex 会读取 annotation 还原为 $...$ / $$...$$。交互：悬停公式 0.8s 显示 LaTeX 提示，双击公式复制 LaTeX 并弹出提示。关闭模块后已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
     elModuleSettings.textContent = '';
@@ -596,6 +985,13 @@
     if (moduleId === 'quicknav') return renderQuickNavModuleSettings(siteId);
     if (moduleId === 'chatgpt_perf') return void renderChatGPTPerfModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
+    if (moduleId === 'chatgpt_cmdenter_send') return renderChatGPTCmdEnterSendModuleSettings(siteId);
+    if (moduleId === 'chatgpt_readaloud_speed_controller') return void renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token);
+    if (moduleId === 'chatgpt_download_file_fix') return renderChatGPTDownloadFileFixModuleSettings(siteId);
+    if (moduleId === 'chatgpt_strong_highlight_lite') return renderChatGPTStrongHighlightLiteModuleSettings(siteId);
+    if (moduleId === 'chatgpt_quick_deep_search') return renderChatGPTQuickDeepSearchModuleSettings(siteId);
+    if (moduleId === 'chatgpt_hide_feedback_buttons') return renderChatGPTHideFeedbackButtonsModuleSettings(siteId);
+    if (moduleId === 'chatgpt_tex_copy_quote') return renderChatGPTTexCopyQuoteModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
 
     addPanelTitle('设置', '未知模块。');
@@ -643,10 +1039,9 @@
     for (const s of SITES) {
       next.sites[s.id] = true;
       next.scrollLockDefaults[s.id] = true;
-      next.siteModules[s.id] = { quicknav: true };
+      next.siteModules[s.id] = {};
+      for (const modId of s.modules) next.siteModules[s.id][modId] = true;
     }
-    next.siteModules.chatgpt = { quicknav: true, chatgpt_perf: false, chatgpt_thinking_toggle: false };
-    next.siteModules.gemini_business = { quicknav: true, gemini_math_fix: false };
     void saveQuickNavSettings(next);
   });
 

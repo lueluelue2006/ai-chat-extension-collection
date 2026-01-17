@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const REPO = 'lueluelue2006/AIChat_Quick_Nav';
+  const REPO = 'lueluelue2006/ai-chat-extension-collection';
   const REPO_URL = `https://github.com/${REPO}`;
 
   const elStatus = document.getElementById('status');
@@ -14,7 +14,7 @@
   const elModuleSettings = document.getElementById('moduleSettings');
 
   const SITES = [
-    { id: 'chatgpt', name: 'ChatGPT', sub: 'chatgpt.com', modules: ['quicknav', 'chatgpt_perf'] },
+    { id: 'chatgpt', name: 'ChatGPT', sub: 'chatgpt.com', modules: ['quicknav', 'chatgpt_perf', 'chatgpt_thinking_toggle'] },
     { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav'] },
     { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav'] },
     { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav'] },
@@ -35,6 +35,11 @@
       id: 'chatgpt_perf',
       name: 'ChatGPT 性能优化',
       sub: '离屏虚拟化 + CSS contain'
+    },
+    chatgpt_thinking_toggle: {
+      id: 'chatgpt_thinking_toggle',
+      name: 'ChatGPT 推理强度快捷切换',
+      sub: '⌘O：Light ↔ Heavy / Standard ↔ Extended'
     },
     gemini_math_fix: {
       id: 'gemini_math_fix',
@@ -548,6 +553,37 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderChatGPTThinkingToggleModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 推理强度快捷切换', '在 chatgpt.com 使用 ⌘O 切换：Light ↔ Heavy / Standard ↔ Extended。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_thinking_toggle');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_thinking_toggle = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O，并在发送成功后右下角弹窗显示实际使用的 thinking_effort。关闭模块后已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
     elModuleSettings.textContent = '';
@@ -559,6 +595,7 @@
 
     if (moduleId === 'quicknav') return renderQuickNavModuleSettings(siteId);
     if (moduleId === 'chatgpt_perf') return void renderChatGPTPerfModuleSettings(siteId, token);
+    if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
 
     addPanelTitle('设置', '未知模块。');
@@ -608,7 +645,7 @@
       next.scrollLockDefaults[s.id] = true;
       next.siteModules[s.id] = { quicknav: true };
     }
-    next.siteModules.chatgpt = { quicknav: true, chatgpt_perf: false };
+    next.siteModules.chatgpt = { quicknav: true, chatgpt_perf: false, chatgpt_thinking_toggle: false };
     next.siteModules.gemini_business = { quicknav: true, gemini_math_fix: false };
     void saveQuickNavSettings(next);
   });
@@ -632,4 +669,3 @@
 
   init();
 })();
-

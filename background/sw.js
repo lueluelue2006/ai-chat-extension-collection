@@ -28,7 +28,7 @@
       genspark: true
     },
     siteModules: {
-      chatgpt: { quicknav: true, chatgpt_perf: false },
+      chatgpt: { quicknav: true, chatgpt_perf: false, chatgpt_thinking_toggle: false },
       ernie: { quicknav: true },
       deepseek: { quicknav: true },
       qwen: { quicknav: true },
@@ -122,6 +122,15 @@
       js: ['content/chatgpt-perf/content.js'],
       css: ['content/chatgpt-perf/content.css'],
       runAt: 'document_idle'
+    },
+    {
+      id: 'quicknav_chatgpt_thinking_toggle',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_thinking_toggle',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-thinking-toggle/main.js'],
+      runAt: 'document_idle',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_gemini_math_fix',

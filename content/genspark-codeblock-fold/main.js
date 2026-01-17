@@ -217,6 +217,11 @@
 
     injectStyles();
 
+    // Keep a reference so the scroll handler can follow DOM replacements.
+    try {
+      pre.__aichatStickyCopyBtn = btn;
+    } catch {}
+
     if (btn.getAttribute(ATTR_STICKY_COPY) !== '1') {
       btn.setAttribute(ATTR_STICKY_COPY, '1');
       btn.classList.add(STICKY_COPY_CLASS);
@@ -239,9 +244,11 @@
       let raf = 0;
       const sync = () => {
         raf = 0;
+        const curBtn = pre.__aichatStickyCopyBtn;
+        if (!curBtn || !(curBtn instanceof Element)) return;
         const x = Number(pre.scrollLeft) || 0;
         const y = Number(pre.scrollTop) || 0;
-        btn.style.transform = `translate(${x}px, ${y}px)`;
+        curBtn.style.transform = `translate(${x}px, ${y}px)`;
       };
 
       const onScroll = () => {

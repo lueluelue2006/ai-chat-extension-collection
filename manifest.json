@@ -14,7 +14,7 @@
     "https://grok.com/*",
     "https://gemini.google.com/app*",
     "https://business.gemini.google/*",
-    "https://www.genspark.ai/agents*"
+    "https://www.genspark.ai/*"
   ],
   "background": {
     "service_worker": "background/sw.js"

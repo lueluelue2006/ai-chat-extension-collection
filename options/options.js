@@ -38,7 +38,7 @@
     { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
     { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
     { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'gemini_math_fix'] },
-    { id: 'genspark', name: 'Genspark', sub: 'genspark.ai/agents', modules: ['quicknav', 'genspark_moa_image_autosettings'] }
+    { id: 'genspark', name: 'Genspark', sub: 'genspark.ai/agents', modules: ['quicknav', 'genspark_moa_image_autosettings', 'genspark_credit_balance'] }
   ];
 
   const MODULES = {
@@ -112,6 +112,12 @@
       id: 'genspark_moa_image_autosettings',
       name: 'Genspark 绘图默认设置',
       sub: '进入绘图页自动打开 Setting，并选择 2K 画质',
+      hotkeys: []
+    },
+    genspark_credit_balance: {
+      id: 'genspark_credit_balance',
+      name: 'Genspark 积分余量',
+      sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）',
       hotkeys: []
     }
   };
@@ -1010,6 +1016,42 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderGensparkCreditBalanceModuleSettings(siteId) {
+    addPanelTitle('Genspark 积分余量', '悬停页面上的小蓝点显示积分余量信息；支持折叠/展开、强制刷新、每分钟自动刷新。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'genspark_credit_balance');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].genspark_credit_balance = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块在 https://www.genspark.ai/* 生效；右上角会出现一个可拖动的小蓝点，鼠标悬停时展示积分信息窗口；窗口位置会跟随蓝点。';
+    elModuleSettings.appendChild(hint);
+
+    const credit = document.createElement('div');
+    credit.className = 'smallHint';
+    credit.textContent = '原作者：LinuxDo 悟空';
+    elModuleSettings.appendChild(credit);
+  }
+
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
     elModuleSettings.textContent = '';
@@ -1031,6 +1073,7 @@
     if (moduleId === 'chatgpt_tex_copy_quote') return renderChatGPTTexCopyQuoteModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
     if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);
+    if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);
 
     addPanelTitle('设置', '未知模块。');
   }

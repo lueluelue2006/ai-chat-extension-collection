@@ -21,7 +21,7 @@
   const TOOLBAR_CLASS = 'aichat-gs-code-toolbar';
   const EXT_COPY_BTN_CLASS = 'aichat-gs-code-copybtn';
 
-  const MAX_HEIGHT_PX = 420;
+  const MAX_HEIGHT_PX = 260;
   const MIN_LINES = 40;
   const MIN_HEIGHT_PX = 900;
 
@@ -73,7 +73,7 @@
         align-items: center;
         justify-content: flex-end;
         gap: 10px;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
       }
 
       pre.${COLLAPSED_CLASS} {
@@ -86,7 +86,7 @@
         align-items: center;
         justify-content: flex-end;
         gap: 10px;
-        margin-top: 6px;
+        margin-top: 4px;
       }
 
       .${LINE_HINT_CLASS} {

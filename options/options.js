@@ -38,7 +38,7 @@
     { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
     { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
     { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'gemini_math_fix'] },
-    { id: 'genspark', name: 'Genspark', sub: 'genspark.ai/agents', modules: ['quicknav'] }
+    { id: 'genspark', name: 'Genspark', sub: 'genspark.ai/agents', modules: ['quicknav', 'genspark_moa_image_autosettings'] }
   ];
 
   const MODULES = {
@@ -106,6 +106,12 @@
       id: 'gemini_math_fix',
       name: 'Gemini Enterprise 数学修复',
       sub: 'KaTeX / inline math 修复',
+      hotkeys: []
+    },
+    genspark_moa_image_autosettings: {
+      id: 'genspark_moa_image_autosettings',
+      name: 'Genspark 绘图默认设置',
+      sub: '进入绘图页自动打开 Setting，并选择 2K 画质',
       hotkeys: []
     }
   };
@@ -973,6 +979,37 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderGensparkMoaImageAutosettingsModuleSettings(siteId) {
+    addPanelTitle('Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'genspark_moa_image_autosettings');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].genspark_moa_image_autosettings = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块只在 https://www.genspark.ai/agents?type=moa_generate_image 生效；会尽量通过按钮文本/aria-label/弹窗选项等启发式方式打开设置并选择 2K。若关闭模块，已打开页面可能需要刷新才会完全停用。';
+    elModuleSettings.appendChild(hint);
+  }
+
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
     elModuleSettings.textContent = '';
@@ -993,6 +1030,7 @@
     if (moduleId === 'chatgpt_hide_feedback_buttons') return renderChatGPTHideFeedbackButtonsModuleSettings(siteId);
     if (moduleId === 'chatgpt_tex_copy_quote') return renderChatGPTTexCopyQuoteModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
+    if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);
 
     addPanelTitle('设置', '未知模块。');
   }

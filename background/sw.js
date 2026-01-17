@@ -47,7 +47,7 @@
       grok: { quicknav: true },
       gemini_app: { quicknav: true },
       gemini_business: { quicknav: true, gemini_math_fix: true },
-      genspark: { quicknav: true }
+      genspark: { quicknav: true, genspark_moa_image_autosettings: true }
     }
   };
 
@@ -124,6 +124,14 @@
       matches: ['https://www.genspark.ai/agents*'],
       js: ['content/gm-menu-polyfill.js', 'content/genspark-quicknav.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_genspark_moa_image_autosettings',
+      siteId: 'genspark',
+      moduleId: 'genspark_moa_image_autosettings',
+      matches: ['https://www.genspark.ai/agents*'],
+      js: ['content/genspark-moa-image-autosettings/main.js'],
+      runAt: 'document_start'
     },
     {
       id: 'quicknav_chatgpt_perf',

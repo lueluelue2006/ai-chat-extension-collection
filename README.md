@@ -1,3 +1,7 @@
+
+<img width="1024" height="1024" alt="封面" src="https://github.com/user-attachments/assets/6a407b24-11df-4187-bb3a-08f54266744c" />
+<img width="296" height="411" alt="iShot_2026-01-17_02 44 24" src="https://github.com/user-attachments/assets/379ffb33-b173-422d-8e4a-f1896ec7d3b8" />
+
 # QuickNav MV3
 
 把现有的 QuickNav 用户脚本封装为一个 Chrome MV3 扩展（ChatGPT / Gemini / Grok / Genspark / 文心一言 / DeepSeek / Qwen / GLM）。

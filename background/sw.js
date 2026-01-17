@@ -129,9 +129,10 @@
       id: 'quicknav_genspark_moa_image_autosettings',
       siteId: 'genspark',
       moduleId: 'genspark_moa_image_autosettings',
-      matches: ['https://www.genspark.ai/agents*'],
+      matches: ['https://www.genspark.ai/*'],
       js: ['content/genspark-moa-image-autosettings/main.js'],
-      runAt: 'document_start'
+      runAt: 'document_start',
+      allFrames: true
     },
     {
       id: 'quicknav_genspark_credit_balance',
@@ -386,6 +387,7 @@
                 {
                   target: { tabId },
                   files: rule.js,
+                  ...(rule.allFrames ? { allFrames: true } : {}),
                   ...(rule.world ? { world: rule.world } : {})
                 },
                 () => void chrome.runtime.lastError
@@ -454,6 +456,7 @@
             js: d.js,
             ...(d.css?.length ? { css: d.css } : {}),
             runAt: d.runAt || 'document_end',
+            ...(d.allFrames ? { allFrames: true } : {}),
             ...(d.world ? { world: d.world } : {})
           })),
           () => {

@@ -20,9 +20,18 @@
     console.log(LOG_PREFIX, ...args);
   }
 
-  function isTargetPage() {
+  function getTopHref() {
     try {
-      const u = new URL(location.href);
+      return typeof window.top?.location?.href === 'string' ? window.top.location.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isTargetPage() {
+    const topHref = getTopHref();
+    try {
+      const u = new URL(topHref || location.href);
       if (u.hostname !== 'www.genspark.ai') return false;
       if (!u.pathname.startsWith('/agents')) return false;
       return String(u.searchParams.get('type') || '').toLowerCase() === TARGET_TYPE;
@@ -282,6 +291,13 @@
         }
       }
     } catch {}
+
+    try {
+      // Some versions render settings as an inline panel (not a dialog).
+      const label = findByTexts(document, QUALITY_LABEL_TEXTS, { selector: 'span,div,label,button,[role="button"]' });
+      if (label && isVisible(label)) return true;
+    } catch {}
+
     return false;
   }
 
@@ -355,6 +371,36 @@
     return null;
   }
 
+  function find2kByAttribute(root) {
+    const ATTRS = ['data-value', 'data-size', 'data-resolution', 'data-quality', 'value', 'aria-label', 'title'];
+    let nodes = [];
+    try {
+      nodes = Array.from(
+        root.querySelectorAll('[data-value],[data-size],[data-resolution],[data-quality],[value],[aria-label],[title]')
+      );
+    } catch {
+      nodes = [];
+    }
+
+    for (const el of nodes) {
+      if (!isVisible(el)) continue;
+      let matched = false;
+      for (const a of ATTRS) {
+        const v = el.getAttribute?.(a);
+        if (!v) continue;
+        if (matches2kText(v)) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) continue;
+      const clickable =
+        el.closest?.('button,[role="button"],[role="option"],[role="menuitem"],[role="radio"],[tabindex],label,a') || el;
+      if (isVisible(clickable)) return clickable;
+    }
+    return null;
+  }
+
   function apply2kOnSelectIfAny(root) {
     try {
       const selects = root.querySelectorAll('select');
@@ -402,6 +448,12 @@
       if (opt) {
         realClick(opt);
         logOnce(`applied:${location.pathname}${location.search}`, 'selected 2K');
+        return true;
+      }
+      const opt2 = find2kByAttribute(root);
+      if (opt2) {
+        realClick(opt2);
+        logOnce(`applied_attr:${location.pathname}${location.search}`, 'selected 2K (by attribute)');
         return true;
       }
     }

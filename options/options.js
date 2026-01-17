@@ -38,7 +38,12 @@
     { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
     { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
     { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'gemini_math_fix'] },
-    { id: 'genspark', name: 'Genspark', sub: 'genspark.ai/agents', modules: ['quicknav', 'genspark_moa_image_autosettings', 'genspark_credit_balance'] }
+    {
+      id: 'genspark',
+      name: 'Genspark',
+      sub: 'genspark.ai/agents',
+      modules: ['quicknav', 'genspark_moa_image_autosettings', 'genspark_credit_balance', 'genspark_codeblock_fold']
+    }
   ];
 
   const MODULES = {
@@ -118,6 +123,12 @@
       id: 'genspark_credit_balance',
       name: 'Genspark 积分余量',
       sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）',
+      hotkeys: []
+    },
+    genspark_codeblock_fold: {
+      id: 'genspark_codeblock_fold',
+      name: 'Genspark 长代码块折叠',
+      sub: '自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）',
       hotkeys: []
     }
   };

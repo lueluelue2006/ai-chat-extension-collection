@@ -1,6 +1,7 @@
 # QuickNav MV3
 
-把现有的 QuickNav 用户脚本封装为一个 Chrome MV3 扩展（ChatGPT / Gemini / Grok / Genspark / 文心一言 / DeepSeek / Qwen / GLM）。
+把现有的 QuickNav 油猴脚本封装成了一个 Chrome MV3 扩展
+目前支持：ChatGPT / Gemini / Grok / Genspark / 文心一言国际版 / DeepSeek / Qwen / GLM 官网
 
 ## 安装
 

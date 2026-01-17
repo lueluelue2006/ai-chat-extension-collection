@@ -179,6 +179,48 @@
     return findByTexts(document, SETTINGS_TEXTS);
   }
 
+  function readToggleState(btn) {
+    if (!btn || !(btn instanceof Element)) return null;
+    const ariaExpanded = String(btn.getAttribute('aria-expanded') || '').toLowerCase();
+    if (ariaExpanded === 'true') return true;
+    if (ariaExpanded === 'false') return false;
+    const ariaPressed = String(btn.getAttribute('aria-pressed') || '').toLowerCase();
+    if (ariaPressed === 'true') return true;
+    if (ariaPressed === 'false') return false;
+    const ariaSelected = String(btn.getAttribute('aria-selected') || '').toLowerCase();
+    if (ariaSelected === 'true') return true;
+    if (ariaSelected === 'false') return false;
+    const dataState = String(btn.getAttribute('data-state') || '').toLowerCase();
+    if (dataState === 'open' || dataState === 'opened' || dataState === 'expanded') return true;
+    if (dataState === 'closed' || dataState === 'collapsed') return false;
+    return null;
+  }
+
+  function looksLikeSettingsPanelOpen() {
+    try {
+      for (const root of findDialogRoots()) {
+        const t = String(root.textContent || '').toLowerCase();
+        if (!t) continue;
+        if (t.includes('2k')) return true;
+        for (const w of QUALITY_LABEL_TEXTS) {
+          const lw = String(w || '').toLowerCase();
+          if (lw && t.includes(lw)) return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  function ensureSettingsOpen() {
+    const btn = findSettingsButton();
+    if (!btn) return false;
+    const state = readToggleState(btn);
+    if (state === true) return true;
+    if (state === false) return realClick(btn);
+    if (!looksLikeSettingsPanelOpen()) return realClick(btn);
+    return true;
+  }
+
   function findQualityTrigger(root) {
     const labelEl = findByTexts(root, QUALITY_LABEL_TEXTS, { selector: 'span,div,label,button,[role="button"]' });
     if (!labelEl) return null;
@@ -237,22 +279,11 @@
   async function tryOpenSettingsAndSelect2k() {
     if (!isTargetPage()) return false;
 
-    // 1) 如果设置面板已开，直接找 2K 选项
-    for (const root of [...findDialogRoots(), document]) {
-      if (apply2kOnSelectIfAny(root)) return true;
-      const opt = find2kOption(root);
-      if (opt) {
-        realClick(opt);
-        return true;
-      }
-    }
+    // 1) 进入页面先尽量打开 Setting
+    ensureSettingsOpen();
+    await sleep(220);
 
-    // 2) 尝试打开 Setting
-    const settingsBtn = findSettingsButton();
-    if (settingsBtn) realClick(settingsBtn);
-    await sleep(200);
-
-    // 3) 如果需要先展开 Quality 下拉/弹层，尽量做一次触发
+    // 2) 如果需要先展开 Quality 下拉/弹层，尽量做一次触发
     for (const root of [...findDialogRoots(), document]) {
       const trigger = findQualityTrigger(root);
       if (trigger) {
@@ -262,7 +293,7 @@
     }
     await sleep(120);
 
-    // 4) 再找 2K
+    // 3) 选择 2K
     for (const root of [...findDialogRoots(), document]) {
       if (apply2kOnSelectIfAny(root)) return true;
       const opt = find2kOption(root);
@@ -307,4 +338,3 @@
 
   void boot();
 })();
-

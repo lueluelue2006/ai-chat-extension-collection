@@ -10,11 +10,13 @@
   const STYLE_ID = '__aichat_genspark_codeblock_fold_style_v1__';
   const ATTR_PROCESSED = 'data-aichat-gs-codefold';
   const ATTR_STATE = 'data-aichat-gs-codefold-state';
+  const ATTR_STICKY_COPY = 'data-aichat-gs-stickycopy';
 
   const COLLAPSED_CLASS = 'aichat-gs-codefold-collapsed';
   const TOGGLE_BAR_CLASS = 'aichat-gs-codefold-togglebar';
   const TOGGLE_BTN_CLASS = 'aichat-gs-codefold-togglebtn';
   const LINE_HINT_CLASS = 'aichat-gs-codefold-linehint';
+  const STICKY_COPY_CLASS = 'aichat-gs-stickycopy';
 
   const MAX_HEIGHT_PX = 420;
   const MIN_LINES = 40;
@@ -95,6 +97,11 @@
       .${TOGGLE_BTN_CLASS}:hover {
         background: rgba(0, 0, 0, 0.28);
         border-color: rgba(255, 255, 255, 0.26);
+      }
+
+      pre .hljs-copy-button.${STICKY_COPY_CLASS} {
+        z-index: 50 !important;
+        will-change: transform;
       }
     `;
 
@@ -182,6 +189,77 @@
     });
   }
 
+  function findCopyButton(pre) {
+    if (!pre || !(pre instanceof Element)) return null;
+    try {
+      const btn = pre.querySelector('button.hljs-copy-button');
+      if (btn) return btn;
+    } catch {}
+
+    try {
+      const buttons = Array.from(pre.querySelectorAll('button'));
+      for (const b of buttons) {
+        const t = String(b.textContent || '').trim().toLowerCase();
+        const aria = String(b.getAttribute('aria-label') || '').trim().toLowerCase();
+        const title = String(b.getAttribute('title') || '').trim().toLowerCase();
+        if (t === 'copy' || t === '复制') return b;
+        if (aria === 'copy' || aria.includes('copy') || aria.includes('复制')) return b;
+        if (title === 'copy' || title.includes('copy') || title.includes('复制')) return b;
+      }
+    } catch {}
+
+    return null;
+  }
+
+  function enableStickyCopy(pre) {
+    const btn = findCopyButton(pre);
+    if (!btn) return false;
+
+    injectStyles();
+
+    if (btn.getAttribute(ATTR_STICKY_COPY) !== '1') {
+      btn.setAttribute(ATTR_STICKY_COPY, '1');
+      btn.classList.add(STICKY_COPY_CLASS);
+
+      try {
+        const s = getComputedStyle(btn);
+        if (s.position !== 'absolute' && s.position !== 'fixed' && s.position !== 'sticky') {
+          btn.style.position = 'absolute';
+        }
+      } catch {}
+
+      if (!btn.style.top) btn.style.top = '8px';
+      if (!btn.style.right) btn.style.right = '8px';
+      if (!btn.style.zIndex) btn.style.zIndex = '50';
+    }
+
+    if (!pre.__aichatStickyCopyBound) {
+      Object.defineProperty(pre, '__aichatStickyCopyBound', { value: true });
+
+      let raf = 0;
+      const sync = () => {
+        raf = 0;
+        const x = Number(pre.scrollLeft) || 0;
+        const y = Number(pre.scrollTop) || 0;
+        btn.style.transform = `translate(${x}px, ${y}px)`;
+      };
+
+      const onScroll = () => {
+        if (raf) return;
+        raf = requestAnimationFrame(sync);
+      };
+
+      pre.addEventListener('scroll', onScroll, { passive: true });
+      sync();
+    } else {
+      const x = Number(pre.scrollLeft) || 0;
+      const y = Number(pre.scrollTop) || 0;
+      btn.style.transform = `translate(${x}px, ${y}px)`;
+    }
+
+    return true;
+  }
+
   function fold(pre) {
     if (!pre || !(pre instanceof Element)) return false;
     if (pre.getAttribute(ATTR_PROCESSED) === '1') return false;
@@ -212,8 +290,8 @@
     }
 
     for (const pre of pres) {
-      if (pre.getAttribute(ATTR_PROCESSED) === '1') continue;
-      fold(pre);
+      if (pre.getAttribute(ATTR_PROCESSED) !== '1') fold(pre);
+      enableStickyCopy(pre);
     }
   }
 

@@ -335,10 +335,14 @@
     const winWidth = PANEL_WIDTH;
     const winHeight = isVisible(elWindow) ? elWindow.getBoundingClientRect().height : 0;
 
-    const desiredLeft = boxRect.left + boxRect.width - winWidth;
+    // Prefer aligning to the right edge of the dot; if it would overflow, flip to the left edge.
+    const preferLeft = boxRect.left + boxRect.width - winWidth;
+    const preferRight = boxRect.left;
     const desiredTop = boxRect.top + PANEL_TOP_OFFSET;
 
-    const left = clamp(desiredLeft, 0, Math.max(0, window.innerWidth - winWidth));
+    let left = preferLeft;
+    if (preferLeft < 0 && preferRight + winWidth <= window.innerWidth) left = preferRight;
+    left = clamp(left, 0, Math.max(0, window.innerWidth - winWidth));
     const top = clamp(desiredTop, 0, Math.max(0, window.innerHeight - (winHeight || 0)));
 
     elWindow.style.left = `${Math.round(left)}px`;
@@ -347,114 +351,177 @@
     elWindow.style.bottom = 'auto';
   }
 
-  function setupShowHide(elHoverBox, elWindow) {
-    let showTimer = 0;
-    let hideTimer = 0;
+  function setupInteractions({ elHoverBox, elWindow, elHeader, elRefreshButton, persistPos }) {
+    const state = {
+      hoveringDot: false,
+      hoveringPanel: false,
+      dragging: false,
+      dragPointerId: null,
+      dragCaptureEl: null,
+      dragStartX: 0,
+      dragStartY: 0,
+      dragStartTop: 0,
+      dragStartLeft: 0,
+      dragMoved: false,
+      suppressHeaderClick: false,
+      showTimer: 0,
+      hideTimer: 0
+    };
 
-    function showSoon() {
-      clearTimeout(hideTimer);
-      clearTimeout(showTimer);
-      showTimer = setTimeout(() => {
-        elWindow.classList.add(SHOW_CLASS);
-        syncWindowPos(elHoverBox, elWindow);
+    function clearTimers() {
+      clearTimeout(state.showTimer);
+      clearTimeout(state.hideTimer);
+      state.showTimer = 0;
+      state.hideTimer = 0;
+    }
+
+    function openPanel() {
+      elWindow.classList.add(SHOW_CLASS);
+      syncWindowPos(elHoverBox, elWindow);
+    }
+
+    function closePanel() {
+      elWindow.classList.remove(SHOW_CLASS);
+    }
+
+    function shouldKeepOpen() {
+      return state.dragging || state.hoveringDot || state.hoveringPanel;
+    }
+
+    function scheduleOpen() {
+      clearTimeout(state.hideTimer);
+      clearTimeout(state.showTimer);
+      state.showTimer = setTimeout(() => {
+        openPanel();
       }, 80);
     }
 
-    function hideSoon() {
-      clearTimeout(showTimer);
-      clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        elWindow.classList.remove(SHOW_CLASS);
+    function scheduleClose() {
+      clearTimeout(state.showTimer);
+      clearTimeout(state.hideTimer);
+      state.hideTimer = setTimeout(() => {
+        if (shouldKeepOpen()) return;
+        closePanel();
       }, 200);
     }
 
-    elHoverBox.addEventListener('mouseenter', showSoon);
-    elHoverBox.addEventListener('mouseleave', hideSoon);
-    elWindow.addEventListener('mouseenter', () => {
-      clearTimeout(hideTimer);
-      elWindow.classList.add(SHOW_CLASS);
-    });
-    elWindow.addEventListener('mouseleave', hideSoon);
-  }
-
-  function setupDragging(elHoverBox, elWindow, elHeader, persistPos) {
-    let dragging = false;
-    let pointerId = null;
-    let startX = 0;
-    let startY = 0;
-    let startTop = 0;
-    let startLeft = 0;
-    let didDrag = false;
-    let suppressHeaderClick = false;
-
-    function onPointerDown(e) {
-      if (e.button !== undefined && e.button !== 0) return;
-      dragging = true;
-      didDrag = false;
-      suppressHeaderClick = false;
-      pointerId = e.pointerId ?? 'mouse';
-      startX = e.clientX;
-      startY = e.clientY;
-      const pos = readHoverBoxPos(elHoverBox);
-      startTop = pos.top;
-      startLeft = pos.left;
+    function updateHoverFromPoint(x, y) {
       try {
-        e.currentTarget?.setPointerCapture?.(e.pointerId);
-      } catch {}
-    }
-
-    function onPointerMove(e) {
-      if (!dragging) return;
-      if ((e.pointerId ?? 'mouse') !== pointerId) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (!didDrag && (Math.abs(dx) >= DRAG_THRESHOLD_PX || Math.abs(dy) >= DRAG_THRESHOLD_PX)) didDrag = true;
-      if (!didDrag) return;
-      const nextTop = clamp(startTop + dy, 0, Math.max(0, window.innerHeight - HOVER_BOX_SIZE));
-      const nextLeft = clamp(startLeft + dx, 0, Math.max(0, window.innerWidth - HOVER_BOX_SIZE));
-      applyHoverBoxPos(elHoverBox, { top: nextTop, left: nextLeft });
-      syncWindowPos(elHoverBox, elWindow);
-      e.preventDefault();
-    }
-
-    function onPointerUp(e) {
-      if (!dragging) return;
-      if ((e.pointerId ?? 'mouse') !== pointerId) return;
-      dragging = false;
-      pointerId = null;
-      try {
-        e.currentTarget?.releasePointerCapture?.(e.pointerId);
-      } catch {}
-      if (didDrag) {
-        suppressHeaderClick = true;
-        setTimeout(() => {
-          suppressHeaderClick = false;
-        }, 0);
-        const pos = readHoverBoxPos(elHoverBox);
-        void persistPos(pos);
+        const el = document.elementFromPoint(x, y);
+        state.hoveringDot = !!(el && elHoverBox.contains(el));
+        state.hoveringPanel = !!(el && elWindow.contains(el));
+      } catch {
+        state.hoveringDot = false;
+        state.hoveringPanel = false;
       }
     }
 
-    function onHeaderClick(e) {
-      if (suppressHeaderClick) return;
-      elWindow.classList.toggle(COLLAPSED_CLASS);
+    function beginDrag(e, captureEl) {
+      if (e.button !== undefined && e.button !== 0) return;
+      state.dragging = true;
+      state.dragMoved = false;
+      state.dragPointerId = e.pointerId ?? 'mouse';
+      state.dragCaptureEl = captureEl || null;
+      state.dragStartX = e.clientX;
+      state.dragStartY = e.clientY;
+      const pos = readHoverBoxPos(elHoverBox);
+      state.dragStartTop = pos.top;
+      state.dragStartLeft = pos.left;
+      clearTimers();
+      openPanel();
+      try {
+        state.dragCaptureEl?.setPointerCapture?.(e.pointerId);
+      } catch {}
     }
 
-    elHoverBox.addEventListener('pointerdown', onPointerDown, { passive: true });
-    elHeader.addEventListener('pointerdown', (e) => {
-      const refreshBtn = document.getElementById(REFRESH_BUTTON_ID);
-      if (refreshBtn && refreshBtn.contains(e.target)) return;
-      onPointerDown(e);
+    async function endDrag(e) {
+      if (!state.dragging) return;
+      if ((e.pointerId ?? 'mouse') !== state.dragPointerId) return;
+      state.dragging = false;
+      try {
+        state.dragCaptureEl?.releasePointerCapture?.(e.pointerId);
+      } catch {}
+      state.dragPointerId = null;
+      state.dragCaptureEl = null;
+
+      if (state.dragMoved) {
+        state.suppressHeaderClick = true;
+        setTimeout(() => {
+          state.suppressHeaderClick = false;
+        }, 0);
+        const pos = readHoverBoxPos(elHoverBox);
+        await persistPos(pos);
+      }
+
+      updateHoverFromPoint(e.clientX, e.clientY);
+      if (shouldKeepOpen()) scheduleOpen();
+      else scheduleClose();
+    }
+
+    function onPointerMove(e) {
+      if (!state.dragging) return;
+      if ((e.pointerId ?? 'mouse') !== state.dragPointerId) return;
+
+      const dx = e.clientX - state.dragStartX;
+      const dy = e.clientY - state.dragStartY;
+      if (!state.dragMoved && (Math.abs(dx) >= DRAG_THRESHOLD_PX || Math.abs(dy) >= DRAG_THRESHOLD_PX)) state.dragMoved = true;
+      if (!state.dragMoved) return;
+
+      const nextTop = clamp(state.dragStartTop + dy, 0, Math.max(0, window.innerHeight - HOVER_BOX_SIZE));
+      const nextLeft = clamp(state.dragStartLeft + dx, 0, Math.max(0, window.innerWidth - HOVER_BOX_SIZE));
+      applyHoverBoxPos(elHoverBox, { top: nextTop, left: nextLeft });
+      openPanel();
+      e.preventDefault();
+    }
+
+    function onHeaderClick(e) {
+      if (state.suppressHeaderClick) return;
+      if (elRefreshButton && elRefreshButton.contains(e.target)) return;
+      elWindow.classList.toggle(COLLAPSED_CLASS);
+      openPanel();
+    }
+
+    elHoverBox.addEventListener('pointerenter', () => {
+      state.hoveringDot = true;
+      scheduleOpen();
     });
+    elHoverBox.addEventListener('pointerleave', () => {
+      state.hoveringDot = false;
+      scheduleClose();
+    });
+    elWindow.addEventListener('pointerenter', () => {
+      state.hoveringPanel = true;
+      scheduleOpen();
+    });
+    elWindow.addEventListener('pointerleave', () => {
+      state.hoveringPanel = false;
+      scheduleClose();
+    });
+
+    elHoverBox.addEventListener(
+      'pointerdown',
+      (e) => {
+        beginDrag(e, elHoverBox);
+      },
+      { passive: true }
+    );
+    elHeader.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (elRefreshButton && elRefreshButton.contains(e.target)) return;
+        beginDrag(e, elHeader);
+      },
+      { passive: true }
+    );
+    elHeader.addEventListener('click', onHeaderClick);
 
     window.addEventListener('pointermove', onPointerMove, { passive: false });
-    window.addEventListener('pointerup', onPointerUp, { passive: true });
+    window.addEventListener('pointerup', (e) => void endDrag(e), { passive: true });
+    window.addEventListener('pointercancel', (e) => void endDrag(e), { passive: true });
 
-    elHeader.addEventListener('click', (e) => {
-      const refreshBtn = document.getElementById(REFRESH_BUTTON_ID);
-      if (refreshBtn && refreshBtn.contains(e.target)) return;
-      onHeaderClick(e);
-    });
+    // Ensure initial state is consistent
+    clearTimers();
+    if (!shouldKeepOpen()) closePanel();
   }
 
   async function boot() {
@@ -506,8 +573,7 @@
       await storageSet(chrome.storage.sync, { [POS_STORAGE_KEY]: payload });
     }
 
-    setupShowHide(elHoverBox, elWindow);
-    setupDragging(elHoverBox, elWindow, elHeader, persistPos);
+    setupInteractions({ elHoverBox, elWindow, elHeader, elRefreshButton: refreshButton, persistPos });
 
     refreshButton.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -530,4 +596,3 @@
 
   void boot();
 })();
-

@@ -26,6 +26,17 @@
       gemini_app: true,
       gemini_business: true,
       genspark: true
+    },
+    siteModules: {
+      chatgpt: { quicknav: true, chatgpt_perf: false },
+      ernie: { quicknav: true },
+      deepseek: { quicknav: true },
+      qwen: { quicknav: true },
+      zai: { quicknav: true },
+      grok: { quicknav: true },
+      gemini_app: { quicknav: true },
+      gemini_business: { quicknav: true, gemini_math_fix: false },
+      genspark: { quicknav: true }
     }
   };
 
@@ -34,56 +45,92 @@
     {
       id: 'quicknav_chatgpt',
       siteId: 'chatgpt',
+      moduleId: 'quicknav',
       matches: ['https://chatgpt.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/chatgpt-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/chatgpt-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_ernie',
       siteId: 'ernie',
+      moduleId: 'quicknav',
       matches: ['https://ernie.baidu.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/ernie-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/ernie-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_deepseek',
       siteId: 'deepseek',
+      moduleId: 'quicknav',
       matches: ['https://chat.deepseek.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/deepseek-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/deepseek-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_qwen',
       siteId: 'qwen',
+      moduleId: 'quicknav',
       matches: ['https://chat.qwen.ai/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/qwen-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/qwen-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_zai',
       siteId: 'zai',
+      moduleId: 'quicknav',
       matches: ['https://chat.z.ai/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/zai-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/zai-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_gemini_business',
       siteId: 'gemini_business',
+      moduleId: 'quicknav',
       matches: ['https://business.gemini.google/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/gemini-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/gemini-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_gemini_app',
       siteId: 'gemini_app',
+      moduleId: 'quicknav',
       matches: ['https://gemini.google.com/app*'],
-      js: ['content/gm-menu-polyfill.js', 'content/gemini-app-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/gemini-app-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_grok',
       siteId: 'grok',
+      moduleId: 'quicknav',
       matches: ['https://grok.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/grok-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/grok-quicknav.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_genspark',
       siteId: 'genspark',
+      moduleId: 'quicknav',
       matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/gm-menu-polyfill.js', 'content/genspark-quicknav.js']
+      js: ['content/gm-menu-polyfill.js', 'content/genspark-quicknav.js'],
+      runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_chatgpt_perf',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_perf',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-perf/content.js'],
+      css: ['content/chatgpt-perf/content.css'],
+      runAt: 'document_idle'
+    },
+    {
+      id: 'quicknav_gemini_math_fix',
+      siteId: 'gemini_business',
+      moduleId: 'gemini_math_fix',
+      matches: ['https://business.gemini.google/*'],
+      js: ['content/gemini-enterprise-math-fix/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
     }
   ];
 
@@ -92,11 +139,20 @@
   let reinjectScheduled = false;
   let lastReinjectAt = 0;
 
+  function deepCloneJsonSafe(obj) {
+    try {
+      return JSON.parse(JSON.stringify(obj));
+    } catch {
+      return {};
+    }
+  }
+
   function normalizeSettings(input) {
     const out = {
       enabled: true,
       sites: { ...DEFAULT_SETTINGS.sites },
-      scrollLockDefaults: { ...DEFAULT_SETTINGS.scrollLockDefaults }
+      scrollLockDefaults: { ...DEFAULT_SETTINGS.scrollLockDefaults },
+      siteModules: deepCloneJsonSafe(DEFAULT_SETTINGS.siteModules)
     };
     try {
       if (!input || typeof input !== 'object') return out;
@@ -109,6 +165,17 @@
       if (input.scrollLockDefaults && typeof input.scrollLockDefaults === 'object') {
         for (const key of Object.keys(DEFAULT_SETTINGS.scrollLockDefaults)) {
           if (typeof input.scrollLockDefaults[key] === 'boolean') out.scrollLockDefaults[key] = input.scrollLockDefaults[key];
+        }
+      }
+      if (input.siteModules && typeof input.siteModules === 'object') {
+        for (const siteId of Object.keys(DEFAULT_SETTINGS.siteModules)) {
+          const rawMods = input.siteModules?.[siteId];
+          if (!rawMods || typeof rawMods !== 'object') continue;
+          const outMods = out.siteModules?.[siteId];
+          if (!outMods || typeof outMods !== 'object') continue;
+          for (const modId of Object.keys(outMods)) {
+            if (typeof rawMods[modId] === 'boolean') outMods[modId] = rawMods[modId];
+          }
         }
       }
     } catch {}
@@ -126,6 +193,16 @@
       if (!raw.scrollLockDefaults || typeof raw.scrollLockDefaults !== 'object') return true;
       for (const key of Object.keys(DEFAULT_SETTINGS.scrollLockDefaults)) {
         if (typeof raw.scrollLockDefaults[key] !== 'boolean') return true;
+      }
+      if (!raw.siteModules || typeof raw.siteModules !== 'object') return true;
+      for (const siteId of Object.keys(DEFAULT_SETTINGS.siteModules)) {
+        const expectedMods = DEFAULT_SETTINGS.siteModules?.[siteId];
+        if (!expectedMods || typeof expectedMods !== 'object') continue;
+        const rawMods = raw.siteModules?.[siteId];
+        if (!rawMods || typeof rawMods !== 'object') return true;
+        for (const modId of Object.keys(expectedMods)) {
+          if (typeof rawMods[modId] !== 'boolean') return true;
+        }
       }
       return false;
     } catch {
@@ -170,9 +247,18 @@
     return normalized;
   }
 
+  function isModuleEnabled(settings, siteId, moduleId) {
+    if (!settings?.enabled) return false;
+    if (settings?.sites?.[siteId] === false) return false;
+    const mods = settings?.siteModules?.[siteId];
+    if (!mods || typeof mods !== 'object') return moduleId === 'quicknav';
+    if (typeof mods[moduleId] === 'boolean') return mods[moduleId];
+    return DEFAULT_SETTINGS.siteModules?.[siteId]?.[moduleId] === true;
+  }
+
   function getEnabledContentScriptDefs(settings) {
     if (!settings?.enabled) return [];
-    return CONTENT_SCRIPT_DEFS.filter((d) => settings.sites?.[d.siteId] !== false);
+    return CONTENT_SCRIPT_DEFS.filter((d) => isModuleEnabled(settings, d.siteId, d.moduleId));
   }
 
   function reinjectContentScripts(settings) {
@@ -192,10 +278,20 @@
             const tabId = tab && tab.id;
             if (!Number.isFinite(tabId)) continue;
             try {
+              if (rule.css?.length) {
+                chrome.scripting.insertCSS(
+                  {
+                    target: { tabId },
+                    files: rule.css
+                  },
+                  () => void chrome.runtime.lastError
+                );
+              }
               chrome.scripting.executeScript(
                 {
                   target: { tabId },
-                  files: rule.js
+                  files: rule.js,
+                  ...(rule.world ? { world: rule.world } : {})
                 },
                 () => void chrome.runtime.lastError
               );
@@ -261,7 +357,9 @@
             id: d.id,
             matches: d.matches,
             js: d.js,
-            runAt: 'document_end'
+            ...(d.css?.length ? { css: d.css } : {}),
+            runAt: d.runAt || 'document_end',
+            ...(d.world ? { world: d.world } : {})
           })),
           () => {
             const err = chrome.runtime.lastError;

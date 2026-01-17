@@ -112,11 +112,153 @@ body {
   gap: 8px;
 }
 
+.triGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 10px;
+}
+
 @media (max-width: 720px) {
   .grid,
   .siteGrid {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 860px) {
+  .triGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.triTitle {
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.triList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
+  min-height: 220px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.triRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+}
+
+.triRow:hover {
+  border-color: var(--border);
+}
+
+.triRow.selected {
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
+  background: color-mix(in srgb, var(--panel) 78%, var(--accent) 22%);
+}
+
+.triBtn {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.triName {
+  font-weight: 800;
+}
+
+.triSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.triToggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.triPanel {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
+  min-height: 220px;
+}
+
+.panelTitle {
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.panelSubtitle {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.panelGroup {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.formRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.formRow:hover {
+  border-color: var(--border);
+}
+
+.formRow input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.formRow input[type='number'] {
+  width: 120px;
+  border: 1px solid var(--border);
+  background: var(--btn);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.formRow input[type='number']:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent 60%);
+  outline-offset: 2px;
+}
+
+.smallHint {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .siteItem {

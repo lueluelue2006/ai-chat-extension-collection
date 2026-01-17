@@ -17,52 +17,28 @@
         <div class="cardTitle">总开关</div>
         <label class="toggle">
           <input type="checkbox" id="enabled" />
-          <span>启用 QuickNav</span>
+          <span>启用扩展（所有模块）</span>
         </label>
-        <div class="hint">关闭后需要刷新页面，才能完全移除已注入的面板。</div>
+        <div class="hint">关闭后需要刷新页面，才能完全移除已注入的内容。</div>
       </section>
 
       <section class="card">
-        <div class="cardTitle">网站</div>
-        <div class="siteGrid">
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_chatgpt" /><span>ChatGPT（chatgpt.com）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_chatgpt" /><span>默认 🔐（防自动滚动）</span></label>
+        <div class="cardTitle">配置</div>
+        <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
+          <div class="triCol" aria-label="页面">
+            <div class="triTitle">页面</div>
+            <div class="triList" id="siteList"></div>
           </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_ernie" /><span>文心一言（ernie.baidu.com）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_ernie" /><span>默认 🔐（防自动滚动）</span></label>
+          <div class="triCol" aria-label="脚本">
+            <div class="triTitle">脚本</div>
+            <div class="triList" id="moduleList"></div>
           </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_deepseek" /><span>DeepSeek（chat.deepseek.com）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_deepseek" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_qwen" /><span>Qwen（chat.qwen.ai）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_qwen" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_zai" /><span>GLM（chat.z.ai）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_zai" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_grok" /><span>Grok（grok.com）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_grok" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_gemini_app" /><span>Gemini App（gemini.google.com/app）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_gemini_app" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_gemini_business" /><span>Gemini Business（business.gemini.google）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_gemini_business" /><span>默认 🔐（防自动滚动）</span></label>
-          </div>
-          <div class="siteItem">
-            <label class="siteMain"><input type="checkbox" id="site_genspark" /><span>Genspark（genspark.ai/agents）</span></label>
-            <label class="siteSub"><input type="checkbox" id="lock_genspark" /><span>默认 🔐（防自动滚动）</span></label>
+          <div class="triCol" aria-label="脚本设置">
+            <div class="triTitle">设置</div>
+            <div class="triPanel" id="moduleSettings"></div>
           </div>
         </div>
-        <div class="hint">“默认 🔐”仅在该网站从未保存过 🔐 状态时生效（例如第一次使用，或清除该网站数据后）。</div>
+        <div class="hint">提示：关闭某个模块后，已打开页面一般需要刷新才会完全停用。</div>
       </section>
 
       <section class="actions">

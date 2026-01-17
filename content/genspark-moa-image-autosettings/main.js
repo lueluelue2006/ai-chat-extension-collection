@@ -6,17 +6,26 @@
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
 
   const TARGET_TYPE = 'moa_generate_image';
-  const TARGET_QUALITY_TEXT = '2k';
+  const TARGET_QUALITY_PATTERNS = [/\b2\s*k\b/i, /\b2048\b/i, /\b2048\s*x\s*2048\b/i];
 
   const SETTINGS_TEXTS = ['setting', 'settings', '设置', '参数', '选项', '偏好', '配置'];
   const QUALITY_LABEL_TEXTS = ['quality', 'resolution', 'size', '画质', '分辨率', '尺寸'];
+  const LOG_PREFIX = '[ai-chat] genspark image settings';
+  const logged = new Set();
+
+  function logOnce(key, ...args) {
+    if (logged.has(key)) return;
+    logged.add(key);
+    // eslint-disable-next-line no-console
+    console.log(LOG_PREFIX, ...args);
+  }
 
   function isTargetPage() {
     try {
       const u = new URL(location.href);
       if (u.hostname !== 'www.genspark.ai') return false;
       if (!u.pathname.startsWith('/agents')) return false;
-      return u.searchParams.get('type') === TARGET_TYPE;
+      return String(u.searchParams.get('type') || '').toLowerCase() === TARGET_TYPE;
     } catch {
       return false;
     }
@@ -66,6 +75,17 @@
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
+  }
+
+  function matches2kText(text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    for (const re of TARGET_QUALITY_PATTERNS) {
+      try {
+        if (re.test(t)) return true;
+      } catch {}
+    }
+    return false;
   }
 
   function realClick(el) {
@@ -163,20 +183,74 @@
     return out;
   }
 
-  function findSettingsButton() {
+  function getAttrLower(el, name) {
+    try {
+      return String(el.getAttribute(name) || '').toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
+  function findSettingsButtons() {
+    const out = [];
+    const seen = new Set();
+
     const selectors = [
       'button[aria-label*="setting" i]',
       'button[title*="setting" i]',
       '[role="button"][aria-label*="setting" i]',
       '[role="button"][title*="setting" i]',
       'button[data-testid*="setting" i]',
-      '[role="button"][data-testid*="setting" i]'
+      '[role="button"][data-testid*="setting" i]',
+      'button[id*="setting" i]',
+      '[role="button"][id*="setting" i]',
+      'button[class*="setting" i]',
+      '[role="button"][class*="setting" i]'
     ];
+
     for (const sel of selectors) {
-      const el = findFirstVisible(document, sel);
-      if (el) return el;
+      let els = [];
+      try {
+        els = Array.from(document.querySelectorAll(sel));
+      } catch {
+        els = [];
+      }
+      for (const el of els) {
+        if (!isVisible(el)) continue;
+        if (seen.has(el)) continue;
+        seen.add(el);
+        out.push(el);
+      }
     }
-    return findByTexts(document, SETTINGS_TEXTS);
+
+    const byText = findByTexts(document, SETTINGS_TEXTS);
+    if (byText && isVisible(byText) && !seen.has(byText)) {
+      seen.add(byText);
+      out.push(byText);
+    }
+
+    // 兜底：找带 setting 字样属性的 icon button
+    try {
+      const iconBtns = Array.from(document.querySelectorAll('button,[role="button"]'));
+      for (const el of iconBtns) {
+        if (!isVisible(el)) continue;
+        if (seen.has(el)) continue;
+        const bag = [
+          getAttrLower(el, 'aria-label'),
+          getAttrLower(el, 'title'),
+          getAttrLower(el, 'data-testid'),
+          getAttrLower(el, 'id'),
+          getAttrLower(el, 'class')
+        ]
+          .filter(Boolean)
+          .join(' ');
+        if (!bag.includes('setting')) continue;
+        seen.add(el);
+        out.push(el);
+      }
+    } catch {}
+
+    return out;
   }
 
   function readToggleState(btn) {
@@ -201,7 +275,7 @@
       for (const root of findDialogRoots()) {
         const t = String(root.textContent || '').toLowerCase();
         if (!t) continue;
-        if (t.includes('2k')) return true;
+        if (matches2kText(t)) return true;
         for (const w of QUALITY_LABEL_TEXTS) {
           const lw = String(w || '').toLowerCase();
           if (lw && t.includes(lw)) return true;
@@ -211,14 +285,20 @@
     return false;
   }
 
-  function ensureSettingsOpen() {
-    const btn = findSettingsButton();
-    if (!btn) return false;
-    const state = readToggleState(btn);
-    if (state === true) return true;
-    if (state === false) return realClick(btn);
-    if (!looksLikeSettingsPanelOpen()) return realClick(btn);
-    return true;
+  async function ensureSettingsOpen() {
+    if (looksLikeSettingsPanelOpen()) return true;
+    const btns = findSettingsButtons();
+    if (!btns.length) return false;
+
+    for (const btn of btns.slice(0, 6)) {
+      const state = readToggleState(btn);
+      if (state === true) return true;
+      realClick(btn);
+      await sleep(240);
+      if (looksLikeSettingsPanelOpen()) return true;
+    }
+
+    return looksLikeSettingsPanelOpen();
   }
 
   function findQualityTrigger(root) {
@@ -239,6 +319,8 @@
       '[role="menuitem"]',
       '[role="radio"]',
       '[role="button"]',
+      '[role="tab"]',
+      '[tabindex]',
       'label',
       'option'
     ].join(',');
@@ -251,10 +333,25 @@
 
     for (const el of nodes) {
       if (!isVisible(el)) continue;
-      const t = textOf(el).toLowerCase();
+      const t = textOf(el);
       if (!t) continue;
-      if (t.includes(TARGET_QUALITY_TEXT)) return el;
+      if (matches2kText(t)) return el;
     }
+
+    // 兜底：弹窗/抽屉里可能是 div/span 无 role，仅靠文字可点击
+    if (root !== document) {
+      try {
+        const texts = Array.from(root.querySelectorAll('div,span'));
+        for (const el of texts) {
+          if (!isVisible(el)) continue;
+          const t = textOf(el);
+          if (!matches2kText(t)) continue;
+          const clickable = el.closest?.('button,[role="button"],[role="option"],[role="menuitem"],[role="radio"],[tabindex],a') || el;
+          if (isVisible(clickable)) return clickable;
+        }
+      } catch {}
+    }
+
     return null;
   }
 
@@ -264,7 +361,7 @@
       for (const sel of selects) {
         if (!isVisible(sel)) continue;
         const options = Array.from(sel.options || []);
-        const opt = options.find((o) => textOf(o).toLowerCase().includes(TARGET_QUALITY_TEXT));
+        const opt = options.find((o) => matches2kText(textOf(o)));
         if (!opt) continue;
         if (sel.value !== opt.value) {
           sel.value = opt.value;
@@ -280,14 +377,19 @@
     if (!isTargetPage()) return false;
 
     // 1) 进入页面先尽量打开 Setting
-    ensureSettingsOpen();
-    await sleep(220);
+    logOnce('loaded', 'loaded');
+    logOnce(`target:${location.pathname}${location.search}`, 'target page');
+
+    const opened = await ensureSettingsOpen();
+    if (!opened) logOnce(`no_settings_btn:${location.pathname}${location.search}`, 'settings not opened yet');
+    await sleep(180);
 
     // 2) 如果需要先展开 Quality 下拉/弹层，尽量做一次触发
     for (const root of [...findDialogRoots(), document]) {
       const trigger = findQualityTrigger(root);
       if (trigger) {
         realClick(trigger);
+        logOnce(`clicked_quality:${location.pathname}${location.search}`, 'clicked quality trigger');
         break;
       }
     }
@@ -299,6 +401,7 @@
       const opt = find2kOption(root);
       if (opt) {
         realClick(opt);
+        logOnce(`applied:${location.pathname}${location.search}`, 'selected 2K');
         return true;
       }
     }

@@ -4,6 +4,9 @@
   const GUARD_KEY = '__aichat_genspark_moa_image_autosettings_v1__';
   if (window[GUARD_KEY]) return;
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  try {
+    document.documentElement?.setAttribute?.('data-aichat-genspark-moa-image-autosettings', '1');
+  } catch {}
 
   const TARGET_TYPE = 'moa_generate_image';
   const TARGET_QUALITY_PATTERNS = [/\b2\s*k\b/i, /\b2048\b/i, /\b2048\s*x\s*2048\b/i];
@@ -84,6 +87,14 @@
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
+  }
+
+  function hasPointerCursor(el) {
+    try {
+      return getComputedStyle(el).cursor === 'pointer';
+    } catch {
+      return false;
+    }
   }
 
   function matches2kText(text) {
@@ -203,6 +214,66 @@
   function findSettingsButtons() {
     const out = [];
     const seen = new Set();
+
+    // Genspark AI Image page uses a non-semantic "Setting" selector (div with pointer cursor).
+    const preferredSelectors = [
+      '.models-selected.aspect-ratio-selector',
+      '.models-selected.aspect-ratio-selector .model-selected',
+      '.aspect-ratio-selector',
+      '.settings-selector',
+      '.settings-trigger'
+    ];
+    for (const sel of preferredSelectors) {
+      let els = [];
+      try {
+        els = Array.from(document.querySelectorAll(sel));
+      } catch {
+        els = [];
+      }
+      for (const el of els) {
+        if (!isVisible(el)) continue;
+        if (!hasPointerCursor(el)) continue;
+        if (seen.has(el)) continue;
+        seen.add(el);
+        out.push(el);
+      }
+    }
+
+    try {
+      const roots = [
+        document.querySelector('.controls'),
+        document.querySelector('.options-wrapper'),
+        document.querySelector('.input-wrapper-wrapper'),
+        document.querySelector('.main-inner.j-chat-agent'),
+        document
+      ].filter(Boolean);
+
+      const wanted = SETTINGS_TEXTS.map((t) => String(t || '').toLowerCase()).filter(Boolean);
+      for (const root of roots) {
+        let nodes = [];
+        try {
+          nodes = Array.from(root.querySelectorAll('div,span,button,[role="button"],[tabindex],a'));
+        } catch {
+          nodes = [];
+        }
+        for (const el of nodes) {
+          if (!isVisible(el)) continue;
+          if (!hasPointerCursor(el)) continue;
+          const t = textOf(el).toLowerCase();
+          if (!t) continue;
+          if (!wanted.some((w) => t.includes(w))) continue;
+
+          // Avoid clicking huge containers that merely contain the word.
+          const rect = el.getBoundingClientRect();
+          if (rect.width > window.innerWidth * 0.85 || rect.height > window.innerHeight * 0.85) continue;
+          if (t.length > 30) continue;
+
+          if (seen.has(el)) continue;
+          seen.add(el);
+          out.push(el);
+        }
+      }
+    } catch {}
 
     const selectors = [
       'button[aria-label*="setting" i]',

@@ -5,6 +5,7 @@
   const AUTHOR = 'lueluelue2006';
   const REPO_URL = `https://github.com/${REPO}`;
   const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/manifest.json`;
+  const SHOW_DESCRIPTIONS = false;
 
   const elAuthor = document.getElementById('author');
   const elVersion = document.getElementById('version');
@@ -238,12 +239,13 @@
     mainEl.className = 'labelMain';
     mainEl.textContent = String(main || '');
 
-    const subEl = document.createElement('span');
-    subEl.className = 'labelSub';
-    subEl.textContent = String(sub || '');
-
     textWrap.appendChild(mainEl);
-    if (subEl.textContent) textWrap.appendChild(subEl);
+    if (SHOW_DESCRIPTIONS) {
+      const subEl = document.createElement('span');
+      subEl.className = 'labelSub';
+      subEl.textContent = String(sub || '');
+      if (subEl.textContent) textWrap.appendChild(subEl);
+    }
 
     label.appendChild(input);
     label.appendChild(textWrap);

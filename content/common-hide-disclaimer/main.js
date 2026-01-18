@@ -23,6 +23,38 @@
     } catch {}
   }
 
+  const STYLE_ID = 'aichat-hide-disclaimer-style';
+
+  function upsertStyle(cssText) {
+    try {
+      const existing = document.getElementById(STYLE_ID);
+      if (existing) {
+        existing.textContent = cssText;
+        return;
+      }
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = cssText;
+      (document.head || document.documentElement).appendChild(style);
+    } catch {}
+  }
+
+  function isChatGpt() {
+    const host = String(location.hostname || '').toLowerCase();
+    return host === 'chatgpt.com' || host === 'chat.openai.com';
+  }
+
+  // ChatGPT：用 CSS 精确隐藏免责声明，避免在该站点做重 DOM 扫描（该站点 DOM 变动很频繁）
+  if (isChatGpt()) {
+    upsertStyle(`
+      #thread-bottom-container [class*="vt-disclaimer"],
+      div.text-token-text-secondary.min-h-8.text-xs[class*="md:px-"] {
+        display: none !important;
+      }
+    `);
+    return;
+  }
+
   const DATA_ATTR = 'data-aichat-hidden-disclaimer';
 
   const PATTERNS = [
@@ -162,28 +194,46 @@
     }
   }
 
+  const pendingRoots = new Set();
+
+  function enqueueRoot(node) {
+    try {
+      const el = node?.nodeType === 1 ? node : node?.parentElement;
+      if (!el || el.nodeType !== 1) return;
+      pendingRoots.add(el);
+    } catch {}
+  }
+
+  function flushPendingRoots() {
+    const roots = Array.from(pendingRoots);
+    pendingRoots.clear();
+    for (const root of roots) scan(root);
+  }
+
   function scheduleScanSoon() {
     if (state.scanTimer) return;
     state.scanTimer = setTimeout(() => {
       state.scanTimer = null;
-      scan(document.body || document.documentElement);
-    }, 80);
+      flushPendingRoots();
+    }, 120);
   }
 
   function boot() {
     scan(document.body || document.documentElement);
 
     const mo = new MutationObserver((mutations) => {
-      let should = false;
       for (const m of mutations) {
         if (m.type !== 'childList') continue;
-        if (m.addedNodes && m.addedNodes.length) {
-          should = true;
-          break;
-        }
+        for (const n of m.addedNodes || []) enqueueRoot(n);
       }
-      if (should) scheduleScanSoon();
+      if (pendingRoots.size) scheduleScanSoon();
     });
+
+    // 覆盖 SSR/水合后才出现的提示（仅一次）
+    setTimeout(() => {
+      enqueueRoot(document.body || document.documentElement);
+      scheduleScanSoon();
+    }, 800);
 
     try {
       mo.observe(document.documentElement, { childList: true, subtree: true });

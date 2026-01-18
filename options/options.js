@@ -128,7 +128,7 @@
     gemini_auto_3_pro: {
       id: 'gemini_auto_3_pro',
       name: 'Gemini Enterprise 自动切换 3 Pro',
-      sub: '自动将模型切换为 Gemini 3 Pro（可用时）',
+      sub: '自动将模型切换为 Gemini 3 Pro（可用时）；并隐藏 Gemini Enterprise 的 disclaimer',
       hotkeys: []
     },
     genspark_moa_image_autosettings: {

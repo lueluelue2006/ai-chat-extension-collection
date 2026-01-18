@@ -777,7 +777,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。UI 识别失败时会在下一次发送时兜底覆写请求参数。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 

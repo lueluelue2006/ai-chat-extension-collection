@@ -26,6 +26,8 @@
   let cachedEffortPill = null;
   /** @type {HTMLButtonElement|null} */
   let cachedModelPill = null;
+  /** @type {HTMLButtonElement|null} */
+  let cachedThinkingProPill = null;
 
   function loadPreferredModelMode() {
     try {
@@ -527,6 +529,32 @@ button.${HINT_CLASS}::after {
     return { light, standard, extended, heavy };
   }
 
+  function getThinkingProModeItems(menu) {
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']"));
+    /** @type {Element|null} */
+    let thinking = null;
+    /** @type {Element|null} */
+    let pro = null;
+
+    for (const item of items) {
+      const t = normalizeText(item.textContent || '');
+      if (!thinking && (t === 'thinking' || t.startsWith('thinking ') || t.startsWith('思考') || t.startsWith('推理'))) {
+        thinking = item;
+      }
+      if (!pro && (t === 'pro' || t.startsWith('pro ') || t.startsWith('专业'))) {
+        pro = item;
+      }
+    }
+
+    return { thinking, pro };
+  }
+
+  function menuHasThinkingProMode(menu) {
+    if (!(menu instanceof Element)) return false;
+    const { thinking, pro } = getThinkingProModeItems(menu);
+    return !!thinking && !!pro;
+  }
+
   function menuHasEffortOptions(menu) {
     const { light, standard, extended, heavy } = getEffortItems(menu);
     const hasTwo = !!standard && !!extended;
@@ -620,6 +648,41 @@ button.${HINT_CLASS}::after {
       if (hasThinking && hasPro) return pill;
 
       // 不是模型菜单：关掉再继续试下一个
+      clickLikeUser(pill);
+      await sleep(60);
+    }
+
+    return null;
+  }
+
+  async function findThinkingProModePill() {
+    const pills = listComposerPills();
+    if (!pills.length) return null;
+
+    /** @type {HTMLButtonElement[]} */
+    const ordered = [];
+    const active = document.activeElement;
+    if (active instanceof HTMLButtonElement && active.matches('button.__composer-pill')) ordered.push(active);
+    for (const p of pills) if (!ordered.includes(p)) ordered.push(p);
+
+    for (const pill of ordered) {
+      const opened = await openThinkingMenu(pill);
+      if (!opened) continue;
+
+      /** @type {Element|null} */
+      let menu = null;
+      for (let i = 0; i < 8; i++) {
+        menu = findMenuForPill(pill);
+        if (menu) break;
+        await sleep(40);
+      }
+
+      if (menu && menuHasThinkingProMode(menu)) {
+        const contextText = normalizeText(`${pill.textContent || ''} ${menu.textContent || ''}`);
+        if (contextText.includes('5.2')) return pill;
+      }
+
+      // 不是目标菜单：关掉再继续试下一个
       clickLikeUser(pill);
       await sleep(60);
     }
@@ -776,104 +839,52 @@ button.${HINT_CLASS}::after {
     busy = true;
 
     try {
-      let current =
-        preferredModelMode ||
-        guessModeFromEffort(lastEffortByMode.thinking || '') ||
-        guessModeFromEffort(lastEffortByMode.pro || '') ||
-        null;
-      let target = current === 'thinking' ? 'pro' : 'thinking';
+      const pill =
+        cachedThinkingProPill instanceof HTMLButtonElement && document.contains(cachedThinkingProPill)
+          ? cachedThinkingProPill
+          : await findThinkingProModePill();
+      cachedThinkingProPill = pill;
 
-      // 1) 尝试在推理强度菜单里“跨模式”点击（有些 UI 会把 4 个选项都放一起）
-      const effortPill =
-        cachedEffortPill instanceof HTMLButtonElement && document.contains(cachedEffortPill)
-          ? cachedEffortPill
-          : await findEffortPill();
-      cachedEffortPill = effortPill;
-
-      if (effortPill) {
-        const opened = await openThinkingMenu(effortPill);
-        if (opened) {
-          let menu = null;
-          for (let i = 0; i < 10; i++) {
-            menu = findMenuForPill(effortPill);
-            if (menu) break;
-            await sleep(40);
-          }
-
-          if (menu) {
-            const fromMenuMode = menuSelectedMode(menu);
-            if (fromMenuMode) {
-              current = fromMenuMode;
-              target = current === 'thinking' ? 'pro' : 'thinking';
-            }
-
-            const { light, standard, extended, heavy } = getEffortItems(menu);
-            const hasThinking = !!light || !!heavy;
-            const hasPro = !!standard || !!extended;
-            if (hasThinking && hasPro) {
-              const high = menuSelectedIsHigh(menu) ?? isHighEffort(lastEffortByMode[current || 'pro'] || '');
-              const targetItem =
-                target === 'pro'
-                  ? high
-                    ? extended || standard
-                    : standard || extended
-                  : high
-                    ? heavy || light
-                    : light || heavy;
-              if (targetItem) {
-                clickLikeUser(targetItem);
-                preferredModelMode = target;
-                savePreferredModelMode(preferredModelMode);
-                schedulePulse(effortPill, target === 'thinking', target === 'thinking' ? 'Thinking' : 'Pro');
-                showToast(`已切换模型：${target === 'thinking' ? 'thinking' : 'pro'}`);
-                return;
-              }
-            }
-
-            // 关掉菜单
-            clickLikeUser(effortPill);
-            await sleep(60);
-          }
-        }
+      if (!pill) {
+        showToast('没找到 GPT-5.2 的 Thinking/Pro 菜单（可能当前模型/页面不支持）');
+        return;
       }
 
-      // 2) 尝试模型菜单（通常是另一个 pill）
-      const modelPill =
-        cachedModelPill instanceof HTMLButtonElement && document.contains(cachedModelPill)
-          ? cachedModelPill
-          : await findModelPill();
-      cachedModelPill = modelPill;
-
-      if (modelPill) {
-        const opened = await openThinkingMenu(modelPill);
-        if (opened) {
-          let menu = null;
-          for (let i = 0; i < 12; i++) {
-            menu = findMenuForPill(modelPill);
-            if (menu) break;
-            await sleep(40);
-          }
-          const item = findBestModelMenuItem(menu, target);
-          if (item) {
-            clickLikeUser(item);
-            preferredModelMode = target;
-            savePreferredModelMode(preferredModelMode);
-            schedulePulse(modelPill, target === 'thinking', target === 'thinking' ? 'Thinking' : 'Pro');
-            showToast(`已切换模型：${target === 'thinking' ? 'thinking' : 'pro'}`);
-            return;
-          }
-
-          // 关掉菜单
-          clickLikeUser(modelPill);
-          await sleep(60);
-        }
+      const opened = await openThinkingMenu(pill);
+      if (!opened) {
+        showToast('打开模型菜单失败');
+        return;
       }
 
-      // 3) UI 切不了则兜底：下一次发送时强制改 payload（需要配合 fetch hook）
-      pendingModelOverride = target;
-      preferredModelMode = target;
+      /** @type {Element|null} */
+      let menu = null;
+      for (let i = 0; i < 10; i++) {
+        menu = findMenuForPill(pill);
+        if (menu) break;
+        await sleep(40);
+      }
+
+      if (!menu) {
+        showToast('未找到模型菜单');
+        return;
+      }
+
+      const { thinking, pro } = getThinkingProModeItems(menu);
+      if (!thinking || !pro) {
+        showToast('该菜单未发现 Thinking/Pro 选项');
+        return;
+      }
+
+      const thinkingChecked = thinking.getAttribute('aria-checked') === 'true';
+      const proChecked = pro.getAttribute('aria-checked') === 'true';
+      const targetItem = thinkingChecked ? pro : proChecked ? thinking : normalizeText(pill.textContent || '').includes('pro') ? thinking : pro;
+
+      clickLikeUser(targetItem);
+      const targetMode = targetItem === pro ? 'pro' : 'thinking';
+      preferredModelMode = targetMode;
       savePreferredModelMode(preferredModelMode);
-      showToast(`已设定下一次发送使用：${target === 'thinking' ? 'thinking' : 'pro'}`);
+      schedulePulse(pill, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
+      showToast(`已切换：${targetMode === 'pro' ? 'Pro' : 'Thinking'}`);
     } catch (err) {
       log(err);
       error('切换模型失败', err);

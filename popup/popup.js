@@ -368,7 +368,19 @@
       })
     );
 
-    for (const moduleId of siteDef.modules) {
+    const orderedModules = (siteDef.modules || [])
+      .map((id, idx) => ({
+        id,
+        idx,
+        hasMenu: !!(menuByModule && Array.isArray(menuByModule[id]) && menuByModule[id].length)
+      }))
+      .sort((a, b) => {
+        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
+        return a.idx - b.idx;
+      })
+      .map((x) => x.id);
+
+    for (const moduleId of orderedModules) {
       const def = getModuleDef(moduleId);
       const row = createToggleRow({
         main: def.name,

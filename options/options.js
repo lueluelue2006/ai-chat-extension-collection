@@ -64,7 +64,8 @@
       id: 'quicknav',
       name: 'QuickNav',
       sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
-      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/']
+      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
+      menuPreview: ['重置问题栏位置', '清理过期检查点（30天/31天）', '清理无效收藏']
     },
     chatgpt_perf: {
       id: 'chatgpt_perf',
@@ -124,7 +125,8 @@
       id: 'chatgpt_export_conversation',
       name: 'ChatGPT 对话导出（新版 UI）',
       sub: '一键导出当前对话为 Markdown / HTML（在扩展菜单里执行）',
-      hotkeys: []
+      hotkeys: [],
+      menuPreview: ['导出为 Markdown', '导出为 HTML']
     },
     gemini_math_fix: {
       id: 'gemini_math_fix',
@@ -416,7 +418,18 @@
     if (!elModuleList) return;
     elModuleList.textContent = '';
 
-    const mods = getSite(siteId)?.modules || [];
+    const rawMods = getSite(siteId)?.modules || [];
+    const mods = rawMods
+      .map((id, idx) => ({
+        id,
+        idx,
+        hasMenu: !!(MODULES[id]?.menuPreview && MODULES[id].menuPreview.length)
+      }))
+      .sort((a, b) => {
+        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
+        return a.idx - b.idx;
+      })
+      .map((x) => x.id);
 
     for (const moduleId of mods) {
       const def = MODULES[moduleId];
@@ -503,6 +516,27 @@
     elModuleSettings.appendChild(d);
   }
 
+  function addPanelMenuPreview(moduleId) {
+    const def = MODULES[moduleId];
+    const items = Array.isArray(def?.menuPreview) ? def.menuPreview.filter((v) => typeof v === 'string' && v.trim()) : [];
+    if (!items.length) return;
+
+    addPanelDivider();
+    addPanelTitle('菜单栏预览', '设置页仅展示预览；请在扩展图标弹窗里点击执行。');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'menuPreview';
+    for (const label of items) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'menuPreviewBtn';
+      btn.textContent = label;
+      btn.disabled = true;
+      wrap.appendChild(btn);
+    }
+    elModuleSettings.appendChild(wrap);
+  }
+
   function renderQuickNavModuleSettings(siteId) {
     addPanelTitle('QuickNav', '该模块负责对话导航面板、📌标记点、收藏夹、防自动滚动与快捷键。');
     addPanelHotkeys('quicknav');
@@ -552,6 +586,8 @@
       ? '“默认 🔐”仅在该网站从未保存过 🔐 状态时生效（例如第一次使用，或清除该网站数据后）。'
       : '当前页面开关已关闭：该站点不会注入任何模块。';
     elModuleSettings.appendChild(hint);
+
+    addPanelMenuPreview('quicknav');
   }
 
   async function renderChatGPTPerfModuleSettings(siteId, token) {
@@ -1021,6 +1057,38 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderChatGPTExportConversationModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 对话导出（新版 UI）', '导出当前对话为 Markdown / HTML（菜单在扩展弹窗里）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_export_conversation');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_export_conversation = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '说明：导出为纯前端下载（Blob），无需额外权限；图片会保持为原始链接（不做 base64 内嵌）。';
+    elModuleSettings.appendChild(hint);
+
+    addPanelMenuPreview('chatgpt_export_conversation');
+  }
+
   function renderGensparkMoaImageAutosettingsModuleSettings(siteId) {
     addPanelTitle('Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
     addPanelDivider();
@@ -1107,6 +1175,7 @@
     if (moduleId === 'chatgpt_quick_deep_search') return renderChatGPTQuickDeepSearchModuleSettings(siteId);
     if (moduleId === 'chatgpt_hide_feedback_buttons') return renderChatGPTHideFeedbackButtonsModuleSettings(siteId);
     if (moduleId === 'chatgpt_tex_copy_quote') return renderChatGPTTexCopyQuoteModuleSettings(siteId);
+    if (moduleId === 'chatgpt_export_conversation') return renderChatGPTExportConversationModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
     if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);
     if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);

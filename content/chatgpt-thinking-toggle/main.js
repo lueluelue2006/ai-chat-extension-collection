@@ -3,7 +3,7 @@
 
   const DEBUG = false;
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
-  const HOTKEY_COOLDOWN_MS = 200;
+  const HOTKEY_COOLDOWN_MS = 100;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';

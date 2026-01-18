@@ -670,13 +670,33 @@ button.${HINT_CLASS}::after {
   }
 
   function findVisibleThinkingProMenu() {
-    const menus = listVisibleMenus();
-    for (const menu of menus) {
-      if (!menuHasThinkingProMode(menu)) continue;
-      const t = normalizeText(menu.textContent || '');
-      if (t.includes('5.2') || t.includes('gpt-5.2')) return menu;
+    const thinkingItem = findVisibleByTestId('model-switcher-gpt-5-2-thinking');
+    const proItem = findVisibleByTestId('model-switcher-gpt-5-2-pro');
+    const any = thinkingItem || proItem;
+    if (!any) return null;
+    return any.closest("[role='menu']") || null;
+  }
+
+  function findVisibleByTestId(testId) {
+    try {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="${CSS.escape(testId)}"]`));
+      for (const el of nodes) {
+        if (el instanceof HTMLElement && isVisibleElement(el)) return el;
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
-    return null;
+  }
+
+  function findGPT52ModelSelectorTrigger() {
+    const byTestId = document.querySelector("button[data-testid='model-switcher-dropdown-button']");
+    if (byTestId instanceof HTMLElement) return byTestId;
+
+    const byAria = Array.from(document.querySelectorAll('button[aria-label],[role="button"][aria-label]')).find(
+      (el) => normalizeText(el.getAttribute('aria-label') || '').startsWith('model selector')
+    );
+    return byAria instanceof HTMLElement ? byAria : null;
   }
 
   function listMaybeThinkingProTriggers() {
@@ -884,40 +904,47 @@ button.${HINT_CLASS}::after {
     busy = true;
 
     try {
-      /** @type {Element|null} */
-      let menu = findVisibleThinkingProMenu();
-      if (!menu) {
-        const trigger =
-          cachedThinkingProTrigger instanceof HTMLElement && document.contains(cachedThinkingProTrigger)
-            ? cachedThinkingProTrigger
-            : await findThinkingProTrigger();
-        cachedThinkingProTrigger = trigger;
+      const trigger =
+        cachedThinkingProTrigger instanceof HTMLElement && document.contains(cachedThinkingProTrigger)
+          ? cachedThinkingProTrigger
+          : findGPT52ModelSelectorTrigger();
+      cachedThinkingProTrigger = trigger;
+      if (!trigger) {
+        showToast('没找到 GPT-5.2 的模型下拉按钮');
+        return;
+      }
 
-        if (!trigger) {
-          showToast('没找到 GPT-5.2 的 Thinking/Pro 菜单（可能当前模型/页面不支持）');
-          return;
-        }
-        for (let i = 0; i < 10; i++) {
-          menu = findVisibleThinkingProMenu();
-          if (menu) break;
+      const triggerLabel = normalizeText(trigger.textContent || trigger.getAttribute('aria-label') || '');
+      const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
+      const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
+
+      // 如果菜单已打开，直接点；否则打开菜单再点
+      let targetItem = findVisibleByTestId(targetTestId);
+      if (!targetItem) {
+        clickLikeUser(trigger);
+        for (let i = 0; i < 12; i++) {
+          targetItem = findVisibleByTestId(targetTestId);
+          if (targetItem) break;
           await sleep(50);
         }
       }
 
-      if (!menu) return;
+      if (!targetItem) {
+        // 可能第一次 click 没弹出：再试一次
+        clickLikeUser(trigger);
+        for (let i = 0; i < 12; i++) {
+          targetItem = findVisibleByTestId(targetTestId);
+          if (targetItem) break;
+          await sleep(50);
+        }
+      }
 
-      const { thinking, pro } = getThinkingProModeItems(menu);
-      if (!thinking || !pro) {
-        showToast('该菜单未发现 Thinking/Pro 选项');
+      if (!targetItem) {
+        showToast('没找到 GPT-5.2 的 Thinking/Pro 选项（可能当前模型/页面不支持）');
         return;
       }
 
-      const thinkingChecked = thinking.getAttribute('aria-checked') === 'true';
-      const proChecked = pro.getAttribute('aria-checked') === 'true';
-      const targetItem = thinkingChecked ? pro : proChecked ? thinking : pro;
-
       clickLikeUser(targetItem);
-      const targetMode = targetItem === pro ? 'pro' : 'thinking';
       preferredModelMode = targetMode;
       savePreferredModelMode(preferredModelMode);
       const pulseTarget = cachedThinkingProTrigger;

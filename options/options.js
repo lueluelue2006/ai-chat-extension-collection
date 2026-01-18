@@ -29,7 +29,8 @@
         'chatgpt_strong_highlight_lite',
         'chatgpt_quick_deep_search',
         'chatgpt_hide_feedback_buttons',
-        'chatgpt_tex_copy_quote'
+        'chatgpt_tex_copy_quote',
+        'chatgpt_export_conversation'
       ]
     },
     { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav'] },
@@ -117,6 +118,12 @@
       id: 'chatgpt_tex_copy_quote',
       name: 'ChatGPT TeX Copy & Quote',
       sub: '复制/引用含 KaTeX 的选区时优先还原 LaTeX，并支持悬停提示/双击复制',
+      hotkeys: []
+    },
+    chatgpt_export_conversation: {
+      id: 'chatgpt_export_conversation',
+      name: 'ChatGPT 对话导出（新版 UI）',
+      sub: '一键导出当前对话为 Markdown / HTML（在扩展菜单里执行）',
       hotkeys: []
     },
     gemini_math_fix: {

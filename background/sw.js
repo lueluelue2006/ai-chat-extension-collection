@@ -41,7 +41,8 @@
         chatgpt_strong_highlight_lite: true,
         chatgpt_quick_deep_search: true,
         chatgpt_hide_feedback_buttons: true,
-        chatgpt_tex_copy_quote: true
+        chatgpt_tex_copy_quote: true,
+        chatgpt_export_conversation: true
       },
       ernie: { quicknav: true },
       deepseek: { quicknav: true },
@@ -253,6 +254,14 @@
       js: ['content/chatgpt-tex-copy-quote/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_export_conversation',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_export_conversation',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/gm-menu-polyfill.js', 'content/chatgpt-export-conversation/main.js'],
+      runAt: 'document_end'
     },
     {
       id: 'quicknav_gemini_math_fix',

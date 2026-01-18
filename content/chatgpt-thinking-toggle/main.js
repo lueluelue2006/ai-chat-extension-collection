@@ -3,7 +3,7 @@
 
   const DEBUG = false;
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
-  const HOTKEY_COOLDOWN_MS = 500;
+  const HOTKEY_COOLDOWN_MS = 300;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
@@ -526,4 +526,3 @@ button.${HINT_CLASS}::after {
 
   installFetchSniffer();
 })();
-

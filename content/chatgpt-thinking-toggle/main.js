@@ -680,21 +680,31 @@ button.${HINT_CLASS}::after {
   }
 
   function listMaybeThinkingProTriggers() {
-    let nodes = Array.from(
+    const primaryNodes = Array.from(
       document.querySelectorAll(
         "button[aria-haspopup='menu'],button[aria-expanded],button[data-state],[role='button'][aria-haspopup='menu'],[role='button'][aria-expanded],[role='button'][data-state]"
       )
     ).filter((el) => el instanceof HTMLElement);
-    if (!nodes.length) nodes = Array.from(document.querySelectorAll('button,[role="button"]')).filter((el) => el instanceof HTMLElement);
 
-    /** @type {HTMLElement[]} */
-    const candidates = [];
-    for (const el of nodes) {
-      const t = normalizeText(el.textContent || '');
-      if (!t.includes('5.2')) continue;
-      if (!t.includes('chatgpt') && !t.includes('gpt') && !t.includes('thinking') && !t.includes('pro')) continue;
-      if (!isVisibleElement(el)) continue;
-      candidates.push(el);
+    function filterCandidates(nodes) {
+      /** @type {HTMLElement[]} */
+      const out = [];
+      for (const el of nodes) {
+        const t = normalizeText(el.textContent || '');
+        if (!t.includes('5.2')) continue;
+        if (!t.includes('chatgpt') && !t.includes('gpt') && !t.includes('thinking') && !t.includes('pro')) continue;
+        if (!isVisibleElement(el)) continue;
+        out.push(el);
+      }
+      return out;
+    }
+
+    let candidates = filterCandidates(primaryNodes);
+    if (!candidates.length) {
+      const fallbackNodes = Array.from(document.querySelectorAll('button,[role="button"]')).filter(
+        (el) => el instanceof HTMLElement
+      );
+      candidates = filterCandidates(fallbackNodes);
     }
     return candidates.slice(0, 40);
   }

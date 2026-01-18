@@ -2217,7 +2217,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const useSoft = isLongChat && !!hasStop;
       // 只要涉及消息区域的变更，就触发去抖刷新
       for (const mut of muts) {
-        const t = mut.target && mut.target.nodeType === 1 ? mut.target : null;
+        // characterData 的 target 是 Text 节点，这里取其 parentElement 参与判断
+        const t = mut.target && mut.target.nodeType === 1 ? mut.target : (mut.target?.parentElement || null);
         if (!t) continue;
 
         // 尽量廉价地判断：在主区域/turn/markdown/消息块内的任何变更都算
@@ -2252,6 +2253,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     forceRefreshTimer = setInterval(() => {
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
+      const targetGone = !ui._moTarget || !ui._moTarget.isConnected;
+      if (targetGone) {
+        observeChat(ui);
+        scheduleRefresh(ui, { force: true });
+        return;
+      }
+      // 某些切换会话场景：turn selector 暂时抓不到元素（一直 0），这里强制重绑+刷新，避免长期“暂无对话”
+      if (!hasStop && count === 0 && lastDomTurnCount === 0) {
+        observeChat(ui);
+        scheduleRefresh(ui, { force: true });
+        return;
+      }
       if (!hasStop && count === lastDomTurnCount) return;
       scheduleRefresh(ui, { force: hasStop, soft: !hasStop && (lastDomTurnCount || 0) > 120 });
     }, 10000);

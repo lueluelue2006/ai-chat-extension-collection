@@ -119,6 +119,8 @@
 
   function hideElement(el) {
     if (!el || isMarkedHidden(el)) return false;
+    // 安全兜底：永远不要把输入框/编辑器一起干掉
+    if (hasEditorDescendant(el)) return false;
     try {
       el.style.setProperty('display', 'none', 'important');
       el.style.setProperty('visibility', 'hidden', 'important');
@@ -128,9 +130,11 @@
     return true;
   }
 
-  function hasInteractiveDescendant(el) {
+  function hasEditorDescendant(el) {
     try {
-      return !!el.querySelector('textarea, input, select, [contenteditable="true"], button[data-testid="send-button"], button[type="submit"]');
+      if (!el) return false;
+      if (el.matches?.('textarea, input, select, [contenteditable], [role="textbox"], [aria-multiline="true"]')) return true;
+      return !!el.querySelector('textarea, input, select, [contenteditable], [role="textbox"], [aria-multiline="true"]');
     } catch {
       return false;
     }
@@ -141,7 +145,7 @@
     for (let i = 0; i < MAX_ASCEND; i++) {
       const parent = current?.parentElement;
       if (!parent) break;
-      if (hasInteractiveDescendant(parent)) break;
+      if (hasEditorDescendant(parent)) break;
 
       const parentText = trimText(parent.textContent);
       if (!parentText) break;
@@ -162,6 +166,7 @@
       if (!el || el.nodeType !== 1) return false;
       if (isMarkedHidden(el)) return false;
       if (el.closest?.('pre, code, textarea, input, [contenteditable="true"]')) return false;
+      if (hasEditorDescendant(el)) return false;
 
       const text = trimText(el.textContent);
       if (!text || text.length < MIN_TEXT_LEN || text.length > MAX_TEXT_LEN) return false;

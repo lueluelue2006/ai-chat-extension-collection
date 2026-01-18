@@ -146,6 +146,9 @@ a { color: var(--text); }
 .toggleRow .labelSub { color: var(--muted); font-size: 12px; }
 
 .menuList { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.menuGroup { padding-top: 8px; border-top: 1px solid var(--border); }
+.menuGroup:first-child { padding-top: 0; border-top: none; }
+.menuGroupTitle { font-weight: 650; margin-bottom: 6px; }
 .menuBtn {
   width: 100%;
   padding: 9px 10px;

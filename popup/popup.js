@@ -345,16 +345,37 @@
     clearEl(elMenuList);
     if (!elMenuList) return;
 
-    const arr = Array.isArray(commands) ? commands.filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string') : [];
+    const arr = Array.isArray(commands)
+      ? commands.filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
+      : [];
     if (!arr.length) return;
 
+    const groups = new Map();
     for (const c of arr) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'menuBtn';
-      btn.textContent = c.name;
-      btn.addEventListener('click', () => onRun(c));
-      elMenuList.appendChild(btn);
+      const group = (c && typeof c.group === 'string' && c.group.trim()) ? c.group.trim() : '其它';
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(c);
+    }
+
+    for (const [groupName, cmds] of groups.entries()) {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'menuGroup';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'menuGroupTitle';
+      titleEl.textContent = groupName;
+      groupEl.appendChild(titleEl);
+
+      for (const c of cmds) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'menuBtn';
+        btn.textContent = c.name;
+        btn.addEventListener('click', () => onRun(c));
+        groupEl.appendChild(btn);
+      }
+
+      elMenuList.appendChild(groupEl);
     }
   }
 

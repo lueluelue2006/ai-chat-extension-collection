@@ -48,6 +48,8 @@
   const RETRY_DELAYS_MS = [0, 250, 600, 1200, 2200, 4000, 7000, 12000, 20000];
   const DISCLAIMER_RETRY_DELAYS_MS = [400, 1500, 3500, 8000, 15000];
 
+  let cachedModelSelectorHost = null;
+
   function getGeminiRoot() {
     return document.querySelector(HOST_SELECTOR)?.shadowRoot || document;
   }
@@ -90,6 +92,8 @@
   }
 
   function findModelSelectorHost() {
+    if (cachedModelSelectorHost && cachedModelSelectorHost.isConnected) return cachedModelSelectorHost;
+
     const root = getGeminiRoot();
     const candidates = deepQueryAll(root, MODEL_SELECTOR);
     if (!candidates.length) return null;
@@ -99,7 +103,8 @@
       return text.includes('auto') || text.includes('gemini');
     });
 
-    return preferred || candidates[candidates.length - 1];
+    cachedModelSelectorHost = preferred || candidates[candidates.length - 1];
+    return cachedModelSelectorHost;
   }
 
   function findModelSelectorButton() {

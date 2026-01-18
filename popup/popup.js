@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const REPO = 'lueluelue2006/AIChat_Quick_Nav';
+  const REPO = 'lueluelue2006/ai-chat-extension-collection';
   const AUTHOR = 'lueluelue2006';
   const REPO_URL = `https://github.com/${REPO}`;
   const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/manifest.json`;

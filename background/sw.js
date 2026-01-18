@@ -6,6 +6,7 @@
   const DEFAULT_SETTINGS = {
     enabled: true,
     sites: {
+      common: true,
       chatgpt: true,
       ernie: true,
       deepseek: true,
@@ -17,6 +18,7 @@
       genspark: true
     },
     scrollLockDefaults: {
+      common: true,
       chatgpt: true,
       ernie: true,
       deepseek: true,
@@ -28,6 +30,7 @@
       genspark: true
     },
     siteModules: {
+      common: { hide_disclaimer: true },
       chatgpt: {
         quicknav: true,
         chatgpt_perf: true,
@@ -58,6 +61,25 @@
 
   const MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
   const CONTENT_SCRIPT_DEFS = [
+    {
+      id: 'quicknav_common_hide_disclaimer',
+      siteId: 'common',
+      moduleId: 'hide_disclaimer',
+      matches: [
+        'https://chatgpt.com/*',
+        'https://chat.openai.com/*',
+        'https://ernie.baidu.com/*',
+        'https://chat.deepseek.com/*',
+        'https://chat.qwen.ai/*',
+        'https://chat.z.ai/*',
+        'https://grok.com/*',
+        'https://gemini.google.com/app*',
+        'https://business.gemini.google/*',
+        'https://www.genspark.ai/*'
+      ],
+      js: ['content/common-hide-disclaimer/main.js'],
+      runAt: 'document_start'
+    },
     {
       id: 'quicknav_chatgpt',
       siteId: 'chatgpt',

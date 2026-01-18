@@ -14,6 +14,7 @@
   const elModuleSettings = document.getElementById('moduleSettings');
 
   const SITES = [
+    { id: 'common', name: '通用', sub: '全部站点', modules: ['hide_disclaimer'] },
     {
       id: 'chatgpt',
       name: 'ChatGPT',
@@ -47,6 +48,12 @@
   ];
 
   const MODULES = {
+    hide_disclaimer: {
+      id: 'hide_disclaimer',
+      name: '隐藏免责声明/提示条',
+      sub: '自动隐藏“AI 可能会犯错/数据使用”等提示条',
+      hotkeys: []
+    },
     quicknav: {
       id: 'quicknav',
       name: 'QuickNav',

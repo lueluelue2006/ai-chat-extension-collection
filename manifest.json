@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ai chat 扩展合集",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
   "permissions": ["scripting", "storage", "activeTab"],
   "host_permissions": [

@@ -949,7 +949,6 @@ button.${HINT_CLASS}::after {
       savePreferredModelMode(preferredModelMode);
       const pulseTarget = cachedThinkingProTrigger;
       if (pulseTarget) schedulePulse(pulseTarget, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
-      showToast(`已切换：${targetMode === 'pro' ? 'Pro' : 'Thinking'}`);
     } catch (err) {
       log(err);
       error('切换模型失败', err);

@@ -26,8 +26,8 @@
   let cachedEffortPill = null;
   /** @type {HTMLButtonElement|null} */
   let cachedModelPill = null;
-  /** @type {HTMLButtonElement|null} */
-  let cachedThinkingProPill = null;
+  /** @type {HTMLElement|null} */
+  let cachedThinkingProTrigger = null;
 
   function loadPreferredModelMode() {
     try {
@@ -655,38 +655,73 @@ button.${HINT_CLASS}::after {
     return null;
   }
 
-  async function findThinkingProModePill() {
-    const pills = listComposerPills();
-    if (!pills.length) return null;
+  function isVisibleElement(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    if (!document.contains(el)) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return true;
+  }
 
-    /** @type {HTMLButtonElement[]} */
-    const ordered = [];
-    const active = document.activeElement;
-    if (active instanceof HTMLButtonElement && active.matches('button.__composer-pill')) ordered.push(active);
-    for (const p of pills) if (!ordered.includes(p)) ordered.push(p);
+  function listVisibleMenus() {
+    return Array.from(document.querySelectorAll("[role='menu']")).filter(isVisibleElement);
+  }
 
-    for (const pill of ordered) {
-      const opened = await openThinkingMenu(pill);
-      if (!opened) continue;
+  function findVisibleThinkingProMenu() {
+    const menus = listVisibleMenus();
+    for (const menu of menus) {
+      if (!menuHasThinkingProMode(menu)) continue;
+      const t = normalizeText(menu.textContent || '');
+      if (t.includes('5.2') || t.includes('gpt-5.2')) return menu;
+    }
+    return null;
+  }
 
-      /** @type {Element|null} */
-      let menu = null;
-      for (let i = 0; i < 8; i++) {
-        menu = findMenuForPill(pill);
-        if (menu) break;
+  function listMaybeThinkingProTriggers() {
+    let nodes = Array.from(
+      document.querySelectorAll(
+        "button[aria-haspopup='menu'],button[aria-expanded],button[data-state],[role='button'][aria-haspopup='menu'],[role='button'][aria-expanded],[role='button'][data-state]"
+      )
+    ).filter((el) => el instanceof HTMLElement);
+    if (!nodes.length) nodes = Array.from(document.querySelectorAll('button,[role="button"]')).filter((el) => el instanceof HTMLElement);
+
+    /** @type {HTMLElement[]} */
+    const candidates = [];
+    for (const el of nodes) {
+      const t = normalizeText(el.textContent || '');
+      if (!t.includes('5.2')) continue;
+      if (!t.includes('chatgpt') && !t.includes('gpt') && !t.includes('thinking') && !t.includes('pro')) continue;
+      if (!isVisibleElement(el)) continue;
+      candidates.push(el);
+    }
+    return candidates.slice(0, 40);
+  }
+
+  async function findThinkingProTrigger() {
+    // 优先：已经有菜单打开
+    const existingMenu = findVisibleThinkingProMenu();
+    if (existingMenu) return null;
+
+    const candidates = listMaybeThinkingProTriggers();
+    for (const el of candidates) {
+      // 尝试一次点击打开
+      clickLikeUser(el);
+      for (let i = 0; i < 10; i++) {
+        const menu = findVisibleThinkingProMenu();
+        if (menu) return el;
         await sleep(40);
       }
 
-      if (menu && menuHasThinkingProMode(menu)) {
-        const contextText = normalizeText(`${pill.textContent || ''} ${menu.textContent || ''}`);
-        if (contextText.includes('5.2')) return pill;
+      // 有些按钮第一次不生效：再点一次
+      clickLikeUser(el);
+      for (let i = 0; i < 10; i++) {
+        const menu = findVisibleThinkingProMenu();
+        if (menu) return el;
+        await sleep(40);
       }
-
-      // 不是目标菜单：关掉再继续试下一个
-      clickLikeUser(pill);
-      await sleep(60);
     }
-
     return null;
   }
 
@@ -839,35 +874,27 @@ button.${HINT_CLASS}::after {
     busy = true;
 
     try {
-      const pill =
-        cachedThinkingProPill instanceof HTMLButtonElement && document.contains(cachedThinkingProPill)
-          ? cachedThinkingProPill
-          : await findThinkingProModePill();
-      cachedThinkingProPill = pill;
-
-      if (!pill) {
-        showToast('没找到 GPT-5.2 的 Thinking/Pro 菜单（可能当前模型/页面不支持）');
-        return;
-      }
-
-      const opened = await openThinkingMenu(pill);
-      if (!opened) {
-        showToast('打开模型菜单失败');
-        return;
-      }
-
       /** @type {Element|null} */
-      let menu = null;
-      for (let i = 0; i < 10; i++) {
-        menu = findMenuForPill(pill);
-        if (menu) break;
-        await sleep(40);
+      let menu = findVisibleThinkingProMenu();
+      if (!menu) {
+        const trigger =
+          cachedThinkingProTrigger instanceof HTMLElement && document.contains(cachedThinkingProTrigger)
+            ? cachedThinkingProTrigger
+            : await findThinkingProTrigger();
+        cachedThinkingProTrigger = trigger;
+
+        if (!trigger) {
+          showToast('没找到 GPT-5.2 的 Thinking/Pro 菜单（可能当前模型/页面不支持）');
+          return;
+        }
+        for (let i = 0; i < 10; i++) {
+          menu = findVisibleThinkingProMenu();
+          if (menu) break;
+          await sleep(50);
+        }
       }
 
-      if (!menu) {
-        showToast('未找到模型菜单');
-        return;
-      }
+      if (!menu) return;
 
       const { thinking, pro } = getThinkingProModeItems(menu);
       if (!thinking || !pro) {
@@ -877,13 +904,14 @@ button.${HINT_CLASS}::after {
 
       const thinkingChecked = thinking.getAttribute('aria-checked') === 'true';
       const proChecked = pro.getAttribute('aria-checked') === 'true';
-      const targetItem = thinkingChecked ? pro : proChecked ? thinking : normalizeText(pill.textContent || '').includes('pro') ? thinking : pro;
+      const targetItem = thinkingChecked ? pro : proChecked ? thinking : pro;
 
       clickLikeUser(targetItem);
       const targetMode = targetItem === pro ? 'pro' : 'thinking';
       preferredModelMode = targetMode;
       savePreferredModelMode(preferredModelMode);
-      schedulePulse(pill, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
+      const pulseTarget = cachedThinkingProTrigger;
+      if (pulseTarget) schedulePulse(pulseTarget, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
       showToast(`已切换：${targetMode === 'pro' ? 'Pro' : 'Thinking'}`);
     } catch (err) {
       log(err);

@@ -38,7 +38,12 @@
     { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav'] },
     { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
     { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
-    { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'gemini_math_fix'] },
+    {
+      id: 'gemini_business',
+      name: 'Gemini Business',
+      sub: 'business.gemini.google',
+      modules: ['quicknav', 'gemini_math_fix', 'gemini_auto_3_pro']
+    },
     {
       id: 'genspark',
       name: 'Genspark',
@@ -118,6 +123,12 @@
       id: 'gemini_math_fix',
       name: 'Gemini Enterprise 数学修复',
       sub: 'KaTeX / inline math 修复',
+      hotkeys: []
+    },
+    gemini_auto_3_pro: {
+      id: 'gemini_auto_3_pro',
+      name: 'Gemini Enterprise 自动切换 3 Pro',
+      sub: '自动将模型切换为 Gemini 3 Pro（可用时）',
       hotkeys: []
     },
     genspark_moa_image_autosettings: {

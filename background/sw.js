@@ -49,7 +49,7 @@
       zai: { quicknav: true },
       grok: { quicknav: true },
       gemini_app: { quicknav: true },
-      gemini_business: { quicknav: true, gemini_math_fix: true },
+      gemini_business: { quicknav: true, gemini_math_fix: true, gemini_auto_3_pro: true },
       genspark: {
         quicknav: true,
         genspark_moa_image_autosettings: true,
@@ -262,6 +262,14 @@
       js: ['content/gemini-enterprise-math-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
+    },
+    {
+      id: 'quicknav_gemini_auto_3_pro',
+      siteId: 'gemini_business',
+      moduleId: 'gemini_auto_3_pro',
+      matches: ['https://business.gemini.google/*'],
+      js: ['content/gemini-enterprise-auto-gemini-3-pro/main.js'],
+      runAt: 'document_end'
     }
   ];
 

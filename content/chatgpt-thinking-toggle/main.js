@@ -5,6 +5,7 @@
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
   const HOTKEY_COOLDOWN_MS = 300;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
+  const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
   const PULSE_STYLE_ID = '__tm_thinking_toggle_pulse_style';
@@ -17,6 +18,33 @@
 
   let busy = false;
   let lastHotkeyAt = 0;
+  let preferredModelMode = null; // 'thinking' | 'pro' | null
+  let lastModelByMode = { thinking: '', pro: '' };
+  let lastEffortByMode = { thinking: '', pro: '' };
+  let pendingModelOverride = null; // 'thinking' | 'pro' | null (one-shot fallback)
+  /** @type {HTMLButtonElement|null} */
+  let cachedEffortPill = null;
+  /** @type {HTMLButtonElement|null} */
+  let cachedModelPill = null;
+
+  function loadPreferredModelMode() {
+    try {
+      const v = localStorage.getItem(MODEL_PREF_KEY);
+      if (v === 'thinking' || v === 'pro') return v;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function savePreferredModelMode(mode) {
+    try {
+      if (mode === 'thinking' || mode === 'pro') localStorage.setItem(MODEL_PREF_KEY, mode);
+      else localStorage.removeItem(MODEL_PREF_KEY);
+    } catch {}
+  }
+
+  preferredModelMode = loadPreferredModelMode();
 
   function log(...args) {
     if (!DEBUG) return;
@@ -197,7 +225,117 @@ button.${HINT_CLASS}::after {
 
   function isConversationSendUrl(url) {
     if (typeof url !== 'string') return false;
-    return /\/backend-api\/f\/conversation(?:\?|$)/.test(url);
+    return /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url);
+  }
+
+  function normalizeText(text) {
+    return String(text || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function isHighEffort(effort) {
+    const e = normalizeText(effort);
+    return e === 'max' || e === 'heavy' || e === 'extended';
+  }
+
+  function effortForMode(mode, high) {
+    if (mode === 'thinking') return high ? 'max' : 'min';
+    if (mode === 'pro') return high ? 'extended' : 'standard';
+    return '';
+  }
+
+  function guessModeFromEffort(effort) {
+    const e = normalizeText(effort);
+    if (e === 'min' || e === 'max') return 'thinking';
+    if (e === 'standard' || e === 'extended') return 'pro';
+    return null;
+  }
+
+  function isString(v) {
+    return typeof v === 'string' || v instanceof String;
+  }
+
+  function toUrlString(input) {
+    if (isString(input)) return String(input);
+    if (input && typeof input === 'object') {
+      if (typeof input.href === 'string') return input.href;
+      if (typeof input.url === 'string') return input.url;
+    }
+    return null;
+  }
+
+  function normalizeHeaders(headers) {
+    try {
+      if (!headers) return undefined;
+      if (headers instanceof Headers) return headers;
+      return new Headers(headers);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function buildInitFromRequest(req, init) {
+    const out = init ? { ...init } : {};
+    if (out.method == null && req && req.method) out.method = req.method;
+    if (out.headers == null && req && req.headers) out.headers = req.headers;
+    if (out.credentials == null && req && req.credentials) out.credentials = req.credentials;
+    if (out.mode == null && req && req.mode) out.mode = req.mode;
+    if (out.cache == null && req && req.cache) out.cache = req.cache;
+    if (out.redirect == null && req && req.redirect) out.redirect = req.redirect;
+    if (out.referrer == null && req && req.referrer) out.referrer = req.referrer;
+    if (out.referrerPolicy == null && req && req.referrerPolicy) out.referrerPolicy = req.referrerPolicy;
+    if (out.integrity == null && req && req.integrity) out.integrity = req.integrity;
+    if (out.keepalive === undefined && req && typeof req.keepalive === 'boolean') out.keepalive = req.keepalive;
+    if (out.signal == null && req && req.signal) out.signal = req.signal;
+
+    if (out.headers != null) out.headers = normalizeHeaders(out.headers) || out.headers;
+    return out;
+  }
+
+  function inferModelForMode(targetMode, currentModel) {
+    const known = lastModelByMode[targetMode];
+    if (known) return known;
+
+    const cur = typeof currentModel === 'string' ? currentModel : '';
+    const otherMode = targetMode === 'thinking' ? 'pro' : 'thinking';
+    const otherKnown = lastModelByMode[otherMode];
+
+    const from = cur || otherKnown || '';
+    if (!from) return '';
+
+    if (targetMode === 'pro') {
+      if (/\bpro\b/i.test(from)) return from;
+      if (/\bthinking\b/i.test(from)) return from.replace(/\bthinking\b/gi, 'pro');
+      return '';
+    }
+
+    if (/\bthinking\b/i.test(from)) return from;
+    if (/\bpro\b/i.test(from)) return from.replace(/\bpro\b/gi, 'thinking');
+    return '';
+  }
+
+  function mapEffortAcrossModes(targetMode, currentEffort) {
+    const high = isHighEffort(currentEffort);
+    const target = effortForMode(targetMode, high);
+    return target || (targetMode === 'pro' ? 'standard' : 'min');
+  }
+
+  function applyModelOverrideToPayload(payload, targetMode) {
+    if (!payload || typeof payload !== 'object') return { applied: false, reason: 'bad_payload' };
+    if (targetMode !== 'thinking' && targetMode !== 'pro') return { applied: false, reason: 'bad_mode' };
+
+    const currentModel = typeof payload.model === 'string' ? payload.model : '';
+    const currentEffort = typeof payload.thinking_effort === 'string' ? payload.thinking_effort : '';
+
+    const nextEffort = mapEffortAcrossModes(targetMode, currentEffort || lastEffortByMode[targetMode] || '');
+    if (nextEffort) payload.thinking_effort = nextEffort;
+
+    const nextModel = inferModelForMode(targetMode, currentModel);
+    if (nextModel) payload.model = nextModel;
+
+    return { applied: true, model: payload.model || '', effort: payload.thinking_effort || '' };
   }
 
   function sniffEffortInfo(payload) {
@@ -215,6 +353,19 @@ button.${HINT_CLASS}::after {
     return { mode, model, effort };
   }
 
+  function getHotkeyAction(event) {
+    if (!event.metaKey) return null;
+    if (event.ctrlKey || event.altKey || event.shiftKey) return null;
+
+    const code = typeof event.code === 'string' ? event.code : '';
+    const key = typeof event.key === 'string' ? event.key : '';
+    const k = key.toLowerCase();
+
+    if (code === 'KeyO' || k === 'o') return 'toggle_effort';
+    if (code === 'KeyJ' || k === 'j') return 'toggle_model';
+    return null;
+  }
+
   function installFetchSniffer() {
     if (window[FETCH_SNIFF_FLAG]) return;
     window[FETCH_SNIFF_FLAG] = true;
@@ -225,23 +376,21 @@ button.${HINT_CLASS}::after {
     window.fetch = async function (input, init) {
       /** @type {{mode:string,model:string,effort:string}|null} */
       let effortInfo = null;
+      let nextInput = input;
+      let nextInit = init;
 
       try {
-        const url =
-          typeof input === 'string'
-            ? input
-            : input instanceof Request
-              ? input.url
-              : typeof input?.url === 'string'
-                ? input.url
-                : '';
-
+        const url = toUrlString(input) || '';
         const method =
-          (init && typeof init.method === 'string' && init.method) || (input instanceof Request ? input.method : 'GET');
+          (init && typeof init.method === 'string' && init.method) ||
+          (input instanceof Request ? input.method : 'GET');
 
-        if (isConversationSendUrl(url) && String(method).toUpperCase() === 'POST') {
+        if (!isConversationSendUrl(url) || String(method).toUpperCase() !== 'POST') {
+          // pass
+        } else {
           let bodyText = null;
-          if (init && typeof init.body === 'string') {
+          const initHasTextBody = init && typeof init.body === 'string';
+          if (initHasTextBody) {
             bodyText = init.body;
           } else if (input instanceof Request) {
             try {
@@ -258,14 +407,40 @@ button.${HINT_CLASS}::after {
             } catch (_) {
               payload = null;
             }
+
+            if (payload && pendingModelOverride) {
+              const target = pendingModelOverride;
+              const override = applyModelOverrideToPayload(payload, target);
+              if (override.applied) {
+                const newBody = JSON.stringify(payload);
+                pendingModelOverride = null;
+
+                if (input instanceof Request && !initHasTextBody) {
+                  nextInput = url;
+                  nextInit = buildInitFromRequest(input, init);
+                  nextInit.body = newBody;
+                } else {
+                  nextInit = init ? { ...init, body: newBody } : { method: 'POST', body: newBody };
+                }
+              }
+            }
+
             effortInfo = sniffEffortInfo(payload);
+            if (effortInfo && (effortInfo.mode === 'thinking' || effortInfo.mode === 'pro')) {
+              if (effortInfo.model) lastModelByMode[effortInfo.mode] = effortInfo.model;
+              if (effortInfo.effort) lastEffortByMode[effortInfo.mode] = effortInfo.effort;
+              if (preferredModelMode !== effortInfo.mode) {
+                preferredModelMode = effortInfo.mode;
+                savePreferredModelMode(preferredModelMode);
+              }
+            }
           }
         }
       } catch (e) {
         log(e);
       }
 
-      const response = await originalFetch.apply(this, arguments);
+      const response = await originalFetch.call(this, nextInput, nextInit);
 
       try {
         if (effortInfo && response && response.ok) {
@@ -280,15 +455,6 @@ button.${HINT_CLASS}::after {
 
       return response;
     };
-  }
-
-  function isHotkey(event) {
-    if (!event.metaKey) return false;
-    if (event.ctrlKey || event.altKey || event.shiftKey) return false;
-
-    const code = typeof event.code === 'string' ? event.code : '';
-    const key = typeof event.key === 'string' ? event.key : '';
-    return code === 'KeyO' || key.toLowerCase() === 'o';
   }
 
   function clickLikeUser(el) {
@@ -380,6 +546,107 @@ button.${HINT_CLASS}::after {
     return null;
   }
 
+  function isModelLikeMenuItemText(text) {
+    const t = normalizeText(text);
+    if (!t) return false;
+    if (t.includes('5.2')) return true;
+    if (t.includes('gpt')) return true;
+    if (/\bgpt[-\s]?\d/.test(t)) return true;
+    if (/\b\d(?:\.\d)+\b/.test(t)) return true;
+    return false;
+  }
+
+  function scoreModelItem(text, mode) {
+    const t = normalizeText(text);
+    if (!t) return -999;
+    if (!isModelLikeMenuItemText(t)) return -999;
+
+    const wantsThinking = mode === 'thinking';
+    const wantsPro = mode === 'pro';
+
+    const hasThinking = /\bthinking\b/.test(t) || /思考|推理/.test(t);
+    const hasPro = /\bpro\b/.test(t) || /专业/.test(t);
+
+    if (wantsThinking && !hasThinking) return -999;
+    if (wantsPro && !hasPro) return -999;
+
+    let score = 0;
+    if (t.includes('5.2')) score += 6;
+    if (/\bgpt\b/.test(t)) score += 2;
+    if (/\bgpt[-\s]?5\b/.test(t)) score += 2;
+    if (hasThinking) score += wantsThinking ? 6 : -4;
+    if (hasPro) score += wantsPro ? 6 : -4;
+    return score;
+  }
+
+  function findBestModelMenuItem(menu, mode) {
+    if (!(menu instanceof Element)) return null;
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']"));
+    let best = null;
+    let bestScore = -999;
+    for (const item of items) {
+      const score = scoreModelItem(item.textContent || '', mode);
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+      }
+    }
+    return bestScore > 0 ? best : null;
+  }
+
+  async function findModelPill() {
+    const pills = listComposerPills();
+    if (!pills.length) return null;
+
+    /** @type {HTMLButtonElement[]} */
+    const ordered = [];
+    const active = document.activeElement;
+    if (active instanceof HTMLButtonElement && active.matches('button.__composer-pill')) ordered.push(active);
+    for (const p of pills) if (!ordered.includes(p)) ordered.push(p);
+
+    for (const pill of ordered) {
+      const opened = await openThinkingMenu(pill);
+      if (!opened) continue;
+
+      /** @type {Element|null} */
+      let menu = null;
+      for (let i = 0; i < 8; i++) {
+        menu = findMenuForPill(pill);
+        if (menu) break;
+        await sleep(40);
+      }
+      const hasThinking = !!findBestModelMenuItem(menu, 'thinking');
+      const hasPro = !!findBestModelMenuItem(menu, 'pro');
+      if (hasThinking && hasPro) return pill;
+
+      // 不是模型菜单：关掉再继续试下一个
+      clickLikeUser(pill);
+      await sleep(60);
+    }
+
+    return null;
+  }
+
+  function menuSelectedIsHigh(menu) {
+    if (!(menu instanceof Element)) return null;
+    const checked = menu.querySelector("[role='menuitemradio'][aria-checked='true']");
+    if (!checked) return null;
+    const t = normalizeText(checked.textContent || '');
+    if (t.includes('heavy') || t.includes('extended')) return true;
+    if (t.includes('light') || t.includes('standard')) return false;
+    return null;
+  }
+
+  function menuSelectedMode(menu) {
+    if (!(menu instanceof Element)) return null;
+    const checked = menu.querySelector("[role='menuitemradio'][aria-checked='true']");
+    if (!checked) return null;
+    const t = normalizeText(checked.textContent || '');
+    if (t.includes('light') || t.includes('heavy')) return 'thinking';
+    if (t.includes('standard') || t.includes('extended')) return 'pro';
+    return null;
+  }
+
   async function findEffortPill() {
     const pills = listComposerPills();
     if (!pills.length) return null;
@@ -435,7 +702,11 @@ button.${HINT_CLASS}::after {
     busy = true;
 
     try {
-      const pill = await findEffortPill();
+      const pill =
+        cachedEffortPill instanceof HTMLButtonElement && document.contains(cachedEffortPill)
+          ? cachedEffortPill
+          : await findEffortPill();
+      cachedEffortPill = pill;
       if (!pill) {
         warn('没找到推理强度选择器（可能当前模型/页面不支持）');
         return;
@@ -500,12 +771,124 @@ button.${HINT_CLASS}::after {
     }
   }
 
+  async function toggleModelType() {
+    if (busy) return;
+    busy = true;
+
+    try {
+      let current =
+        preferredModelMode ||
+        guessModeFromEffort(lastEffortByMode.thinking || '') ||
+        guessModeFromEffort(lastEffortByMode.pro || '') ||
+        null;
+      let target = current === 'thinking' ? 'pro' : 'thinking';
+
+      // 1) 尝试在推理强度菜单里“跨模式”点击（有些 UI 会把 4 个选项都放一起）
+      const effortPill =
+        cachedEffortPill instanceof HTMLButtonElement && document.contains(cachedEffortPill)
+          ? cachedEffortPill
+          : await findEffortPill();
+      cachedEffortPill = effortPill;
+
+      if (effortPill) {
+        const opened = await openThinkingMenu(effortPill);
+        if (opened) {
+          let menu = null;
+          for (let i = 0; i < 10; i++) {
+            menu = findMenuForPill(effortPill);
+            if (menu) break;
+            await sleep(40);
+          }
+
+          if (menu) {
+            const fromMenuMode = menuSelectedMode(menu);
+            if (fromMenuMode) {
+              current = fromMenuMode;
+              target = current === 'thinking' ? 'pro' : 'thinking';
+            }
+
+            const { light, standard, extended, heavy } = getEffortItems(menu);
+            const hasThinking = !!light || !!heavy;
+            const hasPro = !!standard || !!extended;
+            if (hasThinking && hasPro) {
+              const high = menuSelectedIsHigh(menu) ?? isHighEffort(lastEffortByMode[current || 'pro'] || '');
+              const targetItem =
+                target === 'pro'
+                  ? high
+                    ? extended || standard
+                    : standard || extended
+                  : high
+                    ? heavy || light
+                    : light || heavy;
+              if (targetItem) {
+                clickLikeUser(targetItem);
+                preferredModelMode = target;
+                savePreferredModelMode(preferredModelMode);
+                schedulePulse(effortPill, target === 'thinking', target === 'thinking' ? 'Thinking' : 'Pro');
+                showToast(`已切换模型：${target === 'thinking' ? 'thinking' : 'pro'}`);
+                return;
+              }
+            }
+
+            // 关掉菜单
+            clickLikeUser(effortPill);
+            await sleep(60);
+          }
+        }
+      }
+
+      // 2) 尝试模型菜单（通常是另一个 pill）
+      const modelPill =
+        cachedModelPill instanceof HTMLButtonElement && document.contains(cachedModelPill)
+          ? cachedModelPill
+          : await findModelPill();
+      cachedModelPill = modelPill;
+
+      if (modelPill) {
+        const opened = await openThinkingMenu(modelPill);
+        if (opened) {
+          let menu = null;
+          for (let i = 0; i < 12; i++) {
+            menu = findMenuForPill(modelPill);
+            if (menu) break;
+            await sleep(40);
+          }
+          const item = findBestModelMenuItem(menu, target);
+          if (item) {
+            clickLikeUser(item);
+            preferredModelMode = target;
+            savePreferredModelMode(preferredModelMode);
+            schedulePulse(modelPill, target === 'thinking', target === 'thinking' ? 'Thinking' : 'Pro');
+            showToast(`已切换模型：${target === 'thinking' ? 'thinking' : 'pro'}`);
+            return;
+          }
+
+          // 关掉菜单
+          clickLikeUser(modelPill);
+          await sleep(60);
+        }
+      }
+
+      // 3) UI 切不了则兜底：下一次发送时强制改 payload（需要配合 fetch hook）
+      pendingModelOverride = target;
+      preferredModelMode = target;
+      savePreferredModelMode(preferredModelMode);
+      showToast(`已设定下一次发送使用：${target === 'thinking' ? 'thinking' : 'pro'}`);
+    } catch (err) {
+      log(err);
+      error('切换模型失败', err);
+    } finally {
+      busy = false;
+    }
+  }
+
   // 以 fetch-sniffer 作为“已安装”标记，避免在 reinject / 与 Tampermonkey 共存时重复绑定快捷键
   if (!window[FETCH_SNIFF_FLAG]) {
     window.addEventListener(
       'keydown',
       (event) => {
-        if (!isHotkey(event)) return;
+        const action = getHotkeyAction(event);
+        if (!action) return;
 
         event.preventDefault();
         event.stopPropagation();
@@ -518,7 +901,8 @@ button.${HINT_CLASS}::after {
         if (now - lastHotkeyAt < HOTKEY_COOLDOWN_MS) return;
         lastHotkeyAt = now;
 
-        toggleThinkingTime();
+        if (action === 'toggle_effort') toggleThinkingTime();
+        else if (action === 'toggle_model') toggleModelType();
       },
       true
     );

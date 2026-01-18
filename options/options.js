@@ -76,8 +76,8 @@
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
       name: 'ChatGPT 推理强度快捷切换',
-      sub: 'Light ↔ Heavy / Standard ↔ Extended',
-      hotkeys: ['⌘O']
+      sub: '⌘O 推理强度 / ⌘J 模型切换',
+      hotkeys: ['⌘O', '⌘J']
     },
     chatgpt_cmdenter_send: {
       id: 'chatgpt_cmdenter_send',
@@ -747,7 +747,10 @@
   }
 
   function renderChatGPTThinkingToggleModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 推理强度快捷切换', '在 chatgpt.com 使用 ⌘O 切换：Light ↔ Heavy / Standard ↔ Extended。');
+    addPanelTitle(
+      'ChatGPT 推理强度快捷切换',
+      '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在 GPT 5.2 thinking ↔ GPT 5.2 pro 之间切换。'
+    );
     addPanelHotkeys('chatgpt_thinking_toggle');
     addPanelDivider();
 
@@ -774,7 +777,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O，并在发送成功后右下角弹窗显示实际使用的 thinking_effort。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。UI 识别失败时会在下一次发送时兜底覆写请求参数。关闭模块后已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 

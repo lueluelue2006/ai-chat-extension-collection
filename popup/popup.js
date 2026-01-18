@@ -15,8 +15,6 @@
   const elSiteName = document.getElementById('siteName');
   const elSiteUrl = document.getElementById('siteUrl');
   const elToggleList = document.getElementById('toggleList');
-  const elMenuList = document.getElementById('menuList');
-  const elMenuHint = document.getElementById('menuHint');
 
   const SITE_DEFS = [
     { id: 'common', name: '通用', sub: '全部站点', modules: ['hide_disclaimer'] },
@@ -270,7 +268,45 @@
     return group;
   }
 
-  function renderToggles({ settings, activeSiteId, onMutate }) {
+  function createModuleMenu(cmds, onRun) {
+    const wrap = document.createElement('div');
+    wrap.className = 'moduleMenu';
+    for (const c of cmds || []) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'menuBtn';
+      btn.textContent = c.name;
+      btn.addEventListener('click', () => onRun(c));
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
+
+  function mapGroupToModuleId(group, activeSiteId) {
+    const g = String(group || '');
+    if (/对话导出/.test(g)) return 'chatgpt_export_conversation';
+    if (/QuickNav/.test(g)) return 'quicknav';
+    // Future: map more groups to module ids here.
+    return null;
+  }
+
+  function buildMenuByModule(commands, activeSiteId) {
+    const byModule = {};
+    const unmapped = [];
+    for (const c of Array.isArray(commands) ? commands : []) {
+      if (!c || typeof c.id !== 'string' || typeof c.name !== 'string') continue;
+      const moduleId = mapGroupToModuleId(c.group, activeSiteId);
+      if (!moduleId) {
+        unmapped.push(c);
+        continue;
+      }
+      if (!byModule[moduleId]) byModule[moduleId] = [];
+      byModule[moduleId].push(c);
+    }
+    return { byModule, unmapped };
+  }
+
+  function renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate, onRunMenu }) {
     clearEl(elToggleList);
     if (!elToggleList) return;
 
@@ -310,7 +346,14 @@
       elToggleList.appendChild(group);
     }
 
-    if (!activeSiteId || activeSiteId === 'common') return;
+    if (!activeSiteId || activeSiteId === 'common') {
+      if (Array.isArray(unmappedMenu) && unmappedMenu.length) {
+        const other = createGroup('其它菜单');
+        other.appendChild(createModuleMenu(unmappedMenu, onRunMenu));
+        elToggleList.appendChild(other);
+      }
+      return;
+    }
     const siteDef = getSiteDef(activeSiteId);
     if (!siteDef) return;
 
@@ -327,55 +370,25 @@
 
     for (const moduleId of siteDef.modules) {
       const def = getModuleDef(moduleId);
-      group.appendChild(
-        createToggleRow({
-          main: def.name,
-          sub: def.sub,
-          checked: settings?.siteModules?.[activeSiteId]?.[moduleId] !== false,
-          disabled: !settings?.enabled || settings?.sites?.[activeSiteId] === false,
-          onChange: (v) => onMutate((draft) => { draft.siteModules[activeSiteId][moduleId] = !!v; })
-        })
-      );
+      const row = createToggleRow({
+        main: def.name,
+        sub: def.sub,
+        checked: settings?.siteModules?.[activeSiteId]?.[moduleId] !== false,
+        disabled: !settings?.enabled || settings?.sites?.[activeSiteId] === false,
+        onChange: (v) => onMutate((draft) => { draft.siteModules[activeSiteId][moduleId] = !!v; })
+      });
+      group.appendChild(row);
+
+      const cmds = menuByModule && Array.isArray(menuByModule[moduleId]) ? menuByModule[moduleId] : [];
+      if (cmds.length) group.appendChild(createModuleMenu(cmds, onRunMenu));
     }
 
     elToggleList.appendChild(group);
-  }
 
-  function renderMenuCommands({ commands, onRun }) {
-    clearEl(elMenuList);
-    if (!elMenuList) return;
-
-    const arr = Array.isArray(commands)
-      ? commands.filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
-      : [];
-    if (!arr.length) return;
-
-    const groups = new Map();
-    for (const c of arr) {
-      const group = (c && typeof c.group === 'string' && c.group.trim()) ? c.group.trim() : '其它';
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group).push(c);
-    }
-
-    for (const [groupName, cmds] of groups.entries()) {
-      const groupEl = document.createElement('div');
-      groupEl.className = 'menuGroup';
-
-      const titleEl = document.createElement('div');
-      titleEl.className = 'menuGroupTitle';
-      titleEl.textContent = groupName;
-      groupEl.appendChild(titleEl);
-
-      for (const c of cmds) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'menuBtn';
-        btn.textContent = c.name;
-        btn.addEventListener('click', () => onRun(c));
-        groupEl.appendChild(btn);
-      }
-
-      elMenuList.appendChild(groupEl);
+    if (Array.isArray(unmappedMenu) && unmappedMenu.length) {
+      const other = createGroup('其它菜单');
+      other.appendChild(createModuleMenu(unmappedMenu, onRunMenu));
+      elToggleList.appendChild(other);
     }
   }
 
@@ -452,6 +465,25 @@
       if (elSiteUrl) elSiteUrl.textContent = href ? href.replace(/^https?:\/\//, '') : '';
 
       let settings = await getSettings();
+      let menuByModule = {};
+      let unmappedMenu = [];
+      try {
+        if (menuResp && menuResp.ok === true) {
+          const built = buildMenuByModule(menuResp.commands, activeSiteId);
+          menuByModule = built.byModule;
+          unmappedMenu = built.unmapped;
+        }
+      } catch {}
+
+      async function refreshMenu() {
+        try {
+          const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_GET_MENU' });
+          if (!resp || resp.ok !== true) return { byModule: {}, unmapped: [] };
+          return buildMenuByModule(resp.commands, activeSiteId);
+        } catch {
+          return { byModule: {}, unmapped: [] };
+        }
+      }
 
       async function mutateSettings(mutator) {
         const draft = cloneJsonSafe(settings);
@@ -462,42 +494,24 @@
         setStatus('正在保存…');
         settings = await setSettings(draft);
         setStatus('已保存', 'ok');
-        renderToggles({ settings, activeSiteId, onMutate: mutateSettings });
+        renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
 
-        // After reinject, refresh menu commands
         setTimeout(async () => {
-          try {
-            const nextMenu = await tabsSendMessage(tabId, { type: 'QUICKNAV_GET_MENU' });
-            if (nextMenu && nextMenu.ok === true) {
-              renderMenuCommands({
-                commands: nextMenu.commands,
-                onRun: async (cmd) => {
-                  setStatus(`正在执行：${cmd.name}…`);
-                  const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
-                  if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
-                  else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
-                }
-              });
-              if (elMenuHint) elMenuHint.style.display = nextMenu.commands?.length ? 'none' : '';
-            }
-          } catch {}
+          const next = await refreshMenu();
+          menuByModule = next.byModule;
+          unmappedMenu = next.unmapped;
+          renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
         }, 300);
       }
 
-      renderToggles({ settings, activeSiteId, onMutate: mutateSettings });
-
-      if (menuResp && menuResp.ok === true) {
-        renderMenuCommands({
-          commands: menuResp.commands,
-          onRun: async (cmd) => {
-            setStatus(`正在执行：${cmd.name}…`);
-            const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
-            if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
-            else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
-          }
-        });
-        if (elMenuHint) elMenuHint.style.display = menuResp.commands?.length ? 'none' : '';
+      async function onRunMenu(cmd) {
+        setStatus(`正在执行：${cmd.name}…`);
+        const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
+        if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
+        else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
       }
+
+      renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`初始化菜单失败：${msg}`, 'warn');

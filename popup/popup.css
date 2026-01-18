@@ -144,15 +144,19 @@ a { color: var(--text); }
 .toggleRow .labelText { display: flex; flex-direction: column; gap: 1px; }
 .toggleRow .labelMain { font-weight: 650; }
 .toggleRow .labelSub { color: var(--muted); font-size: 12px; }
+.menuNote { margin-left: 26px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 
-.menuList { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.menuGroup { padding-top: 8px; border-top: 1px solid var(--border); }
-.menuGroup:first-child { padding-top: 0; border-top: none; }
-.menuGroupTitle { font-weight: 650; margin-bottom: 6px; }
+.moduleMenu {
+  margin-top: 8px;
+  margin-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .menuBtn {
   width: 100%;
-  padding: 9px 10px;
-  border-radius: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--btn);
   color: var(--text);

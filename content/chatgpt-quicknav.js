@@ -69,6 +69,20 @@
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
 
+  // Conversation Tree (bridge to MAIN-world chatgpt-message-tree)
+  const TREE_BRIDGE_REQ_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_REQUEST';
+  const TREE_BRIDGE_RES_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_RESPONSE';
+  const TREE_BRIDGE_TOGGLE_PANEL = 'QUICKNAV_CHATGPT_TREE_TOGGLE';
+  const TREE_BRIDGE_OPEN_PANEL = 'QUICKNAV_CHATGPT_TREE_OPEN';
+  const TREE_BRIDGE_CLOSE_PANEL = 'QUICKNAV_CHATGPT_TREE_CLOSE';
+  const TREE_BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
+  const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
+
+  let treeSummary = null;
+  let treePathSet = new Set();
+  let treeSummaryReqTimer = 0;
+  let treeSummaryPendingReqId = '';
+
   // 全局调试函数，用户可在控制台调用
   window.chatGptNavDebug = {
     forceRefresh: () => {
@@ -111,6 +125,7 @@
       }
       return { panels: panels.length, styles: styles.length, keysBound: !!window.__cgptKeysBound, booting: __cgptBooting };
     },
+    getTreeSummary: () => treeSummary,
     testObserver: () => {
       const nav = document.getElementById('cgpt-compact-nav');
       if (!nav || !nav._ui || !nav._ui._mo) {
@@ -228,6 +243,70 @@
     }
   }
 
+  function getConversationIdFromUrl() {
+    try {
+      const parts = String(location.pathname || '')
+        .split('/')
+        .filter(Boolean);
+      const idx = parts.indexOf('c');
+      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function installTreeBridgeListener() {
+    if (window.__cgptTreeBridgeBound) return;
+    window.__cgptTreeBridgeBound = true;
+
+    window.addEventListener('message', (event) => {
+      try {
+        if (!event || event.source !== window) return;
+        const data = event.data;
+        if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
+        if (String(data.type || '') !== TREE_BRIDGE_RES_SUMMARY) return;
+        if (typeof data.reqId !== 'string' || !data.reqId) return;
+        if (treeSummaryPendingReqId && data.reqId !== treeSummaryPendingReqId) return;
+
+        const ok = !!data.ok;
+        const summary = ok && data.summary && typeof data.summary === 'object' ? data.summary : null;
+        treeSummaryPendingReqId = '';
+
+        const currentConv = getConversationIdFromUrl();
+        if (summary && summary.conversationId && currentConv && summary.conversationId !== currentConv) return;
+
+        treeSummary = summary;
+        treePathSet = new Set(Array.isArray(summary?.pathIds) ? summary.pathIds.filter((x) => typeof x === 'string' && x) : []);
+
+        const ui = document.getElementById('cgpt-compact-nav')?._ui;
+        if (ui) {
+          try { updateTreeBtnState(ui); } catch {}
+          try { renderList(ui); } catch {}
+        }
+      } catch {}
+    });
+  }
+
+  function requestTreeSummary() {
+    try {
+      if (!getConversationIdFromUrl()) return;
+      const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      treeSummaryPendingReqId = reqId;
+      window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REQ_SUMMARY, reqId }, '*');
+    } catch {}
+  }
+
+  function scheduleTreeSummaryRequest(delay = 650) {
+    try {
+      if (treeSummaryReqTimer) clearTimeout(treeSummaryReqTimer);
+      treeSummaryReqTimer = setTimeout(() => {
+        treeSummaryReqTimer = 0;
+        requestTreeSummary();
+      }, Math.max(0, Number(delay) || 0));
+    } catch {}
+  }
+
   function whenBodyReady(cb) {
     try {
       if (document.body) return cb();
@@ -278,9 +357,11 @@
           setTimeout(() => {
             refreshIndex(ui, { force: true });
             scheduleActiveUpdateNow();
+            scheduleTreeSummaryRequest(900);
           }, 120);
         } else {
           scheduleActiveUpdateNow();
+          scheduleTreeSummaryRequest(650);
         }
       } catch (e) {
         if (DEBUG || window.DEBUG_TEMP) console.error('scheduleRefresh error:', e);
@@ -341,12 +422,14 @@
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 开始创建面板');
         const ui = createPanel();
         wirePanel(ui);
+        installTreeBridgeListener();
         initScrollLock(ui);
         observeChat(ui);
         bindActiveTracking();
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
         scheduleRefresh(ui);
+        scheduleTreeSummaryRequest(1200);
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
         __cgptBooting = false;
@@ -396,6 +479,10 @@
       cachedTurns = [];
       lastDomTurnCount = 0;
       currentActiveTurnPos = 0;
+      treeSummary = null;
+      treePathSet = new Set();
+      treeSummaryPendingReqId = '';
+      if (treeSummaryReqTimer) { clearTimeout(treeSummaryReqTimer); treeSummaryReqTimer = 0; }
       setTimeout(init, 100);
     }
   }
@@ -525,6 +612,21 @@
     return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
   }
 
+  function getTurnMessageId(turnEl, previewEl) {
+    try {
+      if (!turnEl) return '';
+      const direct = turnEl.getAttribute('data-message-id');
+      if (direct) return direct;
+      const fromPreview = previewEl && previewEl.closest ? previewEl.closest('[data-message-id]')?.getAttribute?.('data-message-id') : '';
+      if (fromPreview) return fromPreview;
+      const found = turnEl.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id');
+      if (found) return found;
+      const turnId = turnEl.getAttribute('data-turn-id');
+      if (turnId) return turnId;
+    } catch {}
+    return '';
+  }
+
   function buildIndex(turnsOverride) {
     const turns = turnsOverride || qsTurns();
     cachedTurns = turns;
@@ -594,8 +696,8 @@
 
       const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS;
       let preview = previewCache.get(msgKey) || '';
+      let block = null;
       if (!preview || shouldRecalcPreview) {
-        let block = null;
         if (isUser) {
           block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
         } else {
@@ -610,7 +712,8 @@
       }
 
       const seq = isUser ? ++u : ++a;
-      list.push({ id: el.id, key: msgKey, idx: i, role: isUser ? 'user' : 'assistant', preview, seq });
+      const msgId = getTurnMessageId(el, block) || '';
+      list.push({ id: el.id, key: msgKey, msgId, idx: i, role: isUser ? 'user' : 'assistant', preview, seq });
     }
 
     if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
@@ -769,6 +872,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 }
 
 #cgpt-compact-nav { position: fixed; top: 60px; right: 10px; width: var(--cgpt-nav-width, auto); min-width: 80px; max-width: var(--cgpt-nav-width, 210px); z-index: 2147483647 !important; font-family: var(--cgpt-nav-font); font-size: 13px; pointer-events: auto; background: transparent; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color: transparent; color: var(--cgpt-nav-text-strong); color-scheme: light dark; display:flex; flex-direction:column; align-items:stretch; box-sizing:border-box; --cgpt-nav-gutter: 0px; }
+/* Tree 已集成到 QuickNav 顶部按钮：隐藏独立悬浮入口，避免打扰 */
+#__aichat_chatgpt_message_tree_toggle_v1__ { display:none !important; }
 #cgpt-compact-nav.cgpt-has-scrollbar { --cgpt-nav-gutter: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 32), 8px); }
 #cgpt-compact-nav * { -webkit-user-select:none; user-select:none; box-sizing:border-box; }
 #cgpt-compact-nav > .compact-header,
@@ -779,12 +884,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 .compact-title { font-size:11px; font-weight:600; color:var(--cgpt-nav-text-muted); display:flex; align-items:center; gap:3px; text-transform:uppercase; letter-spacing:.04em; }
 .compact-title span { color:var(--cgpt-nav-text-strong); }
 .compact-title svg { width:12px; height:12px; opacity:.55; }
-.compact-toggle, .compact-refresh, .compact-lock { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); }
+.compact-toggle, .compact-refresh, .compact-lock, .compact-tree { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); }
 .compact-toggle { font-size:clamp(14px, calc(var(--cgpt-nav-width, 210px) / 14), 18px); }
 .compact-refresh { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 18), 14px); margin-left:4px; }
 .compact-lock { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
-.compact-toggle:hover, .compact-refresh:hover, .compact-lock:hover { border-color:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
-.compact-toggle:active, .compact-refresh:active, .compact-lock:active { transform:scale(.94); }
+.compact-tree { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; position:relative; }
+.compact-toggle:hover, .compact-refresh:hover, .compact-lock:hover, .compact-tree:hover { border-color:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
+.compact-toggle:active, .compact-refresh:active, .compact-lock:active, .compact-tree:active { transform:scale(.94); }
 .toggle-text { display:block; font-family:monospace; font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); }
   .compact-list { max-height:400px; overflow-y:auto; overflow-x:hidden; padding:0; pointer-events:auto; display:flex; flex-direction:column; gap:8px; scrollbar-width:thin; scrollbar-color:var(--cgpt-nav-scrollbar-thumb) transparent; width:100%; padding-right: var(--cgpt-nav-gutter); scrollbar-gutter: stable both-edges; }
 .compact-list::-webkit-scrollbar { width:3px; }
@@ -809,6 +915,74 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   .fav-toggle { position:absolute; right:calc(6px + var(--cgpt-nav-gutter)); top:2px; border:none; background:transparent; color:var(--cgpt-nav-text-muted); cursor:pointer; font-size:12px; line-height:1; padding:2px; opacity:.7; }
   .fav-toggle:hover { color:var(--cgpt-nav-fav-color); opacity:1; }
   .fav-toggle.active { color:var(--cgpt-nav-fav-color); opacity:1; }
+
+  .compact-tree .tree-count {
+    position:absolute;
+    right:-6px;
+    top:-6px;
+    min-width:16px;
+    height:16px;
+    padding:0 4px;
+    border-radius:999px;
+    background:var(--cgpt-nav-accent);
+    color:var(--token-text-on-accent, #fff);
+    font-size:10px;
+    line-height:16px;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 6px 18px rgba(15,23,42,0.18);
+  }
+  .compact-tree[data-count]:not([data-count="0"]) .tree-count { display:inline-flex; }
+
+  .compact-item.has-branches { padding-right: calc(58px + var(--cgpt-nav-gutter)); }
+  .branch-badge {
+    position:absolute;
+    right:calc(22px + var(--cgpt-nav-gutter));
+    top:2px;
+    height:18px;
+    padding:0 6px;
+    border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--cgpt-nav-accent) 28%, transparent);
+    background:color-mix(in srgb, var(--cgpt-nav-accent) 10%, transparent);
+    color:var(--cgpt-nav-accent);
+    font-size:10px;
+    line-height:18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    pointer-events:auto;
+    opacity:.95;
+  }
+  .branch-badge:hover { background:color-mix(in srgb, var(--cgpt-nav-accent) 14%, transparent); }
+
+  #${TREE_TOOLTIP_ID}{
+    position:fixed;
+    z-index:2147483647;
+    display:none;
+    min-width:240px;
+    max-width:min(360px, calc(100vw - 24px));
+    background:var(--cgpt-nav-panel-bg);
+    border:1px solid var(--cgpt-nav-panel-border);
+    border-radius:var(--cgpt-nav-radius-lg);
+    box-shadow:var(--cgpt-nav-panel-shadow);
+    color:var(--cgpt-nav-text-strong);
+    padding:8px 10px;
+    backdrop-filter:saturate(180%) blur(18px);
+  }
+  #${TREE_TOOLTIP_ID}[data-open="1"]{ display:block; }
+  #${TREE_TOOLTIP_ID} .hdr{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:700; color:var(--cgpt-nav-text-muted); margin-bottom:8px; }
+  #${TREE_TOOLTIP_ID} .rows{ display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; padding-right:2px; }
+  #${TREE_TOOLTIP_ID} .rows::-webkit-scrollbar{ width:3px; }
+  #${TREE_TOOLTIP_ID} .rows::-webkit-scrollbar-thumb{ background:var(--cgpt-nav-scrollbar-thumb); border-radius:2px; }
+  #${TREE_TOOLTIP_ID} .row{ display:flex; align-items:center; gap:8px; width:100%; border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-item-bg); border-radius:var(--cgpt-nav-radius); padding:6px 8px; cursor:pointer; color:var(--cgpt-nav-text-strong); text-align:left; }
+  #${TREE_TOOLTIP_ID} .row:hover{ background:var(--cgpt-nav-item-hover-bg); border-color:var(--cgpt-nav-accent-subtle); }
+  #${TREE_TOOLTIP_ID} .role{ width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:11px; background:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); flex:0 0 auto; }
+  #${TREE_TOOLTIP_ID} .role.user{ background:color-mix(in srgb, var(--cgpt-nav-positive) 16%, transparent); color:var(--cgpt-nav-positive); }
+  #${TREE_TOOLTIP_ID} .role.assistant{ background:color-mix(in srgb, var(--cgpt-nav-info) 16%, transparent); color:var(--cgpt-nav-info); }
+  #${TREE_TOOLTIP_ID} .snippet{ flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  #${TREE_TOOLTIP_ID} .tag{ flex:0 0 auto; font-size:10px; padding:2px 6px; border-radius:999px; background:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); }
+  #${TREE_TOOLTIP_ID} .foot{ margin-top:8px; display:flex; gap:6px; justify-content:flex-end; }
+  #${TREE_TOOLTIP_ID} .btn{ border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); border-radius:var(--cgpt-nav-radius); padding:5px 8px; font-size:11px; cursor:pointer; color:var(--cgpt-nav-text-strong); box-shadow:var(--cgpt-nav-item-shadow); }
+  #${TREE_TOOLTIP_ID} .btn:hover{ background:var(--cgpt-nav-footer-hover); }
 /* 锚点占位（绝对定位，不再插入文本流） */
   .cgpt-pin-anchor { position:absolute; width:48px; height:48px; display:flex; align-items:center; justify-content:center; transform:translate(-50%,-50%); pointer-events:auto; user-select:none; -webkit-user-select:none; caret-color:transparent; cursor:default; z-index:2; }
   .cgpt-pin-anchor::after { content:'📌'; font-size:40px; line-height:1; opacity:.95; color:var(--cgpt-nav-pin-color); transition:opacity .18s ease, transform .18s ease; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.5)); }
@@ -899,6 +1073,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           <button class="compact-refresh" type="button" title="刷新对话列表">⟳</button>
           <button class="compact-lock" type="button" title="阻止新回复自动滚动">🔐</button>
           <button class="compact-star" type="button" title="仅显示收藏">☆</button>
+          <button class="compact-tree" type="button" title="分支 / 对话树">🌿<span class="tree-count" aria-hidden="true"></span></button>
         </div>
       </div>
       <div class="compact-list" role="listbox" aria-label="对话项"></div>
@@ -910,6 +1085,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       </div>
     `;
     document.body.appendChild(nav);
+    // 分支悬浮提示（固定定位，不受列表 overflow 影响）
+    try {
+      const oldTip = document.getElementById(TREE_TOOLTIP_ID);
+      if (oldTip) oldTip.remove();
+    } catch {}
+    const branchTip = document.createElement('div');
+    branchTip.id = TREE_TOOLTIP_ID;
+    branchTip.setAttribute('data-open', '0');
+    nav.appendChild(branchTip);
     applySavedPosition(nav);
     let layout = {
       beginUserInteraction: () => {},
@@ -947,7 +1131,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (e.detail > 1) e.preventDefault();
     }, { capture: true });
 
-    const ui = { nav, layout };
+    const ui = { nav, layout, branchTip };
     nav._ui = ui;
     return ui;
   }
@@ -1677,6 +1861,241 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   let cacheIndex = [];
 
+  function getBranchInfo(msgId) {
+    try {
+      const id = String(msgId || '');
+      if (!id) return null;
+      const nodes = treeSummary && typeof treeSummary === 'object' ? treeSummary.nodes : null;
+      if (!nodes || typeof nodes !== 'object') return null;
+      const node = nodes[id];
+      if (!node || typeof node !== 'object') return null;
+      const children = Array.isArray(node.children) ? node.children.filter((x) => typeof x === 'string' && x) : [];
+      const count = Math.max(0, Number(node.childrenCount) || children.length);
+      return { count, children, role: String(node.role || ''), snippet: String(node.snippet || '') };
+    } catch {
+      return null;
+    }
+  }
+
+  function cssEscape(value) {
+    const s = String(value || '');
+    try {
+      if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') return CSS.escape(s);
+    } catch {}
+    return s.replace(/["\\]/g, '\\$&');
+  }
+
+  function findTurnByMessageId(msgId) {
+    const id = String(msgId || '');
+    if (!id) return null;
+    try {
+      const msgEl = document.querySelector(`[data-message-id="${cssEscape(id)}"]`);
+      const art = msgEl ? msgEl.closest('article') : null;
+      if (art) return art;
+    } catch {}
+    try {
+      const art = document.querySelector(`article[data-turn-id="${cssEscape(id)}"]`);
+      if (art) return art;
+    } catch {}
+    return null;
+  }
+
+  function jumpToMessageId(msgId) {
+    try {
+      const el = findTurnByMessageId(msgId);
+      if (!el) return false;
+      if (!el.id) el.id = `cgpt-turn-msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      setActiveTurn(el.id);
+      scrollToTurn(el);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function hideBranchTooltip(ui) {
+    try {
+      const tip = ui?.branchTip || document.getElementById(TREE_TOOLTIP_ID);
+      if (!tip) return;
+      tip.setAttribute('data-open', '0');
+      tip.textContent = '';
+    } catch {}
+  }
+
+  function renderBranchTooltip(ui, anchorEl) {
+    try {
+      if (!ui) return false;
+      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
+      if (!tip) return false;
+      if (!treeSummary || !treeSummary.nodes) return false;
+
+      const msgId = anchorEl?.dataset?.msgId ? String(anchorEl.dataset.msgId) : '';
+      const info = getBranchInfo(msgId);
+      if (!info || info.count <= 1) {
+        hideBranchTooltip(ui);
+        return false;
+      }
+
+      tip.textContent = '';
+      const hdr = document.createElement('div');
+      hdr.className = 'hdr';
+      const title = document.createElement('span');
+      title.textContent = `分支 ${info.count}`;
+      const hint = document.createElement('span');
+      hint.textContent = '悬停预览';
+      hdr.appendChild(title);
+      hdr.appendChild(hint);
+      tip.appendChild(hdr);
+
+      const rows = document.createElement('div');
+      rows.className = 'rows';
+      const children = info.children.slice(0, 10);
+      for (const cid of children) {
+        const child = treeSummary.nodes?.[cid];
+        const role = child && typeof child === 'object' ? String(child.role || '') : '';
+        const snippet = child && typeof child === 'object' ? String(child.snippet || '') : '';
+
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.setAttribute('data-branch-msg-id', cid);
+
+        const roleEl = document.createElement('span');
+        roleEl.className = `role ${role}`.trim();
+        roleEl.textContent = role ? role[0].toUpperCase() : '·';
+
+        const textEl = document.createElement('span');
+        textEl.className = 'snippet';
+        textEl.textContent = snippet || '(empty)';
+
+        row.appendChild(roleEl);
+        row.appendChild(textEl);
+
+        if (treePathSet && treePathSet.has(cid)) {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = '当前';
+          row.appendChild(tag);
+        }
+
+        rows.appendChild(row);
+      }
+
+      if (info.children.length > children.length) {
+        const more = document.createElement('div');
+        more.className = 'row';
+        more.setAttribute('data-branch-msg-id', '__open_tree__');
+        const roleEl = document.createElement('span');
+        roleEl.className = 'role';
+        roleEl.textContent = '…';
+        const textEl = document.createElement('span');
+        textEl.className = 'snippet';
+        textEl.textContent = `还有 ${info.children.length - children.length} 条分支，打开树查看`;
+        more.appendChild(roleEl);
+        more.appendChild(textEl);
+        rows.appendChild(more);
+      }
+
+      tip.appendChild(rows);
+
+      const foot = document.createElement('div');
+      foot.className = 'foot';
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'btn';
+      openBtn.setAttribute('data-action', 'open-tree');
+      openBtn.textContent = '打开树';
+      foot.appendChild(openBtn);
+      tip.appendChild(foot);
+
+      tip.setAttribute('data-open', '1');
+
+      const a = anchorEl.getBoundingClientRect();
+      tip.style.left = '0px';
+      tip.style.top = '0px';
+
+      const tRect = tip.getBoundingClientRect();
+      const gap = 10;
+      let left = a.left - tRect.width - gap;
+      if (left < 8) left = a.right + gap;
+      let top = a.top - 6;
+      if (top + tRect.height > window.innerHeight - 8) top = window.innerHeight - tRect.height - 8;
+      if (top < 8) top = 8;
+
+      tip.style.left = `${Math.round(left)}px`;
+      tip.style.top = `${Math.round(top)}px`;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function bindBranchHover(ui) {
+    try {
+      const list = ui.nav.querySelector('.compact-list');
+      if (!list || list._branchHoverBound) return;
+      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
+      let activeRow = null;
+      let hideTimer = 0;
+
+      const scheduleHide = () => {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          hideTimer = 0;
+          activeRow = null;
+          hideBranchTooltip(ui);
+        }, 160);
+      };
+
+      list.addEventListener('mouseover', (e) => {
+        const row = e.target.closest('.compact-item.has-branches');
+        if (!row || !list.contains(row)) return;
+        if (row === activeRow) return;
+        activeRow = row;
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
+        renderBranchTooltip(ui, row);
+      });
+      list.addEventListener('mouseout', (e) => {
+        const row = e.target.closest('.compact-item.has-branches');
+        if (!row || !list.contains(row)) return;
+        const to = e.relatedTarget;
+        if (to && row.contains(to)) return;
+        scheduleHide();
+      });
+      list.addEventListener('scroll', () => scheduleHide(), { passive: true });
+
+      if (tip) {
+        tip.addEventListener('mouseenter', () => {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
+        });
+        tip.addEventListener('mouseleave', () => scheduleHide());
+        tip.addEventListener('click', (e) => {
+          const action = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
+          if (action && action.getAttribute('data-action') === 'open-tree') {
+            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+            scheduleHide();
+            return;
+          }
+          const row = e.target && e.target.closest ? e.target.closest('[data-branch-msg-id]') : null;
+          if (!row) return;
+          const targetId = String(row.getAttribute('data-branch-msg-id') || '');
+          if (!targetId) return;
+          if (targetId === '__open_tree__') {
+            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+            scheduleHide();
+            return;
+          }
+          const ok = jumpToMessageId(targetId);
+          if (!ok) {
+            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+          }
+          scheduleHide();
+        });
+      }
+
+      list._branchHoverBound = true;
+    } catch {}
+  }
+
   function renderList(ui) {
     const list = ui.nav.querySelector('.compact-list');
     if (!list) return;
@@ -1707,15 +2126,20 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     for (const item of next) {
       const node = document.createElement('div');
       const fav = favSet.has(item.key);
-      node.className = `compact-item ${item.role} ${fav ? 'has-fav' : ''}`;
+      const msgId = typeof item.msgId === 'string' ? item.msgId : '';
+      const branchInfo = item.role === 'pin' ? null : getBranchInfo(msgId);
+      const branchCount = branchInfo && branchInfo.count > 1 ? branchInfo.count : 0;
+      node.className = `compact-item ${item.role} ${fav ? 'has-fav' : ''} ${branchCount ? 'has-branches' : ''}`;
       node.dataset.id = item.id;
       node.dataset.key = item.key;
+      if (msgId) node.dataset.msgId = msgId;
       if (item.role === 'pin') {
         node.classList.add('pin');
         node.title = 'Option+单击删除📌';
         node.innerHTML = `<span class="pin-label">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       } else {
-        node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
+        const branchBadge = branchCount ? `<span class="branch-badge" title="分支：${branchCount}">[${branchCount}]</span>` : '';
+        node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span>${branchBadge}<button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       }
       node.setAttribute('draggable', 'false');
       frag.appendChild(node);
@@ -1739,6 +2163,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             updateStarBtnState(ui);
             renderList(ui);
           }
+          return;
+        }
+        const branchBadge = e.target.closest('.branch-badge');
+        if (branchBadge) {
+          e.stopPropagation();
+          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
           return;
         }
         const item = e.target.closest('.compact-item');
@@ -2038,6 +2468,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const toggleBtn = ui.nav.querySelector('.compact-toggle');
     const refreshBtn = ui.nav.querySelector('.compact-refresh');
     const starBtn = ui.nav.querySelector('.compact-star');
+    const treeBtn = ui.nav.querySelector('.compact-tree');
 
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
@@ -2103,6 +2534,25 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       updateStarBtnState(ui);
     }
 
+    if (treeBtn) {
+      treeBtn.addEventListener('click', (e) => {
+        if (e && e.shiftKey) {
+          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
+          scheduleTreeSummaryRequest(240);
+          return;
+        }
+        try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_TOGGLE_PANEL }, '*'); } catch {}
+      });
+      treeBtn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
+        scheduleTreeSummaryRequest(240);
+      });
+      updateTreeBtnState(ui);
+    }
+
+    bindBranchHover(ui);
+
 
     // 底部按钮
     const prevBtn = ui.nav.querySelector('#cgpt-nav-prev');
@@ -2162,6 +2612,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       starBtn.classList.toggle('active', !!filterFav);
       starBtn.textContent = filterFav ? '★' : '☆';
       starBtn.title = (filterFav ? '显示全部（当前仅收藏）' : '仅显示收藏') + (count ? `（${count}）` : '');
+    } catch {}
+  }
+
+  function updateTreeBtnState(ui) {
+    try {
+      const btn = ui.nav.querySelector('.compact-tree');
+      if (!btn) return;
+      const count = Math.max(0, Number(treeSummary?.stats?.branchCount) || 0);
+      btn.setAttribute('data-count', String(count));
+      const badge = btn.querySelector('.tree-count');
+      if (badge) badge.textContent = count ? String(count) : '';
+      btn.title = count ? `分支 / 对话树（分支点：${count}）` : '分支 / 对话树（当前对话无分支）';
     } catch {}
   }
 

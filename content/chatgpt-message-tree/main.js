@@ -11,6 +11,13 @@
   const PREFS_KEY = '__aichat_chatgpt_message_tree_prefs_v1__';
   const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
 
+  const BRIDGE_REQ_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_REQUEST';
+  const BRIDGE_RES_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_RESPONSE';
+  const BRIDGE_TOGGLE_PANEL = 'QUICKNAV_CHATGPT_TREE_TOGGLE';
+  const BRIDGE_OPEN_PANEL = 'QUICKNAV_CHATGPT_TREE_OPEN';
+  const BRIDGE_CLOSE_PANEL = 'QUICKNAV_CHATGPT_TREE_CLOSE';
+  const BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
+
   const DEFAULT_PREFS = Object.freeze({
     simpleMode: true,
     guides: true
@@ -60,6 +67,9 @@
     statusEl: null,
     statsEl: null,
     lastData: null,
+    lastSummary: null,
+    lastSummaryKey: '',
+    lastSummaryAt: 0,
     prefs: null,
     hubUnsub: null,
     authCache: {
@@ -67,7 +77,8 @@
       token: '',
       accountId: '',
       deviceId: ''
-    }
+    },
+    bridgeInstalled: false
   };
 
   function loadPrefs() {
@@ -482,6 +493,15 @@
     state.treeEl = panel.querySelector('.tree');
 
     applyPrefsToUi();
+    updateToggleVisibility();
+  }
+
+  function updateToggleVisibility() {
+    try {
+      const hasQuickNav = !!document.getElementById('cgpt-compact-nav');
+      const hidden = hasQuickNav ? '1' : '0';
+      state.toggleEl?.setAttribute('data-hidden', hidden);
+    } catch {}
   }
 
   function applyPrefsToUi() {
@@ -602,6 +622,142 @@
       }
     } catch {}
     return set;
+  }
+
+  function getBridgeSummary() {
+    try {
+      const cached = state.lastData;
+      if (!cached || !cached.mapping || typeof cached.mapping !== 'object') return null;
+
+      const prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : DEFAULT_PREFS;
+      const key = `${cached.conversationId || ''}|${cached.currentId || ''}|${prefs.simpleMode ? '1' : '0'}`;
+
+      const age = now() - (Number(state.lastSummaryAt) || 0);
+      if (state.lastSummary && state.lastSummaryKey === key && age < 2500) return state.lastSummary;
+
+      const mapping = cached.mapping;
+      const rootNodeId = cached.rootId;
+      const effectiveCurrentNodeId = getEffectiveCurrentId(mapping, cached.currentId);
+      const stats = computeDisplayStats(mapping, rootNodeId);
+
+      const pathNodeSet = computeVisiblePathSet(mapping, cached.currentId);
+      const pathIds = Array.from(pathNodeSet).map((id) => {
+        const node = mapping?.[id];
+        return typeof node?.message?.id === 'string' ? node.message.id : String(id || '');
+      });
+
+      const visited = new Set();
+      const nodes = {};
+
+      function walk(nodeId, guard) {
+        const id = String(nodeId || '');
+        if (!id) return;
+        if (visited.has(id)) return;
+        if ((guard || 0) > 4096) return;
+        visited.add(id);
+
+        const node = mapping?.[id] || null;
+        const msg = node?.message || null;
+        const msgId = typeof msg?.id === 'string' ? msg.id : id;
+        const role = msg?.author?.role ? String(msg.author.role) : id === 'client-created-root' ? 'root' : '';
+        const text = msg ? extractTextFromMessage(msg) : id === 'client-created-root' ? 'root' : '';
+        const snippet = formatSnippet(text, 96);
+
+        const childNodeIds = getDisplayChildren(id, mapping);
+        const children = childNodeIds.map((cid) => {
+          const cnode = mapping?.[cid];
+          return typeof cnode?.message?.id === 'string' ? cnode.message.id : String(cid || '');
+        });
+
+        nodes[msgId] = { role, snippet, children, childrenCount: children.length };
+
+        for (const childId of childNodeIds) walk(childId, (guard || 0) + 1);
+      }
+
+      walk(rootNodeId, 0);
+
+      const rootMsgId = (() => {
+        const rootNode = mapping?.[rootNodeId];
+        return typeof rootNode?.message?.id === 'string' ? rootNode.message.id : String(rootNodeId || '');
+      })();
+      const currentMsgId = (() => {
+        const curNode = mapping?.[effectiveCurrentNodeId];
+        return typeof curNode?.message?.id === 'string' ? curNode.message.id : String(effectiveCurrentNodeId || '');
+      })();
+
+      const summary = {
+        v: 1,
+        builtAt: now(),
+        conversationId: cached.conversationId || '',
+        rootId: rootMsgId,
+        currentId: currentMsgId,
+        stats,
+        pathIds,
+        nodes
+      };
+
+      state.lastSummary = summary;
+      state.lastSummaryKey = key;
+      state.lastSummaryAt = now();
+      return summary;
+    } catch {
+      return null;
+    }
+  }
+
+  function installQuickNavBridge() {
+    if (state.bridgeInstalled) return;
+    state.bridgeInstalled = true;
+
+    window.addEventListener('message', (event) => {
+      try {
+        if (!event || event.source !== window) return;
+        const data = event.data;
+        if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
+
+        const type = String(data.type || '');
+
+        if (type === BRIDGE_REQ_SUMMARY) {
+          const reqId = typeof data.reqId === 'string' ? data.reqId : '';
+          const summary = getBridgeSummary();
+          window.postMessage(
+            {
+              __quicknav: 1,
+              type: BRIDGE_RES_SUMMARY,
+              reqId,
+              ok: !!summary,
+              summary: summary || null
+            },
+            '*'
+          );
+          return;
+        }
+
+        if (type === BRIDGE_TOGGLE_PANEL) {
+          ensureUi();
+          setOpen(!state.open);
+          return;
+        }
+
+        if (type === BRIDGE_OPEN_PANEL) {
+          ensureUi();
+          setOpen(true);
+          return;
+        }
+
+        if (type === BRIDGE_CLOSE_PANEL) {
+          ensureUi();
+          setOpen(false);
+          return;
+        }
+
+        if (type === BRIDGE_REFRESH) {
+          ensureUi();
+          scheduleRefresh(50, 'external');
+          return;
+        }
+      } catch {}
+    });
   }
 
   function unwrapVisibleNodes(nodeId, mapping, localSeen, guard) {
@@ -886,6 +1042,7 @@
   function startHrefWatcher() {
     try {
       setInterval(() => {
+        updateToggleVisibility();
         if (location.href !== state.lastHref) {
           state.lastHref = location.href;
           scheduleRefresh(500, 'route');
@@ -901,6 +1058,7 @@
 
   state.prefs = loadPrefs();
   ensureUi();
+  installQuickNavBridge();
   installHubHooks();
   startHrefWatcher();
   scheduleRefresh(800, 'init');

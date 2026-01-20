@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ai chat 扩展合集",
-  "version": "1.0.20",
+  "version": "1.0.37",
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
   "permissions": ["scripting", "storage", "activeTab"],
   "host_permissions": [
@@ -19,6 +19,24 @@
   "background": {
     "service_worker": "background/sw.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://ernie.baidu.com/*",
+        "https://chat.deepseek.com/*",
+        "https://chat.qwen.ai/*",
+        "https://chat.z.ai/*",
+        "https://grok.com/*",
+        "https://gemini.google.com/app*",
+        "https://business.gemini.google/*",
+        "https://www.genspark.ai/*"
+      ],
+      "js": ["content/bootstrap.js"],
+      "run_at": "document_start"
+    }
+  ],
   "action": {
     "default_title": "ai chat 扩展合集",
     "default_popup": "popup/popup.html"

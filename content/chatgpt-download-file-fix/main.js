@@ -109,26 +109,35 @@
     return out;
   }
 
-  const originalFetch = window.fetch;
-  if (typeof originalFetch === 'function') {
-    window.fetch = function (input, init) {
-      const urlStr = toUrlString(input);
-      if (!urlStr) return originalFetch.call(this, input, init);
+  // Use the shared fetch hub to avoid stacked fetch patches.
+  try {
+    const hub = window.__aichat_chatgpt_fetch_hub_v1__;
+    if (hub && typeof hub.register === 'function') {
+      hub.register({
+        priority: 10,
+        beforeFetch: (ctx) => {
+          try {
+            const urlStr = toUrlString(ctx?.input) || toUrlString(ctx?.url) || '';
+            if (!urlStr) return;
+            if (String(ctx?.method || '').toUpperCase() !== 'GET') return;
+            const fixed = fixDownloadUrl(urlStr);
+            if (!fixed) return;
 
-      if (!methodIsGet(input, init)) return originalFetch.call(this, input, init);
-
-      const fixed = fixDownloadUrl(urlStr);
-      if (!fixed) return originalFetch.call(this, input, init);
-
-      if (isString(input) || (input && typeof input === 'object' && typeof input.href === 'string')) {
-        return originalFetch.call(this, fixed, init);
-      }
-
-      const req = input;
-      const mergedInit = buildInitFromRequest(req, init);
-      return originalFetch.call(this, fixed, mergedInit);
-    };
-  }
+            const input = ctx?.input;
+            const init = ctx?.init;
+            if (isString(input) || (input && typeof input === 'object' && typeof input.href === 'string')) {
+              return { input: fixed, init };
+            }
+            if (input instanceof Request) {
+              const mergedInit = buildInitFromRequest(input, init);
+              return { input: fixed, init: mergedInit };
+            }
+            return { input: fixed, init };
+          } catch {}
+        }
+      });
+    }
+  } catch {}
 
   const XHROpen = XMLHttpRequest && XMLHttpRequest.prototype && XMLHttpRequest.prototype.open;
   if (typeof XHROpen === 'function') {

@@ -372,91 +372,55 @@ button.${HINT_CLASS}::after {
     if (window[FETCH_SNIFF_FLAG]) return;
     window[FETCH_SNIFF_FLAG] = true;
 
-    const originalFetch = window.fetch;
-    if (typeof originalFetch !== 'function') return;
+    const hub = window.__aichat_chatgpt_fetch_hub_v1__;
+    if (!hub || typeof hub.register !== 'function') return;
 
-    window.fetch = async function (input, init) {
-      /** @type {{mode:string,model:string,effort:string}|null} */
-      let effortInfo = null;
-      let nextInput = input;
-      let nextInit = init;
-
-      try {
-        const url = toUrlString(input) || '';
-        const method =
-          (init && typeof init.method === 'string' && init.method) ||
-          (input instanceof Request ? input.method : 'GET');
-
-        if (!isConversationSendUrl(url) || String(method).toUpperCase() !== 'POST') {
-          // pass
-        } else {
-          let bodyText = null;
-          const initHasTextBody = init && typeof init.body === 'string';
-          if (initHasTextBody) {
-            bodyText = init.body;
-          } else if (input instanceof Request) {
-            try {
-              bodyText = await input.clone().text();
-            } catch (_) {
-              bodyText = null;
-            }
+    hub.register({
+      priority: 110,
+      onConversationPayload: (payload, ctx) => {
+        /** @type {{mode:string,model:string,effort:string}|null} */
+        let effortInfo = null;
+        try {
+          if (payload && pendingModelOverride) {
+            const target = pendingModelOverride;
+            const override = applyModelOverrideToPayload(payload, target);
+            if (override.applied) pendingModelOverride = null;
           }
 
-          if (bodyText) {
-            let payload = null;
-            try {
-              payload = JSON.parse(bodyText);
-            } catch (_) {
-              payload = null;
-            }
-
-            if (payload && pendingModelOverride) {
-              const target = pendingModelOverride;
-              const override = applyModelOverrideToPayload(payload, target);
-              if (override.applied) {
-                const newBody = JSON.stringify(payload);
-                pendingModelOverride = null;
-
-                if (input instanceof Request && !initHasTextBody) {
-                  nextInput = url;
-                  nextInit = buildInitFromRequest(input, init);
-                  nextInit.body = newBody;
-                } else {
-                  nextInit = init ? { ...init, body: newBody } : { method: 'POST', body: newBody };
-                }
-              }
-            }
-
-            effortInfo = sniffEffortInfo(payload);
-            if (effortInfo && (effortInfo.mode === 'thinking' || effortInfo.mode === 'pro')) {
-              if (effortInfo.model) lastModelByMode[effortInfo.mode] = effortInfo.model;
-              if (effortInfo.effort) lastEffortByMode[effortInfo.mode] = effortInfo.effort;
-              if (preferredModelMode !== effortInfo.mode) {
-                preferredModelMode = effortInfo.mode;
-                savePreferredModelMode(preferredModelMode);
-              }
+          effortInfo = sniffEffortInfo(payload);
+          if (effortInfo && (effortInfo.mode === 'thinking' || effortInfo.mode === 'pro')) {
+            if (effortInfo.model) lastModelByMode[effortInfo.mode] = effortInfo.model;
+            if (effortInfo.effort) lastEffortByMode[effortInfo.mode] = effortInfo.effort;
+            if (preferredModelMode !== effortInfo.mode) {
+              preferredModelMode = effortInfo.mode;
+              savePreferredModelMode(preferredModelMode);
             }
           }
+        } catch (e) {
+          log(e);
         }
-      } catch (e) {
-        log(e);
-      }
 
-      const response = await originalFetch.call(this, nextInput, nextInit);
+        try {
+          if (ctx && typeof ctx === 'object') ctx.__aichatThinkingToggleEffortInfo = effortInfo;
+        } catch {}
 
-      try {
-        if (effortInfo && response && response.ok) {
+        return payload;
+      },
+      onConversationResponse: (ctx) => {
+        try {
+          const effortInfo = ctx && ctx.__aichatThinkingToggleEffortInfo;
+          const respOk = !!ctx?.response?.ok;
+          if (!effortInfo || !respOk) return;
+
           const suffix = effortInfo.model ? ` (${effortInfo.model})` : '';
           if (effortInfo.mode === 'thinking') showToast(`发送成功：thinking ${effortInfo.effort}${suffix}`);
           else if (effortInfo.mode === 'pro') showToast(`发送成功：pro ${effortInfo.effort}${suffix}`);
           else showToast(`发送成功：thinking_effort=${effortInfo.effort}${suffix}`);
+        } catch {
+          // ignore
         }
-      } catch (_) {
-        // ignore
       }
-
-      return response;
-    };
+    });
   }
 
   function clickLikeUser(el) {

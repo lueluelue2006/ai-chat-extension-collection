@@ -5,8 +5,34 @@
   if (globalThis[GUARD_KEY]) return;
   Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
 
+  const SITE = (() => {
+    try {
+      const host = String(location.hostname || '').toLowerCase();
+      const path = String(location.pathname || '');
+      if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
+      if (host === 'gemini.google.com' && path.startsWith('/app')) return 'gemini_app';
+      if (host === 'business.gemini.google') return 'gemini_business';
+      if (host === 'www.genspark.ai') return 'genspark';
+      return 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  })();
+
+  // genspark: only AI Chat page (agents). The "moa_chat" entry currently redirects to ai_chat, allow both.
+  try {
+    if (SITE === 'genspark') {
+      const u = new URL(location.href);
+      const type = String(u.searchParams.get('type') || '').toLowerCase();
+      const okType = type === 'moa_chat' || type === 'ai_chat';
+      const okPath = String(u.pathname || '').startsWith('/agents');
+      if (!okPath || !okType) return;
+    }
+  } catch {}
+
   // ===== 配置（可微调延时和阈值） =====
   const DEFAULT_POSITION = { top: '30%', right: '0px' };
+  const DEFAULT_POSITION_TRANSLATE = { top: '40%', right: '0px' };
   const DEFAULT_POSITION_THINK = { top: '50%', right: '0px' };
   const LONG_CONTENT_THRESHOLD = 5000; // 超过此字符数视为长内容，使用优化处理
   const TIMEOUTS = {
@@ -18,18 +44,18 @@
     afterInsert: 160, // 写入后等一会
     beforeClick: 80, // 点击前留一点时间
     afterClickClear: 140, // 点击后再清空
-    unlockBtn: 2000, // 解锁按钮延时
     nextClickWindow: 5000 // 防重复点击窗口
   };
 
   const POLL_INTERVAL = 70; // 轮询间隔
+  const ENABLE_FLOATING_FALLBACK = false; // 性能优先：不启用“找不到输入框位置就悬浮回退”
   const PREFIX = `ultra think and deeper websearch
 
 `;
   const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.
 
 `;
-  const SEND_BTN_SELECTORS = [
+  const CHATGPT_SEND_BTN_SELECTORS = [
     'button[data-testid="send-button"]',
     'button#composer-submit-button[data-testid="send-button"]',
     'form button[type="submit"][data-testid="send-button"]',
@@ -38,6 +64,7 @@
   const TRANSLATE_PREFIX = `翻译成中文`;
 
   const STORAGE_KEY_BUTTON_POS = 'aichat_chatgpt_qds_button_pos_v1';
+  const STORAGE_KEY_TRANSLATE_BUTTON_POS = 'aichat_chatgpt_qds_translate_button_pos_v1';
   const STORAGE_KEY_THINK_BUTTON_POS = 'aichat_chatgpt_qds_think_button_pos_v1';
 
   function readJsonStorage(key, fallback) {
@@ -64,119 +91,201 @@
 
   // ===== 状态 =====
   let buttonPosition = readJsonStorage(STORAGE_KEY_BUTTON_POS, DEFAULT_POSITION);
+  let translateButtonPosition = readJsonStorage(STORAGE_KEY_TRANSLATE_BUTTON_POS, DEFAULT_POSITION_TRANSLATE);
   let thinkButtonPosition = readJsonStorage(STORAGE_KEY_THINK_BUTTON_POS, DEFAULT_POSITION_THINK);
   let pendingModelSwitch = false; // 点"搜/思/译"后，仅下一次请求切模型
   let isSending = false; // 防重入
   let cycle = 0; // 事务编号
 
-  // ===== 拦截 fetch：仅切模型为 gpt-5 =====
-  function getFetchUrl(input) {
+  // ===== 调试信息（仅在点击触发时更新，便于排查站点差异）=====
+  const DEBUG_LAST_KEY = '__aichat_qds_debug_last_v1__';
+  function setDebug(patch) {
     try {
-      if (typeof input === 'string') return input;
-      if (input instanceof Request) return input.url;
-      if (input && typeof input === 'object') {
-        if (typeof input.url === 'string') return input.url;
-        if (typeof input.href === 'string') return input.href;
-      }
-    } catch {
-      // ignore
+      globalThis[DEBUG_LAST_KEY] = { ...(globalThis[DEBUG_LAST_KEY] || {}), ...(patch || {}) };
+    } catch {}
+  }
+
+  // ===== 轻量缓存（避免频繁深度查询）=====
+  const CACHE_TTL_MS = { editor: 600, sendButton: 350 };
+  const editorElCache = { value: null, at: 0 };
+  const editorFallbackCache = { value: null, at: 0 };
+  const sendButtonCache = { value: null, at: 0 };
+
+  function readCached(cache, ttlMs, resolver) {
+    const now = Date.now();
+    const cachedValue = cache.value;
+    if (now - cache.at < ttlMs) {
+      if (!cachedValue) return null;
+      if (cachedValue && cachedValue.isConnected) return cachedValue;
     }
-    return '';
+    let next = null;
+    try {
+      next = resolver() || null;
+    } catch {
+      next = null;
+    }
+    cache.value = next;
+    cache.at = now;
+    return next;
   }
 
-  function getFetchMethod(input, init) {
-    const method = (init && typeof init.method === 'string' && init.method) || (input instanceof Request ? input.method : 'GET');
-    return String(method || 'GET').toUpperCase();
-  }
-
-  function isConversationSendUrl(url) {
-    if (typeof url !== 'string') return false;
-    return /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url);
-  }
-
-  const originalFetch = window.fetch;
-  if (typeof originalFetch === 'function') {
-    window.fetch = async function (input, init) {
-      try {
-        if (pendingModelSwitch) {
-          const url = getFetchUrl(input);
-          if (isConversationSendUrl(url) && getFetchMethod(input, init) === 'POST') {
+  // ===== ChatGPT：通过共享 fetch hub 仅切一次模型为 gpt-5 =====
+  function installChatGPTModelSwitchHook() {
+    try {
+      if (SITE !== 'chatgpt') return;
+      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
+      if (!hub || typeof hub.register !== 'function') return;
+      hub.register({
+        priority: 120,
+        onConversationPayload: (payload) => {
+          try {
+            if (!pendingModelSwitch) return;
+            if (!payload || typeof payload !== 'object') return;
             pendingModelSwitch = false; // 只改一次
-
-            if (init && typeof init === 'object' && typeof init.body === 'string') {
-              const nextInit = { ...init };
-              let payload = null;
-              try {
-                payload = JSON.parse(nextInit.body);
-              } catch (_) {
-                payload = null;
-              }
-              if (payload && typeof payload === 'object') {
-                payload.model = 'gpt-5';
-                nextInit.body = JSON.stringify(payload);
-                return originalFetch.call(this, input, nextInit);
-              }
-            } else if (input instanceof Request && init == null) {
-              let bodyText = null;
-              try {
-                bodyText = await input.clone().text();
-              } catch (_) {
-                bodyText = null;
-              }
-              if (bodyText) {
-                let payload = null;
-                try {
-                  payload = JSON.parse(bodyText);
-                } catch (_) {
-                  payload = null;
-                }
-                if (payload && typeof payload === 'object') {
-                  payload.model = 'gpt-5';
-                  const nextInit = {
-                    method: input.method,
-                    headers: input.headers,
-                    body: JSON.stringify(payload),
-                    credentials: input.credentials,
-                    mode: input.mode,
-                    cache: input.cache,
-                    redirect: input.redirect,
-                    referrer: input.referrer,
-                    referrerPolicy: input.referrerPolicy,
-                    integrity: input.integrity,
-                    keepalive: input.keepalive,
-                    signal: input.signal
-                  };
-                  return originalFetch.call(this, input.url, nextInit);
-                }
-              }
-            }
-          }
+            payload.model = 'gpt-5';
+            return payload;
+          } catch {}
         }
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('[AIChat][QuickDeepSearch] fetch hook error:', e);
-      }
-      return originalFetch.apply(this, arguments);
-    };
+      });
+    } catch {}
   }
+  installChatGPTModelSwitchHook();
 
   // ===== 小工具 =====
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function walkOpenShadows(start, visit) {
+    const stack = [start];
+    const seen = new Set();
+    while (stack.length) {
+      const root = stack.pop();
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      try { visit(root); } catch {}
+      if (!root.querySelectorAll) continue;
+      const all = root.querySelectorAll('*');
+      for (const el of all) {
+        if (el && el.shadowRoot) stack.push(el.shadowRoot);
+      }
+    }
+  }
+
+  function deepQueryFirst(start, selector) {
+    let found = null;
+    walkOpenShadows(start, (root) => {
+      if (found || !root.querySelector) return;
+      const hit = root.querySelector(selector);
+      if (hit) found = hit;
+    });
+    return found;
+  }
+
+  function deepQueryAll(start, selector) {
+    const out = [];
+    walkOpenShadows(start, (root) => {
+      if (!root.querySelectorAll) return;
+      out.push(...root.querySelectorAll(selector));
+    });
+    return out;
+  }
+
+  function getSiteRoot() {
+    if (SITE === 'gemini_business') {
+      try {
+        return document.querySelector('ucs-standalone-app')?.shadowRoot || null;
+      } catch {
+        return null;
+      }
+    }
+    if (SITE === 'gemini_app') {
+      return document.querySelector('chat-app#app-root') || document.documentElement;
+    }
+    return document.documentElement;
+  }
+
+  function pickBottomMostVisible(candidates) {
+    const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+    let best = null;
+    let bestScore = -Infinity;
+    for (const el of list) {
+      try {
+        if (!el || !el.getBoundingClientRect) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 10 || r.height < 10) continue;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+        // Prefer elements closer to the bottom (composer)
+        const score = r.bottom;
+        if (score > bestScore) { bestScore = score; best = el; }
+      } catch {}
+    }
+    return best;
+  }
+
   function editorEl() {
-    return document.querySelector('#prompt-textarea.ProseMirror, .ProseMirror');
+    return readCached(editorElCache, CACHE_TTL_MS.editor, editorElRaw);
+  }
+  function editorElRaw() {
+    if (SITE === 'chatgpt')
+      return document.querySelector('#prompt-textarea.ProseMirror, #prompt-textarea[contenteditable="true"][role="textbox"]');
+    if (SITE === 'gemini_app') {
+      const root = getSiteRoot() || document.documentElement;
+      const direct = root.querySelector?.('div.ql-editor[contenteditable="true"][role="textbox"]') || null;
+      if (direct) return direct;
+      return pickBottomMostVisible(Array.from(root.querySelectorAll?.('[role="textbox"][contenteditable="true"]') || []));
+    }
+    if (SITE === 'gemini_business') {
+      const root = getSiteRoot();
+      if (!root) return null;
+      const direct =
+        deepQueryFirst(root, 'div[contenteditable="true"][role="textbox"][aria-label]') ||
+        deepQueryFirst(root, 'div[contenteditable="true"][role="textbox"]') ||
+        deepQueryFirst(root, 'div[contenteditable="true"][aria-label]') ||
+        null;
+      if (direct) return direct;
+      return pickBottomMostVisible(deepQueryAll(root, '[role="textbox"][contenteditable="true"], div[contenteditable="true"]'));
+    }
+    return null;
   }
   function editorFallback() {
-    return document.querySelector('textarea[name="prompt-textarea"]');
+    return readCached(editorFallbackCache, CACHE_TTL_MS.editor, editorFallbackRaw);
+  }
+  function editorFallbackRaw() {
+    if (SITE === 'chatgpt') return document.querySelector('textarea[name="prompt-textarea"]');
+    if (SITE === 'genspark') {
+      return (
+        document.querySelector('textarea.search-input.j-search-input') ||
+        Array.from(document.querySelectorAll('textarea')).find((t) => String(t.getAttribute('placeholder') || '').toLowerCase().includes('ask anything')) ||
+        null
+      );
+    }
+    // Gemini sometimes uses textarea in fallback UIs.
+    const root = getSiteRoot() || document.documentElement;
+    const tas = Array.from(root.querySelectorAll?.('textarea') || []);
+    return pickBottomMostVisible(tas);
+  }
+  function readContentEditableText(el) {
+    try {
+      if (!el) return '';
+      const text = typeof el.innerText === 'string' ? (el.innerText || '').trim() : '';
+      if (!text) return '';
+      const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
+      const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
+      if (placeholderText && text === placeholderText) return '';
+      return text;
+    } catch {
+      return '';
+    }
   }
   function editorText() {
     const el = editorEl();
-    if (el && typeof el.innerText === 'string') return (el.innerText || '').trim();
+    if (el) return readContentEditableText(el);
     const fb = editorFallback();
     return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
   }
   function isLongContent() {
     const el = editorEl();
-    if (el && typeof el.innerText === 'string') return el.innerText.length > LONG_CONTENT_THRESHOLD;
+    if (el) return readContentEditableText(el).length > LONG_CONTENT_THRESHOLD;
     const fb = editorFallback();
     if (fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
     return false;
@@ -196,20 +305,16 @@
       })();
     });
   }
-  function lockButton(btn, lock) {
-    if (!btn) return;
-    btn.setAttribute('aria-disabled', lock ? 'true' : 'false');
-    btn.disabled = !!lock;
-  }
   function clearEditorSafely() {
     const pm = editorEl();
     if (pm) {
       pm.focus();
-      const r = document.createRange();
-      r.selectNodeContents(pm);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
+      document.execCommand('selectAll', false, null);
+      try {
+        pm.dispatchEvent(
+          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward', data: '' })
+        );
+      } catch {}
       document.execCommand('insertText', false, '');
       pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
       pm.blur();
@@ -233,27 +338,35 @@
     const myCycle = ++cycle;
 
     try {
+      setDebug({ t: Date.now(), site: SITE, step: 'start', prefix: String(prefixText || '').slice(0, 60) });
       // 第 1 步：写前缀
       insertPrefixAtBeginning(prefixText);
       await sleep(DELAYS.afterInsert);
       await waitUntil(() => editorText().startsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
+      setDebug({ step: 'editorCommitted', editorPreview: editorText().slice(0, 120) });
 
       // 第 2 步：等待发送按钮 → 锁 → 切模型 → 点击
-      const btn = await waitUntil(findSendButton, TIMEOUTS.findSendBtn, POLL_INTERVAL);
-      await waitUntil(() => btn && !isDisabled(btn), TIMEOUTS.btnEnable, POLL_INTERVAL);
-      lockButton(btn, true);
-      pendingModelSwitch = true;
+      await waitUntil(findSendButton, TIMEOUTS.findSendBtn, POLL_INTERVAL);
+      const btn = await waitUntil(() => {
+        const b = findSendButton();
+        if (!b) return null;
+        if (isDisabled(b)) return null;
+        return b;
+      }, TIMEOUTS.btnEnable, POLL_INTERVAL);
+      setDebug({ step: 'btnReady', btnFound: !!btn, btnDisabled: btn ? isDisabled(btn) : null });
+      pendingModelSwitch = SITE === 'chatgpt';
       await sleep(DELAYS.beforeClick);
       realClick(btn);
+      setDebug({ step: 'clicked' });
 
       // 清空编辑器，避免草稿回放再次发送
       await sleep(DELAYS.afterClickClear);
       clearEditorSafely();
+      setDebug({ step: 'cleared' });
 
-      // 解锁
-      setTimeout(() => lockButton(btn, false), DELAYS.unlockBtn);
     } catch (e) {
       // eslint-disable-next-line no-console
+      setDebug({ step: 'error', error: e instanceof Error ? e.message : String(e) });
       console.warn('[AIChat][QuickDeepSearch] pipeline error:', e);
     } finally {
       setTimeout(() => {
@@ -274,11 +387,22 @@
       if (pm) {
         pm.focus();
         document.execCommand('selectAll', false, null);
-        document.execCommand('insertText', false, '');
-        document.execCommand('insertText', false, finalText);
+        try {
+          pm.dispatchEvent(
+            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward', data: '' })
+          );
+        } catch {}
+        const ok1 = document.execCommand('insertText', false, '');
+        try {
+          pm.dispatchEvent(
+            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: finalText })
+          );
+        } catch {}
+        const ok2 = document.execCommand('insertText', false, finalText);
         pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
         pm.blur();
         pm.focus();
+        setDebug({ step: 'insert', mode: 'contenteditable_long', execOk: !!(ok1 && ok2), editorPreview: readContentEditableText(pm).slice(0, 120) });
         return;
       }
 
@@ -297,15 +421,17 @@
 
     if (pm) {
       pm.focus();
-      const range = document.createRange();
-      range.selectNodeContents(pm);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('insertText', false, finalText);
+      document.execCommand('selectAll', false, null);
+      try {
+        pm.dispatchEvent(
+          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: finalText })
+        );
+      } catch {}
+      const ok = document.execCommand('insertText', false, finalText);
       pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
       pm.blur();
       pm.focus();
+      setDebug({ step: 'insert', mode: 'contenteditable', execOk: !!ok, editorPreview: readContentEditableText(pm).slice(0, 120) });
       return;
     }
 
@@ -319,9 +445,68 @@
   }
 
   function findSendButton() {
-    for (const sel of SEND_BTN_SELECTORS) {
-      const btn = document.querySelector(sel);
-      if (btn) return btn;
+    return readCached(sendButtonCache, CACHE_TTL_MS.sendButton, findSendButtonRaw);
+  }
+  function findSendButtonRaw() {
+    if (SITE === 'chatgpt') {
+      for (const sel of CHATGPT_SEND_BTN_SELECTORS) {
+        const btn = document.querySelector(sel);
+        if (btn) return btn;
+      }
+      return null;
+    }
+
+    if (SITE === 'gemini_app') {
+      const root = getSiteRoot() || document.documentElement;
+      const direct =
+        root.querySelector?.('button.send-button, button[aria-label="Send message"], button[aria-label*="Send"], button[title*="Send"]') || null;
+      if (direct) return direct;
+      const btns = Array.from(root.querySelectorAll?.('button[aria-label], button[title], button[type=\"submit\"]') || []);
+      const hits = btns.filter((b) => {
+        const label = (b.getAttribute('aria-label') || '').trim();
+        const title = (b.getAttribute('title') || '').trim();
+        const text = (b.textContent || '').trim();
+        const hay = `${label} ${title} ${text}`.trim();
+        return /\bsend\b/i.test(hay) || /\bsubmit\b/i.test(hay) || /发送|提交/.test(hay);
+      });
+      return pickBottomMostVisible(hits);
+    }
+
+    if (SITE === 'gemini_business') {
+      const root = getSiteRoot();
+      if (!root) return null;
+      const direct =
+        deepQueryFirst(root, 'button[aria-label="Send message"]') ||
+        deepQueryFirst(root, 'button[aria-label*="Send"]') ||
+        deepQueryFirst(root, 'button[title*="Send"]') ||
+        null;
+      if (direct) return direct;
+      const btns = deepQueryAll(root, 'button[aria-label], button[title], button[type="submit"]');
+      const hits = btns.filter((b) => {
+        const label = (b.getAttribute('aria-label') || '').trim();
+        const title = (b.getAttribute('title') || '').trim();
+        const text = (b.textContent || '').trim();
+        const hay = `${label} ${title} ${text}`.trim();
+        return /\bsend\b/i.test(hay) || /\bsubmit\b/i.test(hay) || /发送|提交/.test(hay);
+      });
+      return pickBottomMostVisible(hits);
+    }
+
+    if (SITE === 'genspark') {
+      const ta = editorFallback();
+      const parent = ta?.parentElement || null;
+      const group = parent?.querySelector?.('.icon-group') || document.querySelector('.icon-group') || null;
+      const candidates = [
+        group?.querySelector?.('.enter-icon-wrapper'),
+        group?.querySelector?.('.enter-icon'),
+        parent?.querySelector?.('.enter-icon-wrapper'),
+        parent?.querySelector?.('.enter-icon')
+      ].filter(Boolean);
+      const best = pickBottomMostVisible(candidates);
+      if (best) return best;
+      // fallback: try any obvious clickable in the icon group
+      const clickables = group ? Array.from(group.querySelectorAll('[role="button"], button, .cursor-pointer')) : [];
+      return pickBottomMostVisible(clickables);
     }
     return null;
   }
@@ -466,6 +651,57 @@
   }
 
   // ===== 创建浮动按钮（回退） =====
+  function addTranslateButton() {
+    if (document.getElementById('o4-translate-button')) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'o4-translate-button';
+    btn.style.cssText = `
+      position: fixed;
+      top: ${translateButtonPosition.top};
+      right: ${translateButtonPosition.right};
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%);
+      color: #fff;
+      border-top-left-radius: 6px;
+      border-bottom-left-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,.2);
+      transition: background .3s ease;
+      font-size: 18px;
+      user-select: none;
+      touch-action: none;
+    `;
+    btn.textContent = '译';
+
+    makeDraggable(btn, ({ top, right }) => {
+      translateButtonPosition = { top, right };
+      writeJsonStorage(STORAGE_KEY_TRANSLATE_BUTTON_POS, translateButtonPosition);
+      notify('"译"按钮位置已保存');
+    });
+
+    btn.addEventListener('click', function () {
+      if (this._suppressNextClick) {
+        this._suppressNextClick = false;
+        return;
+      }
+      runPrefixThenSend(TRANSLATE_PREFIX);
+      this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #27ae60 76.89%)';
+      setTimeout(() => {
+        this.style.background = 'linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%)';
+      }, 2000);
+      notify('"译"已激活：1)写前缀→2)发送（逐步确认+延时）');
+    });
+
+    document.body.appendChild(btn);
+  }
+
   function addQuickSearchButton() {
     if (document.getElementById('o4-mini-button')) return;
 
@@ -592,24 +828,51 @@
 
   // ===== 注入与保活 =====
   function addInlineButtons() {
-    let container = document.querySelector('div[data-testid="composer-trailing-actions"]');
-    if (!container) {
-      container = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
+    let container = null;
+    let insertBefore = null;
+
+    if (SITE === 'chatgpt') {
+      container = document.querySelector('div[data-testid="composer-trailing-actions"]');
       if (!container) {
-        const speechContainer = document.querySelector('div[data-testid="composer-speech-button-container"]');
-        if (speechContainer && speechContainer.parentElement) container = speechContainer.parentElement;
+        container = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
+        if (!container) {
+          const speechContainer = document.querySelector('div[data-testid="composer-speech-button-container"]');
+          if (speechContainer && speechContainer.parentElement) container = speechContainer.parentElement;
+        }
       }
+    } else if (SITE === 'gemini_app') {
+      const sendBtn = findSendButton();
+      container = sendBtn?.parentElement || null;
+      insertBefore = sendBtn && sendBtn.parentElement === container ? sendBtn : null;
+    } else if (SITE === 'gemini_business') {
+      const sendBtn = findSendButton();
+      container = sendBtn?.parentElement || sendBtn?.parentNode || null;
+      insertBefore = sendBtn && sendBtn.parentNode === container ? sendBtn : null;
+    } else if (SITE === 'genspark') {
+      const ta = editorFallback();
+      const parent = ta?.parentElement || null;
+      const group = parent?.querySelector?.('.icon-group') || document.querySelector('.icon-group') || null;
+      container = group?.querySelector?.('.right-icon-group') || group || null;
+      const sendEl = group?.querySelector?.('.enter-icon') || group?.querySelector?.('.enter-icon-wrapper') || null;
+      insertBefore = sendEl && sendEl.parentElement === container ? sendEl : null;
     }
+
     if (!container) return false;
-    if (
-      document.getElementById('o4-translate-inline-btn') ||
-      document.getElementById('o4-mini-inline-btn') ||
-      document.getElementById('o4-think-inline-btn')
-    )
-      return true;
+    try {
+      const root = typeof container.getRootNode === 'function' ? container.getRootNode() : document;
+      const q = root && typeof root.querySelector === 'function' ? root.querySelector.bind(root) : document.querySelector.bind(document);
+      if (
+        q('#o4-inline-btn-wrap') ||
+        q('#o4-translate-inline-btn') ||
+        q('#o4-mini-inline-btn') ||
+        q('#o4-think-inline-btn')
+      )
+        return true;
+    } catch {}
 
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+    wrap.id = 'o4-inline-btn-wrap';
+    wrap.style.cssText = 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
 
     const commonBtnCss = `
       display:flex; align-items:center; justify-content:center;
@@ -660,11 +923,17 @@
     wrap.appendChild(translateBtn);
     wrap.appendChild(searchBtn);
     wrap.appendChild(thinkBtn);
-    container.appendChild(wrap);
+    try {
+      if (insertBefore && insertBefore.parentNode === container && typeof container.insertBefore === 'function') container.insertBefore(wrap, insertBefore);
+      else container.appendChild(wrap);
+    } catch {
+      return false;
+    }
     return true;
   }
 
   function removeFloatingButtonsIfAny() {
+    document.getElementById('o4-translate-button')?.remove();
     document.getElementById('o4-mini-button')?.remove();
     document.getElementById('o4-think-button')?.remove();
   }
@@ -676,6 +945,11 @@
       removeFloatingButtonsIfAny();
       return;
     }
+    if (!ENABLE_FLOATING_FALLBACK) {
+      removeFloatingButtonsIfAny();
+      return;
+    }
+    addTranslateButton();
     addQuickSearchButton();
     addThinkButton();
   }
@@ -687,5 +961,37 @@
   } else {
     document.addEventListener('DOMContentLoaded', boot);
   }
-  setInterval(boot, 2000);
+
+  // Reduce constant polling: schedule boot on DOM changes with rate limiting.
+  (function setupBootWatcher() {
+    const BOOT_MIN_INTERVAL_MS = SITE === 'chatgpt' ? 4000 : 1500;
+    const BOOT_FALLBACK_INTERVAL_MS = SITE === 'chatgpt' ? 20000 : 15000;
+
+    let lastBootAt = 0;
+    let timer = 0;
+
+    function scheduleBoot(delayMs = 0) {
+      if (timer) return;
+      const now = Date.now();
+      const earliest = lastBootAt + BOOT_MIN_INTERVAL_MS;
+      const wait = Math.max(delayMs, earliest - now, 0);
+      timer = setTimeout(() => {
+        timer = 0;
+        lastBootAt = Date.now();
+        boot();
+      }, wait);
+    }
+
+    scheduleBoot(0);
+
+    try {
+      const root = document.documentElement;
+      if (root && typeof MutationObserver === 'function') {
+        const mo = new MutationObserver(() => scheduleBoot(250));
+        mo.observe(root, { childList: true, subtree: true });
+      }
+    } catch {}
+
+    setInterval(() => scheduleBoot(0), BOOT_FALLBACK_INTERVAL_MS);
+  })();
 })();

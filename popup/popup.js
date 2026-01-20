@@ -29,6 +29,8 @@
         'chatgpt_thinking_toggle',
         'chatgpt_cmdenter_send',
         'chatgpt_readaloud_speed_controller',
+        'chatgpt_reply_timer',
+        'chatgpt_usage_monitor',
         'chatgpt_download_file_fix',
         'chatgpt_strong_highlight_lite',
         'chatgpt_quick_deep_search',
@@ -37,19 +39,26 @@
         'chatgpt_export_conversation'
       ]
     },
-    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav'] },
-    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav'] },
-    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav'] },
-    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav'] },
-    { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
-    { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
-    { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'gemini_math_fix', 'gemini_auto_3_pro'] },
+    { id: 'gemini_business', name: 'Gemini Business', sub: 'business.gemini.google', modules: ['quicknav', 'chatgpt_cmdenter_send', 'gemini_math_fix', 'gemini_auto_3_pro'] },
+    { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
     {
       id: 'genspark',
       name: 'Genspark',
       sub: 'genspark.ai/agents',
-      modules: ['quicknav', 'genspark_moa_image_autosettings', 'genspark_credit_balance', 'genspark_codeblock_fold']
-    }
+      modules: [
+        'quicknav',
+        'chatgpt_cmdenter_send',
+        'genspark_moa_image_autosettings',
+        'genspark_credit_balance',
+        'genspark_codeblock_fold',
+        'genspark_inline_upload_fix'
+      ]
+    },
+    { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav', 'chatgpt_cmdenter_send', 'grok_fast_unlock', 'grok_rate_limit_display'] },
+    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] }
   ];
 
   const MODULE_DEFS = {
@@ -57,11 +66,15 @@
     quicknav: { name: 'QuickNav', sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动' },
     chatgpt_perf: { name: 'ChatGPT 性能优化', sub: '离屏虚拟化 + CSS contain' },
     chatgpt_thinking_toggle: { name: 'ChatGPT 推理强度快捷切换', sub: 'Light ↔ Heavy / Standard ↔ Extended（⌘O）' },
-    chatgpt_cmdenter_send: { name: 'ChatGPT ⌘Enter 发送', sub: 'Enter/Shift+Enter 换行（强制）' },
+    chatgpt_cmdenter_send: { name: '⌘Enter 发送（Enter 换行）', sub: 'Enter/Shift+Enter 换行（强制）' },
+    grok_fast_unlock: { name: 'Grok 4 Fast 菜单项', sub: '在模型菜单增加 “Grok 4 Fast”，并在发送时选用该模型' },
+    grok_rate_limit_display: { name: 'Grok 剩余次数显示', sub: '在输入框附近显示 rate limit（剩余次数/等待时间）' },
     chatgpt_readaloud_speed_controller: { name: 'ChatGPT 朗读速度控制器', sub: '控制朗读播放速度（0.01–100x）' },
+    chatgpt_reply_timer: { name: 'ChatGPT 回复计时器', sub: '统计从发送到回复完成的耗时（右下角极简数字）' },
+    chatgpt_usage_monitor: { name: 'ChatGPT 用量统计', sub: '实时统计各模型调用量（支持导入/导出与分析报告）' },
     chatgpt_download_file_fix: { name: 'ChatGPT 下载修复', sub: '修复文件下载失败（sandbox_path 解码）' },
     chatgpt_strong_highlight_lite: { name: 'ChatGPT 回复粗体高亮（Lite）', sub: '高亮粗体 + 隐藏免责声明' },
-    chatgpt_quick_deep_search: { name: 'ChatGPT 快捷深度搜索（自用版）', sub: '译 / 搜 / 思（按钮 + 快捷键）并强制下一次请求模型为 gpt-5' },
+    chatgpt_quick_deep_search: { name: '快捷深度搜索（译/搜/思）', sub: '一键插入前缀并发送（ChatGPT）' },
     chatgpt_hide_feedback_buttons: { name: 'ChatGPT 隐藏点赞/点踩', sub: '隐藏回复下方反馈按钮（👍/👎）' },
     chatgpt_tex_copy_quote: { name: 'ChatGPT TeX Copy & Quote', sub: '复制/引用含 KaTeX 的选区时优先还原 LaTeX' },
     chatgpt_export_conversation: { name: 'ChatGPT 对话导出（新版 UI）', sub: '导出当前对话为 Markdown / HTML（在下方“菜单”里执行）' },
@@ -69,7 +82,8 @@
     gemini_auto_3_pro: { name: 'Gemini Enterprise 自动切换 3 Pro', sub: '自动将模型切换为 Gemini 3 Pro（可用时）' },
     genspark_moa_image_autosettings: { name: 'Genspark 绘图默认设置', sub: '进入绘图页自动打开 Setting，并选择 2K 画质' },
     genspark_credit_balance: { name: 'Genspark 积分余量', sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）' },
-    genspark_codeblock_fold: { name: 'Genspark 长代码块折叠', sub: '自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）' }
+    genspark_codeblock_fold: { name: 'Genspark 长代码块折叠', sub: '自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）' },
+    genspark_inline_upload_fix: { name: 'Genspark 消息编辑上传修复', sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器' }
   };
 
   function setStatus(text, kind = '') {

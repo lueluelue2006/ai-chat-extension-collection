@@ -25,6 +25,8 @@
         'chatgpt_thinking_toggle',
         'chatgpt_cmdenter_send',
         'chatgpt_readaloud_speed_controller',
+        'chatgpt_usage_monitor',
+        'chatgpt_reply_timer',
         'chatgpt_download_file_fix',
         'chatgpt_strong_highlight_lite',
         'chatgpt_quick_deep_search',
@@ -33,24 +35,31 @@
         'chatgpt_export_conversation'
       ]
     },
-    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav'] },
-    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav'] },
-    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav'] },
-    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav'] },
-    { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav'] },
-    { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav'] },
     {
       id: 'gemini_business',
       name: 'Gemini Business',
       sub: 'business.gemini.google',
-      modules: ['quicknav', 'gemini_math_fix', 'gemini_auto_3_pro']
+      modules: ['quicknav', 'chatgpt_cmdenter_send', 'gemini_math_fix', 'gemini_auto_3_pro']
     },
+    { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
     {
       id: 'genspark',
       name: 'Genspark',
       sub: 'genspark.ai/agents',
-      modules: ['quicknav', 'genspark_moa_image_autosettings', 'genspark_credit_balance', 'genspark_codeblock_fold']
-    }
+      modules: [
+        'quicknav',
+        'chatgpt_cmdenter_send',
+        'genspark_moa_image_autosettings',
+        'genspark_credit_balance',
+        'genspark_codeblock_fold',
+        'genspark_inline_upload_fix'
+      ]
+    },
+    { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav', 'chatgpt_cmdenter_send', 'grok_fast_unlock', 'grok_rate_limit_display'] },
+    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] }
   ];
 
   const MODULES = {
@@ -81,14 +90,38 @@
     },
     chatgpt_cmdenter_send: {
       id: 'chatgpt_cmdenter_send',
-      name: 'ChatGPT ⌘Enter 发送',
+      name: '⌘Enter 发送（Enter 换行）',
       sub: 'Enter/Shift+Enter 换行（强制）',
       hotkeys: ['⌘Enter', 'Ctrl+Enter']
+    },
+    grok_fast_unlock: {
+      id: 'grok_fast_unlock',
+      name: 'Grok 4 Fast 菜单项',
+      sub: '在模型菜单增加 “Grok 4 Fast”，并在发送时选用该模型',
+      hotkeys: []
+    },
+    grok_rate_limit_display: {
+      id: 'grok_rate_limit_display',
+      name: 'Grok 剩余次数显示',
+      sub: '在输入框附近显示 rate limit（剩余次数/等待时间）',
+      hotkeys: []
     },
     chatgpt_readaloud_speed_controller: {
       id: 'chatgpt_readaloud_speed_controller',
       name: 'ChatGPT 朗读速度控制器',
       sub: '控制 ChatGPT 朗读音频播放速度（0.01–100x）',
+      hotkeys: []
+    },
+    chatgpt_usage_monitor: {
+      id: 'chatgpt_usage_monitor',
+      name: 'ChatGPT 用量统计',
+      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
+      hotkeys: ['⌘I', 'Ctrl+I']
+    },
+    chatgpt_reply_timer: {
+      id: 'chatgpt_reply_timer',
+      name: 'ChatGPT 回复计时器',
+      sub: '统计从发送到回复完成的耗时（右下角极简数字）',
       hotkeys: []
     },
     chatgpt_download_file_fix: {
@@ -105,8 +138,8 @@
     },
     chatgpt_quick_deep_search: {
       id: 'chatgpt_quick_deep_search',
-      name: 'ChatGPT 快捷深度搜索（自用版）',
-      sub: '译 / 搜 / 思（按钮 + 快捷键）并强制下一次请求模型为 gpt-5',
+      name: '快捷深度搜索（译/搜/思）',
+      sub: '一键插入前缀并发送（ChatGPT）',
       hotkeys: ['Ctrl+S', 'Ctrl+T', 'Ctrl+Y', 'Ctrl+Z']
     },
     chatgpt_hide_feedback_buttons: {
@@ -156,6 +189,12 @@
       id: 'genspark_codeblock_fold',
       name: 'Genspark 长代码块折叠',
       sub: '自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）',
+      hotkeys: []
+    },
+    genspark_inline_upload_fix: {
+      id: 'genspark_inline_upload_fix',
+      name: 'Genspark 消息编辑上传修复',
+      sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
       hotkeys: []
     }
   };
@@ -363,7 +402,7 @@
   function isModuleEnabled(siteId, moduleId) {
     const v = currentSettings?.siteModules?.[siteId]?.[moduleId];
     if (typeof v === 'boolean') return v;
-    return moduleId === 'quicknav';
+    return v !== false;
   }
 
   function renderSites(activeSiteId) {
@@ -902,6 +941,69 @@
     elModuleSettings.appendChild(hint);
   }
 
+  function renderChatGPTUsageMonitorModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 用量统计', '实时统计各模型调用量（支持导入/导出、一周/一月分析报告）。');
+    addPanelHotkeys('chatgpt_usage_monitor');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_usage_monitor');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_usage_monitor = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I / Ctrl+I 可快速最小化。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTReplyTimerModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 回复计时器', '统计从你发送消息到 GPT 回复完成的耗时（右下角极简数字，覆盖最底层）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_reply_timer');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_reply_timer = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并读取对话 SSE（/backend-api/(f/)conversation）来判断开始/结束；右下角仅显示一个小数字（秒），并使用极高 z-index 覆盖其它悬浮物。';
+    elModuleSettings.appendChild(hint);
+  }
+
   function renderChatGPTDownloadFileFixModuleSettings(siteId) {
     addPanelTitle('ChatGPT 下载修复', '修复 chatgpt.com 下载文件失败：自动解码 download URL 的 sandbox_path。');
     addPanelDivider();
@@ -963,13 +1065,13 @@
     elModuleSettings.appendChild(hint);
   }
 
-  function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
-    addPanelTitle(
-      'ChatGPT 快捷深度搜索（自用版）',
-      '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧；找不到时回退为可拖动悬浮按钮），并支持快捷键触发。'
-    );
-    addPanelHotkeys('chatgpt_quick_deep_search');
-    addPanelDivider();
+	  function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
+	    addPanelTitle(
+	      '快捷深度搜索（译/搜/思）',
+	      '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧），并支持快捷键触发。'
+	    );
+	    addPanelHotkeys('chatgpt_quick_deep_search');
+	    addPanelDivider();
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -994,7 +1096,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块会在页面主世界（MAIN world）拦截 fetch，把 “译/搜/思” 触发的下一次 /backend-api/conversation（含 /backend-api/f/conversation）请求的 body.model 强制改为 gpt-5。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '说明：该模块会在输入框右侧添加“译/搜/思”按钮并自动发送；并拦截 fetch，把下一次 /backend-api/(f/)conversation 的 body.model 强制改为 gpt-5。';
     elModuleSettings.appendChild(hint);
   }
 
@@ -1159,6 +1261,108 @@
     elModuleSettings.appendChild(credit);
   }
 
+  function renderGrokFastUnlockModuleSettings(siteId) {
+    addPanelTitle('Grok 4 Fast 菜单项', '在模型菜单增加 “Grok 4 Fast”，并在发送时选用该模型。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'grok_fast_unlock');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] = next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].grok_fast_unlock = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '说明：该模块会拦截 grok.com 的发送请求，把 modelName/modelMode 改为 Grok 4 Fast 对应的模型参数。';
+    elModuleSettings.appendChild(hint);
+
+    const credit = document.createElement('div');
+    credit.className = 'smallHint';
+    credit.textContent = '原作者：MUTED64（Grok 4 Fast Unlock）';
+    elModuleSettings.appendChild(credit);
+  }
+
+  function renderGrokRateLimitDisplayModuleSettings(siteId) {
+    addPanelTitle('Grok 剩余次数显示', '在输入框附近显示 rate limit（剩余次数/等待时间）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'grok_rate_limit_display');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] = next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].grok_rate_limit_display = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '说明：该模块会请求 https://grok.com/rest/rate-limits 并在页面输入框附近展示剩余次数/等待时间。';
+    elModuleSettings.appendChild(hint);
+
+    const credit = document.createElement('div');
+    credit.className = 'smallHint';
+    credit.textContent = "原作者：Blankspeaker（Originally ported from CursedAtom's chrome extension）";
+    elModuleSettings.appendChild(credit);
+  }
+
+  function renderGensparkInlineUploadFixModuleSettings(siteId) {
+    addPanelTitle('Genspark 消息编辑上传修复', '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'genspark_inline_upload_fix');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] = next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].genspark_inline_upload_fix = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent = '使用方式：先点击消息右侧的铅笔进入编辑，然后点击编辑框，再 Cmd+V 粘贴图片/文件；点击编辑器里的📎会弹出文件选择器。';
+    elModuleSettings.appendChild(hint);
+
+    const credit = document.createElement('div');
+    credit.className = 'smallHint';
+    credit.textContent = '原作者：schweigen（Genspark Inline Upload Fix）';
+    elModuleSettings.appendChild(credit);
+  }
+
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
     elModuleSettings.textContent = '';
@@ -1173,6 +1377,8 @@
     if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
     if (moduleId === 'chatgpt_cmdenter_send') return renderChatGPTCmdEnterSendModuleSettings(siteId);
     if (moduleId === 'chatgpt_readaloud_speed_controller') return void renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token);
+    if (moduleId === 'chatgpt_usage_monitor') return renderChatGPTUsageMonitorModuleSettings(siteId);
+    if (moduleId === 'chatgpt_reply_timer') return renderChatGPTReplyTimerModuleSettings(siteId);
     if (moduleId === 'chatgpt_download_file_fix') return renderChatGPTDownloadFileFixModuleSettings(siteId);
     if (moduleId === 'chatgpt_strong_highlight_lite') return renderChatGPTStrongHighlightLiteModuleSettings(siteId);
     if (moduleId === 'chatgpt_quick_deep_search') return renderChatGPTQuickDeepSearchModuleSettings(siteId);
@@ -1182,6 +1388,9 @@
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
     if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);
     if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);
+    if (moduleId === 'genspark_inline_upload_fix') return renderGensparkInlineUploadFixModuleSettings(siteId);
+    if (moduleId === 'grok_fast_unlock') return renderGrokFastUnlockModuleSettings(siteId);
+    if (moduleId === 'grok_rate_limit_display') return renderGrokRateLimitDisplayModuleSettings(siteId);
 
     addPanelTitle('设置', '未知模块。');
   }

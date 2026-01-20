@@ -219,6 +219,37 @@
   let lastStopCheckTs = 0;
   let lastHasStop = null;
 
+  function isChatRoute() {
+    try {
+      const p = location && location.pathname ? location.pathname : '/';
+      return p === '/' || p.startsWith('/c/') || p.startsWith('/g/') || p.startsWith('/share/');
+    } catch {
+      return true;
+    }
+  }
+
+  function whenBodyReady(cb) {
+    try {
+      if (document.body) return cb();
+      const mo = new MutationObserver(() => {
+        if (!document.body) return;
+        try { mo.disconnect(); } catch {}
+        cb();
+      });
+      mo.observe(document.documentElement, { childList: true });
+    } catch {
+      try {
+        window.addEventListener(
+          'DOMContentLoaded',
+          () => {
+            try { cb(); } catch {}
+          },
+          { once: true }
+        );
+      } catch {}
+    }
+  }
+
   // 性能缓存：避免长对话频繁扫描/强制重排
   const previewCache = new Map(); // msgKey -> preview
   const roleCache = new Map(); // msgKey -> 'user' | 'assistant'
@@ -272,6 +303,14 @@
   }
 
   function init() {
+    if (!isChatRoute()) {
+      // 非聊天路由：避免在 Library/GPTs 等页面显示面板
+      try {
+        const nav = document.getElementById('cgpt-compact-nav');
+        if (nav) nav.remove();
+      } catch {}
+      return;
+    }
     const existing = document.getElementById('cgpt-compact-nav');
     if (existing) {
       // 扩展“重新加载”后旧内容脚本上下文会消失，但 DOM 还在；此时需要清理并重新初始化
@@ -286,10 +325,6 @@
         return;
       }
     }
-    const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
-    };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
       if (document.getElementById('cgpt-compact-nav')) {
@@ -317,13 +352,7 @@
         __cgptBooting = false;
       }
     };
-    if (checkContentLoaded()) boot();
-    else {
-      const observer = new MutationObserver(() => {
-        if (checkContentLoaded()) { observer.disconnect(); boot(); }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
+    boot();
   }
 
   let currentUrl = location.href;
@@ -376,8 +405,7 @@
   history.pushState = function (...args) { originalPushState.apply(this, args); setTimeout(detectUrlChange, 0); };
   history.replaceState = function (...args) { originalReplaceState.apply(this, args); setTimeout(detectUrlChange, 0); };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  whenBodyReady(init);
 
   function qsTurns(root = document) {
     if (TURN_SELECTOR) {
@@ -386,6 +414,17 @@
       // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
       TURN_SELECTOR = null;
     }
+
+    // 快速返回：没有任何消息时，避免触发大量 fallback 选择器扫描（新会话/加载中常见）
+    try {
+      const hasAnyTurn =
+        root.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]').length > 0;
+      if (!hasAnyTurn) {
+        const hasRoleMarker = !!root.querySelector('[data-message-author-role]');
+        if (!hasRoleMarker) return [];
+      }
+    } catch {}
+
     const selectors = [
       // 原有选择器
       'article[data-testid^="conversation-turn-"]',

@@ -37,6 +37,8 @@
         chatgpt_thinking_toggle: true,
         chatgpt_cmdenter_send: true,
         chatgpt_readaloud_speed_controller: true,
+        chatgpt_reply_timer: true,
+        chatgpt_usage_monitor: true,
         chatgpt_download_file_fix: true,
         chatgpt_strong_highlight_lite: true,
         chatgpt_quick_deep_search: true,
@@ -44,18 +46,20 @@
         chatgpt_tex_copy_quote: true,
         chatgpt_export_conversation: true
       },
-      ernie: { quicknav: true },
-      deepseek: { quicknav: true },
-      qwen: { quicknav: true },
-      zai: { quicknav: true },
-      grok: { quicknav: true },
-      gemini_app: { quicknav: true },
-      gemini_business: { quicknav: true, gemini_math_fix: true, gemini_auto_3_pro: true },
+      ernie: { quicknav: true, chatgpt_cmdenter_send: true },
+      deepseek: { quicknav: true, chatgpt_cmdenter_send: true },
+      qwen: { quicknav: true, chatgpt_cmdenter_send: true },
+      zai: { quicknav: true, chatgpt_cmdenter_send: true },
+      grok: { quicknav: true, chatgpt_cmdenter_send: true, grok_fast_unlock: true, grok_rate_limit_display: true },
+      gemini_app: { quicknav: true, chatgpt_cmdenter_send: true },
+      gemini_business: { quicknav: true, chatgpt_cmdenter_send: true, gemini_math_fix: true, gemini_auto_3_pro: true },
       genspark: {
         quicknav: true,
         genspark_moa_image_autosettings: true,
         genspark_credit_balance: true,
-        genspark_codeblock_fold: true
+        genspark_codeblock_fold: true,
+        genspark_inline_upload_fix: true,
+        chatgpt_cmdenter_send: true
       }
     }
   };
@@ -87,7 +91,7 @@
       moduleId: 'quicknav',
       matches: ['https://chatgpt.com/*'],
       js: ['content/gm-menu-polyfill.js', 'content/chatgpt-quicknav.js'],
-      runAt: 'document_end'
+      runAt: 'document_start'
     },
     {
       id: 'quicknav_ernie',
@@ -179,6 +183,15 @@
       runAt: 'document_end'
     },
     {
+      id: 'quicknav_genspark_inline_upload_fix',
+      siteId: 'genspark',
+      moduleId: 'genspark_inline_upload_fix',
+      matches: ['https://www.genspark.ai/agents*'],
+      js: ['content/genspark-inline-upload-fix/main.js'],
+      runAt: 'document_idle',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_chatgpt_perf',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_perf',
@@ -192,7 +205,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',
       matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-thinking-toggle/main.js'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-thinking-toggle/main.js'],
       runAt: 'document_idle',
       world: 'MAIN'
     },
@@ -200,7 +213,89 @@
       id: 'quicknav_chatgpt_cmdenter_send',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chatgpt.com/*'],
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_ernie_cmdenter_send',
+      siteId: 'ernie',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://ernie.baidu.com/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_deepseek_cmdenter_send',
+      siteId: 'deepseek',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://chat.deepseek.com/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_qwen_cmdenter_send',
+      siteId: 'qwen',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://chat.qwen.ai/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_zai_cmdenter_send',
+      siteId: 'zai',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://chat.z.ai/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_grok_cmdenter_send',
+      siteId: 'grok',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://grok.com/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_grok_fast_unlock',
+      siteId: 'grok',
+      moduleId: 'grok_fast_unlock',
+      matches: ['https://grok.com/*'],
+      js: ['content/grok-fast-unlock/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_grok_rate_limit_display',
+      siteId: 'grok',
+      moduleId: 'grok_rate_limit_display',
+      matches: ['https://grok.com/*'],
+      js: ['content/grok-rate-limit-display/main.js'],
+      runAt: 'document_end',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_gemini_app_cmdenter_send',
+      siteId: 'gemini_app',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://gemini.google.com/app*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_gemini_business_cmdenter_send',
+      siteId: 'gemini_business',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://business.gemini.google/*'],
+      js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_genspark_cmdenter_send',
+      siteId: 'genspark',
+      moduleId: 'chatgpt_cmdenter_send',
+      matches: ['https://www.genspark.ai/agents*'],
       js: ['content/chatgpt-cmdenter-send/main.js'],
       runAt: 'document_start'
     },
@@ -213,11 +308,29 @@
       runAt: 'document_start'
     },
     {
+      id: 'quicknav_chatgpt_reply_timer',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_reply_timer',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_usage_monitor',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_usage_monitor',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_chatgpt_download_file_fix',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_download_file_fix',
       matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
-      js: ['content/chatgpt-download-file-fix/main.js'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-download-file-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     },
@@ -234,7 +347,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_quick_deep_search',
       matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
-      js: ['content/chatgpt-quick-deep-search/main.js'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-quick-deep-search/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     },
@@ -282,10 +395,12 @@
     }
   ];
 
-  const QUICKNAV_CONTENT_SCRIPT_IDS = CONTENT_SCRIPT_DEFS.map((d) => d.id);
+  const LEGACY_CONTENT_SCRIPT_IDS = ['quicknav_grok_model_selector'];
+  const QUICKNAV_CONTENT_SCRIPT_IDS = [...new Set([...CONTENT_SCRIPT_DEFS.map((d) => d.id), ...LEGACY_CONTENT_SCRIPT_IDS])];
 
   let reinjectScheduled = false;
   let lastReinjectAt = 0;
+  let pendingReinjectSettings = null;
 
   function deepCloneJsonSafe(obj) {
     try {
@@ -452,16 +567,35 @@
   }
 
   function scheduleReinject() {
+    try {
+      // allow callers to pass latest settings via scheduleReinject(settings)
+      if (arguments.length && arguments[0]) pendingReinjectSettings = arguments[0];
+    } catch {}
     if (reinjectScheduled) return;
     reinjectScheduled = true;
-    setTimeout(async () => {
-      reinjectScheduled = false;
-      const settings = await getSettings();
-      reinjectContentScripts(settings);
-    }, 150);
+    try {
+      queueMicrotask(async () => {
+        reinjectScheduled = false;
+        const settings = pendingReinjectSettings || (await getSettings());
+        pendingReinjectSettings = null;
+        reinjectContentScripts(settings);
+      });
+    } catch {
+      Promise.resolve()
+        .then(async () => {
+          reinjectScheduled = false;
+          const settings = pendingReinjectSettings || (await getSettings());
+          pendingReinjectSettings = null;
+          reinjectContentScripts(settings);
+        })
+        .catch(() => {
+          reinjectScheduled = false;
+          pendingReinjectSettings = null;
+        });
+    }
   }
 
-  async function getRegisteredQuickNavContentScriptIds() {
+  async function getRegisteredQuickNavContentScripts() {
     try {
       const scripts = await new Promise((resolve) => {
         try {
@@ -470,23 +604,113 @@
           resolve([]);
         }
       });
-      const ids = [];
+      const out = [];
       for (const s of scripts || []) {
         const id = s && typeof s.id === 'string' ? s.id : '';
-        if (id && QUICKNAV_CONTENT_SCRIPT_IDS.includes(id)) ids.push(id);
+        if (id && QUICKNAV_CONTENT_SCRIPT_IDS.includes(id)) out.push(s);
       }
-      return ids;
+      return out;
     } catch {
       return [];
     }
   }
 
+  function normalizeWorld(input) {
+    return input === 'MAIN' ? 'MAIN' : 'ISOLATED';
+  }
+
+  function normalizeRunAt(input) {
+    return input === 'document_start' || input === 'document_idle' || input === 'document_end' ? input : 'document_end';
+  }
+
+  function normalizeStringArray(input) {
+    if (!Array.isArray(input)) return [];
+    return input.filter((x) => typeof x === 'string' && x);
+  }
+
+  function contentScriptDefToRegistration(def) {
+    return {
+      id: def.id,
+      matches: normalizeStringArray(def.matches),
+      js: normalizeStringArray(def.js),
+      css: normalizeStringArray(def.css),
+      runAt: normalizeRunAt(def.runAt),
+      allFrames: !!def.allFrames,
+      world: normalizeWorld(def.world)
+    };
+  }
+
+  function registeredContentScriptToComparable(reg) {
+    return {
+      id: typeof reg?.id === 'string' ? reg.id : '',
+      matches: normalizeStringArray(reg?.matches),
+      js: normalizeStringArray(reg?.js),
+      css: normalizeStringArray(reg?.css),
+      runAt: normalizeRunAt(reg?.runAt),
+      allFrames: !!reg?.allFrames,
+      world: normalizeWorld(reg?.world)
+    };
+  }
+
+  function arraysEqual(a, b) {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  function isSameContentScriptRegistration(registered, desired) {
+    try {
+      if (!registered || !desired) return false;
+      return (
+        registered.id === desired.id &&
+        arraysEqual(registered.matches, desired.matches) &&
+        arraysEqual(registered.js, desired.js) &&
+        arraysEqual(registered.css, desired.css) &&
+        registered.runAt === desired.runAt &&
+        registered.allFrames === desired.allFrames &&
+        registered.world === desired.world
+      );
+    } catch {
+      return false;
+    }
+  }
+
   async function applyContentScriptRegistration(settings) {
-    const registeredIds = await getRegisteredQuickNavContentScriptIds();
-    if (registeredIds.length) {
+    const enabledDefs = getEnabledContentScriptDefs(settings);
+    const desired = new Map(enabledDefs.map((d) => [d.id, contentScriptDefToRegistration(d)]));
+
+    const registeredScripts = await getRegisteredQuickNavContentScripts();
+    const registered = new Map(registeredScripts.map((s) => [s.id, registeredContentScriptToComparable(s)]));
+
+    const unregisterIds = new Set();
+    const registerItems = [];
+
+    // Remove scripts that no longer exist or are disabled.
+    for (const [id] of registered) {
+      if (!desired.has(id)) unregisterIds.add(id);
+    }
+
+    // Add scripts that are missing, or update scripts whose registration changed.
+    for (const [id, desiredItem] of desired) {
+      const regItem = registered.get(id);
+      if (!regItem) {
+        registerItems.push(desiredItem);
+        continue;
+      }
+      if (!isSameContentScriptRegistration(regItem, desiredItem)) {
+        unregisterIds.add(id);
+        registerItems.push(desiredItem);
+      }
+    }
+
+    if (unregisterIds.size) {
       await new Promise((resolve) => {
         try {
-          chrome.scripting.unregisterContentScripts({ ids: registeredIds }, () => {
+          chrome.scripting.unregisterContentScripts({ ids: Array.from(unregisterIds) }, () => {
             void chrome.runtime.lastError;
             resolve();
           });
@@ -496,20 +720,19 @@
       });
     }
 
-    const enabledDefs = getEnabledContentScriptDefs(settings);
-    if (!enabledDefs.length) return;
+    if (!registerItems.length) return;
 
     await new Promise((resolve, reject) => {
       try {
         chrome.scripting.registerContentScripts(
-          enabledDefs.map((d) => ({
+          registerItems.map((d) => ({
             id: d.id,
             matches: d.matches,
             js: d.js,
             ...(d.css?.length ? { css: d.css } : {}),
-            runAt: d.runAt || 'document_end',
+            runAt: d.runAt,
             ...(d.allFrames ? { allFrames: true } : {}),
-            ...(d.world ? { world: d.world } : {})
+            ...(d.world !== 'ISOLATED' ? { world: d.world } : {})
           })),
           () => {
             const err = chrome.runtime.lastError;
@@ -529,7 +752,7 @@
       .catch(() => void 0)
       .then(async () => {
         await applyContentScriptRegistration(settings);
-        scheduleReinject();
+        scheduleReinject(settings);
       });
     return applyChain;
   }
@@ -556,6 +779,14 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (!msg || typeof msg !== 'object') return;
+
+      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
+        getSettings()
+          .then((settings) => applySettingsAndReinject(settings).then(() => settings))
+          .then((settings) => sendResponse({ ok: true, settings }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
 
       if (msg.type === 'QUICKNAV_GET_SETTINGS') {
         getSettings().then((settings) => sendResponse({ ok: true, settings })).catch(() => sendResponse({ ok: true, settings: normalizeSettings(null) }));

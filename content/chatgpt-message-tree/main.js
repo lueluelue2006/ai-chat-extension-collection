@@ -75,6 +75,7 @@
     lastSummaryAt: 0,
     prefs: null,
     hubUnsub: null,
+    escCloseInstalled: false,
     authCache: {
       fetchedAt: 0,
       token: '',
@@ -83,6 +84,29 @@
     },
     bridgeInstalled: false
   };
+
+  function installEscClose() {
+    try {
+      if (state.escCloseInstalled) return;
+      state.escCloseInstalled = true;
+    } catch {
+      return;
+    }
+    try {
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          try {
+            if (!state.open) return;
+            if (!e) return;
+            if (e.key !== 'Escape' && e.code !== 'Escape') return;
+            setOpen(false);
+          } catch {}
+        },
+        { capture: true }
+      );
+    } catch {}
+  }
 
   function loadPrefs() {
     try {
@@ -1408,6 +1432,7 @@
 
   state.prefs = loadPrefs();
   ensureUi();
+  installEscClose();
   installQuickNavBridge();
   // Lazy load: only fetch/watch when panel is opened or requested via bridge.
 })();

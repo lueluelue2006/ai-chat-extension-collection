@@ -2598,7 +2598,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     if (treeBtn) {
       treeBtn.addEventListener('click', (e) => {
-        if (e && e.shiftKey) {
+        if (e && e.altKey) {
           try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
           scheduleTreeSummaryRequest(240);
           return;
@@ -2606,11 +2606,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_TOGGLE_PANEL }, '*'); } catch {}
         // Lazy load: only request tree summary after user interacts with the tree button.
         scheduleTreeSummaryRequest(420);
-      });
-      treeBtn.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
-        scheduleTreeSummaryRequest(240);
       });
       updateTreeBtnState(ui);
     }
@@ -2684,6 +2679,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const btn = ui.nav.querySelector('.compact-tree');
       if (!btn) return;
       const badge = btn.querySelector('.tree-count');
+      const refreshHint = 'Option+点击=强制刷新';
       const hasSummary = !!(treeSummary && typeof treeSummary === 'object' && treeSummary.stats && typeof treeSummary.stats === 'object');
       if (!hasSummary) {
         try { btn.removeAttribute('data-count'); } catch {}
@@ -2691,7 +2687,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (!getConversationIdFromUrl()) {
           btn.title = '分支 / 对话树（仅对话页可用）';
         } else {
-          btn.title = treeSummaryPendingReqId ? '分支 / 对话树（加载中…）' : '分支 / 对话树（点击加载）';
+          btn.title = treeSummaryPendingReqId ? `分支 / 对话树（加载中…，${refreshHint}）` : `分支 / 对话树（点击加载，${refreshHint}）`;
         }
         return;
       }
@@ -2699,7 +2695,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const count = Math.max(0, Number(treeSummary?.stats?.branchCount) || 0);
       btn.setAttribute('data-count', String(count));
       if (badge) badge.textContent = count ? String(count) : '';
-      btn.title = count ? `分支 / 对话树（分支点：${count}）` : '分支 / 对话树（当前对话无分支）';
+      btn.title = count ? `分支 / 对话树（分支点：${count}，${refreshHint}）` : `分支 / 对话树（当前对话无分支，${refreshHint}）`;
     } catch {}
   }
 

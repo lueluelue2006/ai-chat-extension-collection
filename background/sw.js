@@ -44,7 +44,9 @@
         chatgpt_quick_deep_search: true,
         chatgpt_hide_feedback_buttons: true,
         chatgpt_tex_copy_quote: true,
-        chatgpt_export_conversation: true
+        chatgpt_export_conversation: true,
+        chatgpt_image_message_edit: true,
+        chatgpt_message_tree: true
       },
       ernie: { quicknav: true, chatgpt_cmdenter_send: true },
       deepseek: { quicknav: true, chatgpt_cmdenter_send: true },
@@ -375,6 +377,24 @@
       matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
       js: ['content/gm-menu-polyfill.js', 'content/chatgpt-export-conversation/main.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_chatgpt_image_message_edit',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_image_message_edit',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-image-message-edit/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_message_tree',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_message_tree',
+      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_gemini_math_fix',

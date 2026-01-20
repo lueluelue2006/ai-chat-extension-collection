@@ -1,0 +1,907 @@
+(() => {
+  'use strict';
+
+  // ChatGPT conversation tree viewer (read-only).
+  // Fetches /backend-api/conversation/:id and renders mapping as a collapsible tree.
+
+  const GLOBAL_KEY = '__aichat_chatgpt_message_tree_v1__';
+  const STYLE_ID = '__aichat_chatgpt_message_tree_style_v1__';
+  const TOGGLE_ID = '__aichat_chatgpt_message_tree_toggle_v1__';
+  const PANEL_ID = '__aichat_chatgpt_message_tree_panel_v1__';
+  const PREFS_KEY = '__aichat_chatgpt_message_tree_prefs_v1__';
+  const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
+
+  const DEFAULT_PREFS = Object.freeze({
+    simpleMode: true,
+    guides: true
+  });
+
+  const SIMPLE_HIDE_ROLES = new Set(['system', 'tool']);
+  const SIMPLE_HIDE_ASSISTANT_TYPES = new Set(['thoughts', 'execution_output', 'reasoning_recap', 'reasoning']);
+
+  const GUIDE_COLORS = Object.freeze([
+    'rgba(239,68,68,0.55)',
+    'rgba(249,115,22,0.55)',
+    'rgba(234,179,8,0.55)',
+    'rgba(34,197,94,0.55)',
+    'rgba(59,130,246,0.55)',
+    'rgba(168,85,247,0.55)'
+  ]);
+
+  function getGuideColor(depth) {
+    const d = Math.max(0, Number(depth) || 0);
+    const idx = Math.max(0, d - 1) % GUIDE_COLORS.length;
+    return GUIDE_COLORS[idx];
+  }
+
+  try {
+    const existing = window[GLOBAL_KEY];
+    if (existing && typeof existing === 'object' && existing.__installed) {
+      try {
+        existing.ensureUi?.();
+        existing.scheduleRefresh?.(200);
+      } catch {}
+      return;
+    }
+  } catch {}
+
+  const now = () => Date.now();
+
+  const state = {
+    __installed: true,
+    open: false,
+    lastHref: location.href,
+    conversationId: '',
+    lastLoadedAt: 0,
+    refreshTimer: 0,
+    panelEl: null,
+    toggleEl: null,
+    treeEl: null,
+    statusEl: null,
+    statsEl: null,
+    lastData: null,
+    prefs: null,
+    hubUnsub: null,
+    authCache: {
+      fetchedAt: 0,
+      token: '',
+      accountId: '',
+      deviceId: ''
+    }
+  };
+
+  function loadPrefs() {
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      if (!raw) return { ...DEFAULT_PREFS };
+      const parsed = JSON.parse(raw);
+      const out = { ...DEFAULT_PREFS };
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.simpleMode === 'boolean') out.simpleMode = parsed.simpleMode;
+        if (typeof parsed.guides === 'boolean') out.guides = parsed.guides;
+      }
+      return out;
+    } catch {
+      return { ...DEFAULT_PREFS };
+    }
+  }
+
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs || DEFAULT_PREFS));
+    } catch {}
+  }
+
+  function setPref(key, value) {
+    state.prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : { ...DEFAULT_PREFS };
+    state.prefs[key] = value;
+    savePrefs();
+    applyPrefsToUi();
+    renderFromCache();
+  }
+
+  function getConversationIdFromUrl() {
+    try {
+      const parts = String(location.pathname || '')
+        .split('/')
+        .filter(Boolean);
+      const idx = parts.indexOf('c');
+      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function getCookie(name) {
+    try {
+      const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}=([^;]*)`));
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch {
+      return '';
+    }
+  }
+
+  async function getAuthContext() {
+    const cached = state.authCache;
+    const age = now() - (Number(cached.fetchedAt) || 0);
+    if (cached.token && cached.accountId && cached.deviceId && age < 5 * 60 * 1000) return cached;
+
+    let token = '';
+    let accountId = '';
+    try {
+      const resp = await fetch('/api/auth/session', { credentials: 'include' });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        token = typeof data?.accessToken === 'string' ? data.accessToken : '';
+        accountId = typeof data?.account?.id === 'string' ? data.account.id : '';
+      }
+    } catch {}
+
+    const deviceId = getCookie('oai-did');
+
+    state.authCache = {
+      fetchedAt: now(),
+      token,
+      accountId,
+      deviceId
+    };
+    return state.authCache;
+  }
+
+  async function fetchConversation(conversationId) {
+    const { token, accountId, deviceId } = await getAuthContext();
+    const headers = {
+      accept: 'application/json',
+      authorization: token ? `Bearer ${token}` : '',
+      'chatgpt-account-id': accountId || '',
+      'oai-device-id': deviceId || '',
+      'oai-language': navigator.language || 'en-US'
+    };
+
+    const url = `/backend-api/conversation/${encodeURIComponent(conversationId)}`;
+    const resp = await fetch(url, { credentials: 'include', headers });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`HTTP ${resp.status} ${text ? `(${text.slice(0, 120)})` : ''}`.trim());
+    }
+    return await resp.json();
+  }
+
+  function ensureStyles() {
+    try {
+      if (document.getElementById(STYLE_ID)) return;
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = `
+        #${TOGGLE_ID}{
+          position: fixed;
+          right: 12px;
+          bottom: 96px;
+          z-index: 2147483647;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 42px;
+          height: 42px;
+          border-radius: 14px;
+          background: rgba(17,17,17,0.92);
+          color: rgba(255,255,255,0.92);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+          cursor: pointer;
+          user-select: none;
+        }
+        #${TOGGLE_ID}:hover{ background: rgba(17,17,17,0.98); }
+        #${TOGGLE_ID}[data-hidden="1"]{ display:none !important; }
+
+        #${PANEL_ID}{
+          position: fixed;
+          right: 12px;
+          top: 80px;
+          bottom: 96px;
+          width: min(380px, calc(100vw - 24px));
+          z-index: 2147483647;
+          background: rgba(17, 17, 17, 0.94);
+          color: rgba(255,255,255,0.92);
+          border-radius: 14px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+          overflow: hidden;
+          display: none;
+        }
+        #${PANEL_ID}[data-open="1"]{ display: flex; flex-direction: column; }
+        #${PANEL_ID}[data-hidden="1"]{ display:none !important; }
+        #${PANEL_ID} .hdr{
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.10);
+        }
+        #${PANEL_ID} .hdr .title{
+          font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          font-weight: 600;
+          letter-spacing: 0.2px;
+        }
+        #${PANEL_ID} .hdr .spacer{ flex: 1; }
+        #${PANEL_ID} .hdr button{
+          appearance: none;
+          border: 0;
+          border-radius: 10px;
+          padding: 6px 10px;
+          background: rgba(255,255,255,0.12);
+          color: rgba(255,255,255,0.92);
+          cursor: pointer;
+          font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        }
+        #${PANEL_ID} .hdr button:hover{ background: rgba(255,255,255,0.18); }
+        #${PANEL_ID} .hdr button.toggle[data-on="1"]{
+          background: rgba(56,189,248,0.18);
+          outline: 1px solid rgba(56,189,248,0.25);
+        }
+        #${PANEL_ID} .body{
+          flex: 1;
+          overflow: auto;
+          padding: 10px 10px 14px;
+        }
+        #${PANEL_ID} .status{
+          font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          opacity: 0.85;
+          margin-bottom: 8px;
+        }
+        #${PANEL_ID} .stats{
+          font: 11px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          opacity: 0.75;
+          margin-bottom: 10px;
+        }
+        #${PANEL_ID} .tree{
+          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          letter-spacing: 0.1px;
+        }
+        #${PANEL_ID} .tree *{ box-sizing: border-box; }
+        #${PANEL_ID} .aichat-tree-node{
+          position: relative;
+          margin-left: 12px;
+        }
+        #${PANEL_ID} .tree > .aichat-tree-node{ margin-left: 0; }
+        #${PANEL_ID} .children{
+          position: relative;
+        }
+        #${PANEL_ID} .children::before{
+          content: '';
+          position: absolute;
+          left: 6px;
+          top: 0px;
+          bottom: 0px;
+          width: 1px;
+          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
+          opacity: 0;
+          pointer-events: none;
+        }
+        #${PANEL_ID} .tree.guides .children::before{ opacity: 0.85; }
+        #${PANEL_ID} summary{
+          list-style: none;
+          cursor: pointer;
+          outline: none;
+        }
+        #${PANEL_ID} summary::-webkit-details-marker{ display: none; }
+        #${PANEL_ID} .node-row{
+          display: inline-flex;
+          align-items: baseline;
+          gap: 8px;
+          padding: 4px 6px;
+          border-radius: 10px;
+          cursor: pointer;
+        }
+        #${PANEL_ID} .node-row:hover{ background: rgba(255,255,255,0.07); }
+        #${PANEL_ID} .caret{
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 14px;
+          height: 14px;
+          border-radius: 6px;
+          flex: 0 0 14px;
+          color: rgba(255,255,255,0.70);
+        }
+        #${PANEL_ID} .caret::before{
+          content: '▸';
+          display: block;
+          transform: rotate(0deg);
+          transition: transform 120ms ease;
+          line-height: 14px;
+          font-size: 12px;
+        }
+        #${PANEL_ID} details[open] > summary .caret::before{ transform: rotate(90deg); }
+        #${PANEL_ID} .caret.placeholder{ opacity: 0; pointer-events: none; }
+        #${PANEL_ID} .node-row.selected{
+          background: rgba(56,189,248,0.18);
+          outline: 1px solid rgba(56,189,248,0.22);
+        }
+        #${PANEL_ID} .badge{
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 18px;
+          height: 16px;
+          padding: 0 6px;
+          border-radius: 999px;
+          font: 10px/16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          background: rgba(255,255,255,0.12);
+          color: rgba(255,255,255,0.92);
+        }
+        #${PANEL_ID} .badge.user{ background: rgba(34,197,94,0.20); }
+        #${PANEL_ID} .badge.assistant{ background: rgba(59,130,246,0.20); }
+        #${PANEL_ID} .badge.system{ background: rgba(245,158,11,0.20); }
+        #${PANEL_ID} .badge.tool{ background: rgba(168,85,247,0.20); }
+        #${PANEL_ID} .meta{
+          opacity: 0.65;
+          font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        #${PANEL_ID} .node-row.current{
+          background: rgba(255,255,255,0.12);
+          outline: 1px solid rgba(255,255,255,0.18);
+        }
+        #${PANEL_ID} .node-row.path{
+          outline: 1px solid rgba(56,189,248,0.18);
+        }
+        #${PANEL_ID} .node-row.branch .meta{
+          opacity: 0.9;
+          color: rgba(251,191,36,0.95);
+        }
+        article.${MSG_HIGHLIGHT_CLASS}{
+          outline: 2px solid rgba(56,189,248,0.90) !important;
+          outline-offset: 4px;
+          border-radius: 14px;
+          animation: aichat-tree-flash 900ms ease-out;
+        }
+        @keyframes aichat-tree-flash{
+          0%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
+          35%{ box-shadow: 0 0 0 8px rgba(56,189,248,0.20); }
+          100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
+        }
+      `;
+      document.documentElement?.appendChild(style);
+    } catch {}
+  }
+
+  function findTurnElementByMessageId(messageId) {
+    const id = String(messageId || '').trim();
+    if (!id) return null;
+    try {
+      const article = document.querySelector(`article[data-turn-id="${id}"]`);
+      if (article) return article;
+    } catch {}
+    try {
+      const msg = document.querySelector(`[data-message-id="${id}"]`);
+      if (!msg) return null;
+      return msg.closest('article') || msg;
+    } catch {
+      return null;
+    }
+  }
+
+  function highlightTurnElement(el) {
+    const element = el && el.nodeType === 1 ? el : null;
+    if (!element) return;
+    try {
+      document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => n.classList.remove(MSG_HIGHLIGHT_CLASS));
+    } catch {}
+    const article = element.closest?.('article') || element;
+    try {
+      article.classList.add(MSG_HIGHLIGHT_CLASS);
+      setTimeout(() => {
+        try {
+          article.classList.remove(MSG_HIGHLIGHT_CLASS);
+        } catch {}
+      }, 1500);
+    } catch {}
+  }
+
+  function scrollToMessageId(messageId) {
+    const el = findTurnElementByMessageId(messageId);
+    if (!el) return false;
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch {
+      try {
+        el.scrollIntoView();
+      } catch {}
+    }
+    highlightTurnElement(el);
+    return true;
+  }
+
+  function setSelectedNodeId(nodeId) {
+    const id = String(nodeId || '');
+    if (!state.treeEl) return;
+    try {
+      state.treeEl.querySelectorAll('.node-row.selected').forEach((n) => n.classList.remove('selected'));
+    } catch {}
+    if (!id) return;
+    try {
+      const nodeEl = state.treeEl.querySelector(`.aichat-tree-node[data-node-id="${id}"]`);
+      const row = nodeEl?.querySelector?.('.node-row');
+      if (row) row.classList.add('selected');
+    } catch {}
+  }
+
+  function ensureUi() {
+    ensureStyles();
+    const docEl = document.documentElement;
+    if (!docEl) return;
+
+    let toggle = document.getElementById(TOGGLE_ID);
+    if (!toggle) {
+      toggle = document.createElement('div');
+      toggle.id = TOGGLE_ID;
+      toggle.setAttribute('role', 'button');
+      toggle.setAttribute('tabindex', '0');
+      toggle.title = 'Conversation tree';
+      toggle.textContent = 'Tree';
+      toggle.addEventListener('click', () => setOpen(!state.open));
+      toggle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setOpen(!state.open);
+        }
+      });
+      docEl.appendChild(toggle);
+    }
+    state.toggleEl = toggle;
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = PANEL_ID;
+      panel.setAttribute('data-open', '0');
+      panel.innerHTML = `
+        <div class="hdr">
+          <div class="title">Conversation Tree</div>
+          <div class="spacer"></div>
+          <button type="button" class="toggle simple" title="隐藏系统/工具/内部节点（简洁）">简洁</button>
+          <button type="button" class="toggle guides" title="彩色对齐竖线（类似 VSCode 缩进线）">彩线</button>
+          <button type="button" class="refresh">刷新</button>
+          <button type="button" class="close">关闭</button>
+        </div>
+        <div class="body">
+          <div class="status"></div>
+          <div class="stats"></div>
+          <div class="tree"></div>
+        </div>
+      `;
+      panel.querySelector('button.simple')?.addEventListener('click', () => setPref('simpleMode', !state.prefs?.simpleMode));
+      panel.querySelector('button.guides')?.addEventListener('click', () => setPref('guides', !state.prefs?.guides));
+      panel.querySelector('button.refresh')?.addEventListener('click', () => scheduleRefresh(50, 'manual'));
+      panel.querySelector('button.close')?.addEventListener('click', () => setOpen(false));
+      docEl.appendChild(panel);
+    }
+
+    state.panelEl = panel;
+    state.statusEl = panel.querySelector('.status');
+    state.statsEl = panel.querySelector('.stats');
+    state.treeEl = panel.querySelector('.tree');
+
+    applyPrefsToUi();
+  }
+
+  function applyPrefsToUi() {
+    try {
+      ensureStyles();
+    } catch {}
+    state.prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : loadPrefs();
+
+    const simpleOn = state.prefs.simpleMode !== false;
+    const guidesOn = state.prefs.guides !== false;
+
+    try {
+      const btn = state.panelEl?.querySelector?.('button.simple');
+      if (btn) btn.setAttribute('data-on', simpleOn ? '1' : '0');
+    } catch {}
+    try {
+      const btn = state.panelEl?.querySelector?.('button.guides');
+      if (btn) btn.setAttribute('data-on', guidesOn ? '1' : '0');
+    } catch {}
+    try {
+      state.treeEl?.classList?.toggle?.('guides', guidesOn);
+    } catch {}
+  }
+
+  function setOpen(open) {
+    state.open = !!open;
+    ensureUi();
+    try {
+      state.panelEl?.setAttribute('data-open', state.open ? '1' : '0');
+    } catch {}
+  }
+
+  function setUiHidden(hidden) {
+    ensureUi();
+    const v = hidden ? '1' : '0';
+    try {
+      state.toggleEl?.setAttribute('data-hidden', v);
+    } catch {}
+    try {
+      state.panelEl?.setAttribute('data-hidden', v);
+    } catch {}
+    if (hidden) setOpen(false);
+  }
+
+  function setStatus(text) {
+    ensureUi();
+    if (state.statusEl) state.statusEl.textContent = text || '';
+  }
+
+  function setStats(text) {
+    ensureUi();
+    if (state.statsEl) state.statsEl.textContent = text || '';
+  }
+
+  function clearTree() {
+    ensureUi();
+    if (!state.treeEl) return;
+    state.treeEl.textContent = '';
+  }
+
+  function getRootId(mapping) {
+    if (mapping && typeof mapping === 'object') {
+      if (mapping['client-created-root']) return 'client-created-root';
+      for (const [k, v] of Object.entries(mapping)) {
+        if (v && v.parent == null) return k;
+      }
+    }
+    return '';
+  }
+
+  function isNodeHidden(nodeId, node) {
+    const prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : DEFAULT_PREFS;
+    if (!prefs.simpleMode) return false;
+    if (!nodeId) return false;
+    if (nodeId === 'client-created-root') return false;
+    if (!node) return false;
+
+    if (!node.message) {
+      const isRoot = node.parent == null;
+      if (isRoot) return false;
+      const children = Array.isArray(node?.children) ? node.children : [];
+      if (children.length <= 1) return true;
+      return false;
+    }
+
+    const msg = node.message;
+    const role = msg?.author?.role ? String(msg.author.role) : '';
+    if (SIMPLE_HIDE_ROLES.has(role)) return true;
+
+    const ct = msg?.content?.content_type ? String(msg.content.content_type) : '';
+    if (role === 'assistant' && SIMPLE_HIDE_ASSISTANT_TYPES.has(ct)) return true;
+
+    return false;
+  }
+
+  function getEffectiveCurrentId(mapping, currentId) {
+    try {
+      let cur = String(currentId || '');
+      let guard = 0;
+      while (cur && guard++ < 4096) {
+        const node = mapping?.[cur];
+        if (!isNodeHidden(cur, node)) return cur;
+        cur = node && typeof node.parent === 'string' ? node.parent : '';
+      }
+    } catch {}
+    return String(currentId || '');
+  }
+
+  function computeVisiblePathSet(mapping, currentId) {
+    const set = new Set();
+    try {
+      let cur = String(currentId || '');
+      let guard = 0;
+      while (cur && guard++ < 4096) {
+        const node = mapping?.[cur];
+        if (!isNodeHidden(cur, node)) set.add(cur);
+        cur = node && typeof node.parent === 'string' ? node.parent : '';
+      }
+    } catch {}
+    return set;
+  }
+
+  function unwrapVisibleNodes(nodeId, mapping, localSeen, guard) {
+    const id = String(nodeId || '');
+    if (!id) return [];
+    if (localSeen.has(id)) return [];
+    if ((guard || 0) > 4096) return [];
+    localSeen.add(id);
+
+    const node = mapping?.[id] || null;
+    if (!node) return [];
+
+    if (isNodeHidden(id, node)) {
+      const children = Array.isArray(node?.children) ? node.children : [];
+      /** @type {string[]} */
+      let out = [];
+      for (const c of children) out = out.concat(unwrapVisibleNodes(c, mapping, localSeen, (guard || 0) + 1));
+      return out;
+    }
+
+    return [id];
+  }
+
+  function getDisplayChildren(nodeId, mapping) {
+    const node = mapping?.[nodeId] || null;
+    const children = Array.isArray(node?.children) ? node.children : [];
+    const localSeen = new Set();
+    /** @type {string[]} */
+    let out = [];
+    for (const childId of children) out = out.concat(unwrapVisibleNodes(childId, mapping, localSeen, 0));
+    return [...new Set(out)];
+  }
+
+  function getRoleBadgeClass(role) {
+    if (role === 'user') return 'user';
+    if (role === 'assistant') return 'assistant';
+    if (role === 'system') return 'system';
+    if (role === 'tool') return 'tool';
+    return '';
+  }
+
+  function extractTextFromMessage(message) {
+    try {
+      const content = message?.content;
+      const ct = String(content?.content_type || '');
+      const parts = content?.parts;
+
+      if (Array.isArray(parts)) {
+        const strings = parts.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim());
+        const hasImagePart = parts.some(
+          (p) => p && typeof p === 'object' && typeof p.content_type === 'string' && p.content_type.toLowerCase().includes('image')
+        );
+        const text = strings.join(' ').trim();
+        if (hasImagePart && text) return `[img] ${text}`;
+        if (hasImagePart) return '[img]';
+        if (text) return text;
+      }
+
+      if (ct && !parts) return `<${ct}>`;
+    } catch {}
+    return '';
+  }
+
+  function formatSnippet(text, maxLen = 60) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    if (s.length <= maxLen) return s;
+    return `${s.slice(0, maxLen - 1)}…`;
+  }
+
+  function renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount }) {
+    const row = document.createElement('span');
+    row.className = 'node-row';
+    if (isCurrent) row.classList.add('current');
+    if (isOnPath) row.classList.add('path');
+    if (isBranch) row.classList.add('branch');
+
+    const caret = document.createElement('span');
+    caret.className = `caret${childrenCount ? '' : ' placeholder'}`;
+    row.appendChild(caret);
+
+    const msg = node?.message;
+    const role = msg?.author?.role ? String(msg.author.role) : nodeId === 'client-created-root' ? 'root' : '';
+    const badge = document.createElement('span');
+    badge.className = `badge ${getRoleBadgeClass(role)}`.trim();
+    badge.textContent = role ? role[0].toUpperCase() : '·';
+    row.appendChild(badge);
+
+    const text = msg ? extractTextFromMessage(msg) : 'root';
+    const snippet = formatSnippet(text);
+    const label = document.createElement('span');
+    label.textContent = snippet || '(empty)';
+    if (text && text !== snippet) label.title = text;
+    row.appendChild(label);
+
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    const n = Math.max(0, Number(childrenCount) || 0);
+    meta.textContent = isBranch ? `branches:${n}` : n ? `children:${n}` : '';
+    row.appendChild(meta);
+
+    return row;
+  }
+
+  function renderTree(mapping, rootId, currentId) {
+    ensureUi();
+    if (!state.treeEl) return;
+    state.treeEl.textContent = '';
+
+    const effectiveCurrent = getEffectiveCurrentId(mapping, currentId);
+    const pathSet = computeVisiblePathSet(mapping, currentId);
+    const visited = new Set();
+
+    function bindNodeNavigate({ nodeId, node, clickableEl, isDetailsNode }) {
+      const msgId = typeof node?.message?.id === 'string' ? node.message.id : nodeId === 'client-created-root' ? '' : nodeId;
+      clickableEl.addEventListener('click', (e) => {
+        let target = e.target && e.target.nodeType === 1 ? e.target : null;
+        if (!target && e.target && e.target.nodeType === 3) target = e.target.parentElement;
+        if (!target) return;
+
+        const isCaret = !!target.closest('.caret');
+        if (isDetailsNode) {
+          e.preventDefault();
+          if (isCaret) {
+            const host = clickableEl.closest('details');
+            if (host) host.open = !host.open;
+            return;
+          }
+        }
+
+        setSelectedNodeId(nodeId);
+        if (!msgId) return;
+        const ok = scrollToMessageId(msgId);
+        if (!ok) setStatus('未在页面中找到该节点对应的消息（可能是系统/内部节点未渲染）');
+      });
+    }
+
+    function walk(nodeId, depth) {
+      if (!nodeId || visited.has(nodeId)) return null;
+      visited.add(nodeId);
+      const node = mapping?.[nodeId] || null;
+      const children = getDisplayChildren(nodeId, mapping);
+      const isBranch = children.length > 1;
+      const isCurrent = nodeId === effectiveCurrent;
+      const isOnPath = pathSet.has(nodeId);
+
+      const el = children.length ? document.createElement('details') : document.createElement('div');
+      el.className = 'aichat-tree-node';
+      el.dataset.nodeId = nodeId;
+      el.dataset.depth = String(depth);
+      if (children.length) {
+        el.open = isOnPath || depth === 0;
+        const summary = document.createElement('summary');
+        const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount: children.length });
+        summary.appendChild(row);
+        el.appendChild(summary);
+        bindNodeNavigate({ nodeId, node, clickableEl: summary, isDetailsNode: true });
+        const childrenWrap = document.createElement('div');
+        childrenWrap.className = 'children';
+        childrenWrap.dataset.depth = String(depth + 1);
+        try {
+          childrenWrap.style.setProperty('--aichat-guide-color', getGuideColor(depth + 1));
+        } catch {}
+        for (const childId of children) {
+          const childEl = walk(childId, depth + 1);
+          if (childEl) childrenWrap.appendChild(childEl);
+        }
+        el.appendChild(childrenWrap);
+      } else {
+        const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch: false, childrenCount: 0 });
+        el.appendChild(row);
+        bindNodeNavigate({ nodeId, node, clickableEl: row, isDetailsNode: false });
+      }
+      return el;
+    }
+
+    const rootEl = walk(rootId, 0);
+    if (rootEl) state.treeEl.appendChild(rootEl);
+
+    setSelectedNodeId(effectiveCurrent);
+  }
+
+  function computeDisplayStats(mapping, rootId) {
+    const visited = new Set();
+    let nodeCount = 0;
+    let msgCount = 0;
+    let branchCount = 0;
+    let leafCount = 0;
+
+    function walk(id, guard) {
+      const nodeId = String(id || '');
+      if (!nodeId) return;
+      if (visited.has(nodeId)) return;
+      if ((guard || 0) > 4096) return;
+      visited.add(nodeId);
+
+      const node = mapping?.[nodeId] || null;
+      nodeCount++;
+      if (node?.message) msgCount++;
+
+      const children = getDisplayChildren(nodeId, mapping);
+      if (children.length > 1) branchCount++;
+      if (children.length === 0) leafCount++;
+      for (const c of children) walk(c, (guard || 0) + 1);
+    }
+
+    walk(rootId, 0);
+    return { nodeCount, msgCount, branchCount, leafCount };
+  }
+
+  function renderFromCache() {
+    const cached = state.lastData;
+    if (!cached || !cached.mapping || typeof cached.mapping !== 'object') return;
+    const mapping = cached.mapping;
+    const rootId = cached.rootId;
+    const currentId = cached.currentId;
+
+    applyPrefsToUi();
+    const stats = computeDisplayStats(mapping, rootId);
+    setStatus(`已加载：${String(cached.conversationId || '').slice(0, 8)}…`);
+    setStats(`nodes:${stats.nodeCount} messages:${stats.msgCount} branches:${stats.branchCount} leaves:${stats.leafCount}`);
+    renderTree(mapping, rootId, currentId);
+  }
+
+  async function refreshConversation(reason = '') {
+    const conversationId = getConversationIdFromUrl();
+    state.conversationId = conversationId;
+
+    if (!conversationId) {
+      setUiHidden(true);
+      return;
+    }
+
+    setUiHidden(false);
+    setStatus(`加载中…${reason ? `（${reason}）` : ''}`);
+    setStats('');
+    clearTree();
+
+    try {
+      const data = await fetchConversation(conversationId);
+      const mapping = data?.mapping && typeof data.mapping === 'object' ? data.mapping : {};
+      const currentId = typeof data?.current_node === 'string' ? data.current_node : '';
+      const rootId = getRootId(mapping) || currentId;
+
+      state.lastLoadedAt = now();
+      state.lastData = { conversationId, mapping, currentId, rootId };
+      renderFromCache();
+    } catch (e) {
+      setStatus(`加载失败：${e instanceof Error ? e.message : String(e)}`);
+      setStats('');
+      clearTree();
+    }
+  }
+
+  function scheduleRefresh(delayMs = 400, reason = 'auto') {
+    try {
+      if (state.refreshTimer) clearTimeout(state.refreshTimer);
+      state.refreshTimer = setTimeout(() => {
+        state.refreshTimer = 0;
+        void refreshConversation(reason);
+      }, Math.max(0, Number(delayMs) || 0));
+    } catch {}
+  }
+
+  function installHubHooks() {
+    try {
+      if (state.hubUnsub) return true;
+      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
+      if (!hub || typeof hub.register !== 'function') return false;
+      state.hubUnsub = hub.register({
+        priority: 20,
+        onConversationDone: () => {
+          scheduleRefresh(900, 'send');
+        }
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function startHrefWatcher() {
+    try {
+      setInterval(() => {
+        if (location.href !== state.lastHref) {
+          state.lastHref = location.href;
+          scheduleRefresh(500, 'route');
+        }
+      }, 800);
+    } catch {}
+  }
+
+  state.ensureUi = ensureUi;
+  state.scheduleRefresh = scheduleRefresh;
+
+  Object.defineProperty(window, GLOBAL_KEY, { value: state, configurable: false, enumerable: false, writable: false });
+
+  state.prefs = loadPrefs();
+  ensureUi();
+  installHubHooks();
+  startHrefWatcher();
+  scheduleRefresh(800, 'init');
+})();

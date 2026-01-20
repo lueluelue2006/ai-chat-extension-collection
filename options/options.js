@@ -32,7 +32,9 @@
         'chatgpt_quick_deep_search',
         'chatgpt_hide_feedback_buttons',
         'chatgpt_tex_copy_quote',
-        'chatgpt_export_conversation'
+        'chatgpt_export_conversation',
+        'chatgpt_image_message_edit',
+        'chatgpt_message_tree'
       ]
     },
     {
@@ -160,6 +162,18 @@
       sub: '一键导出当前对话为 Markdown / HTML（在扩展菜单里执行）',
       hotkeys: [],
       menuPreview: ['导出为 Markdown', '导出为 HTML']
+    },
+    chatgpt_image_message_edit: {
+      id: 'chatgpt_image_message_edit',
+      name: 'ChatGPT 图文消息可编辑',
+      sub: '给图片/图文用户消息补上“编辑”按钮（在输入框里编辑并重新发送）',
+      hotkeys: []
+    },
+    chatgpt_message_tree: {
+      id: 'chatgpt_message_tree',
+      name: 'ChatGPT 消息树（只读）',
+      sub: '显示当前对话的完整消息树/分支结构（右侧面板）',
+      hotkeys: []
     },
     gemini_math_fix: {
       id: 'gemini_math_fix',
@@ -1194,6 +1208,66 @@
     addPanelMenuPreview('chatgpt_export_conversation');
   }
 
+  function renderChatGPTImageMessageEditModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 图文消息可编辑', '为图片/图文用户消息补上“编辑”按钮。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_image_message_edit');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] = next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_image_message_edit = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '使用方式：在“图片/图文”的用户消息下面会出现一个铅笔按钮；点击后会把原文/原图填入输入框。此时你可以在输入框里继续编辑、粘贴图片（Cmd+V）、或用“添加文件/图片”上传，然后直接发送。发送时会自动改写 parent_message_id，实现真正的“编辑（分叉）”。若想恢复正常发送，点输入框上方提示条里的“取消”。';
+    elModuleSettings.appendChild(hint);
+  }
+
+  function renderChatGPTMessageTreeModuleSettings(siteId) {
+    addPanelTitle('ChatGPT 消息树（只读）', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
+    addPanelDivider();
+
+    const rowInject = document.createElement('label');
+    rowInject.className = 'formRow';
+    const leftInject = document.createElement('span');
+    leftInject.textContent = '启用该模块注入';
+    const inputInject = document.createElement('input');
+    inputInject.type = 'checkbox';
+    inputInject.checked = isModuleEnabled(siteId, 'chatgpt_message_tree');
+    inputInject.addEventListener('change', () => {
+      const checked = !!inputInject.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] = next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_message_tree = checked;
+      });
+    });
+    rowInject.appendChild(leftInject);
+    rowInject.appendChild(inputInject);
+    elModuleSettings.appendChild(rowInject);
+
+    const hint = document.createElement('div');
+    hint.className = 'smallHint';
+    hint.textContent =
+      '使用方式：在右下角会出现 “Tree” 按钮。点开后显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。';
+    elModuleSettings.appendChild(hint);
+  }
+
   function renderGensparkMoaImageAutosettingsModuleSettings(siteId) {
     addPanelTitle('Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
     addPanelDivider();
@@ -1385,6 +1459,8 @@
     if (moduleId === 'chatgpt_hide_feedback_buttons') return renderChatGPTHideFeedbackButtonsModuleSettings(siteId);
     if (moduleId === 'chatgpt_tex_copy_quote') return renderChatGPTTexCopyQuoteModuleSettings(siteId);
     if (moduleId === 'chatgpt_export_conversation') return renderChatGPTExportConversationModuleSettings(siteId);
+    if (moduleId === 'chatgpt_image_message_edit') return renderChatGPTImageMessageEditModuleSettings(siteId);
+    if (moduleId === 'chatgpt_message_tree') return renderChatGPTMessageTreeModuleSettings(siteId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
     if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);
     if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);

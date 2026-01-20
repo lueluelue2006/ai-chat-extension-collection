@@ -544,6 +544,55 @@
     return CONTENT_SCRIPT_DEFS.filter((d) => isModuleEnabled(settings, d.siteId, d.moduleId));
   }
 
+  const URL_PATTERN_RE_CACHE = new Map();
+  function compileUrlPattern(pattern) {
+    if (URL_PATTERN_RE_CACHE.has(pattern)) return URL_PATTERN_RE_CACHE.get(pattern);
+    const escaped = String(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    const re = new RegExp(`^${escaped}$`);
+    URL_PATTERN_RE_CACHE.set(pattern, re);
+    return re;
+  }
+
+  function urlMatchesAny(url, patterns) {
+    if (!url || typeof url !== 'string') return false;
+    if (!Array.isArray(patterns) || !patterns.length) return false;
+    for (const p of patterns) {
+      if (!p || typeof p !== 'string') continue;
+      try {
+        if (compileUrlPattern(p).test(url)) return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  function injectContentScriptDefsIntoTab(tabId, defs) {
+    if (!Number.isFinite(tabId)) return;
+    if (!Array.isArray(defs) || !defs.length) return;
+
+    for (const rule of defs) {
+      try {
+        if (rule.css?.length) {
+          chrome.scripting.insertCSS(
+            {
+              target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
+              files: rule.css
+            },
+            () => void chrome.runtime.lastError
+          );
+        }
+        chrome.scripting.executeScript(
+          {
+            target: { tabId },
+            files: rule.js,
+            ...(rule.allFrames ? { allFrames: true } : {}),
+            ...(rule.world ? { world: rule.world } : {})
+          },
+          () => void chrome.runtime.lastError
+        );
+      } catch {}
+    }
+  }
+
   function reinjectContentScripts(settings) {
     try {
       const now = Date.now();
@@ -727,6 +776,8 @@
       }
     }
 
+    const result = { registeredIds: registerItems.map((d) => d.id), unregisteredIds: Array.from(unregisterIds) };
+
     if (unregisterIds.size) {
       await new Promise((resolve) => {
         try {
@@ -740,7 +791,7 @@
       });
     }
 
-    if (!registerItems.length) return;
+    if (!registerItems.length) return result;
 
     await new Promise((resolve, reject) => {
       try {
@@ -764,6 +815,8 @@
         reject(e);
       }
     });
+
+    return result;
   }
 
   let applyChain = Promise.resolve();
@@ -771,8 +824,9 @@
     applyChain = applyChain
       .catch(() => void 0)
       .then(async () => {
-        await applyContentScriptRegistration(settings);
+        const reg = await applyContentScriptRegistration(settings);
         scheduleReinject(settings);
+        return reg;
       });
     return applyChain;
   }
@@ -801,9 +855,37 @@
       if (!msg || typeof msg !== 'object') return;
 
       if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
+        const tabId = sender?.tab?.id;
+        const href = typeof msg.href === 'string' ? msg.href : '';
         getSettings()
-          .then((settings) => applySettingsAndReinject(settings).then(() => settings))
-          .then((settings) => sendResponse({ ok: true, settings }))
+          .then((settings) =>
+            applySettingsAndReinject(settings)
+              .catch((e) => {
+                // even if registration fails, still best-effort inject into sender tab
+                try {
+                  if (Number.isFinite(tabId) && href) {
+                    const enabled = getEnabledContentScriptDefs(settings);
+                    const defsForUrl = enabled.filter((d) => urlMatchesAny(href, d.matches));
+                    injectContentScriptDefsIntoTab(tabId, defsForUrl);
+                  }
+                } catch {}
+                throw e;
+              })
+              .then((reg) => ({ settings, reg }))
+          )
+          .then(({ settings, reg }) => {
+            try {
+              if (Number.isFinite(tabId) && href) {
+                const enabled = getEnabledContentScriptDefs(settings);
+                const defsForUrl = enabled.filter((d) => urlMatchesAny(href, d.matches));
+                const allowIds = new Set(Array.isArray(reg?.registeredIds) ? reg.registeredIds : []);
+                const defsToInject = allowIds.size ? defsForUrl.filter((d) => allowIds.has(d.id)) : [];
+                // Only inject scripts that were just (re)registered; avoids double-inject on normal page loads.
+                injectContentScriptDefsIntoTab(tabId, defsToInject);
+              }
+            } catch {}
+            sendResponse({ ok: true, settings });
+          })
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
       }

@@ -493,7 +493,68 @@
   history.pushState = function (...args) { originalPushState.apply(this, args); setTimeout(detectUrlChange, 0); };
   history.replaceState = function (...args) { originalReplaceState.apply(this, args); setTimeout(detectUrlChange, 0); };
 
-  whenBodyReady(init);
+  function installNavSelfHeal() {
+    try {
+      if (window.__cgptNavSelfHealInstalled) return;
+      window.__cgptNavSelfHealInstalled = true;
+    } catch {
+      // ignore
+    }
+
+    let ensureTimer = 0;
+    let ensureAttempts = 0;
+
+    const ensure = () => {
+      try {
+        if (!isChatRoute()) return;
+        if (document.getElementById('cgpt-compact-nav')) return;
+        init();
+      } catch {}
+    };
+
+    const scheduleEnsure = (delay = 200) => {
+      if (ensureTimer) return;
+      ensureTimer = setTimeout(() => {
+        ensureTimer = 0;
+        ensure();
+        ensureAttempts++;
+        // Some ChatGPT renders can wipe body children during hydration; retry briefly.
+        if (ensureAttempts < 12 && isChatRoute() && !document.getElementById('cgpt-compact-nav')) {
+          scheduleEnsure(600);
+        } else {
+          ensureAttempts = 0;
+        }
+      }, Math.max(0, Number(delay) || 0));
+    };
+
+    // Fast path: if body child list changes and panel is missing, restore it.
+    try {
+      const mo = new MutationObserver(() => {
+        try {
+          if (!isChatRoute()) return;
+          if (document.getElementById('cgpt-compact-nav')) return;
+          scheduleEnsure(120);
+        } catch {}
+      });
+      if (document.body) mo.observe(document.body, { childList: true });
+    } catch {}
+
+    // Slow path: periodic sanity check (covers SPA navigations that don't touch body root children).
+    try {
+      setInterval(() => {
+        try {
+          if (!isChatRoute()) return;
+          if (document.getElementById('cgpt-compact-nav')) return;
+          scheduleEnsure(0);
+        } catch {}
+      }, 2000);
+    } catch {}
+  }
+
+  whenBodyReady(() => {
+    init();
+    installNavSelfHeal();
+  });
 
   function qsTurns(root = document) {
     if (TURN_SELECTOR) {

@@ -17,7 +17,16 @@
 
   try {
     if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
-    chrome.runtime.sendMessage({ type: 'QUICKNAV_BOOTSTRAP_PING', href: location.href }, () => void chrome.runtime.lastError);
+    let attempt = 0;
+    const ping = () => {
+      attempt++;
+      chrome.runtime.sendMessage({ type: 'QUICKNAV_BOOTSTRAP_PING', href: location.href }, (res) => {
+        const err = chrome.runtime.lastError;
+        if (!err && res && res.ok) return;
+        if (attempt >= 3) return;
+        setTimeout(ping, 200 * attempt);
+      });
+    };
+    ping();
   } catch {}
 })();
-

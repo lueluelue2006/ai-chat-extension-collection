@@ -2686,9 +2686,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const badge = btn.querySelector('.tree-count');
       const hasSummary = !!(treeSummary && typeof treeSummary === 'object' && treeSummary.stats && typeof treeSummary.stats === 'object');
       if (!hasSummary) {
-        btn.setAttribute('data-count', '');
+        try { btn.removeAttribute('data-count'); } catch {}
         if (badge) badge.textContent = '';
-        btn.title = treeSummaryPendingReqId ? '分支 / 对话树（加载中…）' : '分支 / 对话树（点击加载）';
+        if (!getConversationIdFromUrl()) {
+          btn.title = '分支 / 对话树（仅对话页可用）';
+        } else {
+          btn.title = treeSummaryPendingReqId ? '分支 / 对话树（加载中…）' : '分支 / 对话树（点击加载）';
+        }
         return;
       }
 

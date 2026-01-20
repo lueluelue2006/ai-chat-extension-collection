@@ -60,7 +60,10 @@
     lastHref: location.href,
     conversationId: '',
     lastLoadedAt: 0,
+    dirty: true,
     refreshTimer: 0,
+    refreshPromise: null,
+    hrefWatchTimer: 0,
     panelEl: null,
     toggleEl: null,
     treeEl: null,
@@ -422,6 +425,183 @@
     return true;
   }
 
+  function getTurnMessageIdFromElement(el) {
+    const element = el && el.nodeType === 1 ? el : null;
+    if (!element) return '';
+    try {
+      const article = element.closest?.('article') || element;
+      const id = article.getAttribute?.('data-turn-id');
+      if (id) return String(id);
+    } catch {}
+    try {
+      const article = element.closest?.('article') || element;
+      const msg = article.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id');
+      if (msg) return String(msg);
+    } catch {}
+    return '';
+  }
+
+  function findVisibleTurnElementByMessageIds(messageIds) {
+    const ids = Array.isArray(messageIds) ? messageIds : [];
+    for (const raw of ids) {
+      const id = String(raw || '').trim();
+      if (!id) continue;
+      const el = findTurnElementByMessageId(id);
+      if (el) return el.closest?.('article') || el;
+    }
+    return null;
+  }
+
+  function getResponseSwitcherButtons(turnEl) {
+    const el = turnEl && turnEl.nodeType === 1 ? turnEl : null;
+    if (!el) return null;
+    const article = el.closest?.('article') || el;
+    const prev =
+      article.querySelector?.('button[aria-label="Previous response"]') ||
+      article.querySelector?.('button[aria-label*="Previous"][aria-label*="response"]') ||
+      null;
+    const next =
+      article.querySelector?.('button[aria-label="Next response"]') ||
+      article.querySelector?.('button[aria-label*="Next"][aria-label*="response"]') ||
+      null;
+    if (!prev && !next) return null;
+    return { prev, next };
+  }
+
+  function waitForCondition(check, timeoutMs = 900, intervalMs = 50) {
+    const timeout = Math.max(60, Number(timeoutMs) || 0);
+    const interval = Math.max(16, Number(intervalMs) || 0);
+    const startedAt = now();
+    return new Promise((resolve) => {
+      const tick = () => {
+        try {
+          if (check()) return resolve(true);
+        } catch {}
+        if (now() - startedAt >= timeout) return resolve(false);
+        setTimeout(tick, interval);
+      };
+      tick();
+    });
+  }
+
+  async function trySelectSiblingMessage(targetMsgId, siblingMsgIds) {
+    const target = String(targetMsgId || '').trim();
+    if (!target) return false;
+    const siblings = Array.isArray(siblingMsgIds) ? siblingMsgIds.map((x) => String(x || '').trim()).filter(Boolean) : [];
+    if (siblings.length <= 1) return false;
+    if (!siblings.includes(target)) return false;
+
+    const maxSteps = Math.min(24, Math.max(2, siblings.length * 2 + 2));
+    let direction = 'next';
+    const seen = new Set();
+
+    for (let step = 0; step < maxSteps; step++) {
+      if (findTurnElementByMessageId(target)) return true;
+
+      const visibleTurn = findVisibleTurnElementByMessageIds(siblings);
+      if (!visibleTurn) return false;
+
+      const beforeId = getTurnMessageIdFromElement(visibleTurn);
+      if (beforeId) seen.add(beforeId);
+
+      const buttons = getResponseSwitcherButtons(visibleTurn);
+      if (!buttons) return false;
+
+      const canPrev = !!buttons.prev && !buttons.prev.disabled;
+      const canNext = !!buttons.next && !buttons.next.disabled;
+
+      let btn = null;
+      if (direction === 'next') {
+        if (canNext) btn = buttons.next;
+        else if (canPrev) {
+          direction = 'prev';
+          btn = buttons.prev;
+        }
+      } else {
+        if (canPrev) btn = buttons.prev;
+        else if (canNext) {
+          direction = 'next';
+          btn = buttons.next;
+        }
+      }
+      if (!btn) return false;
+
+      try {
+        btn.click();
+      } catch {
+        return false;
+      }
+
+      await waitForCondition(() => {
+        if (findTurnElementByMessageId(target)) return true;
+        const afterTurn = findVisibleTurnElementByMessageIds(siblings);
+        const afterId = getTurnMessageIdFromElement(afterTurn);
+        return !!afterId && afterId !== beforeId;
+      }, 1200, 60);
+
+      const afterTurn = findVisibleTurnElementByMessageIds(siblings);
+      const afterId = getTurnMessageIdFromElement(afterTurn);
+      if (afterId && seen.has(afterId) && siblings.length > 2) {
+        // Avoid infinite bouncing when the UI doesn't move as expected.
+        return !!findTurnElementByMessageId(target);
+      }
+    }
+
+    return !!findTurnElementByMessageId(target);
+  }
+
+  function nodeIdToMsgId(nodeId, mapping) {
+    const id = String(nodeId || '');
+    if (!id || !mapping || typeof mapping !== 'object') return '';
+    const node = mapping?.[id] || null;
+    const msgId = typeof node?.message?.id === 'string' ? node.message.id : id === 'client-created-root' ? '' : id;
+    return String(msgId || '');
+  }
+
+  function getPathNodeIds(mapping, rootId, targetNodeId) {
+    const target = String(targetNodeId || '');
+    const root = String(rootId || '');
+    if (!target || !mapping || typeof mapping !== 'object') return [];
+
+    const path = [];
+    let cur = target;
+    let guard = 0;
+    while (cur && guard++ < 4096) {
+      path.push(cur);
+      if (cur === root) break;
+      const node = mapping?.[cur];
+      cur = node && typeof node.parent === 'string' ? node.parent : '';
+    }
+    return path.reverse();
+  }
+
+  async function ensureNodePathVisible(mapping, rootId, targetNodeId) {
+    try {
+      const path = getPathNodeIds(mapping, rootId, targetNodeId);
+      if (path.length <= 1) return true;
+
+      for (let i = 0; i < path.length - 1; i++) {
+        const parentId = path[i];
+        const childId = path[i + 1];
+        const parentNode = mapping?.[parentId];
+        const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+        if (children.length <= 1) continue;
+
+        const siblingMsgIds = children.map((cid) => nodeIdToMsgId(cid, mapping)).filter(Boolean);
+        const desiredMsgId = nodeIdToMsgId(childId, mapping);
+        if (!desiredMsgId || siblingMsgIds.length <= 1) continue;
+
+        if (findTurnElementByMessageId(desiredMsgId)) continue;
+
+        const ok = await trySelectSiblingMessage(desiredMsgId, siblingMsgIds);
+        if (!ok) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function setSelectedNodeId(nodeId) {
     const id = String(nodeId || '');
     if (!state.treeEl) return;
@@ -527,11 +707,26 @@
   }
 
   function setOpen(open) {
-    state.open = !!open;
+    const next = !!open;
+    if (!next && state.refreshTimer) {
+      try {
+        clearTimeout(state.refreshTimer);
+      } catch {}
+      state.refreshTimer = 0;
+    }
+    state.open = next;
     ensureUi();
     try {
       state.panelEl?.setAttribute('data-open', state.open ? '1' : '0');
     } catch {}
+    if (state.open) {
+      installHubHooks();
+      startHrefWatcher();
+      scheduleRefresh(60, 'open');
+    } else {
+      stopHrefWatcher();
+      uninstallHubHooks();
+    }
   }
 
   function setUiHidden(hidden) {
@@ -719,17 +914,59 @@
 
         if (type === BRIDGE_REQ_SUMMARY) {
           const reqId = typeof data.reqId === 'string' ? data.reqId : '';
-          const summary = getBridgeSummary();
-          window.postMessage(
-            {
-              __quicknav: 1,
-              type: BRIDGE_RES_SUMMARY,
-              reqId,
-              ok: !!summary,
-              summary: summary || null
-            },
-            '*'
+          const reply = (summary) => {
+            try {
+              window.postMessage(
+                {
+                  __quicknav: 1,
+                  type: BRIDGE_RES_SUMMARY,
+                  reqId,
+                  ok: !!summary,
+                  summary: summary || null
+                },
+                '*'
+              );
+            } catch {}
+          };
+
+          const currentConvId = getConversationIdFromUrl();
+          if (!currentConvId) {
+            reply(null);
+            return;
+          }
+
+          const cached = state.lastData;
+          const age = now() - (Number(state.lastLoadedAt) || 0);
+          const canUseCache = !!(
+            cached &&
+            cached.conversationId === currentConvId &&
+            !state.dirty &&
+            age >= 0 &&
+            age < 15000
           );
+          if (canUseCache) {
+            reply(getBridgeSummary());
+            return;
+          }
+
+          const run = async () => {
+            try {
+              if (state.refreshPromise) {
+                await state.refreshPromise;
+              } else {
+                state.refreshPromise = refreshConversation('bridge', { silent: true })
+                  .catch(() => void 0)
+                  .finally(() => {
+                    state.refreshPromise = null;
+                  });
+                await state.refreshPromise;
+              }
+              reply(getBridgeSummary());
+            } catch {
+              reply(null);
+            }
+          };
+          void run();
           return;
         }
 
@@ -888,10 +1125,18 @@
           }
         }
 
-        setSelectedNodeId(nodeId);
-        if (!msgId) return;
-        const ok = scrollToMessageId(msgId);
-        if (!ok) setStatus('未在页面中找到该节点对应的消息（可能是系统/内部节点未渲染）');
+        const run = async () => {
+          setSelectedNodeId(nodeId);
+          if (!msgId) return;
+          if (scrollToMessageId(msgId)) return;
+
+          // When the node isn't currently rendered (e.g. alternative responses 1/2),
+          // try to switch the UI onto the target branch/path first.
+          const ok = await ensureNodePathVisible(mapping, rootId, nodeId);
+          if (ok && scrollToMessageId(msgId)) return;
+          setStatus('未在页面中找到该节点对应的消息（可能不在当前分支/1/2 未切换，或系统/内部节点未渲染）');
+        };
+        void run();
       });
     }
 
@@ -982,19 +1227,23 @@
     renderTree(mapping, rootId, currentId);
   }
 
-  async function refreshConversation(reason = '') {
+  async function refreshConversation(reason = '', opts = {}) {
+    const silent = !!opts.silent;
     const conversationId = getConversationIdFromUrl();
     state.conversationId = conversationId;
 
     if (!conversationId) {
+      state.dirty = true;
       setUiHidden(true);
       return;
     }
 
     setUiHidden(false);
-    setStatus(`加载中…${reason ? `（${reason}）` : ''}`);
-    setStats('');
-    clearTree();
+    if (!silent) {
+      setStatus(`加载中…${reason ? `（${reason}）` : ''}`);
+      setStats('');
+      clearTree();
+    }
 
     try {
       const data = await fetchConversation(conversationId);
@@ -1003,21 +1252,38 @@
       const rootId = getRootId(mapping) || currentId;
 
       state.lastLoadedAt = now();
+      state.dirty = false;
       state.lastData = { conversationId, mapping, currentId, rootId };
-      renderFromCache();
+      if (state.open) renderFromCache();
     } catch (e) {
-      setStatus(`加载失败：${e instanceof Error ? e.message : String(e)}`);
-      setStats('');
-      clearTree();
+      state.dirty = true;
+      if (!silent) {
+        setStatus(`加载失败：${e instanceof Error ? e.message : String(e)}`);
+        setStats('');
+        clearTree();
+      }
     }
   }
 
   function scheduleRefresh(delayMs = 400, reason = 'auto') {
     try {
+      if (!state.open) {
+        state.dirty = true;
+        if (state.refreshTimer) {
+          clearTimeout(state.refreshTimer);
+          state.refreshTimer = 0;
+        }
+        return;
+      }
       if (state.refreshTimer) clearTimeout(state.refreshTimer);
       state.refreshTimer = setTimeout(() => {
         state.refreshTimer = 0;
-        void refreshConversation(reason);
+        if (state.refreshPromise) return;
+        state.refreshPromise = refreshConversation(reason)
+          .catch(() => void 0)
+          .finally(() => {
+            state.refreshPromise = null;
+          });
       }, Math.max(0, Number(delayMs) || 0));
     } catch {}
   }
@@ -1030,6 +1296,7 @@
       state.hubUnsub = hub.register({
         priority: 20,
         onConversationDone: () => {
+          state.dirty = true;
           scheduleRefresh(900, 'send');
         }
       });
@@ -1039,16 +1306,40 @@
     }
   }
 
+  function uninstallHubHooks() {
+    try {
+      if (typeof state.hubUnsub === 'function') state.hubUnsub();
+    } catch {}
+    state.hubUnsub = null;
+  }
+
   function startHrefWatcher() {
     try {
-      setInterval(() => {
+      if (state.hrefWatchTimer) return;
+      state.lastHref = location.href;
+      state.hrefWatchTimer = setInterval(() => {
         updateToggleVisibility();
         if (location.href !== state.lastHref) {
           state.lastHref = location.href;
+          state.dirty = true;
+          state.lastData = null;
+          state.lastSummary = null;
+          state.lastSummaryKey = '';
+          state.lastSummaryAt = 0;
           scheduleRefresh(500, 'route');
         }
       }, 800);
     } catch {}
+  }
+
+  function stopHrefWatcher() {
+    try {
+      if (!state.hrefWatchTimer) return;
+      clearInterval(state.hrefWatchTimer);
+      state.hrefWatchTimer = 0;
+    } catch {
+      state.hrefWatchTimer = 0;
+    }
   }
 
   state.ensureUi = ensureUi;
@@ -1059,7 +1350,5 @@
   state.prefs = loadPrefs();
   ensureUi();
   installQuickNavBridge();
-  installHubHooks();
-  startHrefWatcher();
-  scheduleRefresh(800, 'init');
+  // Lazy load: only fetch/watch when panel is opened or requested via bridge.
 })();

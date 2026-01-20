@@ -294,6 +294,10 @@
       const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
       treeSummaryPendingReqId = reqId;
       window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REQ_SUMMARY, reqId }, '*');
+      try {
+        const ui = document.getElementById('cgpt-compact-nav')?._ui;
+        if (ui) updateTreeBtnState(ui);
+      } catch {}
     } catch {}
   }
 
@@ -357,11 +361,9 @@
           setTimeout(() => {
             refreshIndex(ui, { force: true });
             scheduleActiveUpdateNow();
-            scheduleTreeSummaryRequest(900);
           }, 120);
         } else {
           scheduleActiveUpdateNow();
-          scheduleTreeSummaryRequest(650);
         }
       } catch (e) {
         if (DEBUG || window.DEBUG_TEMP) console.error('scheduleRefresh error:', e);
@@ -429,7 +431,6 @@
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
         scheduleRefresh(ui);
-        scheduleTreeSummaryRequest(1200);
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
         __cgptBooting = false;
@@ -2542,6 +2543,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           return;
         }
         try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_TOGGLE_PANEL }, '*'); } catch {}
+        // Lazy load: only request tree summary after user interacts with the tree button.
+        scheduleTreeSummaryRequest(420);
       });
       treeBtn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -2619,9 +2622,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       const btn = ui.nav.querySelector('.compact-tree');
       if (!btn) return;
+      const badge = btn.querySelector('.tree-count');
+      const hasSummary = !!(treeSummary && typeof treeSummary === 'object' && treeSummary.stats && typeof treeSummary.stats === 'object');
+      if (!hasSummary) {
+        btn.setAttribute('data-count', '');
+        if (badge) badge.textContent = '';
+        btn.title = treeSummaryPendingReqId ? '分支 / 对话树（加载中…）' : '分支 / 对话树（点击加载）';
+        return;
+      }
+
       const count = Math.max(0, Number(treeSummary?.stats?.branchCount) || 0);
       btn.setAttribute('data-count', String(count));
-      const badge = btn.querySelector('.tree-count');
       if (badge) badge.textContent = count ? String(count) : '';
       btn.title = count ? `分支 / 对话树（分支点：${count}）` : '分支 / 对话树（当前对话无分支）';
     } catch {}

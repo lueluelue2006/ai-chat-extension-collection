@@ -558,6 +558,57 @@
     return String(msgId || '');
   }
 
+  const representativeMsgIdCache = new Map();
+  function isRenderableMessage(msg) {
+    try {
+      if (!msg || typeof msg !== 'object') return false;
+      const role = msg?.author?.role ? String(msg.author.role) : '';
+      if (!role) return false;
+      if (role === 'system' || role === 'tool') return false;
+      const contentType = msg?.content?.content_type ? String(msg.content.content_type) : '';
+      if (role === 'assistant' && contentType && SIMPLE_HIDE_ASSISTANT_TYPES.has(contentType)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function getRepresentativeRenderableMsgId(startNodeId, mapping) {
+    const start = String(startNodeId || '');
+    if (!start || !mapping || typeof mapping !== 'object') return '';
+    if (representativeMsgIdCache.has(start)) return representativeMsgIdCache.get(start) || '';
+
+    const visited = new Set();
+    const queue = [start];
+    let qi = 0;
+    let found = '';
+    let guard = 0;
+
+    while (qi < queue.length && guard++ < 4096) {
+      const nodeId = queue[qi++];
+      if (!nodeId || visited.has(nodeId)) continue;
+      visited.add(nodeId);
+
+      const node = mapping?.[nodeId] || null;
+      const msg = node?.message || null;
+      if (isRenderableMessage(msg)) {
+        const mid = typeof msg?.id === 'string' ? String(msg.id) : '';
+        if (mid) {
+          found = mid;
+          break;
+        }
+      }
+
+      const children = Array.isArray(node?.children) ? node.children : [];
+      for (const cid of children) {
+        if (typeof cid === 'string' && cid) queue.push(cid);
+      }
+    }
+
+    representativeMsgIdCache.set(start, found);
+    return found;
+  }
+
   function getPathNodeIds(mapping, rootId, targetNodeId) {
     const target = String(targetNodeId || '');
     const root = String(rootId || '');
@@ -587,9 +638,17 @@
         const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
         if (children.length <= 1) continue;
 
-        const siblingMsgIds = children.map((cid) => nodeIdToMsgId(cid, mapping)).filter(Boolean);
-        const desiredMsgId = nodeIdToMsgId(childId, mapping);
-        if (!desiredMsgId || siblingMsgIds.length <= 1) continue;
+        const siblingMsgIds = [];
+        const childToRep = new Map();
+        for (const cid of children) {
+          if (typeof cid !== 'string' || !cid) continue;
+          const rep = getRepresentativeRenderableMsgId(cid, mapping);
+          if (!rep) continue;
+          if (!childToRep.has(cid)) childToRep.set(cid, rep);
+          if (!siblingMsgIds.includes(rep)) siblingMsgIds.push(rep);
+        }
+        const desiredMsgId = childToRep.get(childId) || getRepresentativeRenderableMsgId(childId, mapping) || nodeIdToMsgId(childId, mapping);
+        if (!desiredMsgId || siblingMsgIds.length <= 1 || !siblingMsgIds.includes(desiredMsgId)) continue;
 
         if (findTurnElementByMessageId(desiredMsgId)) continue;
 

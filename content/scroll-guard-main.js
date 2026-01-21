@@ -137,6 +137,17 @@
   function detectChatScrollerFallback() {
     const doc = document.scrollingElement || document.documentElement;
 
+    const grokScrollerSeed = (() => {
+      try {
+        if (String(location.hostname || '').toLowerCase() !== 'grok.com') return null;
+        // Grok conversation messages usually have ids like "response-<uuid>".
+        // Using a message element as seed lets us climb to the real overflow scroller.
+        return document.querySelector?.('[id^="response-"]') || null;
+      } catch {
+        return null;
+      }
+    })();
+
     const deepseekScroller = (() => {
       try {
         const list = document.querySelectorAll?.('.ds-scroll-area');
@@ -156,7 +167,7 @@
     const gensparkTurn = document.querySelector?.('.conversation-statement') || null;
     const main = document.querySelector?.('main') || document.querySelector?.('[role="main"]') || document.getElementById?.('main') || null;
 
-    const seeds = [deepseekScroller, ernieScroller, zaiScroller, geminiAppScroller, turns, msg, gensparkTurn, main, document.body].filter(Boolean);
+    const seeds = [grokScrollerSeed, deepseekScroller, ernieScroller, zaiScroller, geminiAppScroller, turns, msg, gensparkTurn, main, document.body].filter(Boolean);
     for (const s of seeds) {
       const closest = findClosestScrollContainer(s);
       if (closest) return closest;

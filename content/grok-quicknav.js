@@ -2375,10 +2375,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
+      // Grok uses its own scroll container inside <main> (not the document scroller).
+      // Use a message element as the seed so we can climb to the real overflow container.
+      const grokResponse = document.querySelector('[id^="response-"]');
       const turns = document.querySelector('[data-testid="conversation-turns"]');
       const msg = document.querySelector('[data-message-id]');
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
-      const target = turns || msg || main || document.body;
+      const target = grokResponse || turns || msg || main || document.body;
       const closest = findClosestScrollContainer(target);
       if (closest) return closest;
       return getScrollRoot(target);

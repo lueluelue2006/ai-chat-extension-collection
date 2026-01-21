@@ -2282,9 +2282,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     const scroller = getScrollRoot(anchor);
     const isWindow = isWindowScroller(scroller);
-    // Gemini App：自定义 scroller + smooth scroll 时，后续再做 postScrollNudge 容易造成“抽搐/回弹”。
-    // 自定义 scroller 分支已经按 anchorOffset 精确对齐，通常不需要二次 nudge。
-    let needNudge = true;
     markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
     try {
       if (!isWindow && scroller && scroller.getBoundingClientRect) {
@@ -2292,18 +2289,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const aRect = anchor.getBoundingClientRect();
         const top = scroller.scrollTop + (aRect.top - scRect.top) - (CONFIG.anchorOffset || 8);
         scroller.scrollTo({ top: Math.max(0, top), behavior });
-        needNudge = false;
       } else {
         const margin = Math.max(0, getFixedHeaderHeight());
-        try { anchor.style.scrollMarginTop = margin + 'px'; } catch {}
-        anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior });
+        const r = anchor.getBoundingClientRect?.();
+        const se = document.scrollingElement || document.documentElement;
+        const currentTop = se ? (se.scrollTop || 0) : (window.scrollY || 0);
+        const targetTop = r ? (currentTop + r.top - margin - (CONFIG.anchorOffset || 8)) : currentTop;
+        window.scrollTo({ top: Math.max(0, targetTop), behavior });
       }
     } catch {
       // 最后兜底：不崩溃
       try { anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' }); } catch {}
     }
-    if (needNudge) postScrollNudge(el);
-    else scheduleActiveUpdateNow();
+    scheduleActiveUpdateNow();
     el.classList.add('highlight-pulse');
     anchor.classList.add('highlight-pulse');
     setTimeout(() => { el.classList.remove('highlight-pulse'); anchor.classList.remove('highlight-pulse'); }, 1600);

@@ -165,8 +165,8 @@
     },
     chatgpt_image_message_edit: {
       id: 'chatgpt_image_message_edit',
-      name: 'ChatGPT 图文消息可编辑',
-      sub: '给图片/图文用户消息补上“编辑”按钮（在输入框里编辑并重新发送）',
+      name: 'ChatGPT 消息分叉编辑（可加图）',
+      sub: '给用户消息增加“分叉编辑”按钮：在输入框里编辑并可补图/文件；与原生编辑共存',
       hotkeys: []
     },
     chatgpt_message_tree: {
@@ -1209,7 +1209,7 @@
   }
 
   function renderChatGPTImageMessageEditModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 图文消息可编辑', '为图片/图文用户消息补上“编辑”按钮。');
+    addPanelTitle('ChatGPT 消息分叉编辑（可加图）', '为用户消息增加一个“分叉编辑”按钮（可与原生编辑共存）。');
     addPanelDivider();
 
     const rowInject = document.createElement('label');
@@ -1234,7 +1234,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '使用方式：在“图片/图文”的用户消息下面会出现一个铅笔按钮；点击后会把原文/原图填入输入框。此时你可以在输入框里继续编辑、粘贴图片（Cmd+V）、或用“添加文件/图片”上传，然后直接发送。发送时会自动改写 parent_message_id，实现真正的“编辑（分叉）”。若想恢复正常发送，点输入框上方提示条里的“取消”。';
+      '使用方式：在用户消息下面会多出一个 QuickNav 铅笔按钮（在 ChatGPT 原生“编辑”左侧）；点击后会把原文（以及原图，如有）填入输入框。此时你可以继续编辑，并可新增/粘贴图片（Cmd+V）或用“添加文件/图片”上传，然后直接发送。发送时会自动改写 parent_message_id，实现真正的“分叉编辑”。若想恢复正常发送，点提示条里的“取消”。';
     elModuleSettings.appendChild(hint);
   }
 

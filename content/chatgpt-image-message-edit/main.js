@@ -46,6 +46,15 @@
     );
   }
 
+  function findCopyButton(turnEl) {
+    return (
+      turnEl?.querySelector?.('button[data-testid="copy-turn-action-button"]') ||
+      turnEl?.querySelector?.('button[aria-label="Copy"]') ||
+      turnEl?.querySelector?.('button[aria-label="复制"]') ||
+      null
+    );
+  }
+
   function focusComposer() {
     const el = getComposerEl();
     if (!el) return;
@@ -184,11 +193,10 @@
     `;
   }
 
-  function isLikelyImageTurn(turnEl) {
+  function hasUserMessageImages(userMsgEl) {
     try {
-      const userMsg = turnEl?.querySelector?.('[data-message-author-role="user"][data-message-id]');
-      if (!userMsg) return false;
-      return !!userMsg.querySelector('img');
+      if (!userMsgEl) return false;
+      return !!userMsgEl.querySelector('img');
     } catch {
       return false;
     }
@@ -265,6 +273,7 @@
   async function enterEditMode(turnEl) {
     const userMsg = getUserMessageEl(turnEl);
     if (!userMsg) return;
+    const hasImages = hasUserMessageImages(userMsg);
 
     const conversationId = getConversationIdFromUrl();
     const parentMessageId = findParentMessageId(turnEl);
@@ -275,21 +284,31 @@
       sourceMessageId: userMsg.dataset?.messageId || ''
     };
 
-    setBanner('图文消息编辑模式：已把原文/原图填入输入框；下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+    setBanner('消息编辑模式：正在准备…');
 
     clearComposerText();
     setComposerText(extractUserText(userMsg));
 
+    if (!hasImages) {
+      setBanner('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      focusComposer();
+      return;
+    }
+
     const files = await fetchImagesAsFiles(userMsg);
-    if (files.length) {
-      setBanner(`图文消息编辑模式：正在载入原图（${files.length} 张）…`);
-      await sleep(50);
-      const ok = attachFilesToComposer(files);
-      if (!ok) {
-        setBanner('图文消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传（取消=恢复正常发送）');
-      } else {
-        setBanner('图文消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，然后直接发送（取消=恢复正常发送）');
-      }
+    if (!files.length) {
+      setBanner('消息编辑模式：未能读取原图；你可以手动添加图片/文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      focusComposer();
+      return;
+    }
+
+    setBanner(`消息编辑模式：正在载入原图（${files.length} 张）…`);
+    await sleep(50);
+    const ok = attachFilesToComposer(files);
+    if (!ok) {
+      setBanner('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+    } else {
+      setBanner('消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
     }
 
     focusComposer();
@@ -297,22 +316,22 @@
 
   function ensureEditButtonForTurn(turnEl) {
     if (!turnEl || turnEl.nodeType !== 1) return;
-    if (!isLikelyImageTurn(turnEl)) return;
+    const userMsg = getUserMessageEl(turnEl);
+    if (!userMsg) return;
 
-    const copyBtn = turnEl.querySelector('button[aria-label="Copy"]');
+    const copyBtn = findCopyButton(turnEl);
     if (!copyBtn) return;
     const actionBar = copyBtn.parentElement;
     if (!actionBar) return;
 
     if (actionBar.querySelector('button[data-aichat-img-edit="1"]')) return;
-    if (actionBar.querySelector('button[aria-label="Edit message"],button[aria-label="Edit"]')) return;
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.dataset.aichatImgEdit = '1';
     btn.className = copyBtn.className || '';
-    btn.setAttribute('aria-label', 'Edit message');
-    btn.setAttribute('title', 'Edit message');
+    btn.setAttribute('aria-label', 'QuickNav edit');
+    btn.setAttribute('title', 'QuickNav 编辑（可加图/文件，分叉编辑）');
     btn.innerHTML = buildPencilSvg();
     btn.addEventListener(
       'click',
@@ -324,7 +343,10 @@
       true
     );
 
-    actionBar.insertBefore(btn, copyBtn);
+    const nativeEdit = actionBar.querySelector(
+      'button[aria-label="Edit message"],button[aria-label="Edit"],button[aria-label="编辑消息"],button[aria-label="编辑"]'
+    );
+    actionBar.insertBefore(btn, nativeEdit || copyBtn.nextSibling);
   }
 
   function scan() {
@@ -376,7 +398,7 @@
             if (ok) {
               cancelEditMode();
             } else {
-              setBanner('图文消息编辑模式：发送失败（仍在编辑模式，可修改后再发 / 或点取消恢复正常发送）');
+              setBanner('消息编辑模式：发送失败（仍在编辑模式，可修改后再发 / 或点取消恢复正常发送）');
             }
           } catch {}
         }
@@ -435,4 +457,3 @@
     scheduleScan();
   }
 })();
-

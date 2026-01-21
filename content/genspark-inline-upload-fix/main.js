@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genspark Inline Upload Fix
 // @namespace    https://github.com/lueluelue2006
-// @version      0.2.0
+// @version      0.2.1
 // @description  Fix attachment upload in Genspark inline message edit (pencil): Cmd+V paste image/file, paperclip opens file chooser.
 // @match        https://www.genspark.ai/agents*
 // @run-at       document-idle
@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.2.1';
   const GLOBAL_KEY = '__gensparkInlineUploadFix';
   const ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt';
 
@@ -323,22 +323,75 @@
       picker.type = 'file';
       picker.accept = ACCEPT;
       picker.multiple = true;
+      picker.dataset.gensparkInlineUploadFixPicker = '1';
       picker.style.position = 'fixed';
       picker.style.left = '-9999px';
       picker.style.top = '-9999px';
       document.body.appendChild(picker);
 
+      let focusListenerAttached = false;
+      let cancelTimer = null;
+
+      const cleanup = () => {
+        if (cancelTimer) {
+          clearTimeout(cancelTimer);
+          cancelTimer = null;
+        }
+        if (focusListenerAttached) {
+          focusListenerAttached = false;
+          try {
+            window.removeEventListener('focus', onWindowFocus, true);
+          } catch {}
+        }
+        try {
+          picker.remove();
+        } catch {}
+        state.chooserOpen = false;
+      };
+
+      const onWindowFocus = () => {
+        // File dialog closed. If user cancelled, `change` may not fire; reset guard here.
+        setTimeout(() => {
+          if (!picker.isConnected) return;
+          const files = Array.from(picker.files || []);
+          if (files.length) return;
+          cleanup();
+        }, 0);
+      };
+
+      const onPicked = () => {
+        const files = Array.from(picker.files || []);
+        cleanup();
+        if (!files.length) return;
+        queueUpload(dedupeFiles(files), 'file picker');
+      };
+
       picker.addEventListener(
         'change',
-        () => {
-          const files = Array.from(picker.files || []);
-          picker.remove();
-          state.chooserOpen = false;
-          if (!files.length) return;
-          queueUpload(dedupeFiles(files), 'file picker');
-        },
+        onPicked,
         { once: true }
       );
+
+      // Chrome fires `cancel` for <input type="file"> on dialog cancel (not guaranteed).
+      picker.addEventListener('cancel', cleanup, { once: true });
+
+      window.addEventListener('focus', onWindowFocus, true);
+      focusListenerAttached = true;
+
+      // Safety net: never keep the guard stuck even if neither `change` nor `focus` fires.
+      // Avoid resetting while the native dialog is open (document not focused).
+      const retryGuardReset = () => {
+        if (!state.chooserOpen) return;
+        if (!picker.isConnected) return cleanup();
+        if (!document.hasFocus()) {
+          cancelTimer = setTimeout(retryGuardReset, 5000);
+          return;
+        }
+        const files = Array.from(picker.files || []);
+        if (files.length) return;
+        cleanup();
+      };
+      cancelTimer = setTimeout(retryGuardReset, 60_000);
 
       picker.click();
     } catch (e) {

@@ -20,11 +20,14 @@
 
   const DEFAULT_PREFS = Object.freeze({
     simpleMode: true,
-    guides: true
+    guides: true,
+    expandAll: true
   });
 
   const SIMPLE_HIDE_ROLES = new Set(['system', 'tool']);
-  const SIMPLE_HIDE_ASSISTANT_TYPES = new Set(['thoughts', 'execution_output', 'reasoning_recap', 'reasoning']);
+  // Treat internal assistant payloads as non-renderable (and hidden in simple mode),
+  // otherwise branch navigation may mistakenly target them.
+  const SIMPLE_HIDE_ASSISTANT_TYPES = new Set(['thoughts', 'execution_output', 'reasoning_recap', 'reasoning', 'code']);
 
   const GUIDE_COLORS = Object.freeze([
     'rgba(239,68,68,0.55)',
@@ -117,6 +120,7 @@
       if (parsed && typeof parsed === 'object') {
         if (typeof parsed.simpleMode === 'boolean') out.simpleMode = parsed.simpleMode;
         if (typeof parsed.guides === 'boolean') out.guides = parsed.guides;
+        if (typeof parsed.expandAll === 'boolean') out.expandAll = parsed.expandAll;
       }
       return out;
     } catch {
@@ -291,27 +295,28 @@
           opacity: 0.75;
           margin-bottom: 10px;
         }
-        #${PANEL_ID} .tree{
-          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-          letter-spacing: 0.1px;
-        }
-        #${PANEL_ID} .tree *{ box-sizing: border-box; }
-        #${PANEL_ID} .aichat-tree-node{
-          position: relative;
-          margin-left: 12px;
-        }
-        #${PANEL_ID} .tree > .aichat-tree-node{ margin-left: 0; }
-        #${PANEL_ID} .children{
-          position: relative;
-        }
-        #${PANEL_ID} .children::before{
-          content: '';
-          position: absolute;
-          left: 6px;
-          top: 0px;
-          bottom: 0px;
-          width: 1px;
-          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
+	        #${PANEL_ID} .tree{
+	          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	          letter-spacing: 0.1px;
+	          --aichat-indent: 16px;
+	        }
+	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
+	        #${PANEL_ID} .aichat-tree-node{
+	          position: relative;
+	          margin-left: var(--aichat-indent);
+	        }
+	        #${PANEL_ID} .tree > .aichat-tree-node{ margin-left: 0; }
+	        #${PANEL_ID} .children{
+	          position: relative;
+	        }
+	        #${PANEL_ID} .children::before{
+	          content: '';
+	          position: absolute;
+	          left: var(--aichat-indent);
+	          top: 0px;
+	          bottom: 0px;
+	          width: 1px;
+	          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
           opacity: 0;
           pointer-events: none;
         }
@@ -435,13 +440,39 @@
     } catch {}
   }
 
+  function allowTreeNavScroll(ms = 1400) {
+    const dur = Math.max(0, Math.round(Number(ms) || 0));
+    const clamped = Math.max(60, Math.min(8000, dur));
+    if (!clamped) return;
+
+    let hadPrev = false;
+    let prev;
+    try {
+      hadPrev = Object.prototype.hasOwnProperty.call(window, '__cgptNavAllowScroll');
+      prev = window.__cgptNavAllowScroll;
+      window.__cgptNavAllowScroll = true;
+    } catch {}
+    // Main-world scroll guard (when installed) uses window.postMessage.
+    try {
+      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_ALLOW', ms: clamped }, '*');
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (!hadPrev) delete window.__cgptNavAllowScroll;
+        else window.__cgptNavAllowScroll = prev;
+      } catch {}
+    }, clamped);
+  }
+
   function scrollToMessageId(messageId) {
     const el = findTurnElementByMessageId(messageId);
     if (!el) return false;
     try {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      allowTreeNavScroll(1800);
+      el.scrollIntoView({ behavior: 'auto', block: 'center' });
     } catch {
       try {
+        allowTreeNavScroll(1800);
         el.scrollIntoView();
       } catch {}
     }
@@ -454,13 +485,10 @@
     if (!element) return '';
     try {
       const article = element.closest?.('article') || element;
-      const id = article.getAttribute?.('data-turn-id');
-      if (id) return String(id);
-    } catch {}
-    try {
-      const article = element.closest?.('article') || element;
       const msg = article.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id');
       if (msg) return String(msg);
+      const id = article.getAttribute?.('data-turn-id');
+      if (id) return String(id);
     } catch {}
     return '';
   }
@@ -551,6 +579,7 @@
       if (!btn) return false;
 
       try {
+        allowTreeNavScroll(1800);
         btn.click();
       } catch {
         return false;
@@ -733,6 +762,7 @@
           <div class="title">Conversation Tree</div>
           <div class="spacer"></div>
           <button type="button" class="toggle simple" title="隐藏系统/工具/内部节点（简洁）">简洁</button>
+          <button type="button" class="toggle expand" title="展开/折叠所有节点（默认展开）">展开</button>
           <button type="button" class="toggle guides" title="彩色对齐竖线（类似 VSCode 缩进线）">彩线</button>
           <button type="button" class="refresh">刷新</button>
           <button type="button" class="close">关闭</button>
@@ -744,6 +774,7 @@
         </div>
       `;
       panel.querySelector('button.simple')?.addEventListener('click', () => setPref('simpleMode', !state.prefs?.simpleMode));
+      panel.querySelector('button.expand')?.addEventListener('click', () => setPref('expandAll', !state.prefs?.expandAll));
       panel.querySelector('button.guides')?.addEventListener('click', () => setPref('guides', !state.prefs?.guides));
       panel.querySelector('button.refresh')?.addEventListener('click', () => scheduleRefresh(50, 'manual'));
       panel.querySelector('button.close')?.addEventListener('click', () => setOpen(false));
@@ -775,10 +806,15 @@
 
     const simpleOn = state.prefs.simpleMode !== false;
     const guidesOn = state.prefs.guides !== false;
+    const expandOn = state.prefs.expandAll !== false;
 
     try {
       const btn = state.panelEl?.querySelector?.('button.simple');
       if (btn) btn.setAttribute('data-on', simpleOn ? '1' : '0');
+    } catch {}
+    try {
+      const btn = state.panelEl?.querySelector?.('button.expand');
+      if (btn) btn.setAttribute('data-on', expandOn ? '1' : '0');
     } catch {}
     try {
       const btn = state.panelEl?.querySelector?.('button.guides');
@@ -1187,9 +1223,11 @@
     if (!state.treeEl) return;
     state.treeEl.textContent = '';
 
-    const effectiveCurrent = getEffectiveCurrentId(mapping, currentId);
-    const pathSet = computeVisiblePathSet(mapping, currentId);
-    const visited = new Set();
+	    const effectiveCurrent = getEffectiveCurrentId(mapping, currentId);
+	    const pathSet = computeVisiblePathSet(mapping, currentId);
+	    const prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : DEFAULT_PREFS;
+	    const expandAll = prefs.expandAll !== false;
+	    const visited = new Set();
 
     function bindNodeNavigate({ nodeId, node, clickableEl, isDetailsNode }) {
       const msgId = typeof node?.message?.id === 'string' ? node.message.id : nodeId === 'client-created-root' ? '' : nodeId;
@@ -1208,20 +1246,24 @@
           }
         }
 
-        const run = async () => {
-          setSelectedNodeId(nodeId);
-          if (!msgId) return;
-          if (scrollToMessageId(msgId)) return;
+	        const run = async () => {
+	          allowTreeNavScroll(2200);
+	          setSelectedNodeId(nodeId);
+	          if (!msgId) return;
+	          if (scrollToMessageId(msgId)) return;
 
-          // When the node isn't currently rendered (e.g. alternative responses 1/2),
-          // try to switch the UI onto the target branch/path first.
-          const ok = await ensureNodePathVisible(mapping, rootId, nodeId);
-          if (ok && scrollToMessageId(msgId)) return;
-          setStatus('未在页面中找到该节点对应的消息（可能不在当前分支/1/2 未切换，或系统/内部节点未渲染）');
-        };
-        void run();
-      });
-    }
+	          // When the node isn't currently rendered (e.g. alternative responses 1/2),
+	          // try to switch the UI onto the target branch/path first.
+	          const ok = await ensureNodePathVisible(mapping, rootId, nodeId);
+	          if (ok) {
+	            const appeared = await waitForCondition(() => !!findTurnElementByMessageId(msgId), 1800, 60);
+	            if (appeared && scrollToMessageId(msgId)) return;
+	          }
+	          setStatus('未在页面中找到该节点对应的消息（可能不在当前分支：1/2、2/3 未切换，或系统/内部节点未渲染）');
+	        };
+	        void run();
+	      });
+	    }
 
     function walk(nodeId, depth) {
       if (!nodeId || visited.has(nodeId)) return null;
@@ -1236,9 +1278,9 @@
       el.className = 'aichat-tree-node';
       el.dataset.nodeId = nodeId;
       el.dataset.depth = String(depth);
-      if (children.length) {
-        el.open = isOnPath || depth === 0;
-        const summary = document.createElement('summary');
+	      if (children.length) {
+	        el.open = expandAll || isOnPath || depth === 0;
+	        const summary = document.createElement('summary');
         const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount: children.length });
         summary.appendChild(row);
         el.appendChild(summary);

@@ -1083,7 +1083,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   #${TREE_TOOLTIP_ID} .role.user{ background:color-mix(in srgb, var(--cgpt-nav-positive) 16%, transparent); color:var(--cgpt-nav-positive); }
   #${TREE_TOOLTIP_ID} .role.assistant{ background:color-mix(in srgb, var(--cgpt-nav-info) 16%, transparent); color:var(--cgpt-nav-info); }
   #${TREE_TOOLTIP_ID} .snippet{ flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
-  #${TREE_TOOLTIP_ID} .tag{ flex:0 0 auto; font-size:10px; padding:2px 6px; border-radius:999px; background:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); }
+	  #${TREE_TOOLTIP_ID} .tag{ flex:0 0 auto; font-size:10px; padding:2px 6px; border-radius:999px; border:1px solid color-mix(in srgb, var(--cgpt-nav-positive) 40%, transparent); background:color-mix(in srgb, var(--cgpt-nav-positive) 14%, transparent); color:var(--cgpt-nav-positive); }
   #${TREE_TOOLTIP_ID} .foot{ margin-top:8px; display:flex; gap:6px; justify-content:flex-end; }
   #${TREE_TOOLTIP_ID} .btn{ border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); border-radius:var(--cgpt-nav-radius); padding:5px 8px; font-size:11px; cursor:pointer; color:var(--cgpt-nav-text-strong); box-shadow:var(--cgpt-nav-item-shadow); }
   #${TREE_TOOLTIP_ID} .btn:hover{ background:var(--cgpt-nav-footer-hover); }
@@ -2026,24 +2026,46 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch {}
   }
 
-  function renderBranchTooltip(ui, anchorEl) {
-    try {
-      if (!ui) return false;
-      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
-      if (!tip) return false;
+	  function renderBranchTooltip(ui, anchorEl) {
+	    try {
+	      if (!ui) return false;
+	      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
+	      if (!tip) return false;
       if (!treeSummary || !treeSummary.nodes) return false;
 
-      const msgId = anchorEl?.dataset?.msgId ? String(anchorEl.dataset.msgId) : '';
-      const info = getBranchInfo(msgId);
-      if (!info || info.count <= 1) {
-        hideBranchTooltip(ui);
-        return false;
-      }
+	      const msgId = anchorEl?.dataset?.msgId ? String(anchorEl.dataset.msgId) : '';
+	      const info = getBranchInfo(msgId);
+	      if (!info || info.count <= 1) {
+	        hideBranchTooltip(ui);
+	        return false;
+	      }
 
-      tip.textContent = '';
-      const hdr = document.createElement('div');
-      hdr.className = 'hdr';
-      const title = document.createElement('span');
+	      const currentChildMsgId = (() => {
+	        try {
+	          let found = '';
+	          let foundCount = 0;
+	          for (const cid of info.children) {
+	            if (!cid || typeof cid !== 'string') continue;
+	            if (findTurnByMessageId(cid)) {
+	              found = cid;
+	              foundCount++;
+	              if (foundCount > 1) break;
+	            }
+	          }
+	          if (foundCount === 1) return found;
+	        } catch {}
+	        try {
+	          for (const cid of info.children) {
+	            if (treePathSet && treePathSet.has(cid)) return cid;
+	          }
+	        } catch {}
+	        return '';
+	      })();
+
+	      tip.textContent = '';
+	      const hdr = document.createElement('div');
+	      hdr.className = 'hdr';
+	      const title = document.createElement('span');
       title.textContent = `分支 ${info.count}`;
       const hint = document.createElement('span');
       hint.textContent = '悬停预览';
@@ -2052,12 +2074,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       tip.appendChild(hdr);
 
       const rows = document.createElement('div');
-      rows.className = 'rows';
-      const children = info.children.slice(0, 10);
-      for (const cid of children) {
-        const child = treeSummary.nodes?.[cid];
-        const role = child && typeof child === 'object' ? String(child.role || '') : '';
-        const snippet = child && typeof child === 'object' ? String(child.snippet || '') : '';
+	      rows.className = 'rows';
+	      const children = info.children.slice(0, 10);
+	      for (const cid of children) {
+	        const child = treeSummary.nodes?.[cid];
+	        const role = child && typeof child === 'object' ? String(child.role || '') : '';
+	        const snippet = child && typeof child === 'object' ? String(child.snippet || '') : '';
 
         const row = document.createElement('div');
         row.className = 'row';
@@ -2071,15 +2093,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         textEl.className = 'snippet';
         textEl.textContent = snippet || '(empty)';
 
-        row.appendChild(roleEl);
-        row.appendChild(textEl);
+	        row.appendChild(roleEl);
+	        row.appendChild(textEl);
 
-        if (treePathSet && treePathSet.has(cid)) {
-          const tag = document.createElement('span');
-          tag.className = 'tag';
-          tag.textContent = '当前';
-          row.appendChild(tag);
-        }
+	        const isCurrentChild = currentChildMsgId ? cid === currentChildMsgId : treePathSet && treePathSet.has(cid);
+	        if (isCurrentChild) {
+	          const tag = document.createElement('span');
+	          tag.className = 'tag';
+	          tag.textContent = '当前';
+	          row.appendChild(tag);
+	        }
 
         rows.appendChild(row);
       }

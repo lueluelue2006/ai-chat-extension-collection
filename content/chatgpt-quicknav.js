@@ -1135,7 +1135,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           <button class="compact-refresh" type="button" title="刷新对话列表">⟳</button>
           <button class="compact-lock" type="button" title="阻止新回复自动滚动">🔐</button>
           <button class="compact-star" type="button" title="仅显示收藏">☆</button>
-          <button class="compact-tree" type="button" title="分支 / 对话树">🌿<span class="tree-count" aria-hidden="true"></span></button>
+          <button class="compact-tree" type="button" title="分支 / 对话树">树<span class="tree-count" aria-hidden="true"></span></button>
         </div>
       </div>
       <div class="compact-list" role="listbox" aria-label="对话项"></div>

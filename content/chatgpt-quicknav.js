@@ -76,12 +76,15 @@
   const TREE_BRIDGE_OPEN_PANEL = 'QUICKNAV_CHATGPT_TREE_OPEN';
   const TREE_BRIDGE_CLOSE_PANEL = 'QUICKNAV_CHATGPT_TREE_CLOSE';
   const TREE_BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
+  const TREE_BRIDGE_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO';
+  const TREE_BRIDGE_RES_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
   const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
 
   let treeSummary = null;
   let treePathSet = new Set();
   let treeSummaryReqTimer = 0;
   let treeSummaryPendingReqId = '';
+  const treeNavigatePending = new Map(); // reqId -> { resolve, timer }
 
   // 全局调试函数，用户可在控制台调用
   window.chatGptNavDebug = {
@@ -265,24 +268,40 @@
         if (!event || event.source !== window) return;
         const data = event.data;
         if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
-        if (String(data.type || '') !== TREE_BRIDGE_RES_SUMMARY) return;
-        if (typeof data.reqId !== 'string' || !data.reqId) return;
-        if (treeSummaryPendingReqId && data.reqId !== treeSummaryPendingReqId) return;
+        const type = String(data.type || '');
 
-        const ok = !!data.ok;
-        const summary = ok && data.summary && typeof data.summary === 'object' ? data.summary : null;
-        treeSummaryPendingReqId = '';
+        if (type === TREE_BRIDGE_RES_SUMMARY) {
+          if (typeof data.reqId !== 'string' || !data.reqId) return;
+          if (treeSummaryPendingReqId && data.reqId !== treeSummaryPendingReqId) return;
 
-        const currentConv = getConversationIdFromUrl();
-        if (summary && summary.conversationId && currentConv && summary.conversationId !== currentConv) return;
+          const ok = !!data.ok;
+          const summary = ok && data.summary && typeof data.summary === 'object' ? data.summary : null;
+          treeSummaryPendingReqId = '';
 
-        treeSummary = summary;
-        treePathSet = new Set(Array.isArray(summary?.pathIds) ? summary.pathIds.filter((x) => typeof x === 'string' && x) : []);
+          const currentConv = getConversationIdFromUrl();
+          if (summary && summary.conversationId && currentConv && summary.conversationId !== currentConv) return;
 
-        const ui = document.getElementById('cgpt-compact-nav')?._ui;
-        if (ui) {
-          try { updateTreeBtnState(ui); } catch {}
-          try { renderList(ui); } catch {}
+          treeSummary = summary;
+          treePathSet = new Set(Array.isArray(summary?.pathIds) ? summary.pathIds.filter((x) => typeof x === 'string' && x) : []);
+
+          const ui = document.getElementById('cgpt-compact-nav')?._ui;
+          if (ui) {
+            try { updateTreeBtnState(ui); } catch {}
+            try { renderList(ui); } catch {}
+          }
+          return;
+        }
+
+        if (type === TREE_BRIDGE_RES_NAVIGATE_TO) {
+          const reqId = typeof data.reqId === 'string' ? data.reqId : '';
+          if (!reqId) return;
+          const pending = treeNavigatePending.get(reqId);
+          if (!pending) return;
+          treeNavigatePending.delete(reqId);
+          try { clearTimeout(pending.timer); } catch {}
+          pending.resolve(!!data.ok);
+          if (data.ok) scheduleTreeSummaryRequest(240);
+          return;
         }
       } catch {}
     });
@@ -309,6 +328,29 @@
         requestTreeSummary();
       }, Math.max(0, Number(delay) || 0));
     } catch {}
+  }
+
+  function requestTreeNavigateToMessageId(msgId, { timeoutMs = 2600 } = {}) {
+    const id = String(msgId || '').trim();
+    if (!id || !getConversationIdFromUrl()) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      const timeout = Math.max(400, Number(timeoutMs) || 0);
+      const timer = setTimeout(() => {
+        treeNavigatePending.delete(reqId);
+        resolve(false);
+      }, timeout);
+      treeNavigatePending.set(reqId, { resolve, timer });
+
+      try {
+        window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_NAVIGATE_TO, reqId, msgId: id }, '*');
+      } catch {
+        try { clearTimeout(timer); } catch {}
+        treeNavigatePending.delete(reqId);
+        resolve(false);
+      }
+    });
   }
 
   function whenBodyReady(cb) {
@@ -2146,11 +2188,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             scheduleHide();
             return;
           }
-          const ok = jumpToMessageId(targetId);
-          if (!ok) {
-            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
-          }
           scheduleHide();
+          if (jumpToMessageId(targetId)) return;
+          void (async () => {
+            const ok = await requestTreeNavigateToMessageId(targetId);
+            if (!ok) {
+              try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+            }
+          })();
         });
       }
 

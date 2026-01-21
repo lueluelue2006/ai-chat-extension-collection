@@ -17,6 +17,8 @@
   const BRIDGE_OPEN_PANEL = 'QUICKNAV_CHATGPT_TREE_OPEN';
   const BRIDGE_CLOSE_PANEL = 'QUICKNAV_CHATGPT_TREE_CLOSE';
   const BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
+  const BRIDGE_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO';
+  const BRIDGE_RES_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
 
   const DEFAULT_PREFS = Object.freeze({
     simpleMode: true,
@@ -532,6 +534,21 @@
       };
       tick();
     });
+  }
+
+  function resolveNodeIdForMessageId(mapping, messageId) {
+    const id = String(messageId || '').trim();
+    if (!id || !mapping || typeof mapping !== 'object') return '';
+    try {
+      if (Object.prototype.hasOwnProperty.call(mapping, id)) return id;
+    } catch {}
+    try {
+      for (const [nodeId, node] of Object.entries(mapping)) {
+        const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
+        if (mid === id) return nodeId;
+      }
+    } catch {}
+    return '';
   }
 
   async function trySelectSiblingMessage(targetMsgId, siblingMsgIds) {
@@ -1079,6 +1096,86 @@
               reply(null);
             }
           };
+          void run();
+          return;
+        }
+
+        if (type === BRIDGE_NAVIGATE_TO) {
+          const reqId = typeof data.reqId === 'string' ? data.reqId : '';
+          const targetMsgId = typeof data.msgId === 'string' ? data.msgId : '';
+          const reply = (ok) => {
+            try {
+              window.postMessage({ __quicknav: 1, type: BRIDGE_RES_NAVIGATE_TO, reqId, ok: !!ok }, '*');
+            } catch {}
+          };
+
+          const currentConvId = getConversationIdFromUrl();
+          if (!reqId || !targetMsgId || !currentConvId) {
+            reply(false);
+            return;
+          }
+
+          const run = async () => {
+            try {
+              const cached = state.lastData;
+              const age = now() - (Number(state.lastLoadedAt) || 0);
+              const canUseCache = !!(
+                cached &&
+                cached.conversationId === currentConvId &&
+                !state.dirty &&
+                age >= 0 &&
+                age < 15000
+              );
+              if (!canUseCache) {
+                if (state.refreshPromise) {
+                  await state.refreshPromise;
+                } else {
+                  state.refreshPromise = refreshConversation('bridge-navigate', { silent: true })
+                    .catch(() => void 0)
+                    .finally(() => {
+                      state.refreshPromise = null;
+                    });
+                  await state.refreshPromise;
+                }
+              }
+
+              const latest = state.lastData;
+              if (!latest || latest.conversationId !== currentConvId) {
+                reply(false);
+                return;
+              }
+
+              const mapping = latest.mapping;
+              const rootId = latest.rootId || getRootId(mapping) || latest.currentId || '';
+              const nodeId = resolveNodeIdForMessageId(mapping, targetMsgId);
+              if (!mapping || !nodeId) {
+                setStatus('未在树数据中找到该节点');
+                reply(false);
+                return;
+              }
+
+              allowTreeNavScroll(2400);
+              if (scrollToMessageId(targetMsgId)) {
+                reply(true);
+                return;
+              }
+
+              const ok = await ensureNodePathVisible(mapping, rootId, nodeId);
+              if (ok) {
+                const appeared = await waitForCondition(() => !!findTurnElementByMessageId(targetMsgId), 2000, 60);
+                if (appeared && scrollToMessageId(targetMsgId)) {
+                  reply(true);
+                  return;
+                }
+              }
+
+              setStatus('未在页面中找到该节点对应的消息（可能不在当前分支：1/2、2/3 未切换，或系统/内部节点未渲染）');
+              reply(false);
+            } catch {
+              reply(false);
+            }
+          };
+
           void run();
           return;
         }

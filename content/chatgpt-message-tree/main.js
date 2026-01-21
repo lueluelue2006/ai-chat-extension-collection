@@ -39,6 +39,10 @@
     'rgba(168,85,247,0.55)'
   ]);
 
+  // Depth can grow unbounded in long single-thread chats (linear chains),
+  // which would otherwise keep shrinking the usable width of each node row.
+  const MAX_INDENT_LEVEL = 12;
+
   function getGuideColor(depth) {
     const d = Math.max(0, Number(depth) || 0);
     const idx = Math.max(0, d - 1) % GUIDE_COLORS.length;
@@ -1354,19 +1358,25 @@
 	      });
 	    }
 
-    function walk(nodeId, depth) {
-      if (!nodeId || visited.has(nodeId)) return null;
-      visited.add(nodeId);
-      const node = mapping?.[nodeId] || null;
-      const children = getDisplayChildren(nodeId, mapping);
+	    function walk(nodeId, depth) {
+	      if (!nodeId || visited.has(nodeId)) return null;
+	      visited.add(nodeId);
+	      const node = mapping?.[nodeId] || null;
+	      const children = getDisplayChildren(nodeId, mapping);
       const isBranch = children.length > 1;
       const isCurrent = nodeId === effectiveCurrent;
       const isOnPath = pathSet.has(nodeId);
 
-      const el = children.length ? document.createElement('details') : document.createElement('div');
-      el.className = 'aichat-tree-node';
-      el.dataset.nodeId = nodeId;
-      el.dataset.depth = String(depth);
+	      const el = children.length ? document.createElement('details') : document.createElement('div');
+	      el.className = 'aichat-tree-node';
+	      el.dataset.nodeId = nodeId;
+	      el.dataset.depth = String(depth);
+	      if (depth > MAX_INDENT_LEVEL) {
+	        // Stop indent growth on very deep paths (keeps rows readable).
+	        try {
+	          el.style.marginLeft = '0px';
+	        } catch {}
+	      }
 	      if (children.length) {
 	        el.open = true;
 	        const summary = document.createElement('summary');
@@ -1374,16 +1384,17 @@
         summary.appendChild(row);
         el.appendChild(summary);
         bindNodeNavigate({ nodeId, node, clickableEl: summary, isDetailsNode: true });
-        const childrenWrap = document.createElement('div');
-        childrenWrap.className = 'children';
-        childrenWrap.dataset.depth = String(depth + 1);
-        try {
-          childrenWrap.style.setProperty('--aichat-guide-color', getGuideColor(depth + 1));
-        } catch {}
-        for (const childId of children) {
-          const childEl = walk(childId, depth + 1);
-          if (childEl) childrenWrap.appendChild(childEl);
-        }
+	        const childrenWrap = document.createElement('div');
+	        childrenWrap.className = 'children';
+	        childrenWrap.dataset.depth = String(depth + 1);
+	        try {
+	          const guideDepth = depth + 1;
+	          childrenWrap.style.setProperty('--aichat-guide-color', guideDepth > MAX_INDENT_LEVEL ? 'transparent' : getGuideColor(guideDepth));
+	        } catch {}
+	        for (const childId of children) {
+	          const childEl = walk(childId, depth + 1);
+	          if (childEl) childrenWrap.appendChild(childEl);
+	        }
         el.appendChild(childrenWrap);
       } else {
         const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch: false, childrenCount: 0 });

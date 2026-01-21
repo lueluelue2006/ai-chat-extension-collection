@@ -20,8 +20,7 @@
 
   const DEFAULT_PREFS = Object.freeze({
     simpleMode: true,
-    guides: true,
-    expandAll: true
+    guides: true
   });
 
   const SIMPLE_HIDE_ROLES = new Set(['system', 'tool']);
@@ -120,7 +119,6 @@
       if (parsed && typeof parsed === 'object') {
         if (typeof parsed.simpleMode === 'boolean') out.simpleMode = parsed.simpleMode;
         if (typeof parsed.guides === 'boolean') out.guides = parsed.guides;
-        if (typeof parsed.expandAll === 'boolean') out.expandAll = parsed.expandAll;
       }
       return out;
     } catch {
@@ -545,16 +543,21 @@
 
     const maxSteps = Math.min(24, Math.max(2, siblings.length * 2 + 2));
     let direction = 'next';
-    const seen = new Set();
+    try {
+      const curTurn = findVisibleTurnElementByMessageIds(siblings);
+      const curId = getTurnMessageIdFromElement(curTurn);
+      const curIdx = siblings.indexOf(curId);
+      const targetIdx = siblings.indexOf(target);
+      if (curIdx >= 0 && targetIdx >= 0) direction = targetIdx > curIdx ? 'next' : 'prev';
+    } catch {}
 
     for (let step = 0; step < maxSteps; step++) {
-      if (findTurnElementByMessageId(target)) return true;
-
       const visibleTurn = findVisibleTurnElementByMessageIds(siblings);
       if (!visibleTurn) return false;
 
       const beforeId = getTurnMessageIdFromElement(visibleTurn);
-      if (beforeId) seen.add(beforeId);
+      if (beforeId === target) return true;
+      if (findTurnElementByMessageId(target)) return true;
 
       const buttons = getResponseSwitcherButtons(visibleTurn);
       if (!buttons) return false;
@@ -585,19 +588,17 @@
         return false;
       }
 
-      await waitForCondition(() => {
-        if (findTurnElementByMessageId(target)) return true;
-        const afterTurn = findVisibleTurnElementByMessageIds(siblings);
-        const afterId = getTurnMessageIdFromElement(afterTurn);
-        return !!afterId && afterId !== beforeId;
-      }, 1200, 60);
-
       const afterTurn = findVisibleTurnElementByMessageIds(siblings);
       const afterId = getTurnMessageIdFromElement(afterTurn);
-      if (afterId && seen.has(afterId) && siblings.length > 2) {
-        // Avoid infinite bouncing when the UI doesn't move as expected.
-        return !!findTurnElementByMessageId(target);
-      }
+      if (afterId === target) return true;
+
+      const moved = await waitForCondition(() => {
+        if (findTurnElementByMessageId(target)) return true;
+        const t = findVisibleTurnElementByMessageIds(siblings);
+        const id = getTurnMessageIdFromElement(t);
+        return !!id && id !== beforeId;
+      }, 1200, 60);
+      if (!moved) return !!findTurnElementByMessageId(target);
     }
 
     return !!findTurnElementByMessageId(target);
@@ -762,7 +763,6 @@
           <div class="title">Conversation Tree</div>
           <div class="spacer"></div>
           <button type="button" class="toggle simple" title="隐藏系统/工具/内部节点（简洁）">简洁</button>
-          <button type="button" class="toggle expand" title="展开/折叠所有节点（默认展开）">展开</button>
           <button type="button" class="toggle guides" title="彩色对齐竖线（类似 VSCode 缩进线）">彩线</button>
           <button type="button" class="refresh">刷新</button>
           <button type="button" class="close">关闭</button>
@@ -774,7 +774,6 @@
         </div>
       `;
       panel.querySelector('button.simple')?.addEventListener('click', () => setPref('simpleMode', !state.prefs?.simpleMode));
-      panel.querySelector('button.expand')?.addEventListener('click', () => setPref('expandAll', !state.prefs?.expandAll));
       panel.querySelector('button.guides')?.addEventListener('click', () => setPref('guides', !state.prefs?.guides));
       panel.querySelector('button.refresh')?.addEventListener('click', () => scheduleRefresh(50, 'manual'));
       panel.querySelector('button.close')?.addEventListener('click', () => setOpen(false));
@@ -806,15 +805,10 @@
 
     const simpleOn = state.prefs.simpleMode !== false;
     const guidesOn = state.prefs.guides !== false;
-    const expandOn = state.prefs.expandAll !== false;
 
     try {
       const btn = state.panelEl?.querySelector?.('button.simple');
       if (btn) btn.setAttribute('data-on', simpleOn ? '1' : '0');
-    } catch {}
-    try {
-      const btn = state.panelEl?.querySelector?.('button.expand');
-      if (btn) btn.setAttribute('data-on', expandOn ? '1' : '0');
     } catch {}
     try {
       const btn = state.panelEl?.querySelector?.('button.guides');
@@ -1225,8 +1219,6 @@
 
 	    const effectiveCurrent = getEffectiveCurrentId(mapping, currentId);
 	    const pathSet = computeVisiblePathSet(mapping, currentId);
-	    const prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : DEFAULT_PREFS;
-	    const expandAll = prefs.expandAll !== false;
 	    const visited = new Set();
 
     function bindNodeNavigate({ nodeId, node, clickableEl, isDetailsNode }) {
@@ -1279,7 +1271,7 @@
       el.dataset.nodeId = nodeId;
       el.dataset.depth = String(depth);
 	      if (children.length) {
-	        el.open = expandAll || isOnPath || depth === 0;
+	        el.open = true;
 	        const summary = document.createElement('summary');
         const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount: children.length });
         summary.appendChild(row);

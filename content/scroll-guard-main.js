@@ -3,7 +3,7 @@
   'use strict';
 
   try {
-    const GUARD_VERSION = 4;
+    const GUARD_VERSION = 5;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -80,7 +80,17 @@
   let __lastMarkedScroller = null;
 
   const now = () => Date.now();
-  const isAllowed = () => !STATE.enabled || now() < (STATE.allowUntil || 0);
+  const isAllowed = () => {
+    if (!STATE.enabled) return true;
+    if (now() < (STATE.allowUntil || 0)) return true;
+    // Synchronous escape hatch for our own navigation actions (tree jump / quicknav jump).
+    // The postMessage-based allow can land a tick later; this flag makes navigation feel instant.
+    try {
+      if (window.__cgptNavAllowScroll) return true;
+      if (window.__quicknavAllowScroll) return true;
+    } catch {}
+    return false;
+  };
 
   function clampAllow(ms) {
     const n = Number(ms);

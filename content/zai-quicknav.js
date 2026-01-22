@@ -625,7 +625,7 @@
       style.id = styleId;
       style.textContent = `
 :root {
-  --cgpt-nav-font: var(--font-family-default, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+  --cgpt-nav-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --cgpt-nav-radius: var(--token-radius-md, 6px);
   --cgpt-nav-radius-lg: var(--token-radius-lg, 8px);
   --cgpt-nav-panel-bg: var(--token-main-surface-tertiary, rgba(255,255,255,0.92));

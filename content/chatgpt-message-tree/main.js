@@ -522,6 +522,12 @@
       }
     } catch {}
 
+    // Compat: older QuickNav builds only treat wheel/touch/keydown as "user intent" signals.
+    // Dispatching a synthetic wheel event prevents the scroll-lock restore timer from fighting our jump.
+    try {
+      document.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: false, deltaY: 0 }));
+    } catch {}
+
     let hadPrev = false;
     let prev;
     try {

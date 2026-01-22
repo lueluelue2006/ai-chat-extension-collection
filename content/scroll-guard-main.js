@@ -89,6 +89,12 @@
       if (window.__cgptNavAllowScroll) return true;
       if (window.__quicknavAllowScroll) return true;
     } catch {}
+    // Cross-world allow window: main/isolated scripts share DOM dataset, not JS globals.
+    try {
+      const v = document.documentElement?.dataset?.quicknavAllowScrollUntil;
+      const until = Number(v);
+      if (Number.isFinite(until) && now() < until) return true;
+    } catch {}
     return false;
   };
 

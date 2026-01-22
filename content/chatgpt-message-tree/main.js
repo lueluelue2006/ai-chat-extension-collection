@@ -4,7 +4,12 @@
   // ChatGPT conversation tree viewer (read-only).
   // Fetches /backend-api/conversation/:id and renders mapping as a collapsible tree.
 
-  const GLOBAL_KEY = '__aichat_chatgpt_message_tree_v1__';
+  const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
+  const STATE_VERSION = 2;
+  const STYLE_VERSION = 2;
+
+  // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
+  const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
   const STYLE_ID = '__aichat_chatgpt_message_tree_style_v1__';
   const TOGGLE_ID = '__aichat_chatgpt_message_tree_toggle_v1__';
   const PANEL_ID = '__aichat_chatgpt_message_tree_panel_v1__';
@@ -29,6 +34,7 @@
   // Treat internal assistant payloads as non-renderable (and hidden in simple mode),
   // otherwise branch navigation may mistakenly target them.
   const SIMPLE_HIDE_ASSISTANT_TYPES = new Set(['thoughts', 'execution_output', 'reasoning_recap', 'reasoning', 'code']);
+  const SNIPPET_MAX_LEN = 32;
 
   const GUIDE_COLORS = Object.freeze([
     'rgba(239,68,68,0.55)',
@@ -45,21 +51,41 @@
     return GUIDE_COLORS[idx];
   }
 
+  // Allow hot-reinject (MV3 reload / reinject) by cleaning up any previous instance.
+  // Note: legacy versions used a non-configurable global key; we cannot remove the property,
+  // but we can still stop timers/unsubscribe/remove DOM and override message handling.
   try {
-    const existing = window[GLOBAL_KEY];
-    if (existing && typeof existing === 'object' && existing.__installed) {
+    /** @type {any} */
+    const prev = window[STATE_KEY] || window[LEGACY_KEY];
+    if (prev && typeof prev === 'object') {
       try {
-        existing.ensureUi?.();
-        existing.scheduleRefresh?.(200);
+        prev.cleanup?.();
       } catch {}
-      return;
+      // Best-effort cleanup for legacy instances without cleanup().
+      try { prev.open = false; } catch {}
+      try {
+        if (prev.refreshTimer) clearTimeout(prev.refreshTimer);
+      } catch {}
+      try {
+        if (prev.hrefWatchTimer) clearInterval(prev.hrefWatchTimer);
+      } catch {}
+      try {
+        if (typeof prev.hubUnsub === 'function') prev.hubUnsub();
+      } catch {}
     }
+  } catch {}
+  try { document.getElementById(TOGGLE_ID)?.remove?.(); } catch {}
+  try { document.getElementById(PANEL_ID)?.remove?.(); } catch {}
+  try { document.getElementById(STYLE_ID)?.remove?.(); } catch {}
+  try {
+    document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => n.classList.remove(MSG_HIGHLIGHT_CLASS));
   } catch {}
 
   const now = () => Date.now();
 
   const state = {
-    __installed: true,
+    version: STATE_VERSION,
+    disposed: false,
     open: false,
     lastHref: location.href,
     conversationId: '',
@@ -86,8 +112,19 @@
       accountId: '',
       deviceId: ''
     },
-    bridgeInstalled: false
+    bridgeInstalled: false,
+    bridgeHandler: null,
+    escHandler: null,
+    cleanup: null
   };
+
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try {
+      window[STATE_KEY] = state;
+    } catch {}
+  }
 
   function installEscClose() {
     try {
@@ -97,18 +134,16 @@
       return;
     }
     try {
-      window.addEventListener(
-        'keydown',
-        (e) => {
-          try {
-            if (!state.open) return;
-            if (!e) return;
-            if (e.key !== 'Escape' && e.code !== 'Escape') return;
-            setOpen(false);
-          } catch {}
-        },
-        { capture: true }
-      );
+      state.escHandler = (e) => {
+        try {
+          if (state.disposed) return;
+          if (!state.open) return;
+          if (!e) return;
+          if (e.key !== 'Escape' && e.code !== 'Escape') return;
+          setOpen(false);
+        } catch {}
+      };
+      window.addEventListener('keydown', state.escHandler, { capture: true });
     } catch {}
   }
 
@@ -211,11 +246,7 @@
   }
 
   function ensureStyles() {
-    try {
-      if (document.getElementById(STYLE_ID)) return;
-      const style = document.createElement('style');
-      style.id = STYLE_ID;
-      style.textContent = `
+    const styleText = `
         #${TOGGLE_ID}{
           position: fixed;
           right: 12px;
@@ -419,6 +450,25 @@
           100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
         }
       `;
+
+    // Hot-reinject friendly: if a previous version already inserted the style tag, update it in place.
+    const existing = document.getElementById(STYLE_ID);
+    if (existing) {
+      if (existing.dataset?.aichatTreeStyleVer === String(STYLE_VERSION)) return;
+      try {
+        existing.textContent = styleText;
+        existing.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
+      } catch {}
+      return;
+    }
+
+    try {
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      try {
+        style.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
+      } catch {}
+      style.textContent = styleText;
       document.documentElement?.appendChild(style);
     } catch {}
   }
@@ -460,6 +510,17 @@
     const dur = Math.max(0, Math.round(Number(ms) || 0));
     const clamped = Math.max(60, Math.min(8000, dur));
     if (!clamped) return;
+
+    // Cross-world escape hatch: isolated-world QuickNav scroll-lock also checks this dataset flag.
+    const until = now() + clamped;
+    try {
+      const docEl = document.documentElement;
+      if (docEl) {
+        const prev = Number(docEl.dataset?.quicknavAllowScrollUntil || 0);
+        const next = Math.max(Number.isFinite(prev) ? prev : 0, until);
+        docEl.dataset.quicknavAllowScrollUntil = String(next);
+      }
+    } catch {}
 
     let hadPrev = false;
     let prev;
@@ -1048,13 +1109,20 @@
     if (state.bridgeInstalled) return;
     state.bridgeInstalled = true;
 
-    window.addEventListener('message', (event) => {
+    // Use a capture listener so we can override legacy bridge handlers from earlier versions.
+    state.bridgeHandler = (event) => {
       try {
+        if (state.disposed) return;
         if (!event || event.source !== window) return;
         const data = event.data;
         if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
 
         const type = String(data.type || '');
+        if (type.startsWith('QUICKNAV_CHATGPT_TREE_')) {
+          try {
+            event.stopImmediatePropagation();
+          } catch {}
+        }
 
         if (type === BRIDGE_REQ_SUMMARY) {
           const reqId = typeof data.reqId === 'string' ? data.reqId : '';
@@ -1218,7 +1286,18 @@
           return;
         }
       } catch {}
-    });
+    };
+    try {
+      window.addEventListener('message', state.bridgeHandler, true);
+    } catch {}
+  }
+
+  function uninstallQuickNavBridge() {
+    try {
+      if (state.bridgeHandler) window.removeEventListener('message', state.bridgeHandler, true);
+    } catch {}
+    state.bridgeHandler = null;
+    state.bridgeInstalled = false;
   }
 
   function unwrapVisibleNodes(nodeId, mapping, localSeen, guard) {
@@ -1282,7 +1361,7 @@
     return '';
   }
 
-  function formatSnippet(text, maxLen = 48) {
+  function formatSnippet(text, maxLen = SNIPPET_MAX_LEN) {
     const s = String(text || '').replace(/\s+/g, ' ').trim();
     if (!s) return '';
     if (s.length <= maxLen) return s;
@@ -1712,10 +1791,44 @@
     }
   }
 
+  function cleanup() {
+    if (state.disposed) return;
+    state.disposed = true;
+    state.open = false;
+
+    try {
+      if (state.refreshTimer) clearTimeout(state.refreshTimer);
+    } catch {}
+    state.refreshTimer = 0;
+
+    stopHrefWatcher();
+    uninstallHubHooks();
+    uninstallQuickNavBridge();
+
+    try {
+      if (state.escHandler) window.removeEventListener('keydown', state.escHandler, { capture: true });
+    } catch {}
+    state.escHandler = null;
+    state.escCloseInstalled = false;
+
+    try { document.getElementById(TOGGLE_ID)?.remove?.(); } catch {}
+    try { document.getElementById(PANEL_ID)?.remove?.(); } catch {}
+    try { document.getElementById(STYLE_ID)?.remove?.(); } catch {}
+    try {
+      document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => n.classList.remove(MSG_HIGHLIGHT_CLASS));
+    } catch {}
+
+    state.panelEl = null;
+    state.toggleEl = null;
+    state.treeEl = null;
+    state.statusEl = null;
+    state.statsEl = null;
+  }
+
+  state.cleanup = cleanup;
+
   state.ensureUi = ensureUi;
   state.scheduleRefresh = scheduleRefresh;
-
-  Object.defineProperty(window, GLOBAL_KEY, { value: state, configurable: false, enumerable: false, writable: false });
 
   state.prefs = loadPrefs();
   ensureUi();

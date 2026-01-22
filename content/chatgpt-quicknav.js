@@ -3044,6 +3044,43 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     window.__cgptNavAllowScroll = prev;
   }
 
+  function getNavAllowScrollUntil() {
+    try {
+      const v = document.documentElement?.dataset?.quicknavAllowScrollUntil;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function bumpNavAllowScrollUntil(ms) {
+    const dur = Math.max(0, Math.round(Number(ms) || 0));
+    const nextUntil = Date.now() + dur;
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return nextUntil;
+      const prev = Number(docEl.dataset?.quicknavAllowScrollUntil || 0);
+      const next = Math.max(Number.isFinite(prev) ? prev : 0, nextUntil);
+      docEl.dataset.quicknavAllowScrollUntil = String(next);
+      return next;
+    } catch {
+      return nextUntil;
+    }
+  }
+
+  function isNavAllowScroll() {
+    try {
+      if (window.__cgptNavAllowScroll) return true;
+    } catch {}
+    try {
+      const until = getNavAllowScrollUntil();
+      return !!until && Date.now() < until;
+    } catch {
+      return false;
+    }
+  }
+
   function handleScrollLockUserScroll(evt) {
     const sc = scrollLockScrollEl || getChatScrollContainer();
     if (!sc) return;
@@ -3054,7 +3091,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // so we cannot use `evt.isTrusted` to infer user scroll. Instead, rely on explicit intent signals.
     void evt;
     const recentUserIntent = (now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS || !!scrollLockPointerActive;
-    const allowNav = !!window.__cgptNavAllowScroll;
+    const allowNav = isNavAllowScroll();
 
     // 用户主动滚动：先更新基准，避免被“回弹”误伤
     const userLikely = allowNav || recentUserIntent;
@@ -3117,13 +3154,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function allowNavScrollFor(ms = 600) {
+    const dur = Math.max(0, Math.round(Number(ms) || 0));
     navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
     window.__cgptNavAllowScroll = true;
-    postScrollLockAllowToMainWorld(ms);
+    bumpNavAllowScrollUntil(dur);
+    postScrollLockAllowToMainWorld(dur);
     setTimeout(() => {
       navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
       if (navAllowScrollDepth === 0) window.__cgptNavAllowScroll = false;
-    }, ms);
+    }, dur);
   }
 
   function markNavScrollIntent(ms = 1200) {
@@ -3219,7 +3258,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function shouldBlockScrollFor(target) {
     if (!scrollLockEnabled) return false;
-    if (window.__cgptNavAllowScroll) return false;
+    if (isNavAllowScroll()) return false;
     const sc = getChatScrollContainer();
     if (!sc) return false;
     if (scrollLockGuardUntil && Date.now() > scrollLockGuardUntil && (Date.now() - scrollLockLastUserTs) < 200) return false;
@@ -3248,7 +3287,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function shouldBlockScrollTop(scroller, nextTop) {
-    if (!scrollLockEnabled || window.__cgptNavAllowScroll) return false;
+    if (!scrollLockEnabled || isNavAllowScroll()) return false;
     const sc = scroller || getChatScrollContainer();
     if (!sc) return false;
     const current = getScrollPos(sc);
@@ -3287,7 +3326,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     };
 
     window.scrollBy = function(...args) {
-      if (scrollLockEnabled && !window.__cgptNavAllowScroll) {
+      if (scrollLockEnabled && !isNavAllowScroll()) {
         // 只关心向下滚
         const dy = getScrollDeltaFromArgs(args);
         if (dy > SCROLL_LOCK_DRIFT) return;
@@ -3306,7 +3345,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     if (ORIGINAL_ELEM_SCROLL_BY) {
       Element.prototype.scrollBy = function(...args) {
-        if (scrollLockEnabled && !window.__cgptNavAllowScroll) {
+        if (scrollLockEnabled && !isNavAllowScroll()) {
           const dy = getScrollDeltaFromArgs(args);
           if (dy > SCROLL_LOCK_DRIFT && shouldBlockElementScroll(this, getScrollPos(this) + dy)) return;
         }
@@ -3406,7 +3445,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scrollLockRestoreTimer = setTimeout(() => {
       scrollLockRestoreTimer = 0;
       if (!scrollLockEnabled) return;
-      if (window.__cgptNavAllowScroll) return;
+      if (isNavAllowScroll()) return;
       const intentGap = Date.now() - (scrollLockLastUserIntentTs || 0);
       if (intentGap <= SCROLL_LOCK_INTENT_MS || scrollLockPointerActive) return;
       const sc = ensureScrollLockBindings();

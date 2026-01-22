@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 10;
+  const STYLE_VERSION = 11;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -275,6 +275,7 @@
           width: min(380px, calc(100vw - 24px));
           z-index: 2147483647;
           background: rgba(17, 17, 17, 0.94);
+          --aichat-panel-bg: rgba(17, 17, 17, 0.94);
           color: rgba(255,255,255,0.92);
           border-radius: 14px;
           box-shadow: 0 10px 30px rgba(0,0,0,0.35);
@@ -366,6 +367,11 @@
             calc(var(--aichat-indent) * 23 / 2) var(--aichat-guide-y);
           background-repeat: no-repeat;
         }
+        /* Hide deeper indent rails on shallow rows (match VSCode indent-guide behavior). */
+        #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
+        #${PANEL_ID} .tree.guides div.aichat-tree-node{
+          background: var(--aichat-panel-bg, rgba(17, 17, 17, 0.94));
+        }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
 	          position: relative;
@@ -391,8 +397,8 @@
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
-          /* Keep a consistent max width (relative to the current indent container), but don't force full-width. */
-          max-width: 100%;
+          /* Keep a consistent max width across depths (aligns to panel edge), but don't force full-width. */
+          max-width: calc(100% + (var(--aichat-indent) * var(--aichat-depth, 0)));
           min-width: 0;
           position: relative;
           overflow: visible;
@@ -409,7 +415,9 @@
           opacity: 0.85;
           pointer-events: none;
         }
-        #${PANEL_ID} .aichat-tree-node[data-depth="0"] .node-row::before{ display:none !important; }
+        /* Only the root row has no connector. (Don't match descendants.) */
+        #${PANEL_ID} .aichat-tree-node[data-depth="0"] > summary .node-row::before{ display:none !important; }
+        #${PANEL_ID} .aichat-tree-node[data-depth="0"] > .node-row::before{ display:none !important; }
         #${PANEL_ID} .node-row .label{
           flex: 0 1 auto;
           min-width: 0;

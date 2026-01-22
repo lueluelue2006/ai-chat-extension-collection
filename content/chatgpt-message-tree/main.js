@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 3;
+  const STYLE_VERSION = 4;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -331,19 +331,6 @@
 	          letter-spacing: 0.1px;
 	          --aichat-indent: 16px;
 	        }
-        /* VSCode-style guide rails: always continuous (not per-subtree), so you don't get broken segments on 1-child chains. */
-        #${PANEL_ID} .tree.guides{
-          background-image:
-            linear-gradient(to bottom, rgba(239,68,68,0.55), rgba(239,68,68,0.55)),
-            linear-gradient(to bottom, rgba(249,115,22,0.55), rgba(249,115,22,0.55)),
-            linear-gradient(to bottom, rgba(234,179,8,0.55), rgba(234,179,8,0.55)),
-            linear-gradient(to bottom, rgba(34,197,94,0.55), rgba(34,197,94,0.55)),
-            linear-gradient(to bottom, rgba(59,130,246,0.55), rgba(59,130,246,0.55)),
-            linear-gradient(to bottom, rgba(168,85,247,0.55), rgba(168,85,247,0.55));
-          background-size: 1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%;
-          background-position: 16px 0, 32px 0, 48px 0, 64px 0, 80px 0, 96px 0;
-          background-repeat: no-repeat;
-        }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
 	          position: relative;
@@ -353,7 +340,18 @@
 	        #${PANEL_ID} .children{
 	          position: relative;
 	        }
-        #${PANEL_ID} .children::before{ display:none !important; }
+        #${PANEL_ID} .children::before{
+          content: '';
+          position: absolute;
+          left: calc(var(--aichat-indent) / 2);
+          top: 0px;
+          bottom: 0px;
+          width: 1px;
+          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
+          opacity: 0;
+          pointer-events: none;
+        }
+        #${PANEL_ID} .tree.guides .children::before{ opacity: 0.85; }
         #${PANEL_ID} summary{
           list-style: none;
           cursor: pointer;
@@ -362,17 +360,32 @@
         }
         #${PANEL_ID} summary::-webkit-details-marker{ display: none; }
 	        #${PANEL_ID} .node-row{
-	          display: flex;
+	          display: inline-flex;
 	          align-items: baseline;
 	          gap: 8px;
 	          padding: 4px 6px;
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
-            width: 100%;
-            max-width: 100%;
-            min-width: 0;
+          /* Keep a consistent max width across depths (aligns to panel edge), but don't force full-width. */
+          max-width: calc(100% + (var(--aichat-indent) * var(--aichat-depth, 0)));
+          min-width: 0;
+          position: relative;
+          overflow: visible;
 	        }
+        #${PANEL_ID} .tree.guides .node-row::before{
+          content: '';
+          position: absolute;
+          left: calc(var(--aichat-indent) / -2);
+          top: 50%;
+          transform: translateY(-50%);
+          width: calc(var(--aichat-indent) / 2);
+          height: 1px;
+          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
+          opacity: 0.85;
+          pointer-events: none;
+        }
+        #${PANEL_ID} .aichat-tree-node[data-depth="0"] .node-row::before{ display:none !important; }
         #${PANEL_ID} .node-row .label{
           flex: 1 1 auto;
           min-width: 0;
@@ -1609,6 +1622,9 @@
 		      el.className = 'aichat-tree-node';
 		      el.dataset.nodeId = nodeId;
 		      el.dataset.depth = String(depth);
+          try {
+            el.style.setProperty('--aichat-depth', String(Math.max(0, Math.floor(Number(depth) || 0))));
+          } catch {}
 		      if (children.length) {
 		        el.open = true;
 		        const summary = document.createElement('summary');

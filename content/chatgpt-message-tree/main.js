@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 11;
+  const STYLE_VERSION = 12;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -371,6 +371,16 @@
         #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
         #${PANEL_ID} .tree.guides div.aichat-tree-node{
           background: var(--aichat-panel-bg, rgba(17, 17, 17, 0.94));
+        }
+        /* Root row: keep the first-indent gutter transparent so the depth-1 rail doesn't "touch the top". */
+        #${PANEL_ID} .tree.guides details.aichat-tree-node[data-depth="0"] > summary,
+        #${PANEL_ID} .tree.guides div.aichat-tree-node[data-depth="0"]{
+          background: linear-gradient(
+            to right,
+            transparent 0,
+            transparent var(--aichat-indent),
+            var(--aichat-panel-bg, rgba(17, 17, 17, 0.94)) var(--aichat-indent)
+          );
         }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{

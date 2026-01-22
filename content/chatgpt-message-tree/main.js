@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 5;
+  const STYLE_VERSION = 6;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -330,7 +330,7 @@
 	          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	          letter-spacing: 0.1px;
 	          --aichat-indent: 16px;
-            --aichat-row-h: 24px;
+            --aichat-row-h: 30px;
 	        }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
@@ -341,28 +341,22 @@
 	        #${PANEL_ID} .children{
 	          position: relative;
 	        }
-        #${PANEL_ID} .children::before{
+        /* VSCode-like tree guides: per-node vertical segments that stop at the last sibling's row. */
+        #${PANEL_ID} .tree.guides .aichat-tree-node::before{
           content: '';
           position: absolute;
-          left: calc(var(--aichat-indent) / 2);
+          left: calc(var(--aichat-indent) / -2);
           top: 0px;
           bottom: 0px;
           width: 1px;
           background: var(--aichat-guide-color, rgba(255,255,255,0.16));
-          opacity: 0;
+          opacity: 0.85;
           pointer-events: none;
         }
-        #${PANEL_ID} .tree.guides .children::before{ opacity: 0.85; }
-        /* Stop the vertical guide at the last child's row (so it doesn't "run through" the last subtree). */
+        #${PANEL_ID} .tree.guides .aichat-tree-node[data-depth="0"]::before{ display:none !important; }
+        /* Don't let the parent's guide line run through the last child's subtree. */
         #${PANEL_ID} .tree.guides .children > .aichat-tree-node:last-child::before{
-          content: '';
-          position: absolute;
-          left: calc(var(--aichat-indent) / -2);
-          top: calc(var(--aichat-row-h) * 0.5);
-          bottom: 0px;
-          width: 2px;
-          background: rgba(17, 17, 17, 0.94);
-          pointer-events: none;
+          bottom: calc(100% - (var(--aichat-row-h) / 2));
         }
         #${PANEL_ID} summary{
           list-style: none;
@@ -373,10 +367,10 @@
         #${PANEL_ID} summary::-webkit-details-marker{ display: none; }
 	        #${PANEL_ID} .node-row{
 	          display: inline-flex;
-	          align-items: baseline;
+	          align-items: center;
 	          gap: 8px;
-	          padding: 4px 6px;
-            min-height: var(--aichat-row-h);
+	          padding: 0 6px;
+            height: var(--aichat-row-h);
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
@@ -1633,29 +1627,28 @@
 
 		      const el = children.length ? document.createElement('details') : document.createElement('div');
 		      el.className = 'aichat-tree-node';
-		      el.dataset.nodeId = nodeId;
-		      el.dataset.depth = String(depth);
+			      el.dataset.nodeId = nodeId;
+			      el.dataset.depth = String(depth);
           try {
             el.style.setProperty('--aichat-depth', String(Math.max(0, Math.floor(Number(depth) || 0))));
           } catch {}
-		      if (children.length) {
+          try {
+            if (depth > 0) el.style.setProperty('--aichat-guide-color', getGuideColor(depth));
+          } catch {}
+			      if (children.length) {
 		        el.open = true;
 		        const summary = document.createElement('summary');
 	        const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount: children.length });
 	        summary.appendChild(row);
 	        el.appendChild(summary);
 	        bindNodeNavigate({ nodeId, node, clickableEl: summary, isDetailsNode: true });
-		        const childrenWrap = document.createElement('div');
-		        childrenWrap.className = 'children';
-		        childrenWrap.dataset.depth = String(depth + 1);
-		        try {
-		          const guideDepth = depth + 1;
-		          childrenWrap.style.setProperty('--aichat-guide-color', getGuideColor(guideDepth));
-		        } catch {}
-		        for (const childId of children) {
-		          const childEl = walk(childId, depth + 1);
-		          if (childEl) childrenWrap.appendChild(childEl);
-		        }
+			        const childrenWrap = document.createElement('div');
+			        childrenWrap.className = 'children';
+			        childrenWrap.dataset.depth = String(depth + 1);
+			        for (const childId of children) {
+			          const childEl = walk(childId, depth + 1);
+			          if (childEl) childrenWrap.appendChild(childEl);
+			        }
         el.appendChild(childrenWrap);
       } else {
         const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch: false, childrenCount: 0 });

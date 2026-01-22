@@ -325,17 +325,32 @@
           list-style: none;
           cursor: pointer;
           outline: none;
+          display: block;
         }
         #${PANEL_ID} summary::-webkit-details-marker{ display: none; }
 	        #${PANEL_ID} .node-row{
-	          display: inline-flex;
+	          display: flex;
 	          align-items: baseline;
 	          gap: 8px;
 	          padding: 4px 6px;
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
 	        }
+        #${PANEL_ID} .node-row .label{
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        #${PANEL_ID} .node-row .meta{
+          flex: 0 0 auto;
+          white-space: nowrap;
+        }
         #${PANEL_ID} .node-row:hover{ background: rgba(255,255,255,0.07); }
         #${PANEL_ID} .caret{
           display: inline-flex;
@@ -468,17 +483,15 @@
   function scrollToMessageId(messageId) {
     const el = findTurnElementByMessageId(messageId);
     if (!el) return false;
+    const article = el.closest?.('article') || el;
     try {
-      allowTreeNavScroll(1800);
-      el.scrollIntoView({ behavior: 'auto', block: 'center' });
-    } catch {
-      try {
-        allowTreeNavScroll(1800);
-        el.scrollIntoView();
-      } catch {}
-    }
-    highlightTurnElement(el);
-    return true;
+      // Keep the scroll-lock logic from fighting tree navigation.
+      allowTreeNavScroll(3200);
+    } catch {}
+
+    const ok = scrollToTopOfElement(article, 12);
+    highlightTurnElement(article);
+    return ok;
   }
 
   function getTurnMessageIdFromElement(el) {
@@ -1269,11 +1282,151 @@
     return '';
   }
 
-  function formatSnippet(text, maxLen = 60) {
+  function formatSnippet(text, maxLen = 48) {
     const s = String(text || '').replace(/\s+/g, ' ').trim();
     if (!s) return '';
     if (s.length <= maxLen) return s;
     return `${s.slice(0, maxLen - 1)}…`;
+  }
+
+  function isScrollableY(el) {
+    if (!el || el.nodeType !== 1) return false;
+    let style;
+    try {
+      style = getComputedStyle(el);
+    } catch {
+      return false;
+    }
+    const oy = style?.overflowY;
+    if (oy !== 'auto' && oy !== 'scroll' && oy !== 'overlay') return false;
+    return (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
+  }
+
+  function findClosestScrollContainer(start) {
+    let el = start && start.nodeType === 1 ? start : null;
+    while (el && el !== document.documentElement && el !== document.body) {
+      if (isScrollableY(el)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function isWindowScroller(el) {
+    try {
+      const doc = document.documentElement;
+      const se = document.scrollingElement || doc;
+      return !el || el === window || el === document || el === document.body || el === doc || el === se;
+    } catch {
+      return true;
+    }
+  }
+
+  function getScrollPos(el) {
+    try {
+      if (!el || isWindowScroller(el)) {
+        const se = document.scrollingElement || document.documentElement;
+        return se ? se.scrollTop : (window.scrollY || 0);
+      }
+      return el.scrollTop || 0;
+    } catch {
+      return window.scrollY || 0;
+    }
+  }
+
+  function scrollToTopOfElement(targetEl, topMarginPx = 12) {
+    const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
+    if (!el) return false;
+
+    const margin = Math.max(0, Math.round(Number(topMarginPx) || 0));
+    const scroller = findClosestScrollContainer(el) || (document.scrollingElement || document.documentElement);
+    const isWin = isWindowScroller(scroller);
+
+    const setTop = (top) => {
+      const value = Math.max(0, Math.round(Number(top) || 0));
+      if (isWin) {
+        try {
+          window.scroll({ top: value, behavior: 'auto' });
+          return;
+        } catch {}
+        try {
+          window.scrollTo({ top: value, behavior: 'auto' });
+          return;
+        } catch {}
+        try {
+          window.scrollTo(0, value);
+        } catch {}
+        return;
+      }
+
+      try {
+        scroller.scroll({ top: value, behavior: 'auto' });
+        return;
+      } catch {}
+      try {
+        scroller.scrollTo({ top: value, behavior: 'auto' });
+        return;
+      } catch {}
+      try {
+        scroller.scrollTop = value;
+      } catch {}
+    };
+
+    try {
+      const r = el.getBoundingClientRect();
+      if (isWin) {
+        const base = window.scrollY || getScrollPos(scroller);
+        setTop(base + r.top - margin);
+      } else {
+        const sr = scroller.getBoundingClientRect();
+        const base = getScrollPos(scroller);
+        setTop(base + (r.top - sr.top) - margin);
+      }
+    } catch {
+      // fallback: just ensure visible
+      try {
+        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+      } catch {}
+      return true;
+    }
+
+    // Stabilize: ChatGPT can reflow after images/code blocks render; re-align a few frames.
+    try {
+      let tries = 0;
+      const MAX_TRIES = 8;
+      const step = () => {
+        tries++;
+        const sc = findClosestScrollContainer(el) || scroller;
+        const win = isWindowScroller(sc);
+        const targetTop = (() => {
+          if (win) return margin;
+          try {
+            return (sc.getBoundingClientRect().top || 0) + margin;
+          } catch {
+            return margin;
+          }
+        })();
+        let delta = 0;
+        try {
+          delta = (el.getBoundingClientRect().top || 0) - targetTop;
+        } catch {
+          delta = 0;
+        }
+        if (Math.abs(delta) <= 3 || tries >= MAX_TRIES) return;
+        if (win) {
+          try { window.scrollBy({ top: delta, behavior: 'auto' }); }
+          catch { try { window.scrollBy(0, delta); } catch {} }
+        } else {
+          try { sc.scrollBy({ top: delta, behavior: 'auto' }); }
+          catch {
+            try { sc.scrollBy(0, delta); } catch {}
+          }
+        }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    } catch {}
+
+    return true;
   }
 
   function renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount }) {
@@ -1297,6 +1450,7 @@
     const text = msg ? extractTextFromMessage(msg) : 'root';
     const snippet = formatSnippet(text);
     const label = document.createElement('span');
+    label.className = 'label';
     label.textContent = snippet || '(empty)';
     if (text && text !== snippet) label.title = text;
     row.appendChild(label);

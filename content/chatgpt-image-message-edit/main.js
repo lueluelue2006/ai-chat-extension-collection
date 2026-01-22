@@ -2,7 +2,7 @@
   'use strict';
   const STATE_KEY = '__aichat_chatgpt_image_message_edit_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 3;
+  const STYLE_VERSION = 4;
 
   // Allow hot-reinject (MV3 reload / reinject) by cleaning up the previous instance.
   try {
@@ -141,10 +141,10 @@
     const styleText = `
       /* Make the QuickNav edit pencil visually distinct from ChatGPT's native edit icon. */
       button[data-aichat-img-edit="1"]{
-        color: #f59e0b !important; /* amber-500 */
+        color: #22c55e !important; /* green-500 */
       }
       button[data-aichat-img-edit="1"]:hover{
-        color: #fbbf24 !important; /* amber-400 */
+        color: #4ade80 !important; /* green-400 */
       }
       #aichat-img-edit-banner{
         position: fixed;
@@ -230,10 +230,10 @@
     if (!rect || !Number.isFinite(rect.top)) return;
 
     // Place the banner just above the composer so it never covers the editor.
-    const GAP = 12;
+    const GAP = 16;
     const rawBottom = (window.innerHeight || 0) - rect.top + GAP;
     const maxBottom = Math.max(96, Math.round((window.innerHeight || 0) - 80));
-    const bottom = Math.round(clamp(rawBottom, 72, maxBottom));
+    const bottom = Math.round(clamp(rawBottom, 96, maxBottom));
     try {
       el.style.setProperty('--aichat-img-edit-banner-bottom', `${bottom}px`);
     } catch {}

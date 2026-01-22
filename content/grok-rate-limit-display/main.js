@@ -1,16 +1,3 @@
-// ==UserScript==
-// @name         Grok Rate Limit Display
-// @namespace    http://tampermonkey.net/
-// @version      5.2.27
-// @description  Displays remaining queries on grok.com
-// @author       Blankspeaker, Originally ported from CursedAtom's chrome extension
-// @match        https://grok.com/*
-// @icon         https://img.icons8.com/color/1200/grok--v2.jpg
-// @license      MIT
-// @downloadURL https://update.greasyfork.org/scripts/533963/Grok%20Rate%20Limit%20Display.user.js
-// @updateURL https://update.greasyfork.org/scripts/533963/Grok%20Rate%20Limit%20Display.meta.js
-// ==/UserScript==
-
 (function() {
     'use strict';
     const GUARD_KEY = '__aichat_grok_rate_limit_display_v1__';

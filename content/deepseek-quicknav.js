@@ -1,24 +1,3 @@
-// ==UserScript==
-// @name         ChatGPT 对话导航
-// @namespace    http://tampermonkey.net/
-// @version      4.6.6
-// @description  紧凑导航 + 实时定位；修复边界误判；底部纯箭头按钮；回到顶部/到底部单击即用；禁用面板内双击选中；快捷键 Cmd+↑/↓（Mac）或 Alt+↑/↓（Windows）；修复竞态条件和流式输出检测问题；加入标记点📌功能和收藏夹功能（4.0大更新）。感谢loongphy佬适配暗色模式（3.0）+适配左右侧边栏自动跟随（4.1）
-// @author       schweigen, loongphy(在3.0版本帮忙加入暗色模式，在4.1版本中帮忙适配左右侧边栏自动跟随)
-// @license      MIT
-// @match        https://chatgpt.com/*
-// @match        https://chatgpt.com/?model=*
-// @match        https://chatgpt.com/?temporary-chat=*
-// @match        https://chatgpt.com/c/*
-// @match        https://chatgpt.com/g/*
-// @match        https://chatgpt.com/share/*
-// @grant        GM_registerMenuCommand
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @run-at       document-end
-// @downloadURL  https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
-// @updateURL    https://raw.githubusercontent.com/lueluelue2006/ChatGPT-QuickNav/main/ChatGPT_QuickNav.js
-// ==/UserScript==
-
 (function () {
   'use strict';
 
@@ -2315,6 +2294,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch {}
   }
 
+  // In MV3, many sites drive autoscroll from page JS (MAIN world).
+  // Ask the extension service worker to inject the MAIN-world scroll guard, best-effort and throttled.
+  let __quicknavMainGuardRequestedAt = 0;
+  function ensureMainWorldScrollGuard() {
+    try {
+      if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
+      const now = Date.now();
+      if (now - (__quicknavMainGuardRequestedAt || 0) < 2000) return;
+      __quicknavMainGuardRequestedAt = now;
+      chrome.runtime.sendMessage({ type: 'QUICKNAV_ENSURE_SCROLL_GUARD' }, () => void chrome.runtime?.lastError);
+    } catch {}
+  }
+
   function bindMainWorldScrollGuardHandshake() {
     if (window.__quicknavScrollGuardHandshakeBound) return;
     window.__quicknavScrollGuardHandshakeBound = true;
@@ -2432,9 +2424,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const now = Date.now();
     const pos = getScrollPos(sc);
     const guardActive = scrollLockEnabled && now < scrollLockGuardUntil;
-    const trusted = !!(evt && evt.isTrusted);
-    if (trusted) scrollLockLastUserIntentTs = now;
-    const recentUserIntent = trusted || (now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS || !!scrollLockPointerActive;
+    // NOTE: In Chrome, scroll events caused by programmatic scrollTop/scrollTo are still `isTrusted === true`,
+    // so we cannot use `evt.isTrusted` to infer user scroll. Instead, rely on explicit intent signals.
+    void evt;
+    const recentUserIntent = (now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS || !!scrollLockPointerActive;
     const allowNav = !!window.__cgptNavAllowScroll;
 
     // 用户主动滚动：先更新基准，避免被“回弹”误伤
@@ -2587,9 +2580,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (ignoreIfInNav(e?.target)) return;
         if (e.button !== 0) return;
         const sc = scrollLockScrollEl || getChatScrollContainer();
-        if (sc && sc.contains && sc.contains(e.target)) {
-          scrollLockLastUserIntentTs = Date.now();
-        }
         if (isProbablyScrollbarGrab(e, sc)) {
           scrollLockPointerActive = true;
           scrollLockLastUserIntentTs = Date.now();
@@ -2723,6 +2713,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     installScrollGuards();
     postScrollLockStateToMainWorld();
     if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
+    ensureMainWorldScrollGuard();
     return scrollLockEnabled;
   }
 
@@ -2730,6 +2721,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const hadSaved = hasSavedScrollLockState();
     scrollLockEnabled = loadScrollLockState();
     bindMainWorldScrollGuardHandshake();
+    ensureMainWorldScrollGuard();
     ensureScrollLockBindings();
     updateLockBtnState(ui.nav);
     bindScrollLockUserIntents();

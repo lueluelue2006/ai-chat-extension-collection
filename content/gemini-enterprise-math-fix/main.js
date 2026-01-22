@@ -1,15 +1,3 @@
-// ==UserScript==
-// @name         Gemini Enterprise Inline Math Fix
-// @namespace    https://github.com/lueluelue2006
-// @author       schweigen
-// @version      1.2.2
-// @license      MIT
-// @description  Render inline and block math that appears as raw delimiters in Gemini Enterprise.
-// @match        https://business.gemini.google/*
-// @run-at       document-start
-// @grant        unsafeWindow
-// ==/UserScript==
-
 (() => {
   'use strict';
 

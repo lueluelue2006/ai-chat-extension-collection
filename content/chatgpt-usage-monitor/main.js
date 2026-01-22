@@ -1,22 +1,3 @@
-// ==UserScript==
-// @name         ChatGPT用量统计
-// @namespace    https://github.com/tizee/tampermonkey-chatgpt-model-usage-monitor
-// @version      4.0.0
-// @description  优雅的 ChatGPT 模型调用量实时统计，界面简洁清爽（中文版），支持导入导出、一周分析报告、快捷键切换最小化（Ctrl/Cmd+I）
-// @author       tizee (original), schweigen (modified)
-// @match        https://chatgpt.com/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=chatgpt.com
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_addStyle
-// @grant        GM_registerMenuCommand
-// @license      MIT
-// @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/lueluelue2006/ChatGPT-Usage/main/ChatGPT_Usage.js
-// @updateURL    https://raw.githubusercontent.com/lueluelue2006/ChatGPT-Usage/main/ChatGPT_Usage.js
-// ==/UserScript==
-
-
 (() => {
   'use strict';
 

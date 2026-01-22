@@ -1,17 +1,42 @@
 (() => {
   'use strict';
-  const GUARD_KEY = '__aichat_chatgpt_image_message_edit_v1__';
-  if (window[GUARD_KEY]) return;
-  Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  const STATE_KEY = '__aichat_chatgpt_image_message_edit_state__';
+  const STATE_VERSION = 2;
+  const STYLE_VERSION = 3;
+
+  // Allow hot-reinject (MV3 reload / reinject) by cleaning up the previous instance.
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev === 'object') {
+      try {
+        prev.cleanup?.();
+      } catch {}
+    }
+  } catch {}
 
   const ROOT_PARENT_MESSAGE_ID = 'client-created-root';
 
   const state = {
+    version: STATE_VERSION,
     pending: null,
     bannerEl: null,
     lastHref: location.href,
-    scanTimer: null
+    scanTimer: null,
+    bannerPosRaf: 0,
+    bannerResizeObserver: null,
+    bannerResizeTarget: null,
+    mo: null,
+    hubUnsub: null,
+    cleanup: null
   };
+
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try {
+      window[STATE_KEY] = state;
+    } catch {}
+  }
 
   function now() {
     return Date.now();
@@ -112,15 +137,20 @@
   }
 
   function ensureStyles() {
-    if (document.getElementById('aichat-img-edit-style')) return;
-    const style = document.createElement('style');
-    style.id = 'aichat-img-edit-style';
-    style.textContent = `
+    const STYLE_ID = 'aichat-img-edit-style';
+    const styleText = `
+      /* Make the QuickNav edit pencil visually distinct from ChatGPT's native edit icon. */
+      button[data-aichat-img-edit="1"]{
+        color: #f59e0b !important; /* amber-500 */
+      }
+      button[data-aichat-img-edit="1"]:hover{
+        color: #fbbf24 !important; /* amber-400 */
+      }
       #aichat-img-edit-banner{
         position: fixed;
         left: 50%;
         transform: translateX(-50%);
-        bottom: 96px;
+        bottom: var(--aichat-img-edit-banner-bottom, 96px);
         z-index: 2147483647;
         display: flex;
         align-items: center;
@@ -134,10 +164,10 @@
         max-width: min(680px, calc(100vw - 24px));
       }
       #aichat-img-edit-banner .msg{
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 52vw;
+        flex: 1 1 auto;
+        min-width: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
       #aichat-img-edit-banner button{
         appearance: none;
@@ -152,7 +182,106 @@
         background: rgba(255,255,255,0.2);
       }
     `;
+
+    // Hot-reinject friendly: if a previous version already inserted the style tag, update it in place.
+    const existing = document.getElementById(STYLE_ID);
+    if (existing) {
+      if (existing.dataset?.aichatImgEditStyleVer === String(STYLE_VERSION)) return;
+      try {
+        existing.textContent = styleText;
+        existing.dataset.aichatImgEditStyleVer = String(STYLE_VERSION);
+      } catch {}
+      return;
+    }
+
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    try {
+      style.dataset.aichatImgEditStyleVer = String(STYLE_VERSION);
+    } catch {}
+    style.textContent = styleText;
     document.documentElement.appendChild(style);
+  }
+
+  function clamp(n, min, max) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return min;
+    return Math.max(min, Math.min(max, x));
+  }
+
+  function getComposerLayoutEl() {
+    const el = getComposerEl();
+    if (!el) return null;
+    return el.closest?.('form') || el.parentElement || el;
+  }
+
+  function updateBannerPosition() {
+    const el = state.bannerEl;
+    if (!el || !el.isConnected) return;
+
+    const composer = getComposerLayoutEl();
+    if (!(composer instanceof Element)) return;
+    let rect = null;
+    try {
+      rect = composer.getBoundingClientRect();
+    } catch {
+      rect = null;
+    }
+    if (!rect || !Number.isFinite(rect.top)) return;
+
+    // Place the banner just above the composer so it never covers the editor.
+    const GAP = 12;
+    const rawBottom = (window.innerHeight || 0) - rect.top + GAP;
+    const maxBottom = Math.max(96, Math.round((window.innerHeight || 0) - 80));
+    const bottom = Math.round(clamp(rawBottom, 72, maxBottom));
+    try {
+      el.style.setProperty('--aichat-img-edit-banner-bottom', `${bottom}px`);
+    } catch {}
+  }
+
+  function scheduleBannerPositionUpdate() {
+    if (state.bannerPosRaf) return;
+    state.bannerPosRaf = requestAnimationFrame(() => {
+      state.bannerPosRaf = 0;
+      updateBannerPosition();
+    });
+  }
+
+  function ensureBannerPositionObservers() {
+    if (!window.__aichatImgEditBannerResizeBound) {
+      window.__aichatImgEditBannerResizeBound = true;
+      window.addEventListener('resize', scheduleBannerPositionUpdate, { passive: true });
+    }
+
+    const target = getComposerLayoutEl();
+    if (!target || typeof ResizeObserver !== 'function') return;
+    if (state.bannerResizeTarget === target && state.bannerResizeObserver) return;
+
+    try {
+      state.bannerResizeObserver?.disconnect?.();
+    } catch {}
+    state.bannerResizeObserver = null;
+    state.bannerResizeTarget = null;
+
+    try {
+      const ro = new ResizeObserver(() => scheduleBannerPositionUpdate());
+      ro.observe(target);
+      state.bannerResizeObserver = ro;
+      state.bannerResizeTarget = target;
+    } catch {
+      state.bannerResizeObserver = null;
+      state.bannerResizeTarget = null;
+    }
+  }
+
+  function cleanupBannerPositionObservers() {
+    if (state.bannerPosRaf) cancelAnimationFrame(state.bannerPosRaf);
+    state.bannerPosRaf = 0;
+    try {
+      state.bannerResizeObserver?.disconnect?.();
+    } catch {}
+    state.bannerResizeObserver = null;
+    state.bannerResizeTarget = null;
   }
 
   function setBanner(text) {
@@ -171,18 +300,42 @@
     }
     const msg = el.querySelector('.msg');
     if (msg) msg.textContent = text;
+    ensureBannerPositionObservers();
+    scheduleBannerPositionUpdate();
   }
 
   function hideBanner() {
     const el = state.bannerEl;
     if (el && el.isConnected) el.remove();
     state.bannerEl = null;
+    cleanupBannerPositionObservers();
   }
 
   function cancelEditMode() {
     state.pending = null;
     hideBanner();
   }
+
+  function cleanup() {
+    try {
+      if (state.scanTimer) clearTimeout(state.scanTimer);
+    } catch {}
+    state.scanTimer = null;
+
+    try {
+      state.mo?.disconnect?.();
+    } catch {}
+    state.mo = null;
+
+    try {
+      state.hubUnsub?.();
+    } catch {}
+    state.hubUnsub = null;
+
+    cancelEditMode();
+  }
+
+  state.cleanup = cleanup;
 
   function buildPencilSvg() {
     // 18x18 pencil icon (outline)
@@ -319,6 +472,9 @@
     const userMsg = getUserMessageEl(turnEl);
     if (!userMsg) return;
 
+    // Ensure our styling (including icon color) is present before injecting the button.
+    ensureStyles();
+
     const copyBtn = findCopyButton(turnEl);
     if (!copyBtn) return;
     const actionBar = copyBtn.parentElement;
@@ -373,7 +529,10 @@
   function installPayloadRewriter() {
     const hub = window.__aichat_chatgpt_fetch_hub_v1__;
     if (hub && typeof hub.register === 'function') {
-      hub.register({
+      try {
+        state.hubUnsub?.();
+      } catch {}
+      state.hubUnsub = hub.register({
         priority: 100,
         onConversationPayload: (payload, ctx) => {
           try {
@@ -447,6 +606,7 @@
   installPayloadRewriter();
 
   const mo = new MutationObserver(scheduleScan);
+  state.mo = mo;
   try {
     mo.observe(document.documentElement, { subtree: true, childList: true });
   } catch {}

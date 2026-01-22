@@ -3,12 +3,57 @@
   'use strict';
 
   try {
-    if (window.__quicknavMainScrollGuardInstalled) return;
+    const GUARD_VERSION = 3;
+    const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
+
+    const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
+    /** @type {any} */
+    const prevOriginals = window[ORIGINALS_KEY];
+    const hasOriginals = !!(prevOriginals && typeof prevOriginals === 'object');
+
+    // If an older, non-upgradable guard is already installed, we can only update after a page refresh.
+    if (window.__quicknavMainScrollGuardInstalled && !hasOriginals) return;
+
+    if (prevVersion >= GUARD_VERSION) return;
+
     window.__quicknavMainScrollGuardInstalled = true;
+    window.__quicknavMainScrollGuardVersion = GUARD_VERSION;
+
+    if (!hasOriginals) {
+      // Capture unpatched originals once so future updates can safely replace wrappers without stacking.
+      const scrollTopDesc =
+        Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop') ||
+        Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop') ||
+        null;
+
+      window[ORIGINALS_KEY] = {
+        scrollIntoView: Element.prototype.scrollIntoView,
+        windowScrollTo: window.scrollTo,
+        windowScrollBy: window.scrollBy,
+        elemScrollTo: Element.prototype.scrollTo,
+        elemScrollBy: Element.prototype.scrollBy,
+        scrollTopOwner: scrollTopDesc
+          ? {
+              proto:
+                Object.prototype.hasOwnProperty.call(Element.prototype, 'scrollTop') ? Element.prototype : HTMLElement.prototype,
+              desc: scrollTopDesc
+            }
+          : null
+      };
+    }
   } catch {
     // If we can't touch window, do nothing.
     return;
   }
+
+  const ORIGINALS = (() => {
+    try {
+      const v = window.__quicknavMainScrollGuardOriginalsV1__;
+      return v && typeof v === 'object' ? v : {};
+    } catch {
+      return {};
+    }
+  })();
 
   const STATE = {
     enabled: false,
@@ -16,8 +61,15 @@
     baselineTop: null
   };
 
-  const DRIFT = 16;
+  // How many pixels of downward drift we tolerate before blocking.
+  // Keep this small to avoid visible "micro jumps" when sites try to autoscroll.
+  const DRIFT = 2;
+  // Some apps occasionally reset scrollTop to ~0 during re-render. While locked, block large upward jumps too.
+  const UP_JUMP = Math.max(DRIFT * 4, 64);
   const MAX_ALLOW_MS = 8000;
+  const SCROLLER_ATTR = 'data-quicknav-scrolllock-scroller';
+  const ANCHOR_STYLE_ID = '__quicknav_scrolllock_anchor_style__';
+  let __lastMarkedScroller = null;
 
   const now = () => Date.now();
   const isAllowed = () => !STATE.enabled || now() < (STATE.allowUntil || 0);
@@ -39,6 +91,10 @@
 
         if (msg.type === 'QUICKNAV_SCROLLLOCK_STATE') {
           STATE.enabled = !!msg.enabled;
+          // When scroll-lock toggles, also toggle scroll anchoring mitigation.
+          try {
+            refreshScrollerMarker();
+          } catch {}
           return;
         }
 
@@ -59,6 +115,21 @@
     },
     true
   );
+
+  function ensureAnchorStyle() {
+    try {
+      if (document.getElementById(ANCHOR_STYLE_ID)) return;
+      const style = document.createElement('style');
+      style.id = ANCHOR_STYLE_ID;
+      // Disable scroll anchoring inside the active chat scroller while locked.
+      // This avoids subtle scrollTop changes caused by reflow (e.g. Copy -> Copied).
+      style.textContent = `
+        [${SCROLLER_ATTR}="1"] { overflow-anchor: none !important; }
+        [${SCROLLER_ATTR}="1"] * { overflow-anchor: none !important; }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    } catch {}
+  }
 
   // === open shadow DOM helpers (Gemini Enterprise) ===
   function walkOpenShadows(start, visit) {
@@ -191,12 +262,59 @@
   let __cachedScroller = null;
   let __cachedScrollerAt = 0;
 
+  function clearScrollerMarker() {
+    try {
+      if (__lastMarkedScroller && __lastMarkedScroller.removeAttribute) {
+        __lastMarkedScroller.removeAttribute(SCROLLER_ATTR);
+      }
+    } catch {}
+    __lastMarkedScroller = null;
+  }
+
+  function setScrollerMarker(el) {
+    try {
+      if (!el || !el.setAttribute) return;
+      if (__lastMarkedScroller === el) return;
+      clearScrollerMarker();
+      ensureAnchorStyle();
+      el.setAttribute(SCROLLER_ATTR, '1');
+      __lastMarkedScroller = el;
+    } catch {}
+  }
+
+  function refreshScrollerMarker(scroller = null) {
+    try {
+      if (!STATE.enabled) return clearScrollerMarker();
+      const sc =
+        (scroller && scroller.isConnected ? scroller : null) ||
+        (__cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null) ||
+        getGeminiScroller() ||
+        detectChatScrollerFallback();
+      if (!sc) return clearScrollerMarker();
+      // If the chat uses the window scroller, mark documentElement as the best-effort root.
+      if (isWindowScroller(sc)) return setScrollerMarker(document.scrollingElement || document.documentElement);
+      return setScrollerMarker(sc);
+    } catch {
+      return clearScrollerMarker();
+    }
+  }
+
   function getChatScroller() {
     const t = now();
-    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) return __cachedScroller;
+    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) {
+      try {
+        // Keep the marker in sync even when we return the cached scroller.
+        if (STATE.enabled) refreshScrollerMarker(__cachedScroller);
+      } catch {}
+      return __cachedScroller;
+    }
     __cachedScrollerAt = t;
     const sc = getGeminiScroller() || detectChatScrollerFallback();
     __cachedScroller = sc || null;
+    try {
+      if (STATE.enabled) refreshScrollerMarker(__cachedScroller);
+      else clearScrollerMarker();
+    } catch {}
     return __cachedScroller;
   }
 
@@ -252,7 +370,9 @@
     const baseline = getBaselineTop(sc);
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
-    return targetTop > baseline + DRIFT;
+    if (targetTop > baseline + DRIFT) return true;
+    if (targetTop < baseline - UP_JUMP) return true;
+    return false;
   }
 
   function shouldBlockWindowScroll(nextTop) {
@@ -262,7 +382,9 @@
     const baseline = getBaselineTop(sc);
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
-    return targetTop > baseline + DRIFT;
+    if (targetTop > baseline + DRIFT) return true;
+    if (targetTop < baseline - UP_JUMP) return true;
+    return false;
   }
 
   function shouldBlockIntoView(target) {
@@ -289,20 +411,22 @@
   }
 
   // === install guards ===
-  const ORIGINAL_SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
-  const ORIGINAL_WINDOW_SCROLL_TO = window.scrollTo;
-  const ORIGINAL_WINDOW_SCROLL_BY = window.scrollBy;
-  const ORIGINAL_ELEM_SCROLL_TO = Element.prototype.scrollTo;
-  const ORIGINAL_ELEM_SCROLL_BY = Element.prototype.scrollBy;
+  const ORIGINAL_SCROLL_INTO_VIEW = typeof ORIGINALS.scrollIntoView === 'function' ? ORIGINALS.scrollIntoView : Element.prototype.scrollIntoView;
+  const ORIGINAL_WINDOW_SCROLL_TO = typeof ORIGINALS.windowScrollTo === 'function' ? ORIGINALS.windowScrollTo : window.scrollTo;
+  const ORIGINAL_WINDOW_SCROLL_BY = typeof ORIGINALS.windowScrollBy === 'function' ? ORIGINALS.windowScrollBy : window.scrollBy;
+  const ORIGINAL_ELEM_SCROLL_TO = typeof ORIGINALS.elemScrollTo === 'function' ? ORIGINALS.elemScrollTo : Element.prototype.scrollTo;
+  const ORIGINAL_ELEM_SCROLL_BY = typeof ORIGINALS.elemScrollBy === 'function' ? ORIGINALS.elemScrollBy : Element.prototype.scrollBy;
 
   // scrollTop setter is the key path for Gemini / ChatGPT autoscroll.
-  const scrollTopOwner = (() => {
-    const d1 = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
-    if (d1 && typeof d1.get === 'function' && typeof d1.set === 'function') return { proto: Element.prototype, desc: d1 };
-    const d2 = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
-    if (d2 && typeof d2.get === 'function' && typeof d2.set === 'function') return { proto: HTMLElement.prototype, desc: d2 };
-    return null;
-  })();
+  const scrollTopOwner =
+    (ORIGINALS && ORIGINALS.scrollTopOwner && typeof ORIGINALS.scrollTopOwner === 'object' ? ORIGINALS.scrollTopOwner : null) ||
+    (() => {
+      const d1 = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+      if (d1 && typeof d1.get === 'function' && typeof d1.set === 'function') return { proto: Element.prototype, desc: d1 };
+      const d2 = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
+      if (d2 && typeof d2.get === 'function' && typeof d2.set === 'function') return { proto: HTMLElement.prototype, desc: d2 };
+      return null;
+    })();
 
   if (scrollTopOwner?.desc?.configurable) {
     try {

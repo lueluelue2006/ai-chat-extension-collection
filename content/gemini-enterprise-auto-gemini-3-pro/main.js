@@ -1,15 +1,3 @@
-// ==UserScript==
-// @name         Gemini Enterprise - Auto Gemini 3 Pro
-// @namespace    https://github.com/lueluelue2006
-// @version      0.1.0
-// @description  Automatically switch Gemini Enterprise model selector to Gemini 3 Pro when available.
-// @author       schweigen
-// @match        https://business.gemini.google/*
-// @run-at       document-end
-// @grant        none
-// @license      MIT
-// ==/UserScript==
-
 (() => {
   'use strict';
 

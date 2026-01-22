@@ -1,13 +1,3 @@
-// ==UserScript==
-// @name         Grok 4 Fast Unlock
-// @namespace    http://tampermonkey.net/
-// @version      3.3
-// @description  使 Grok 免费账号使用 Grok 4 Fast
-// @author       MUTED64
-// @match        https://grok.com/*
-// @grant        none
-// @run-at       document-start
-// ==/UserScript==
 (function() {
     'use strict';
     const GUARD_KEY = '__aichat_grok_fast_unlock_v1__';

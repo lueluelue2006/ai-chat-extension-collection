@@ -1,14 +1,3 @@
-// ==UserScript==
-// @name         Genspark Inline Upload Fix
-// @namespace    https://github.com/lueluelue2006
-// @version      0.2.1
-// @description  Fix attachment upload in Genspark inline message edit (pencil): Cmd+V paste image/file, paperclip opens file chooser.
-// @match        https://www.genspark.ai/agents*
-// @run-at       document-idle
-// @author       schweigen
-// @license      MIT
-// @grant        none
-// ==/UserScript==
 (() => {
   'use strict';
 

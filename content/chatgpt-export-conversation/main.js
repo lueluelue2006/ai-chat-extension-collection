@@ -1,16 +1,3 @@
-// ==UserScript==
-// @name         ChatGPT对话导出（2025年7月新版UI）
-// @namespace    https://github.com/lueluelue2006
-// @version      0.4.0
-// @description  一键导出 ChatGPT 聊天记录为 HTML 或 Markdown（适配新版 UI）
-// @author       Marx (updated by schweigen)
-// @license      MIT
-// @match        https://chatgpt.com/*
-// @match        https://chat.openai.com/*
-// @run-at       document-end
-// @grant        GM_registerMenuCommand
-// ==/UserScript==
-
 (() => {
   'use strict';
 

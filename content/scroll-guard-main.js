@@ -3,7 +3,7 @@
   'use strict';
 
   try {
-    const GUARD_VERSION = 3;
+    const GUARD_VERSION = 4;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -30,8 +30,10 @@
         scrollIntoView: Element.prototype.scrollIntoView,
         windowScrollTo: window.scrollTo,
         windowScrollBy: window.scrollBy,
+        windowScroll: window.scroll,
         elemScrollTo: Element.prototype.scrollTo,
         elemScrollBy: Element.prototype.scrollBy,
+        elemScroll: Element.prototype.scroll,
         scrollTopOwner: scrollTopDesc
           ? {
               proto:
@@ -40,6 +42,12 @@
             }
           : null
       };
+    } else {
+      // Backfill originals added in newer versions to keep future updates safe.
+      try {
+        if (!prevOriginals.windowScroll && typeof window.scroll === 'function') prevOriginals.windowScroll = window.scroll;
+        if (!prevOriginals.elemScroll && typeof Element.prototype.scroll === 'function') prevOriginals.elemScroll = Element.prototype.scroll;
+      } catch {}
     }
   } catch {
     // If we can't touch window, do nothing.
@@ -414,8 +422,10 @@
   const ORIGINAL_SCROLL_INTO_VIEW = typeof ORIGINALS.scrollIntoView === 'function' ? ORIGINALS.scrollIntoView : Element.prototype.scrollIntoView;
   const ORIGINAL_WINDOW_SCROLL_TO = typeof ORIGINALS.windowScrollTo === 'function' ? ORIGINALS.windowScrollTo : window.scrollTo;
   const ORIGINAL_WINDOW_SCROLL_BY = typeof ORIGINALS.windowScrollBy === 'function' ? ORIGINALS.windowScrollBy : window.scrollBy;
+  const ORIGINAL_WINDOW_SCROLL = typeof ORIGINALS.windowScroll === 'function' ? ORIGINALS.windowScroll : window.scroll;
   const ORIGINAL_ELEM_SCROLL_TO = typeof ORIGINALS.elemScrollTo === 'function' ? ORIGINALS.elemScrollTo : Element.prototype.scrollTo;
   const ORIGINAL_ELEM_SCROLL_BY = typeof ORIGINALS.elemScrollBy === 'function' ? ORIGINALS.elemScrollBy : Element.prototype.scrollBy;
+  const ORIGINAL_ELEM_SCROLL = typeof ORIGINALS.elemScroll === 'function' ? ORIGINALS.elemScroll : Element.prototype.scroll;
 
   // scrollTop setter is the key path for Gemini / ChatGPT autoscroll.
   const scrollTopOwner =
@@ -466,6 +476,16 @@
     };
   }
 
+  // window.scroll (alias of scrollTo; some apps call this)
+  if (typeof ORIGINAL_WINDOW_SCROLL === 'function') {
+    window.scroll = function (...args) {
+      const current = getScrollPos(getChatScroller());
+      const targetTop = getScrollTopFromArgs(args, current);
+      if (shouldBlockWindowScroll(targetTop)) return;
+      return ORIGINAL_WINDOW_SCROLL.apply(window, args);
+    };
+  }
+
   if (typeof ORIGINAL_WINDOW_SCROLL_BY === 'function') {
     window.scrollBy = function (...args) {
       if (!isAllowed()) {
@@ -486,6 +506,20 @@
       const targetTop = getScrollTopFromArgs(args, current);
       if (shouldBlockElementScroll(this, targetTop)) return;
       return ORIGINAL_ELEM_SCROLL_TO.apply(this, args);
+    };
+  }
+
+  // Element.scroll (alias of scrollTo; ChatGPT uses this for autoscroll)
+  if (typeof ORIGINAL_ELEM_SCROLL === 'function') {
+    Element.prototype.scroll = function (...args) {
+      const current = getScrollPos(this);
+      const targetTop = getScrollTopFromArgs(args, current);
+      try {
+        if (shouldBlockElementScroll(this, targetTop)) return;
+        // If the chat scroller is window-based, it might call .scroll on documentElement/body.
+        if (shouldBlockWindowScroll(targetTop) && isWindowScroller(this)) return;
+      } catch {}
+      return ORIGINAL_ELEM_SCROLL.apply(this, args);
     };
   }
 

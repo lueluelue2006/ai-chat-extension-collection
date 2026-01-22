@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 4;
+  const STYLE_VERSION = 5;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -330,6 +330,7 @@
 	          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	          letter-spacing: 0.1px;
 	          --aichat-indent: 16px;
+            --aichat-row-h: 24px;
 	        }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
@@ -352,6 +353,17 @@
           pointer-events: none;
         }
         #${PANEL_ID} .tree.guides .children::before{ opacity: 0.85; }
+        /* Stop the vertical guide at the last child's row (so it doesn't "run through" the last subtree). */
+        #${PANEL_ID} .tree.guides .children > .aichat-tree-node:last-child::before{
+          content: '';
+          position: absolute;
+          left: calc(var(--aichat-indent) / -2);
+          top: calc(var(--aichat-row-h) * 0.5);
+          bottom: 0px;
+          width: 2px;
+          background: rgba(17, 17, 17, 0.94);
+          pointer-events: none;
+        }
         #${PANEL_ID} summary{
           list-style: none;
           cursor: pointer;
@@ -364,6 +376,7 @@
 	          align-items: baseline;
 	          gap: 8px;
 	          padding: 4px 6px;
+            min-height: var(--aichat-row-h);
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
@@ -387,7 +400,7 @@
         }
         #${PANEL_ID} .aichat-tree-node[data-depth="0"] .node-row::before{ display:none !important; }
         #${PANEL_ID} .node-row .label{
-          flex: 1 1 auto;
+          flex: 0 1 auto;
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;

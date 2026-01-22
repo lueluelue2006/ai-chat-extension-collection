@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 7;
+  const STYLE_VERSION = 8;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -334,6 +334,7 @@
 	        }
         /* VSCode-like indent guides (continuous rails, independent of branch shapes). */
         #${PANEL_ID} .tree.guides{
+          --aichat-guide-y: calc(var(--aichat-row-h) / 2);
           background-image:
             linear-gradient(to bottom, rgba(239,68,68,0.55), rgba(239,68,68,0.55)),
             linear-gradient(to bottom, rgba(249,115,22,0.55), rgba(249,115,22,0.55)),
@@ -347,23 +348,22 @@
             linear-gradient(to bottom, rgba(34,197,94,0.55), rgba(34,197,94,0.55)),
             linear-gradient(to bottom, rgba(59,130,246,0.55), rgba(59,130,246,0.55)),
             linear-gradient(to bottom, rgba(168,85,247,0.55), rgba(168,85,247,0.55));
-          background-size:
-            1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%,
-            1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%, 1px 100%;
+          /* Give the guide rails top/bottom padding (like code editors). */
+          background-size: 1px calc(100% - var(--aichat-row-h));
           /* Align with the connector center: (depth - 0.5) * indent */
           background-position:
-            calc(var(--aichat-indent) * 1 / 2) 0,
-            calc(var(--aichat-indent) * 3 / 2) 0,
-            calc(var(--aichat-indent) * 5 / 2) 0,
-            calc(var(--aichat-indent) * 7 / 2) 0,
-            calc(var(--aichat-indent) * 9 / 2) 0,
-            calc(var(--aichat-indent) * 11 / 2) 0,
-            calc(var(--aichat-indent) * 13 / 2) 0,
-            calc(var(--aichat-indent) * 15 / 2) 0,
-            calc(var(--aichat-indent) * 17 / 2) 0,
-            calc(var(--aichat-indent) * 19 / 2) 0,
-            calc(var(--aichat-indent) * 21 / 2) 0,
-            calc(var(--aichat-indent) * 23 / 2) 0;
+            calc(var(--aichat-indent) * 1 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 3 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 5 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 7 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 9 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 11 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 13 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 15 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 17 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 19 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 21 / 2) var(--aichat-guide-y),
+            calc(var(--aichat-indent) * 23 / 2) var(--aichat-guide-y);
           background-repeat: no-repeat;
         }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }

@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 19;
+  const STYLE_VERSION = 20;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -91,8 +91,7 @@
     conversationId: '',
     lastLoadedAt: 0,
     dirty: true,
-    // Current max rail depth used to build the CSS background layers.
-    // Kept in state so ensureUi()/applyPrefsToUi() won't accidentally "shrink" it.
+    // Reserved for future styling tweaks; kept for hot-reinject compatibility.
     guideDepth: 0,
     refreshTimer: 0,
     refreshPromise: null,
@@ -248,24 +247,21 @@
     return await resp.json();
   }
 
-  function ensureStyles(maxGuideDepthHint) {
-    // Build enough indent-guide rails for deep conversations (depth can exceed 12 easily).
-    // We generate the CSS instead of hard-coding dozens of background layers.
-    const cap = 512;
-    const hint = Math.max(0, Math.floor(Number(maxGuideDepthHint) || 0));
-    const prev = Math.max(0, Math.floor(Number(state.guideDepth) || 0));
-    const base = Math.max(hint, prev, 72);
-    // Keep a little headroom so new messages don't instantly "run out" of rails.
-    const MAX_GUIDE_DEPTH = Math.min(cap, Math.max(24, base + (hint > prev ? 8 : 0)));
-    state.guideDepth = MAX_GUIDE_DEPTH;
-    const guideImages = [];
-    const guidePositions = [];
-    for (let i = 1; i <= MAX_GUIDE_DEPTH; i++) {
-      const color = GUIDE_COLORS[(i - 1) % GUIDE_COLORS.length];
-      guideImages.push(`linear-gradient(to bottom, ${color}, ${color})`);
-      // Place each rail on the exact indent step so it aligns with node indentation.
-      guidePositions.push(`calc(var(--aichat-indent) * ${i}) var(--aichat-guide-y)`);
+  function ensureStyles(_maxGuideDepthHint) {
+    // Indent guides must remain visible even on very long conversations.
+    // A single giant gradient can be clipped by Chrome's internal texture limits,
+    // so we paint guides with a small repeating tile.
+    const GUIDE_REPEAT_W = GUIDE_COLORS.length;
+    const guidePatternStops = [];
+    for (let i = 0; i < GUIDE_REPEAT_W; i++) {
+      const color = GUIDE_COLORS[i];
+      const x = `calc(var(--aichat-indent) * ${i})`;
+      const x1 = `calc(var(--aichat-indent) * ${i} + 1px)`;
+      const xNext = `calc(var(--aichat-indent) * ${i + 1})`;
+      guidePatternStops.push(`${color} ${x} ${x1}`, `transparent ${x1} ${xNext}`);
     }
+    const guidePattern = `linear-gradient(to right, ${guidePatternStops.join(',')})`;
+    state.guideDepth = 0;
 
     const styleText = `
         #${TOGGLE_ID}{
@@ -358,15 +354,30 @@
 	        }
         /* VSCode-like indent guides (continuous rails, independent of branch shapes). */
         #${PANEL_ID} .tree.guides{
-          /* VSCode-like: a little top/bottom padding, and guides aligned to indent steps. */
+          /* The guides themselves are painted in ::before so we can clip top/bottom without
+             affecting node content (and avoid huge background gradients on long trees). */
           --aichat-guide-y: calc(var(--aichat-row-h) / 2);
-          background-image: ${guideImages.join(',')};
-          /* Give the guide rails top/bottom padding (like code editors). */
-          background-size: 1px calc(100% - var(--aichat-row-h));
-          /* Align to indent steps (depth * indent). */
-          background-position: ${guidePositions.join(',')};
-          background-repeat: no-repeat;
+          --aichat-guide-tile-h: 1024px;
+          position: relative;
+          isolation: isolate;
         }
+        #${PANEL_ID} .tree.guides::before{
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: var(--aichat-guide-y);
+          bottom: var(--aichat-guide-y);
+          background-image: ${guidePattern};
+          /* Repeat across depth and height (prevents "only first screen has guides"). */
+          background-size: calc(var(--aichat-indent) * ${GUIDE_REPEAT_W}) var(--aichat-guide-tile-h);
+          /* Shift by one indent so the first rail starts at depth=1 (not at x=0). */
+          background-position: var(--aichat-indent) 0px;
+          background-repeat: repeat;
+          pointer-events: none;
+          z-index: 0;
+        }
+        #${PANEL_ID} .tree.guides .aichat-tree-node{ z-index: 1; }
         /* Hide deeper indent rails on shallow rows (match VSCode indent-guide behavior). */
         #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
         #${PANEL_ID} .tree.guides div.aichat-tree-node{
@@ -493,13 +504,13 @@
     // Hot-reinject friendly: if a previous version already inserted the style tag, update it in place.
     const existing = document.getElementById(STYLE_ID);
     if (existing) {
-      const key = `${STYLE_VERSION}:${MAX_GUIDE_DEPTH}`;
+      const key = `${STYLE_VERSION}`;
       if (existing.dataset?.aichatTreeStyleKey === key) return;
       try {
         existing.textContent = styleText;
         existing.dataset.aichatTreeStyleKey = key;
         existing.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
-        existing.dataset.aichatTreeGuideDepth = String(MAX_GUIDE_DEPTH);
+        existing.dataset.aichatTreeGuideDepth = String(state.guideDepth || 0);
       } catch {}
       return;
     }
@@ -508,10 +519,10 @@
       const style = document.createElement('style');
       style.id = STYLE_ID;
       try {
-        const key = `${STYLE_VERSION}:${MAX_GUIDE_DEPTH}`;
+        const key = `${STYLE_VERSION}`;
         style.dataset.aichatTreeStyleKey = key;
         style.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
-        style.dataset.aichatTreeGuideDepth = String(MAX_GUIDE_DEPTH);
+        style.dataset.aichatTreeGuideDepth = String(state.guideDepth || 0);
       } catch {}
       style.textContent = styleText;
       document.documentElement?.appendChild(style);

@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 22;
+  const STYLE_VERSION = 23;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -407,6 +407,8 @@
 	          border-radius: 10px;
 	          cursor: pointer;
 	          white-space: nowrap;
+            /* Mask indent-guide rails behind the row so they don't "cut through" the content. */
+            background-color: var(--aichat-panel-bg-solid, rgb(17, 17, 17));
           /* Keep a consistent max width across depths (aligns to panel edge), but don't force full-width. */
           max-width: calc(100% + (var(--aichat-indent) * var(--aichat-depth, 0)));
           min-width: 0;
@@ -425,7 +427,7 @@
           flex: 0 0 auto;
           white-space: nowrap;
         }
-        #${PANEL_ID} .node-row:hover{ background: rgba(255,255,255,0.07); }
+        #${PANEL_ID} .node-row:hover{ background-image: linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)); }
         #${PANEL_ID} .caret{
           display: inline-flex;
           align-items: center;
@@ -446,8 +448,8 @@
         }
         #${PANEL_ID} details[open] > summary .caret::before{ transform: rotate(90deg); }
         #${PANEL_ID} .caret.placeholder{ opacity: 0; pointer-events: none; }
-        #${PANEL_ID} .node-row.selected{
-          background: rgba(56,189,248,0.18);
+	        #${PANEL_ID} .node-row.selected{
+          background-image: linear-gradient(rgba(56,189,248,0.18), rgba(56,189,248,0.18));
           outline: 1px solid rgba(56,189,248,0.22);
         }
         #${PANEL_ID} .badge{
@@ -471,7 +473,7 @@
           font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
         #${PANEL_ID} .node-row.current{
-          background: rgba(255,255,255,0.12);
+          background-image: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12));
           outline: 1px solid rgba(255,255,255,0.18);
         }
         #${PANEL_ID} .node-row.path{

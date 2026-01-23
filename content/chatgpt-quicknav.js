@@ -3032,16 +3032,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function setScrollPos(el, top) {
     if (!el) return;
-    const prev = window.__cgptNavAllowScroll;
-    window.__cgptNavAllowScroll = true;
-    const value = Math.max(0, Math.round(top || 0));
-    if (isWindowScroller(el)) {
-      window.scrollTo({ top: value, behavior: 'auto' });
-    } else {
-      try { el.scrollTo({ top: value, behavior: 'auto' }); }
-      catch { el.scrollTop = value; }
+    navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
+    try {
+      const value = Math.max(0, Math.round(top || 0));
+      if (isWindowScroller(el)) {
+        window.scrollTo({ top: value, behavior: 'auto' });
+      } else {
+        try { el.scrollTo({ top: value, behavior: 'auto' }); }
+        catch { el.scrollTop = value; }
+      }
+    } finally {
+      navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
     }
-    window.__cgptNavAllowScroll = prev;
   }
 
   function getNavAllowScrollUntil() {
@@ -3070,9 +3072,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function isNavAllowScroll() {
-    try {
-      if (window.__cgptNavAllowScroll) return true;
-    } catch {}
+    if ((navAllowScrollDepth || 0) > 0) return true;
     try {
       const until = getNavAllowScrollUntil();
       return !!until && Date.now() < until;
@@ -3156,12 +3156,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function allowNavScrollFor(ms = 600) {
     const dur = Math.max(0, Math.round(Number(ms) || 0));
     navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
-    window.__cgptNavAllowScroll = true;
     bumpNavAllowScrollUntil(dur);
     postScrollLockAllowToMainWorld(dur);
     setTimeout(() => {
       navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
-      if (navAllowScrollDepth === 0) window.__cgptNavAllowScroll = false;
     }, dur);
   }
 

@@ -83,13 +83,7 @@
   const isAllowed = () => {
     if (!STATE.enabled) return true;
     if (now() < (STATE.allowUntil || 0)) return true;
-    // Synchronous escape hatch for our own navigation actions (tree jump / quicknav jump).
-    // The postMessage-based allow can land a tick later; this flag makes navigation feel instant.
-    try {
-      if (window.__cgptNavAllowScroll) return true;
-      if (window.__quicknavAllowScroll) return true;
-    } catch {}
-    // Cross-world allow window: main/isolated scripts share DOM dataset, not JS globals.
+    // Cross-world allow window: use DOM dataset (survives hot reinject; auto-expires).
     try {
       const v = document.documentElement?.dataset?.quicknavAllowScrollUntil;
       const until = Number(v);

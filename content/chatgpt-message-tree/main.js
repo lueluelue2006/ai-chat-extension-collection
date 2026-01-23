@@ -536,7 +536,13 @@
     try {
       const msg = document.querySelector(`[data-message-id="${id}"]`);
       if (!msg) return null;
-      return msg.closest('article') || msg;
+      return (
+        msg.closest?.(
+          'article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],article[data-testid*="conversation-turn"],[data-testid*="conversation-turn"]'
+        ) ||
+        msg.closest?.('article') ||
+        msg
+      );
     } catch {
       return null;
     }
@@ -580,36 +586,24 @@
     try {
       document.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: false, deltaY: 0 }));
     } catch {}
-
-    let hadPrev = false;
-    let prev;
-    try {
-      hadPrev = Object.prototype.hasOwnProperty.call(window, '__cgptNavAllowScroll');
-      prev = window.__cgptNavAllowScroll;
-      window.__cgptNavAllowScroll = true;
-    } catch {}
     // Main-world scroll guard (when installed) uses window.postMessage.
     try {
       window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_ALLOW', ms: clamped }, '*');
     } catch {}
-    setTimeout(() => {
-      try {
-        if (!hadPrev) delete window.__cgptNavAllowScroll;
-        else window.__cgptNavAllowScroll = prev;
-      } catch {}
-    }, clamped);
   }
 
   function scrollToMessageId(messageId) {
     const el = findTurnElementByMessageId(messageId);
     if (!el) return false;
     const article = el.closest?.('article') || el;
+    const anchor = findTurnAnchor(article) || article;
+    const topMargin = getFixedHeaderHeight();
     try {
       // Keep the scroll-lock logic from fighting tree navigation.
       allowTreeNavScroll(3200);
     } catch {}
 
-    const ok = scrollToTopOfElement(article, 12);
+    const ok = scrollToTopOfElement(anchor, topMargin);
     highlightTurnElement(article);
     return ok;
   }
@@ -1471,12 +1465,78 @@
     }
   }
 
+  function getFixedHeaderHeight() {
+    try {
+      const h = document.querySelector('header, [data-testid="top-nav"]');
+      if (!h) return 0;
+      const r = h.getBoundingClientRect();
+      return Math.max(0, Number(r?.height) || 0) + 12;
+    } catch {
+      return 0;
+    }
+  }
+
+  function getChatScrollContainer() {
+    try {
+      const turns = document.querySelector('[data-testid="conversation-turns"]');
+      const msg = document.querySelector('[data-message-id]');
+      const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
+      const target = turns || msg || main || document.body;
+      const closest = findClosestScrollContainer(target);
+      return closest || (document.scrollingElement || document.documentElement);
+    } catch {
+      return document.scrollingElement || document.documentElement;
+    }
+  }
+
+  function findTurnAnchor(root) {
+    const el = root && root.nodeType === 1 ? root : null;
+    if (!el) return null;
+
+    const selectors = [
+      '[data-message-author-role] .whitespace-pre-wrap',
+      '[data-message-content-part]',
+      '.deep-research-result .markdown',
+      '.border-token-border-sharp .markdown',
+      '[data-message-author-role] .markdown',
+      '[data-message-author-role] .prose',
+      '.text-message',
+      'article .markdown',
+      '.prose p',
+      'p',
+      'li',
+      'pre',
+      'blockquote'
+    ];
+
+    for (const s of selectors) {
+      let n = null;
+      try {
+        n = el.querySelector(s);
+      } catch {
+        n = null;
+      }
+      if (!n) continue;
+      try {
+        const r = n.getBoundingClientRect();
+        if (r && Number.isFinite(r.height) && r.height > 0) return n;
+      } catch {}
+      try {
+        if ((n.offsetHeight || 0) > 0) return n;
+      } catch {}
+    }
+
+    return el;
+  }
+
   function scrollToTopOfElement(targetEl, topMarginPx = 12) {
     const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
     if (!el) return false;
 
     const margin = Math.max(0, Math.round(Number(topMarginPx) || 0));
-    const scroller = findClosestScrollContainer(el) || (document.scrollingElement || document.documentElement);
+    // Always scroll the conversation scroller (not an inner overflow container like code blocks),
+    // otherwise jumps can feel "random" depending on which element inside the turn we target.
+    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
     const isWin = isWindowScroller(scroller);
 
     const setTop = (top) => {
@@ -1533,7 +1593,7 @@
       const MAX_TRIES = 8;
       const step = () => {
         tries++;
-        const sc = findClosestScrollContainer(el) || scroller;
+        const sc = getChatScrollContainer() || scroller;
         const win = isWindowScroller(sc);
         const targetTop = (() => {
           if (win) return margin;

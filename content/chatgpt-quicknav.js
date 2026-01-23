@@ -2579,10 +2579,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
 
     // Stabilize for reflow after images/code blocks render. Only do this for instant scroll.
+    // Note: ChatGPT (and our perf/virtualization layers) can change layout shortly after a jump,
+    // causing a visible "bounce". Keep checking a few frames even if initially aligned.
     if (scrollBehavior === 'auto') {
       try {
         let tries = 0;
-        const MAX_TRIES = 8;
+        const MAX_TRIES = 12;
         const step = () => {
           tries++;
           const sc = getChatScrollContainer() || scroller;
@@ -2593,14 +2595,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           })();
           let delta = 0;
           try { delta = (el.getBoundingClientRect().top || 0) - targetTop; } catch { delta = 0; }
-          if (Math.abs(delta) <= 3 || tries >= MAX_TRIES) return;
-          if (win) {
-            try { window.scrollBy({ top: delta, behavior: 'auto' }); }
-            catch { try { window.scrollBy(0, delta); } catch {} }
-          } else {
-            try { sc.scrollBy({ top: delta, behavior: 'auto' }); }
-            catch { try { sc.scrollBy(0, delta); } catch {} }
+          if (Math.abs(delta) > 3) {
+            if (win) {
+              try { window.scrollBy({ top: delta, behavior: 'auto' }); }
+              catch { try { window.scrollBy(0, delta); } catch {} }
+            } else {
+              try { sc.scrollBy({ top: delta, behavior: 'auto' }); }
+              catch { try { sc.scrollBy(0, delta); } catch {} }
+            }
           }
+          if (tries >= MAX_TRIES) return;
           requestAnimationFrame(step);
         };
         requestAnimationFrame(step);

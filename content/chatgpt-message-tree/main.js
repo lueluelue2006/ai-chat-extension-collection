@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 21;
+  const STYLE_VERSION = 22;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -381,17 +381,7 @@
           z-index: 0;
         }
         #${PANEL_ID} .tree.guides .aichat-tree-node{ z-index: 1; }
-        /* Hide deeper indent rails on shallow rows (match VSCode indent-guide behavior). */
-        #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
-        #${PANEL_ID} .tree.guides div.aichat-tree-node{
-          /* Hide deeper rails on shallow rows, while keeping the current-depth rail visible. */
-          background: linear-gradient(
-            to right,
-            transparent 0,
-            transparent 1px,
-            var(--aichat-panel-bg-solid, rgb(17, 17, 17)) 1px
-          );
-        }
+        /* Keep rails visible even when the panel is scrolled horizontally into deep nodes. */
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
 	          position: relative;

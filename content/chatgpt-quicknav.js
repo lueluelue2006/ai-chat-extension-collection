@@ -1119,8 +1119,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   .nav-btn { padding:5px 6px; font-size:13px; }
 }
 
-.highlight-pulse { animation: pulse 1.5s ease-out; }
-@keyframes pulse { 0% { background-color: rgba(255,243,205,0); } 20% { background-color: rgba(168,218,255,0.3); } 100% { background-color: rgba(255,243,205,0); } }
+.highlight-pulse{
+  outline: 3px solid rgba(56,189,248,0.92);
+  outline-offset: 4px;
+  border-radius: 14px;
+  animation: cgpt-turn-pulse 1600ms ease-in-out;
+}
+@keyframes cgpt-turn-pulse{
+  0%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
+  20%{ box-shadow: 0 0 0 10px rgba(56,189,248,0.20), 0 0 22px 6px rgba(56,189,248,0.18); }
+  45%{ box-shadow: 0 0 0 2px rgba(56,189,248,0.08), 0 0 10px 3px rgba(56,189,248,0.08); }
+  70%{ box-shadow: 0 0 0 12px rgba(56,189,248,0.22), 0 0 26px 8px rgba(56,189,248,0.20); }
+  100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
+}
+@media (prefers-reduced-motion: reduce){
+  .highlight-pulse{ animation: none; }
+}
 `;
       document.head.appendChild(style);
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已创建样式');
@@ -2516,7 +2530,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       '.text-message',
       'article .markdown',
       '.prose p',
-      'p','li','pre','code','blockquote'
+      'p','li','pre','blockquote'
     ];
     for (const s of selectors) {
       const n = root.querySelector(s);
@@ -2525,53 +2539,91 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return root;
   }
 
-  function scrollToTurn(el) {
-    const anchor = findTurnAnchor(el) || el;
-    const margin = Math.max(0, getFixedHeaderHeight());
-    const behavior = scrollLockEnabled ? 'auto' : 'smooth';
+  function scrollToTopOfElement(targetEl, topMarginPx = 12, behavior = 'auto') {
+    const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
+    if (!el) return false;
+
+    const margin = Math.max(0, Math.round(Number(topMarginPx) || 0));
+    // Always use the chat scroller (avoid inner overflow elements like code blocks).
+    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
+    const isWin = isWindowScroller(scroller);
+    const scrollBehavior = behavior === 'smooth' ? 'smooth' : 'auto';
+
+    const setTop = (top) => {
+      const value = Math.max(0, Math.round(Number(top) || 0));
+      if (isWin) {
+        try { window.scroll({ top: value, behavior: scrollBehavior }); return; } catch {}
+        try { window.scrollTo({ top: value, behavior: scrollBehavior }); return; } catch {}
+        try { window.scrollTo(0, value); } catch {}
+        return;
+      }
+
+      try { scroller.scroll({ top: value, behavior: scrollBehavior }); return; } catch {}
+      try { scroller.scrollTo({ top: value, behavior: scrollBehavior }); return; } catch {}
+      try { scroller.scrollTop = value; } catch {}
+    };
+
     try {
-      anchor.style.scrollMarginTop = margin + 'px';
-      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
-      requestAnimationFrame(() => {
-        markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
-        anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior });
-        postScrollNudge(el);
-      });
+      const r = el.getBoundingClientRect();
+      if (isWin) {
+        const base = window.scrollY || getScrollPos(scroller);
+        setTop(base + r.top - margin);
+      } else {
+        const sr = scroller.getBoundingClientRect();
+        const base = getScrollPos(scroller);
+        setTop(base + (r.top - sr.top) - margin);
+      }
     } catch {
-      const scroller = getScrollRoot(anchor);
-      const scRect = scroller.getBoundingClientRect ? scroller.getBoundingClientRect() : { top: 0 };
-      const isWindow = (scroller === document.documentElement || scroller === document.body);
-      const base = isWindow ? window.scrollY : scroller.scrollTop;
-      const top = base + anchor.getBoundingClientRect().top - scRect.top - margin;
-      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
-      if (isWindow) window.scrollTo({ top, behavior });
-      else scroller.scrollTo({ top, behavior });
-      postScrollNudge(el);
+      try { el.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch {}
+      return true;
     }
-    el.classList.add('highlight-pulse');
-    anchor.classList.add('highlight-pulse');
-    setTimeout(() => { el.classList.remove('highlight-pulse'); anchor.classList.remove('highlight-pulse'); }, 1600);
+
+    // Stabilize for reflow after images/code blocks render. Only do this for instant scroll.
+    if (scrollBehavior === 'auto') {
+      try {
+        let tries = 0;
+        const MAX_TRIES = 8;
+        const step = () => {
+          tries++;
+          const sc = getChatScrollContainer() || scroller;
+          const win = isWindowScroller(sc);
+          const targetTop = (() => {
+            if (win) return margin;
+            try { return (sc.getBoundingClientRect().top || 0) + margin; } catch { return margin; }
+          })();
+          let delta = 0;
+          try { delta = (el.getBoundingClientRect().top || 0) - targetTop; } catch { delta = 0; }
+          if (Math.abs(delta) <= 3 || tries >= MAX_TRIES) return;
+          if (win) {
+            try { window.scrollBy({ top: delta, behavior: 'auto' }); }
+            catch { try { window.scrollBy(0, delta); } catch {} }
+          } else {
+            try { sc.scrollBy({ top: delta, behavior: 'auto' }); }
+            catch { try { sc.scrollBy(0, delta); } catch {} }
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      } catch {}
+    }
+
+    return true;
   }
 
-  function postScrollNudge(targetEl) {
-    markNavScrollIntent(scrollLockEnabled ? 1200 : 600);
-    let tries = 0;
-    const step = () => {
-      tries++;
-      const y = getAnchorY();
-      const r = targetEl.getBoundingClientRect();
-      const diff = r.top - y;
-      if (diff > 1 && tries <= 6) {
-        const scroller = getScrollRoot(targetEl);
-        const isWindow = (scroller === document.documentElement || scroller === document.body);
-        if (isWindow) window.scrollBy(0, diff + 1);
-        else scroller.scrollBy({ top: diff + 1 });
-        requestAnimationFrame(step);
-      } else {
-        scheduleActiveUpdateNow();
-      }
-    };
-    requestAnimationFrame(step);
+  function scrollToTurn(el) {
+    const anchor = findTurnAnchor(el) || el;
+    const article = el?.closest?.('article') || el;
+    const margin = Math.max(0, getFixedHeaderHeight());
+    const behavior = scrollLockEnabled ? 'auto' : 'smooth';
+    const allowMs = scrollLockEnabled ? 2600 : 1200;
+    markNavScrollIntent(allowMs);
+    scrollToTopOfElement(anchor, margin, behavior);
+
+    // Highlight the whole turn, not just the first paragraph (more obvious).
+    try { document.querySelectorAll('article.highlight-pulse').forEach((n) => n.classList.remove('highlight-pulse')); } catch {}
+    try { article.classList.add('highlight-pulse'); } catch {}
+    setTimeout(() => { try { article.classList.remove('highlight-pulse'); } catch {} }, 2200);
+    scheduleActiveUpdateNow();
   }
 
   function wirePanel(ui) {

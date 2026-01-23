@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 14;
+  const STYLE_VERSION = 16;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -246,6 +246,17 @@
   }
 
   function ensureStyles() {
+    // Build enough indent-guide rails for deep conversations (depth can exceed 12 easily).
+    // We generate the CSS instead of hard-coding dozens of background layers.
+    const MAX_GUIDE_DEPTH = 72;
+    const guideImages = [];
+    const guidePositions = [];
+    for (let i = 1; i <= MAX_GUIDE_DEPTH; i++) {
+      const color = GUIDE_COLORS[(i - 1) % GUIDE_COLORS.length];
+      guideImages.push(`linear-gradient(to bottom, ${color}, ${color})`);
+      guidePositions.push(`calc(var(--aichat-indent) * ${i}) var(--aichat-guide-y)`);
+    }
+
     const styleText = `
         #${TOGGLE_ID}{
           position: fixed;
@@ -335,43 +346,25 @@
 	        }
         /* VSCode-like indent guides (continuous rails, independent of branch shapes). */
         #${PANEL_ID} .tree.guides{
-          /* Start guides at the middle of the 1st non-root row (VSCode-like, avoids "|-" look). */
-          --aichat-guide-y: calc(var(--aichat-row-h) * 3 / 2);
-          background-image:
-            linear-gradient(to bottom, rgba(239,68,68,0.55), rgba(239,68,68,0.55)),
-            linear-gradient(to bottom, rgba(249,115,22,0.55), rgba(249,115,22,0.55)),
-            linear-gradient(to bottom, rgba(234,179,8,0.55), rgba(234,179,8,0.55)),
-            linear-gradient(to bottom, rgba(34,197,94,0.55), rgba(34,197,94,0.55)),
-            linear-gradient(to bottom, rgba(59,130,246,0.55), rgba(59,130,246,0.55)),
-            linear-gradient(to bottom, rgba(168,85,247,0.55), rgba(168,85,247,0.55)),
-            linear-gradient(to bottom, rgba(239,68,68,0.55), rgba(239,68,68,0.55)),
-            linear-gradient(to bottom, rgba(249,115,22,0.55), rgba(249,115,22,0.55)),
-            linear-gradient(to bottom, rgba(234,179,8,0.55), rgba(234,179,8,0.55)),
-            linear-gradient(to bottom, rgba(34,197,94,0.55), rgba(34,197,94,0.55)),
-            linear-gradient(to bottom, rgba(59,130,246,0.55), rgba(59,130,246,0.55)),
-            linear-gradient(to bottom, rgba(168,85,247,0.55), rgba(168,85,247,0.55));
-          /* Reserve one full row (root) + half row padding at bottom. */
-          background-size: 1px calc(100% - (var(--aichat-row-h) * 2));
-          /* Align with the connector center: (depth - 0.5) * indent */
-          background-position:
-            calc(var(--aichat-indent) * 1 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 3 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 5 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 7 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 9 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 11 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 13 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 15 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 17 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 19 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 21 / 2) var(--aichat-guide-y),
-            calc(var(--aichat-indent) * 23 / 2) var(--aichat-guide-y);
+          /* VSCode-like: a little top/bottom padding, and guides aligned to indent steps. */
+          --aichat-guide-y: calc(var(--aichat-row-h) / 2);
+          background-image: ${guideImages.join(',')};
+          /* Give the guide rails top/bottom padding (like code editors). */
+          background-size: 1px calc(100% - var(--aichat-row-h));
+          /* Align to indent steps (depth * indent). */
+          background-position: ${guidePositions.join(',')};
           background-repeat: no-repeat;
         }
         /* Hide deeper indent rails on shallow rows (match VSCode indent-guide behavior). */
         #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
         #${PANEL_ID} .tree.guides div.aichat-tree-node{
-          background: var(--aichat-panel-bg, rgba(17, 17, 17, 0.94));
+          /* Keep the left-most 1px (the rail at this depth) visible. */
+          background: linear-gradient(
+            to right,
+            transparent 0,
+            transparent 1px,
+            var(--aichat-panel-bg, rgba(17, 17, 17, 0.94)) 1px
+          );
         }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{

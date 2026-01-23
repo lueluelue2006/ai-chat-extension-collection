@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 20;
+  const STYLE_VERSION = 21;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -351,6 +351,9 @@
 	          letter-spacing: 0.1px;
 	          --aichat-indent: 16px;
             --aichat-row-h: 30px;
+            /* Expand to content width so indent guides remain visible when the panel scrolls horizontally. */
+            width: max-content;
+            min-width: 100%;
 	        }
         /* VSCode-like indent guides (continuous rails, independent of branch shapes). */
         #${PANEL_ID} .tree.guides{

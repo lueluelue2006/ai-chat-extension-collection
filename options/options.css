@@ -213,6 +213,43 @@ body {
   font-size: 13px;
 }
 
+.panelMeta {
+  margin-top: 10px;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent 30%);
+  background: color-mix(in srgb, var(--panel) 86%, transparent 14%);
+}
+
+.panelMetaRow {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.panelMetaKey {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.1px;
+}
+
+.panelMetaVal {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.panelMetaVal a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.panelMetaVal a:hover {
+  text-decoration: underline;
+}
+
 .panelGroup {
   margin-top: 10px;
   padding-top: 10px;

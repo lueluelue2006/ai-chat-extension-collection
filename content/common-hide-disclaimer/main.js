@@ -41,7 +41,7 @@
 
   function isChatGpt() {
     const host = String(location.hostname || '').toLowerCase();
-    return host === 'chatgpt.com' || host === 'chat.openai.com';
+    return host === 'chatgpt.com';
   }
 
   // ChatGPT：用 CSS 精确隐藏免责声明，避免在该站点做重 DOM 扫描（该站点 DOM 变动很频繁）

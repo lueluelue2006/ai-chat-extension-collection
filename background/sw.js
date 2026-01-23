@@ -74,7 +74,6 @@
       moduleId: 'hide_disclaimer',
       matches: [
         'https://chatgpt.com/*',
-        'https://chat.openai.com/*',
         'https://ernie.baidu.com/*',
         'https://chat.deepseek.com/*',
         'https://chat.qwen.ai/*',
@@ -92,7 +91,7 @@
       siteId: 'chatgpt',
       moduleId: 'quicknav',
       matches: ['https://chatgpt.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/chatgpt-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/chatgpt-quicknav.js'],
       runAt: 'document_start'
     },
     {
@@ -111,7 +110,7 @@
       siteId: 'ernie',
       moduleId: 'quicknav',
       matches: ['https://ernie.baidu.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/ernie-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/ernie-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -128,7 +127,7 @@
       siteId: 'deepseek',
       moduleId: 'quicknav',
       matches: ['https://chat.deepseek.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/deepseek-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/deepseek-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -145,7 +144,7 @@
       siteId: 'qwen',
       moduleId: 'quicknav',
       matches: ['https://chat.qwen.ai/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/qwen-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/qwen-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -162,7 +161,7 @@
       siteId: 'zai',
       moduleId: 'quicknav',
       matches: ['https://chat.z.ai/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/zai-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/zai-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -179,7 +178,7 @@
       siteId: 'gemini_business',
       moduleId: 'quicknav',
       matches: ['https://business.gemini.google/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/gemini-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/gemini-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -196,7 +195,7 @@
       siteId: 'gemini_app',
       moduleId: 'quicknav',
       matches: ['https://gemini.google.com/app*'],
-      js: ['content/gm-menu-polyfill.js', 'content/gemini-app-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/gemini-app-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -213,7 +212,7 @@
       siteId: 'grok',
       moduleId: 'quicknav',
       matches: ['https://grok.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/grok-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/grok-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -230,7 +229,7 @@
       siteId: 'genspark',
       moduleId: 'quicknav',
       matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/gm-menu-polyfill.js', 'content/genspark-quicknav.js'],
+      js: ['content/menu-bridge.js', 'content/genspark-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -298,7 +297,7 @@
       id: 'quicknav_chatgpt_cmdenter_send',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-cmdenter-send/main.js'],
       runAt: 'document_start'
     },
@@ -388,7 +387,7 @@
       id: 'quicknav_chatgpt_readaloud_speed_controller',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_readaloud_speed_controller',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-readaloud-speed-controller/main.js'],
       runAt: 'document_start'
     },
@@ -396,7 +395,7 @@
       id: 'quicknav_chatgpt_reply_timer',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_reply_timer',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -405,7 +404,7 @@
       id: 'quicknav_chatgpt_usage_monitor',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -414,7 +413,7 @@
       id: 'quicknav_chatgpt_download_file_fix',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_download_file_fix',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-download-file-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -423,7 +422,7 @@
       id: 'quicknav_chatgpt_strong_highlight_lite',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_strong_highlight_lite',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-strong-highlight-lite/main.js'],
       runAt: 'document_start'
     },
@@ -431,7 +430,7 @@
       id: 'quicknav_chatgpt_quick_deep_search',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_quick_deep_search',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-quick-deep-search/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -440,7 +439,7 @@
       id: 'quicknav_chatgpt_hide_feedback_buttons',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_hide_feedback_buttons',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-hide-feedback-buttons/main.js'],
       runAt: 'document_start'
     },
@@ -448,7 +447,7 @@
       id: 'quicknav_chatgpt_tex_copy_quote',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_tex_copy_quote',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-tex-copy-quote/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -457,15 +456,15 @@
       id: 'quicknav_chatgpt_export_conversation',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_export_conversation',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
-      js: ['content/gm-menu-polyfill.js', 'content/chatgpt-export-conversation/main.js'],
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
       runAt: 'document_end'
     },
     {
       id: 'quicknav_chatgpt_image_message_edit',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_image_message_edit',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-image-message-edit/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
@@ -474,7 +473,7 @@
       id: 'quicknav_chatgpt_message_tree',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_message_tree',
-      matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+      matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
       runAt: 'document_start',
       world: 'MAIN'

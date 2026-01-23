@@ -7,13 +7,9 @@
     Object.defineProperty(globalThis, __aichatUsageMonitorGuardKey, { value: true, configurable: false, enumerable: false, writable: false });
   } catch {}
 
-  // Tampermonkey GM_* polyfills (MV3 content script, main world)
-  const __aichatGM = Object.freeze({
-    getValue: typeof globalThis.GM_getValue === 'function' ? globalThis.GM_getValue : null,
-    setValue: typeof globalThis.GM_setValue === 'function' ? globalThis.GM_setValue : null,
-    addStyle: typeof globalThis.GM_addStyle === 'function' ? globalThis.GM_addStyle : null,
-    registerMenu: typeof globalThis.GM_registerMenuCommand === 'function' ? globalThis.GM_registerMenuCommand : null
-  });
+  // MV3 MAIN-world helpers.
+  // Note: The upstream script uses GM_* naming; in this extension we back it with localStorage
+  // and the internal menu bridge (window.__quicknavRegisterMenuCommand).
 
   const __aichatGMKeyPrefix = '__aichat_gm_chatgpt_usage_monitor__:';
   function __aichatGMStorageKey(key) {
@@ -21,11 +17,6 @@
   }
 
   function GM_getValue(key, defaultValue) {
-    if (__aichatGM.getValue) {
-      try {
-        return __aichatGM.getValue(key, defaultValue);
-      } catch {}
-    }
     try {
       const raw = localStorage.getItem(__aichatGMStorageKey(key));
       if (raw == null) return defaultValue;
@@ -36,22 +27,12 @@
   }
 
   function GM_setValue(key, value) {
-    if (__aichatGM.setValue) {
-      try {
-        return __aichatGM.setValue(key, value);
-      } catch {}
-    }
     try {
       localStorage.setItem(__aichatGMStorageKey(key), JSON.stringify(value));
     } catch {}
   }
 
   function GM_addStyle(cssText) {
-    if (__aichatGM.addStyle) {
-      try {
-        return __aichatGM.addStyle(cssText);
-      } catch {}
-    }
     try {
       const id = '__aichat_chatgpt_usage_monitor_style_v1__';
       let style = document.getElementById(id);
@@ -68,12 +49,11 @@
   }
 
   function GM_registerMenuCommand(name, fn) {
-    if (__aichatGM.registerMenu) {
-      try {
-        return __aichatGM.registerMenu(name, fn);
-      } catch {}
-    }
-    // No-op fallback: the monitor UI already provides buttons for the main actions.
+    try {
+      const reg = window.__quicknavRegisterMenuCommand;
+      if (typeof reg === 'function') return reg(name, fn);
+    } catch {}
+    // Fallback: the monitor UI already provides buttons for the main actions.
     return null;
   }
 

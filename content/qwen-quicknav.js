@@ -120,9 +120,17 @@
     }
   };
 
-  GM_registerMenuCommand("重置问题栏位置", resetPanelPosition);
-  GM_registerMenuCommand("清理过期检查点（30天）", cleanupExpiredCheckpoints);
-  GM_registerMenuCommand("清理无效收藏", cleanupInvalidFavorites);
+  function registerMenuCommand(name, fn) {
+    try {
+      const reg = window.__quicknavRegisterMenuCommand;
+      if (typeof reg === 'function') return reg(name, fn);
+    } catch {}
+    return null;
+  }
+
+  registerMenuCommand("重置问题栏位置", resetPanelPosition);
+  registerMenuCommand("清理过期检查点（30天）", cleanupExpiredCheckpoints);
+  registerMenuCommand("清理无效收藏", cleanupInvalidFavorites);
   function resetPanelPosition() {
     const nav = document.getElementById('cgpt-compact-nav');
     if (nav) {
@@ -1331,7 +1339,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function loadCPSet() {
     try {
       const key = CP_KEY_PREFIX + getConvKey();
-      const obj = (typeof GM_getValue === 'function') ? GM_getValue(key, {}) : (JSON.parse(window.localStorage.getItem(key) || '{}'));
+      const obj = JSON.parse(window.localStorage.getItem(key) || '{}');
       cpMap = new Map();
       for (const k of Object.keys(obj || {})) {
         const v = obj[k];
@@ -1360,8 +1368,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const key = CP_KEY_PREFIX + getConvKey();
       const obj = {};
       cpMap.forEach((meta, k) => { obj[k] = meta; });
-      if (typeof GM_setValue === 'function') GM_setValue(key, obj);
-      else window.localStorage.setItem(key, JSON.stringify(obj));
+      window.localStorage.setItem(key, JSON.stringify(obj));
     } catch {}
   }
 
@@ -1371,7 +1378,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function loadFavSet() {
     try {
       const key = getFavKeys();
-      const obj = (typeof GM_getValue === 'function') ? GM_getValue(key, {}) : (JSON.parse(window.localStorage.getItem(key) || '{}'));
+      const obj = JSON.parse(window.localStorage.getItem(key) || '{}');
       favSet = new Set();
       favMeta = new Map();
       for (const k of Object.keys(obj || {})) {
@@ -1390,21 +1397,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const meta = favMeta.get(k) || { created: Date.now() };
         obj[k] = { created: meta.created };
       }
-      if (typeof GM_setValue === 'function') GM_setValue(key, obj);
-      else window.localStorage.setItem(key, JSON.stringify(obj));
+      window.localStorage.setItem(key, JSON.stringify(obj));
     } catch {}
   }
   function loadFavFilterState() {
     try {
       const k = getFavFilterKey();
-      filterFav = (typeof GM_getValue === 'function') ? !!GM_getValue(k, false) : (window.localStorage.getItem(k) === '1');
+      filterFav = window.localStorage.getItem(k) === '1';
     } catch { filterFav = false; }
   }
   function saveFavFilterState() {
     try {
       const k = getFavFilterKey();
-      if (typeof GM_setValue === 'function') GM_setValue(k, !!filterFav);
-      else window.localStorage.setItem(k, filterFav ? '1' : '0');
+      window.localStorage.setItem(k, filterFav ? '1' : '0');
     } catch {}
   }
   function toggleFavorite(key) {
@@ -1457,7 +1462,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function applySavedWidth(nav) {
     try {
-      const w = (typeof GM_getValue === 'function') ? GM_getValue(WIDTH_KEY, 0) : parseInt(window.localStorage.getItem(WIDTH_KEY) || '0', 10);
+      const w = parseInt(window.localStorage.getItem(WIDTH_KEY) || '0', 10);
       if (w && w >= 100 && w <= 480) {
         nav.style.setProperty('--cgpt-nav-width', `${w}px`);
       } else {
@@ -1472,14 +1477,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function saveWidth(px) {
     try {
-      if (typeof GM_setValue === 'function') GM_setValue(WIDTH_KEY, px);
-      else window.localStorage.setItem(WIDTH_KEY, String(px));
+      window.localStorage.setItem(WIDTH_KEY, String(px));
     } catch {}
   }
 
   function loadSavedPosition() {
     try {
-      const raw = (typeof GM_getValue === 'function') ? GM_getValue(POS_KEY, null) : JSON.parse(window.localStorage.getItem(POS_KEY) || 'null');
+      const raw = JSON.parse(window.localStorage.getItem(POS_KEY) || 'null');
       if (!raw || typeof raw !== 'object') return null;
       const toNum = (v) => {
         const n = Number(v);
@@ -1509,8 +1513,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       ts: Date.now()
     };
     try {
-      if (typeof GM_setValue === 'function') GM_setValue(POS_KEY, payload);
-      else window.localStorage.setItem(POS_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(POS_KEY, JSON.stringify(payload));
     } catch {}
   }
 
@@ -2312,8 +2315,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function hasSavedScrollLockState() {
     try {
-      // Userscript 环境下无法区分“未设置/默认值”，避免覆写
-      if (typeof GM_getValue === 'function') return true;
       return window.localStorage.getItem(SCROLL_LOCK_KEY) !== null;
     } catch {
       return true;
@@ -2349,7 +2350,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function loadScrollLockState() {
     try {
-      if (typeof GM_getValue === 'function') return !!GM_getValue(SCROLL_LOCK_KEY, true);
       const raw = window.localStorage.getItem(SCROLL_LOCK_KEY);
       if (raw === null) return true; // 默认开启
       return raw === '1';
@@ -2358,8 +2358,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function saveScrollLockState(on) {
     try {
-      if (typeof GM_setValue === 'function') GM_setValue(SCROLL_LOCK_KEY, !!on);
-      else window.localStorage.setItem(SCROLL_LOCK_KEY, on ? '1' : '0');
+      window.localStorage.setItem(SCROLL_LOCK_KEY, on ? '1' : '0');
     } catch {}
   }
 

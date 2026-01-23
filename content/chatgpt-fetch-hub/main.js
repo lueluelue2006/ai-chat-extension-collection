@@ -448,7 +448,7 @@
   // Only enable on ChatGPT hosts (safety if accidentally injected elsewhere).
   try {
     const host = String(location.hostname || '').toLowerCase();
-    if (host !== 'chatgpt.com' && host !== 'chat.openai.com') return;
+    if (host !== 'chatgpt.com') return;
   } catch {}
 
   const hub = createHub();

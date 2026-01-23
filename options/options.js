@@ -365,6 +365,49 @@
     }
   }
 
+  function addPanelAttribution(moduleId) {
+    const def = MODULES?.[moduleId] || null;
+    const authors = Array.isArray(def?.authors) ? def.authors.map((v) => String(v || '').trim()).filter(Boolean) : [];
+    const license = typeof def?.license === 'string' ? def.license.trim() : '';
+    const upstream = typeof def?.upstream === 'string' ? def.upstream.trim() : '';
+    if (!authors.length && !license && !upstream) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'panelMeta';
+
+    const addLine = (label, valueElOrText) => {
+      const row = document.createElement('div');
+      row.className = 'panelMetaRow';
+      const k = document.createElement('span');
+      k.className = 'panelMetaKey';
+      k.textContent = label;
+      const v = document.createElement('span');
+      v.className = 'panelMetaVal';
+      if (valueElOrText && valueElOrText.nodeType === 1) v.appendChild(valueElOrText);
+      else v.textContent = String(valueElOrText || '');
+      row.appendChild(k);
+      row.appendChild(v);
+      wrap.appendChild(row);
+    };
+
+    if (authors.length) addLine('作者', authors.join(' / '));
+    if (license) addLine('许可证', license);
+    if (upstream) {
+      const a = document.createElement('a');
+      a.href = upstream;
+      a.textContent = upstream;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openUrl(upstream);
+      });
+      addLine('上游', a);
+    }
+
+    elModuleSettings.appendChild(wrap);
+  }
+
   function addPanelHotkeys(moduleId) {
     const def = MODULES[moduleId];
     if (!def) return;
@@ -380,6 +423,13 @@
     const d = document.createElement('div');
     d.className = 'panelGroup';
     elModuleSettings.appendChild(d);
+  }
+
+  function addModuleHeader(moduleId, title, subtitle) {
+    addPanelTitle(title, subtitle);
+    addPanelHotkeys(moduleId);
+    addPanelAttribution(moduleId);
+    addPanelDivider();
   }
 
   function addPanelMenuPreview(moduleId) {
@@ -404,9 +454,7 @@
   }
 
   function renderQuickNavModuleSettings(siteId) {
-    addPanelTitle('QuickNav', '该模块负责对话导航面板、📌标记点、收藏夹、防自动滚动与快捷键。');
-    addPanelHotkeys('quicknav');
-    addPanelDivider();
+    addModuleHeader('quicknav', 'QuickNav', '该模块负责对话导航面板、📌标记点、收藏夹、防自动滚动与快捷键。');
 
     const rowEnabled = document.createElement('label');
     rowEnabled.className = 'formRow';
@@ -457,9 +505,7 @@
   }
 
   async function renderChatGPTPerfModuleSettings(siteId, token) {
-    addPanelTitle('ChatGPT 性能优化', '离屏虚拟化与 CSS contain，减少长对话卡顿（设置写入 storage.sync）。');
-    addPanelHotkeys('chatgpt_perf');
-    addPanelDivider();
+    addModuleHeader('chatgpt_perf', 'ChatGPT 性能优化', '离屏虚拟化与 CSS contain，减少长对话卡顿（设置写入 storage.sync）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -582,9 +628,7 @@
   }
 
   function renderGeminiMathFixModuleSettings(siteId) {
-    addPanelTitle('Gemini Enterprise 数学修复', '在 business.gemini.google 上修复 KaTeX / inline math 显示问题。');
-    addPanelHotkeys('gemini_math_fix');
-    addPanelDivider();
+    addModuleHeader('gemini_math_fix', 'Gemini Enterprise 数学修复', '在 business.gemini.google 上修复 KaTeX / inline math 显示问题。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -613,12 +657,11 @@
   }
 
   function renderChatGPTThinkingToggleModuleSettings(siteId) {
-    addPanelTitle(
+    addModuleHeader(
+      'chatgpt_thinking_toggle',
       'ChatGPT 推理强度快捷切换',
       '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在 GPT 5.2 thinking ↔ GPT 5.2 pro 之间切换。'
     );
-    addPanelHotkeys('chatgpt_thinking_toggle');
-    addPanelDivider();
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -648,9 +691,7 @@
   }
 
   function renderChatGPTCmdEnterSendModuleSettings(siteId) {
-    addPanelTitle('ChatGPT ⌘Enter 发送', '把 Enter/Shift+Enter 变为换行，⌘/Ctrl+Enter 才发送消息。');
-    addPanelHotkeys('chatgpt_cmdenter_send');
-    addPanelDivider();
+    addModuleHeader('chatgpt_cmdenter_send', 'ChatGPT ⌘Enter 发送', '把 Enter/Shift+Enter 变为换行，⌘/Ctrl+Enter 才发送消息。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -679,8 +720,11 @@
   }
 
   async function renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token) {
-    addPanelTitle('ChatGPT 朗读速度控制器', '控制 ChatGPT “朗读/Read aloud”音频播放速度（HTMLAudioElement.playbackRate）。');
-    addPanelDivider();
+    addModuleHeader(
+      'chatgpt_readaloud_speed_controller',
+      'ChatGPT 朗读速度控制器',
+      '控制 ChatGPT “朗读/Read aloud”音频播放速度（HTMLAudioElement.playbackRate）。'
+    );
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -769,9 +813,7 @@
   }
 
   function renderChatGPTUsageMonitorModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 用量统计', '实时统计各模型调用量（支持导入/导出、一周/一月分析报告）。');
-    addPanelHotkeys('chatgpt_usage_monitor');
-    addPanelDivider();
+    addModuleHeader('chatgpt_usage_monitor', 'ChatGPT 用量统计', '实时统计各模型调用量（支持导入/导出、一周/一月分析报告）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -798,11 +840,12 @@
     hint.textContent =
       '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I / Ctrl+I 可快速最小化。';
     elModuleSettings.appendChild(hint);
+
+    addPanelMenuPreview('chatgpt_usage_monitor');
   }
 
   function renderChatGPTReplyTimerModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 回复计时器', '统计从你发送消息到 GPT 回复完成的耗时（右下角极简数字，覆盖最底层）。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_reply_timer', 'ChatGPT 回复计时器', '统计从你发送消息到 GPT 回复完成的耗时（右下角极简数字，覆盖最底层）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -832,8 +875,7 @@
   }
 
   function renderChatGPTDownloadFileFixModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 下载修复', '修复 chatgpt.com 下载文件失败：自动解码 download URL 的 sandbox_path。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_download_file_fix', 'ChatGPT 下载修复', '修复 chatgpt.com 下载文件失败：自动解码 download URL 的 sandbox_path。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -863,8 +905,7 @@
   }
 
   function renderChatGPTStrongHighlightLiteModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 回复粗体高亮（Lite）', '高亮 ChatGPT 回复中的粗体文字，并隐藏底部免责声明提示。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_strong_highlight_lite', 'ChatGPT 回复粗体高亮（Lite）', '高亮 ChatGPT 回复中的粗体文字，并隐藏底部免责声明提示。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -892,13 +933,8 @@
     elModuleSettings.appendChild(hint);
   }
 
-	  function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
-	    addPanelTitle(
-	      '快捷深度搜索（译/搜/思）',
-	      '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧），并支持快捷键触发。'
-	    );
-	    addPanelHotkeys('chatgpt_quick_deep_search');
-	    addPanelDivider();
+  function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
+    addModuleHeader('chatgpt_quick_deep_search', '快捷深度搜索（译/搜/思）', '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧），并支持快捷键触发。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -928,8 +964,7 @@
   }
 
   function renderChatGPTHideFeedbackButtonsModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 隐藏点赞/点踩', '隐藏 ChatGPT 回复下方的反馈按钮（点赞 / 点踩）。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_hide_feedback_buttons', 'ChatGPT 隐藏点赞/点踩', '隐藏 ChatGPT 回复下方的反馈按钮（点赞 / 点踩）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -959,8 +994,7 @@
   }
 
   function renderChatGPTTexCopyQuoteModuleSettings(siteId) {
-    addPanelTitle('ChatGPT TeX Copy & Quote', '增强 ChatGPT 的复制/引用：优先复制 KaTeX 的原始 LaTeX。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_tex_copy_quote', 'ChatGPT TeX Copy & Quote', '增强 ChatGPT 的复制/引用：优先复制 KaTeX 的原始 LaTeX。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -990,8 +1024,7 @@
   }
 
   function renderChatGPTExportConversationModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 对话导出（新版 UI）', '导出当前对话为 Markdown / HTML（菜单在扩展弹窗里）。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_export_conversation', 'ChatGPT 对话导出（新版 UI）', '导出当前对话为 Markdown / HTML（菜单在扩展弹窗里）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1022,8 +1055,7 @@
   }
 
   function renderChatGPTImageMessageEditModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 消息分叉编辑（可加图）', '为用户消息增加一个“分叉编辑”按钮（可与原生编辑共存）。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_image_message_edit', 'ChatGPT 消息分叉编辑（可加图）', '为用户消息增加一个“分叉编辑”按钮（可与原生编辑共存）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1052,8 +1084,7 @@
   }
 
   function renderChatGPTMessageTreeModuleSettings(siteId) {
-    addPanelTitle('ChatGPT 消息树（只读）', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
-    addPanelDivider();
+    addModuleHeader('chatgpt_message_tree', 'ChatGPT 消息树（只读）', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1082,8 +1113,7 @@
   }
 
   function renderGensparkMoaImageAutosettingsModuleSettings(siteId) {
-    addPanelTitle('Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
-    addPanelDivider();
+    addModuleHeader('genspark_moa_image_autosettings', 'Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1113,8 +1143,7 @@
   }
 
   function renderGensparkCreditBalanceModuleSettings(siteId) {
-    addPanelTitle('Genspark 积分余量', '悬停页面上的小蓝点显示积分余量信息；支持折叠/展开、强制刷新、每分钟自动刷新。');
-    addPanelDivider();
+    addModuleHeader('genspark_credit_balance', 'Genspark 积分余量', '悬停页面上的小蓝点显示积分余量信息；支持折叠/展开、强制刷新、每分钟自动刷新。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1141,16 +1170,10 @@
     hint.textContent =
       '说明：该模块在 https://www.genspark.ai/* 生效；右上角会出现一个可拖动的小蓝点，鼠标悬停时展示积分信息窗口；窗口位置会跟随蓝点。';
     elModuleSettings.appendChild(hint);
-
-    const credit = document.createElement('div');
-    credit.className = 'smallHint';
-    credit.textContent = '原作者：LinuxDo 悟空';
-    elModuleSettings.appendChild(credit);
   }
 
   function renderGrokFastUnlockModuleSettings(siteId) {
-    addPanelTitle('Grok 4 Fast 菜单项', '在模型菜单增加 “Grok 4 Fast”，并在发送时选用该模型。');
-    addPanelDivider();
+    addModuleHeader('grok_fast_unlock', 'Grok 4 Fast 菜单项', '在模型菜单增加 “Grok 4 Fast”，并在发送时选用该模型。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1175,16 +1198,10 @@
     hint.className = 'smallHint';
     hint.textContent = '说明：该模块会拦截 grok.com 的发送请求，把 modelName/modelMode 改为 Grok 4 Fast 对应的模型参数。';
     elModuleSettings.appendChild(hint);
-
-    const credit = document.createElement('div');
-    credit.className = 'smallHint';
-    credit.textContent = '原作者：MUTED64（Grok 4 Fast Unlock）';
-    elModuleSettings.appendChild(credit);
   }
 
   function renderGrokRateLimitDisplayModuleSettings(siteId) {
-    addPanelTitle('Grok 剩余次数显示', '在输入框附近显示 rate limit（剩余次数/等待时间）。');
-    addPanelDivider();
+    addModuleHeader('grok_rate_limit_display', 'Grok 剩余次数显示', '在输入框附近显示 rate limit（剩余次数/等待时间）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1209,16 +1226,10 @@
     hint.className = 'smallHint';
     hint.textContent = '说明：该模块会请求 https://grok.com/rest/rate-limits 并在页面输入框附近展示剩余次数/等待时间。';
     elModuleSettings.appendChild(hint);
-
-    const credit = document.createElement('div');
-    credit.className = 'smallHint';
-    credit.textContent = "原作者：Blankspeaker（Originally ported from CursedAtom's chrome extension）";
-    elModuleSettings.appendChild(credit);
   }
 
   function renderGensparkInlineUploadFixModuleSettings(siteId) {
-    addPanelTitle('Genspark 消息编辑上传修复', '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器。');
-    addPanelDivider();
+    addModuleHeader('genspark_inline_upload_fix', 'Genspark 消息编辑上传修复', '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1243,18 +1254,11 @@
     hint.className = 'smallHint';
     hint.textContent = '使用方式：先点击消息右侧的铅笔进入编辑，然后点击编辑框，再 Cmd+V 粘贴图片/文件；点击编辑器里的📎会弹出文件选择器。';
     elModuleSettings.appendChild(hint);
-
-    const credit = document.createElement('div');
-    credit.className = 'smallHint';
-    credit.textContent = '原作者：schweigen（Genspark Inline Upload Fix）';
-    elModuleSettings.appendChild(credit);
   }
 
   function renderBasicToggleModuleSettings(siteId, moduleId, hintText = '') {
     const def = MODULES?.[moduleId];
-    addPanelTitle(def?.name || moduleId, def?.sub || '');
-    addPanelHotkeys(moduleId);
-    addPanelDivider();
+    addModuleHeader(moduleId, def?.name || moduleId, def?.sub || '');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';

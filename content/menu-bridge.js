@@ -1,7 +1,13 @@
 (() => {
   'use strict';
 
-  const STATE_KEY = '__aichat_gm_menu_polyfill_state_v1__';
+  // Internal menu bridge:
+  // - Lets content scripts register "menu commands" (shown in the extension popup)
+  // - Provides message handlers for popup -> page (get list / run command)
+  //
+  // This is an internal API for this extension (not a userscript compatibility layer).
+  const STATE_KEY = '__quicknav_menu_bridge_state_v1__';
+  const REGISTER_FN_KEY = '__quicknavRegisterMenuCommand';
   /** @type {{commands: Array<{id: string, name: string, fn: Function, group?: string, source?: string}>, nextId: number, listenerInstalled: boolean, __deduped?: boolean}} */
   const state = (() => {
     try {
@@ -49,7 +55,7 @@
         if (!m) continue;
         const path = m[1];
         // Skip frames from this polyfill itself.
-        if (path.endsWith('content/gm-menu-polyfill.js')) continue;
+        if (path.endsWith('content/menu-bridge.js')) continue;
         return path;
       }
       return '';
@@ -73,12 +79,12 @@
     if (p.includes('genspark-quicknav')) return 'Genspark QuickNav';
     // Fallback to path tail
     const tail = p.split('/').filter(Boolean).slice(-2).join('/');
-    return tail || p;
+      return tail || p;
   }
 
   try {
-    const existing = window.GM_registerMenuCommand;
-    const isOurFn = !!(existing && existing.__aichat_gm_menu_polyfill);
+    const existing = window[REGISTER_FN_KEY];
+    const isOurFn = !!(existing && existing.__quicknav_menu_bridge);
     if (typeof existing !== 'function' || !isOurFn) {
       const register = (name, fn) => {
         const id = String(state.nextId++);
@@ -95,8 +101,8 @@
         state.commands.push({ id, name: n, fn, group, source });
         return id;
       };
-      register.__aichat_gm_menu_polyfill = true;
-      window.GM_registerMenuCommand = register;
+      register.__quicknav_menu_bridge = true;
+      window[REGISTER_FN_KEY] = register;
     }
   } catch {}
 

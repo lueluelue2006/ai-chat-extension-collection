@@ -120,7 +120,7 @@
       const u = new URL(String(url || ''));
       const host = String(u.hostname || '').toLowerCase();
       const path = String(u.pathname || '');
-      if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
+      if (host === 'chatgpt.com') return 'chatgpt';
       if (host === 'ernie.baidu.com') return 'ernie';
       if (host === 'chat.deepseek.com') return 'deepseek';
       if (host === 'chat.qwen.ai') return 'qwen';

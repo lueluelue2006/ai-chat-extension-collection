@@ -8,7 +8,7 @@
 
   const SITE = (() => {
     const host = String(location.hostname || '').toLowerCase();
-    if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
+    if (host === 'chatgpt.com') return 'chatgpt';
     if (host === 'gemini.google.com') return 'gemini_app';
     if (host === 'business.gemini.google') return 'gemini_business';
     if (host === 'www.genspark.ai') return 'genspark';

@@ -9,7 +9,7 @@
     try {
       const host = String(location.hostname || '').toLowerCase();
       const path = String(location.pathname || '');
-      if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
+      if (host === 'chatgpt.com') return 'chatgpt';
       if (host === 'gemini.google.com' && path.startsWith('/app')) return 'gemini_app';
       if (host === 'business.gemini.google') return 'gemini_business';
       if (host === 'www.genspark.ai') return 'genspark';

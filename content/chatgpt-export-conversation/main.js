@@ -310,9 +310,15 @@
   }
 
   function registerCommands() {
-    if (typeof GM_registerMenuCommand !== 'function') return;
-    GM_registerMenuCommand('导出为 Markdown', exportChatAsMarkdown);
-    GM_registerMenuCommand('导出为 HTML', exportChatAsHTML);
+    let reg = null;
+    try {
+      reg = window.__quicknavRegisterMenuCommand;
+    } catch {
+      reg = null;
+    }
+    if (typeof reg !== 'function') return;
+    reg('导出为 Markdown', exportChatAsMarkdown);
+    reg('导出为 HTML', exportChatAsHTML);
   }
 
   if (document.readyState === 'loading') {
@@ -321,4 +327,3 @@
     registerCommands();
   }
 })();
-

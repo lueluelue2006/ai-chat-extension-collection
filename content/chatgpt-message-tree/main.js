@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 16;
+  const STYLE_VERSION = 19;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -91,6 +91,9 @@
     conversationId: '',
     lastLoadedAt: 0,
     dirty: true,
+    // Current max rail depth used to build the CSS background layers.
+    // Kept in state so ensureUi()/applyPrefsToUi() won't accidentally "shrink" it.
+    guideDepth: 0,
     refreshTimer: 0,
     refreshPromise: null,
     hrefWatchTimer: 0,
@@ -245,15 +248,22 @@
     return await resp.json();
   }
 
-  function ensureStyles() {
+  function ensureStyles(maxGuideDepthHint) {
     // Build enough indent-guide rails for deep conversations (depth can exceed 12 easily).
     // We generate the CSS instead of hard-coding dozens of background layers.
-    const MAX_GUIDE_DEPTH = 72;
+    const cap = 512;
+    const hint = Math.max(0, Math.floor(Number(maxGuideDepthHint) || 0));
+    const prev = Math.max(0, Math.floor(Number(state.guideDepth) || 0));
+    const base = Math.max(hint, prev, 72);
+    // Keep a little headroom so new messages don't instantly "run out" of rails.
+    const MAX_GUIDE_DEPTH = Math.min(cap, Math.max(24, base + (hint > prev ? 8 : 0)));
+    state.guideDepth = MAX_GUIDE_DEPTH;
     const guideImages = [];
     const guidePositions = [];
     for (let i = 1; i <= MAX_GUIDE_DEPTH; i++) {
       const color = GUIDE_COLORS[(i - 1) % GUIDE_COLORS.length];
       guideImages.push(`linear-gradient(to bottom, ${color}, ${color})`);
+      // Place each rail on the exact indent step so it aligns with node indentation.
       guidePositions.push(`calc(var(--aichat-indent) * ${i}) var(--aichat-guide-y)`);
     }
 
@@ -287,6 +297,8 @@
           z-index: 2147483647;
           background: rgba(17, 17, 17, 0.94);
           --aichat-panel-bg: rgba(17, 17, 17, 0.94);
+          /* Use a fully-opaque color for masking indent guides behind rows. */
+          --aichat-panel-bg-solid: rgb(17, 17, 17);
           color: rgba(255,255,255,0.92);
           border-radius: 14px;
           box-shadow: 0 10px 30px rgba(0,0,0,0.35);
@@ -358,12 +370,12 @@
         /* Hide deeper indent rails on shallow rows (match VSCode indent-guide behavior). */
         #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
         #${PANEL_ID} .tree.guides div.aichat-tree-node{
-          /* Keep the left-most 1px (the rail at this depth) visible. */
+          /* Hide deeper rails on shallow rows, while keeping the current-depth rail visible. */
           background: linear-gradient(
             to right,
             transparent 0,
             transparent 1px,
-            var(--aichat-panel-bg, rgba(17, 17, 17, 0.94)) 1px
+            var(--aichat-panel-bg-solid, rgb(17, 17, 17)) 1px
           );
         }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
@@ -481,10 +493,13 @@
     // Hot-reinject friendly: if a previous version already inserted the style tag, update it in place.
     const existing = document.getElementById(STYLE_ID);
     if (existing) {
-      if (existing.dataset?.aichatTreeStyleVer === String(STYLE_VERSION)) return;
+      const key = `${STYLE_VERSION}:${MAX_GUIDE_DEPTH}`;
+      if (existing.dataset?.aichatTreeStyleKey === key) return;
       try {
         existing.textContent = styleText;
+        existing.dataset.aichatTreeStyleKey = key;
         existing.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
+        existing.dataset.aichatTreeGuideDepth = String(MAX_GUIDE_DEPTH);
       } catch {}
       return;
     }
@@ -493,7 +508,10 @@
       const style = document.createElement('style');
       style.id = STYLE_ID;
       try {
+        const key = `${STYLE_VERSION}:${MAX_GUIDE_DEPTH}`;
+        style.dataset.aichatTreeStyleKey = key;
         style.dataset.aichatTreeStyleVer = String(STYLE_VERSION);
+        style.dataset.aichatTreeGuideDepth = String(MAX_GUIDE_DEPTH);
       } catch {}
       style.textContent = styleText;
       document.documentElement?.appendChild(style);
@@ -1675,8 +1693,9 @@
     let msgCount = 0;
     let branchCount = 0;
     let leafCount = 0;
+    let maxDepth = 0;
 
-    function walk(id, guard) {
+    function walk(id, depth, guard) {
       const nodeId = String(id || '');
       if (!nodeId) return;
       if (visited.has(nodeId)) return;
@@ -1686,15 +1705,16 @@
       const node = mapping?.[nodeId] || null;
       nodeCount++;
       if (node?.message) msgCount++;
+      maxDepth = Math.max(maxDepth, Math.max(0, Math.floor(Number(depth) || 0)));
 
       const children = getDisplayChildren(nodeId, mapping);
       if (children.length > 1) branchCount++;
       if (children.length === 0) leafCount++;
-      for (const c of children) walk(c, (guard || 0) + 1);
+      for (const c of children) walk(c, (depth || 0) + 1, (guard || 0) + 1);
     }
 
-    walk(rootId, 0);
-    return { nodeCount, msgCount, branchCount, leafCount };
+    walk(rootId, 0, 0);
+    return { nodeCount, msgCount, branchCount, leafCount, maxDepth };
   }
 
   function renderFromCache() {
@@ -1704,8 +1724,12 @@
     const rootId = cached.rootId;
     const currentId = cached.currentId;
 
-    applyPrefsToUi();
     const stats = computeDisplayStats(mapping, rootId);
+    try {
+      // Ensure we have enough guide rails for this conversation depth before rendering.
+      ensureStyles(stats.maxDepth);
+    } catch {}
+    applyPrefsToUi();
     setStatus(`已加载：${String(cached.conversationId || '').slice(0, 8)}…`);
     setStats(`nodes:${stats.nodeCount} messages:${stats.msgCount} branches:${stats.branchCount} leaves:${stats.leafCount}`);
     renderTree(mapping, rootId, currentId);

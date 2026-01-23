@@ -96,12 +96,32 @@
       runAt: 'document_start'
     },
     {
+      // MAIN-world scroll guard is required for scroll-lock to reliably block site-driven autoscroll.
+      // (Isolated-world patches can't intercept page JS calls.)
+      id: 'quicknav_scroll_guard_chatgpt',
+      siteId: 'chatgpt',
+      moduleId: 'quicknav',
+      matches: ['https://chatgpt.com/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_ernie',
       siteId: 'ernie',
       moduleId: 'quicknav',
       matches: ['https://ernie.baidu.com/*'],
       js: ['content/gm-menu-polyfill.js', 'content/ernie-quicknav.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_scroll_guard_ernie',
+      siteId: 'ernie',
+      moduleId: 'quicknav',
+      matches: ['https://ernie.baidu.com/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_deepseek',
@@ -112,12 +132,30 @@
       runAt: 'document_end'
     },
     {
+      id: 'quicknav_scroll_guard_deepseek',
+      siteId: 'deepseek',
+      moduleId: 'quicknav',
+      matches: ['https://chat.deepseek.com/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_qwen',
       siteId: 'qwen',
       moduleId: 'quicknav',
       matches: ['https://chat.qwen.ai/*'],
       js: ['content/gm-menu-polyfill.js', 'content/qwen-quicknav.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_scroll_guard_qwen',
+      siteId: 'qwen',
+      moduleId: 'quicknav',
+      matches: ['https://chat.qwen.ai/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_zai',
@@ -128,12 +166,30 @@
       runAt: 'document_end'
     },
     {
+      id: 'quicknav_scroll_guard_zai',
+      siteId: 'zai',
+      moduleId: 'quicknav',
+      matches: ['https://chat.z.ai/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_gemini_business',
       siteId: 'gemini_business',
       moduleId: 'quicknav',
       matches: ['https://business.gemini.google/*'],
       js: ['content/gm-menu-polyfill.js', 'content/gemini-quicknav.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_scroll_guard_gemini_business',
+      siteId: 'gemini_business',
+      moduleId: 'quicknav',
+      matches: ['https://business.gemini.google/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_gemini_app',
@@ -144,6 +200,15 @@
       runAt: 'document_end'
     },
     {
+      id: 'quicknav_scroll_guard_gemini_app',
+      siteId: 'gemini_app',
+      moduleId: 'quicknav',
+      matches: ['https://gemini.google.com/app*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_grok',
       siteId: 'grok',
       moduleId: 'quicknav',
@@ -152,12 +217,30 @@
       runAt: 'document_end'
     },
     {
+      id: 'quicknav_scroll_guard_grok',
+      siteId: 'grok',
+      moduleId: 'quicknav',
+      matches: ['https://grok.com/*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_genspark',
       siteId: 'genspark',
       moduleId: 'quicknav',
       matches: ['https://www.genspark.ai/agents*'],
       js: ['content/gm-menu-polyfill.js', 'content/genspark-quicknav.js'],
       runAt: 'document_end'
+    },
+    {
+      id: 'quicknav_scroll_guard_genspark',
+      siteId: 'genspark',
+      moduleId: 'quicknav',
+      matches: ['https://www.genspark.ai/agents*'],
+      js: [MAIN_GUARD_FILE],
+      runAt: 'document_start',
+      world: 'MAIN'
     },
     {
       id: 'quicknav_genspark_moa_image_autosettings',

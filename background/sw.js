@@ -46,7 +46,8 @@
         chatgpt_tex_copy_quote: true,
         chatgpt_export_conversation: true,
         chatgpt_image_message_edit: true,
-        chatgpt_message_tree: true
+        chatgpt_message_tree: true,
+        chatgpt_split_view: false
       },
       ernie: { quicknav: true, chatgpt_cmdenter_send: true },
       deepseek: { quicknav: true, chatgpt_cmdenter_send: true },
@@ -477,6 +478,14 @@
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
+    },
+    {
+      id: 'quicknav_chatgpt_split_view',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_split_view',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-split-view/main.js'],
+      runAt: 'document_idle'
     },
     {
       id: 'quicknav_gemini_math_fix',

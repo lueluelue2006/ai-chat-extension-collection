@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.57
-- Generated: 2026-01-23 20:37
+- Version: 1.1.58
+- Generated: 2026-01-23 21:51
 - Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -90,6 +90,10 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
+- `chatgpt_split_view`: ChatGPT 拆分视图（实验） — 右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_idle / ISOLATED: `content/chatgpt-split-view/main.js`
 
 ### Gemini Business (business.gemini.google)
 

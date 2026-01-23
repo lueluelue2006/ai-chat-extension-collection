@@ -26,7 +26,8 @@
         'chatgpt_tex_copy_quote',
         'chatgpt_export_conversation',
         'chatgpt_image_message_edit',
-        'chatgpt_message_tree'
+        'chatgpt_message_tree',
+        'chatgpt_split_view'
       ]
     },
     {
@@ -204,6 +205,14 @@
       name: 'ChatGPT 消息树（只读）',
       sub: '显示当前对话的完整消息树/分支结构（右侧面板）',
       hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    chatgpt_split_view: {
+      id: 'chatgpt_split_view',
+      name: 'ChatGPT 拆分视图（实验）',
+      sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
+      hotkeys: ['Alt+Shift+S', 'Esc'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

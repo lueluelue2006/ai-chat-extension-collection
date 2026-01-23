@@ -2268,6 +2268,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function postScrollLockBaselineToMainWorld(top, force = false) {
     try {
       const px = Math.max(0, Math.round(Number(top) || 0));
+      try { document.documentElement.dataset.quicknavScrollLockBaseline = String(px); } catch {}
       const now = Date.now();
       if (!force) {
         if (Math.abs(px - (__quicknavBaselineTop || 0)) < 2) return;

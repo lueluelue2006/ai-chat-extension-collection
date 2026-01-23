@@ -42,6 +42,7 @@
   let scrollLockPointerActive = false;
   let scrollLockUserTouched = false;
   let navAllowScrollDepth = 0;
+  let navJumpSeq = 0;
   let ORIGINAL_SCROLL_INTO_VIEW = null;
   let ORIGINAL_SCROLL_TO = null;
   let ORIGINAL_SCROLL_BY = null;
@@ -2618,13 +2619,31 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const article = el?.closest?.('article') || el;
     const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
-    const allowMs = scrollLockEnabled ? 2600 : 1200;
+    const allowMs = scrollLockEnabled ? 1800 : 1200;
     markNavScrollIntent(allowMs);
     const isPin = !!(el && el.classList && el.classList.contains('cgpt-pin-anchor'));
     const target = isPin ? el : article;
     // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
     // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
     scrollToTopOfElement(target, margin, behavior);
+
+    // Some ChatGPT layouts (and/or our virtualization/perf layer) can still shift layout shortly after
+    // a programmatic jump. Re-apply the alignment a few times to eliminate visible "bounce".
+    if (behavior === 'auto') {
+      const seq = ++navJumpSeq;
+      const reAlign = (delay) => {
+        setTimeout(() => {
+          try {
+            if (navJumpSeq !== seq) return;
+            scrollToTopOfElement(target, margin, 'auto');
+          } catch {}
+        }, delay);
+      };
+      reAlign(90);
+      reAlign(220);
+      reAlign(520);
+      reAlign(900);
+    }
 
     // Highlight the whole turn, not just the first paragraph (more obvious).
     try { document.querySelectorAll('article.highlight-pulse').forEach((n) => n.classList.remove('highlight-pulse')); } catch {}

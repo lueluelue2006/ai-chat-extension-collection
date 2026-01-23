@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 12;
+  const STYLE_VERSION = 13;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -335,7 +335,8 @@
 	        }
         /* VSCode-like indent guides (continuous rails, independent of branch shapes). */
         #${PANEL_ID} .tree.guides{
-          --aichat-guide-y: calc(var(--aichat-row-h) / 2);
+          /* Start guides below the root row (so root doesn't look like it's inside a "|-" tree). */
+          --aichat-guide-y: var(--aichat-row-h);
           background-image:
             linear-gradient(to bottom, rgba(239,68,68,0.55), rgba(239,68,68,0.55)),
             linear-gradient(to bottom, rgba(249,115,22,0.55), rgba(249,115,22,0.55)),
@@ -349,7 +350,7 @@
             linear-gradient(to bottom, rgba(34,197,94,0.55), rgba(34,197,94,0.55)),
             linear-gradient(to bottom, rgba(59,130,246,0.55), rgba(59,130,246,0.55)),
             linear-gradient(to bottom, rgba(168,85,247,0.55), rgba(168,85,247,0.55));
-          /* Give the guide rails top/bottom padding (like code editors). */
+          /* Reserve the root row height as top padding. */
           background-size: 1px calc(100% - var(--aichat-row-h));
           /* Align with the connector center: (depth - 0.5) * indent */
           background-position:
@@ -371,16 +372,6 @@
         #${PANEL_ID} .tree.guides details.aichat-tree-node > summary,
         #${PANEL_ID} .tree.guides div.aichat-tree-node{
           background: var(--aichat-panel-bg, rgba(17, 17, 17, 0.94));
-        }
-        /* Root row: keep the first-indent gutter transparent so the depth-1 rail doesn't "touch the top". */
-        #${PANEL_ID} .tree.guides details.aichat-tree-node[data-depth="0"] > summary,
-        #${PANEL_ID} .tree.guides div.aichat-tree-node[data-depth="0"]{
-          background: linear-gradient(
-            to right,
-            transparent 0,
-            transparent var(--aichat-indent),
-            var(--aichat-panel-bg, rgba(17, 17, 17, 0.94)) var(--aichat-indent)
-          );
         }
 	        #${PANEL_ID} .tree *{ box-sizing: border-box; }
 	        #${PANEL_ID} .aichat-tree-node{
@@ -413,21 +404,7 @@
           position: relative;
           overflow: visible;
 	        }
-        #${PANEL_ID} .tree.guides .node-row::before{
-          content: '';
-          position: absolute;
-          left: calc(var(--aichat-indent) / -2);
-          top: 50%;
-          transform: translateY(-50%);
-          width: calc(var(--aichat-indent) / 2);
-          height: 1px;
-          background: var(--aichat-guide-color, rgba(255,255,255,0.16));
-          opacity: 0.85;
-          pointer-events: none;
-        }
-        /* Only the root row has no connector. (Don't match descendants.) */
-        #${PANEL_ID} .aichat-tree-node[data-depth="0"] > summary .node-row::before{ display:none !important; }
-        #${PANEL_ID} .aichat-tree-node[data-depth="0"] > .node-row::before{ display:none !important; }
+        /* No "|-" connectors: show only VSCode-like vertical rails. */
         #${PANEL_ID} .node-row .label{
           flex: 0 1 auto;
           min-width: 0;

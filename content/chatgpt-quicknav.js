@@ -43,6 +43,7 @@
   let scrollLockUserTouched = false;
   let navAllowScrollDepth = 0;
   let navJumpSeq = 0;
+  let navJumpStabilizerCtrl = null;
   let ORIGINAL_SCROLL_INTO_VIEW = null;
   let ORIGINAL_SCROLL_TO = null;
   let ORIGINAL_SCROLL_BY = null;
@@ -2579,40 +2580,134 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       return true;
     }
 
-    // Stabilize for reflow after images/code blocks render. Only do this for instant scroll.
-    // Note: ChatGPT (and our perf/virtualization layers) can change layout shortly after a jump,
-    // causing a visible "bounce". Keep checking a few frames even if initially aligned.
-    if (scrollBehavior === 'auto') {
-      try {
-        let tries = 0;
-        const MAX_TRIES = 12;
-        const step = () => {
-          tries++;
-          const sc = getChatScrollContainer() || scroller;
-          const win = isWindowScroller(sc);
-          const targetTop = (() => {
-            if (win) return margin;
-            try { return (sc.getBoundingClientRect().top || 0) + margin; } catch { return margin; }
-          })();
-          let delta = 0;
-          try { delta = (el.getBoundingClientRect().top || 0) - targetTop; } catch { delta = 0; }
-          if (Math.abs(delta) > 3) {
-            if (win) {
-              try { window.scrollBy({ top: delta, behavior: 'auto' }); }
-              catch { try { window.scrollBy(0, delta); } catch {} }
-            } else {
-              try { sc.scrollBy({ top: delta, behavior: 'auto' }); }
-              catch { try { sc.scrollBy(0, delta); } catch {} }
-            }
-          }
-          if (tries >= MAX_TRIES) return;
-          requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-      } catch {}
-    }
-
     return true;
+  }
+
+  function cancelNavJumpStabilizer() {
+    try { navJumpStabilizerCtrl?.abort?.(); } catch {}
+    navJumpStabilizerCtrl = null;
+  }
+
+  function computeDeltaToAlignTop(el, marginPx, scroller) {
+    try {
+      const margin = Math.max(0, Math.round(Number(marginPx) || 0));
+      const win = isWindowScroller(scroller);
+      const targetTop = win ? margin : ((scroller?.getBoundingClientRect?.().top || 0) + margin);
+      const r = el.getBoundingClientRect();
+      const top = Number(r?.top || 0);
+      if (!Number.isFinite(top)) return 0;
+      return top - targetTop;
+    } catch {
+      return 0;
+    }
+  }
+
+  function startNavJumpStabilizer(targetEl, marginPx, opts = {}) {
+    const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
+    if (!el) return;
+
+    cancelNavJumpStabilizer();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : { signal: { aborted: false }, abort: () => void 0 };
+    navJumpStabilizerCtrl = ctrl;
+    const signal = ctrl.signal;
+
+    const startedAt = Date.now();
+    const maxMsRaw = Number(opts.maxMs);
+    const maxMs = Number.isFinite(maxMsRaw) ? Math.max(150, Math.min(2000, Math.round(maxMsRaw))) : 1200;
+    const settleFrames = 8;
+    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
+    const win = isWindowScroller(scroller);
+
+    const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
+    const cleanupFns = [];
+    const cleanup = () => {
+      cleanupFns.splice(0).forEach((fn) => { try { fn(); } catch {} });
+      if (navJumpStabilizerCtrl === ctrl) navJumpStabilizerCtrl = null;
+    };
+
+    const abortFromUser = (e) => {
+      try {
+        if (ignoreIfInNav(e?.target)) return;
+        ctrl.abort();
+      } catch {
+        // ignore
+      }
+    };
+
+    const onKeyDown = (e) => {
+      try {
+        if (!e) return;
+        if (ignoreIfInNav(e?.target)) return;
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        const k = e.key;
+        if (k === 'PageDown' || k === 'PageUp' || k === 'End' || k === 'Home' || k === 'ArrowDown' || k === 'ArrowUp' || k === ' ') abortFromUser(e);
+      } catch {}
+    };
+
+    const onPointerDown = (e) => {
+      try {
+        if (!e) return;
+        if (ignoreIfInNav(e?.target)) return;
+        if (e.button !== 0) return;
+        const sc = scrollLockScrollEl || getChatScrollContainer();
+        if (isProbablyScrollbarGrab(e, sc)) abortFromUser(e);
+      } catch {}
+    };
+
+    try {
+      document.addEventListener('wheel', abortFromUser, { passive: true, capture: true });
+      cleanupFns.push(() => document.removeEventListener('wheel', abortFromUser, true));
+    } catch {}
+    try {
+      document.addEventListener('touchstart', abortFromUser, { passive: true, capture: true });
+      document.addEventListener('touchmove', abortFromUser, { passive: true, capture: true });
+      cleanupFns.push(() => document.removeEventListener('touchstart', abortFromUser, true));
+      cleanupFns.push(() => document.removeEventListener('touchmove', abortFromUser, true));
+    } catch {}
+    try {
+      document.addEventListener('keydown', onKeyDown, true);
+      cleanupFns.push(() => document.removeEventListener('keydown', onKeyDown, true));
+    } catch {}
+    try {
+      document.addEventListener('pointerdown', onPointerDown, true);
+      cleanupFns.push(() => document.removeEventListener('pointerdown', onPointerDown, true));
+    } catch {}
+
+    try {
+      signal?.addEventListener?.('abort', cleanup, { once: true });
+      cleanupFns.push(() => { try { signal?.removeEventListener?.('abort', cleanup); } catch {} });
+    } catch {}
+
+    let stable = 0;
+    const tick = () => {
+      if (signal?.aborted) return;
+      if ((Date.now() - startedAt) > maxMs) { cleanup(); return; }
+      // If another jump starts, stop stabilizing this one.
+      if (navJumpStabilizerCtrl !== ctrl) return;
+
+      const delta = computeDeltaToAlignTop(el, marginPx, scroller);
+      if (Math.abs(delta) > 3) {
+        stable = 0;
+        // Keep the allow window small: enough for this correction + the ensuing scroll event.
+        allowNavScrollFor(260);
+        if (win) {
+          try { window.scrollBy({ top: delta, behavior: 'auto' }); }
+          catch { try { window.scrollBy(0, delta); } catch {} }
+        } else {
+          try { scroller.scrollBy({ top: delta, behavior: 'auto' }); }
+          catch { try { scroller.scrollBy(0, delta); } catch {} }
+        }
+      } else {
+        stable++;
+        if (stable >= settleFrames) { cleanup(); return; }
+      }
+
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
   }
 
   function scrollToTurn(el) {
@@ -2626,24 +2721,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
     // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
     scrollToTopOfElement(target, margin, behavior);
-
-    // Some ChatGPT layouts (and/or our virtualization/perf layer) can still shift layout shortly after
-    // a programmatic jump. Re-apply the alignment a few times to eliminate visible "bounce".
-    if (behavior === 'auto') {
-      const seq = ++navJumpSeq;
-      const reAlign = (delay) => {
-        setTimeout(() => {
-          try {
-            if (navJumpSeq !== seq) return;
-            scrollToTopOfElement(target, margin, 'auto');
-          } catch {}
-        }, delay);
-      };
-      reAlign(90);
-      reAlign(220);
-      reAlign(520);
-      reAlign(900);
-    }
+    cancelNavJumpStabilizer();
+    // ChatGPT can shift layout shortly after a jump (images, code blocks, virtualization).
+    // Stabilize the alignment, but immediately stop if the user starts scrolling.
+    if (behavior === 'auto') startNavJumpStabilizer(target, margin, { maxMs: 1200, seq: ++navJumpSeq });
 
     // Highlight the whole turn, not just the first paragraph (more obvious).
     try { document.querySelectorAll('article.highlight-pulse').forEach((n) => n.classList.remove('highlight-pulse')); } catch {}

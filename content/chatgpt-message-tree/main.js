@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 24;
+  const STYLE_VERSION = 25;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -486,15 +486,20 @@
           color: rgba(251,191,36,0.95);
         }
         article.${MSG_HIGHLIGHT_CLASS}{
-          outline: 2px solid rgba(56,189,248,0.90) !important;
+          outline: 3px solid rgba(56,189,248,0.92) !important;
           outline-offset: 4px;
           border-radius: 14px;
-          animation: aichat-tree-flash 900ms ease-out;
+          animation: aichat-tree-pulse 1600ms ease-in-out;
         }
-        @keyframes aichat-tree-flash{
-          0%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
-          35%{ box-shadow: 0 0 0 8px rgba(56,189,248,0.20); }
-          100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
+        @keyframes aichat-tree-pulse{
+          0%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
+          20%{ box-shadow: 0 0 0 10px rgba(56,189,248,0.20), 0 0 22px 6px rgba(56,189,248,0.18); }
+          45%{ box-shadow: 0 0 0 2px rgba(56,189,248,0.08), 0 0 10px 3px rgba(56,189,248,0.08); }
+          70%{ box-shadow: 0 0 0 12px rgba(56,189,248,0.22), 0 0 26px 8px rgba(56,189,248,0.20); }
+          100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
+        }
+        @media (prefers-reduced-motion: reduce){
+          article.${MSG_HIGHLIGHT_CLASS}{ animation: none; }
         }
       `;
 
@@ -561,7 +566,7 @@
         try {
           article.classList.remove(MSG_HIGHLIGHT_CLASS);
         } catch {}
-      }, 1500);
+      }, 2200);
     } catch {}
   }
 

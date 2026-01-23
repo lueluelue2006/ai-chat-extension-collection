@@ -2611,13 +2611,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function scrollToTurn(el) {
-    const anchor = findTurnAnchor(el) || el;
     const article = el?.closest?.('article') || el;
     const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     const allowMs = scrollLockEnabled ? 2600 : 1200;
     markNavScrollIntent(allowMs);
-    scrollToTopOfElement(anchor, margin, behavior);
+    const isPin = !!(el && el.classList && el.classList.contains('cgpt-pin-anchor'));
+    const target = isPin ? el : article;
+    // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
+    // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
+    scrollToTopOfElement(target, margin, behavior);
 
     // Highlight the whole turn, not just the first paragraph (more obvious).
     try { document.querySelectorAll('article.highlight-pulse').forEach((n) => n.classList.remove('highlight-pulse')); } catch {}

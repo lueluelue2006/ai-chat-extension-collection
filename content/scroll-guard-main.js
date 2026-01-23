@@ -352,6 +352,13 @@
   }
 
   function getBaselineTop(scroller) {
+    // Prefer the DOM dataset baseline written by the isolated-world content script.
+    // This is synchronous (no postMessage race) and survives hot-reinjects.
+    try {
+      const v = document.documentElement?.dataset?.quicknavScrollLockBaseline;
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) return Math.max(0, Math.round(n));
+    } catch {}
     const b = Number(STATE.baselineTop);
     if (Number.isFinite(b) && b >= 0) return b;
     return getScrollPos(scroller);

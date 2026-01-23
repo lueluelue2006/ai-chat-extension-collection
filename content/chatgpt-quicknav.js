@@ -3064,6 +3064,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function postScrollLockBaselineToMainWorld(top, force = false) {
     try {
       const px = Math.max(0, Math.round(Number(top) || 0));
+      // Cross-world baseline sync: MAIN-world guard reads this synchronously from DOM dataset.
+      // This avoids a race where scroll-lock is toggled on and the guard still has an old baseline
+      // for a brief moment (which can allow a "jump back" to the previous position).
+      try { document.documentElement.dataset.quicknavScrollLockBaseline = String(px); } catch {}
       const now = Date.now();
       if (!force) {
         if (Math.abs(px - (__quicknavBaselineTop || 0)) < 2) return;

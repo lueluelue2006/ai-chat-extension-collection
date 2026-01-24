@@ -2,12 +2,8 @@
   'use strict';
 
   try {
-    if (typeof unsafeWindow !== 'undefined') {
-      unsafeWindow.__geminiInlineMathFix = { version: '1.2.2' };
-    }
-  } catch (e) {
-    // Ignore if unsafeWindow is blocked.
-  }
+    window.__geminiInlineMathFix = { version: '1.2.2' };
+  } catch {}
 
   const mathRegex = /\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
   const bareMathRegex =
@@ -16,7 +12,6 @@
 
   const getKatex = () => {
     if (window.katex) return window.katex;
-    if (typeof unsafeWindow !== 'undefined' && unsafeWindow.katex) return unsafeWindow.katex;
     return null;
   };
 
@@ -1447,12 +1442,10 @@
   observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
 
   try {
-    if (typeof unsafeWindow !== 'undefined' && unsafeWindow.__geminiInlineMathFix) {
-      unsafeWindow.__geminiInlineMathFix.refresh = () => schedule();
+    if (window.__geminiInlineMathFix) {
+      window.__geminiInlineMathFix.refresh = () => schedule();
     }
-  } catch (e) {
-    // Ignore if unsafeWindow is blocked.
-  }
+  } catch {}
 
   scheduleKatexHook();
   schedule();

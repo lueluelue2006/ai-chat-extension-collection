@@ -719,6 +719,42 @@
     }
   }
 
+  function injectContentScriptDefsIntoMatchingTabs(defs) {
+    if (!Array.isArray(defs) || !defs.length) return;
+
+    for (const rule of defs) {
+      try {
+        chrome.tabs.query({ url: rule.matches }, (tabs) => {
+          const err = chrome.runtime.lastError;
+          if (err) return;
+          for (const tab of tabs || []) {
+            const tabId = tab && tab.id;
+            if (!Number.isFinite(tabId)) continue;
+            try {
+              if (rule.css?.length) {
+                chrome.scripting.insertCSS(
+                  {
+                    target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
+                    files: rule.css
+                  },
+                  () => void chrome.runtime.lastError
+                );
+              }
+              chrome.scripting.executeScript(
+                {
+                  target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
+                  files: rule.js,
+                  ...(rule.world ? { world: rule.world } : {})
+                },
+                () => void chrome.runtime.lastError
+              );
+            } catch {}
+          }
+        });
+      } catch {}
+    }
+  }
+
   function reinjectContentScripts(settings) {
     try {
       const now = Date.now();
@@ -945,6 +981,35 @@
   }
 
   let applyChain = Promise.resolve();
+  function applySettingsAndRegister(settings) {
+    applyChain = applyChain
+      .catch(() => void 0)
+      .then(async () => {
+        const reg = await applyContentScriptRegistration(settings);
+        return reg;
+      });
+    return applyChain;
+  }
+
+  function applySettingsAndInjectRegistered(settings) {
+    applyChain = applyChain
+      .catch(() => void 0)
+      .then(async () => {
+        const reg = await applyContentScriptRegistration(settings);
+        try {
+          const ids = Array.isArray(reg?.registeredIds) ? reg.registeredIds : [];
+          if (!ids.length) return reg;
+
+          const allow = new Set(ids);
+          const enabled = getEnabledContentScriptDefs(settings);
+          const defs = enabled.filter((d) => allow.has(d.id));
+          injectContentScriptDefsIntoMatchingTabs(defs);
+        } catch {}
+        return reg;
+      });
+    return applyChain;
+  }
+
   function applySettingsAndReinject(settings) {
     applyChain = applyChain
       .catch(() => void 0)
@@ -975,26 +1040,191 @@
     }
   }
 
+  // === Dev-only smoke tests (not exposed in UI) ===
+  const DEV_SMOKE_TARGETS = [
+    { id: 'chatgpt', url: 'https://chatgpt.com/' },
+    { id: 'gemini_app', url: 'https://gemini.google.com/app' },
+    { id: 'gemini_business', url: 'https://business.gemini.google/' },
+    { id: 'grok', url: 'https://grok.com/' },
+    { id: 'deepseek', url: 'https://chat.deepseek.com/' },
+    { id: 'zai', url: 'https://chat.z.ai/' },
+    { id: 'qwen', url: 'https://chat.qwen.ai/' },
+    { id: 'ernie', url: 'https://ernie.baidu.com/' },
+    { id: 'genspark', url: 'https://www.genspark.ai/' }
+  ];
+
+  function normalizeDevSmokeTargetIds(value) {
+    try {
+      if (!value) return [];
+      if (typeof value === 'string') {
+        return value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+      if (Array.isArray(value)) {
+        return value.map((s) => String(s || '').trim()).filter(Boolean);
+      }
+    } catch {}
+    return [];
+  }
+
+  function resolveDevSmokeTargets(options) {
+    const ids = normalizeDevSmokeTargetIds(options?.targets || options?.ids || options?.only);
+    if (!ids.length) return DEV_SMOKE_TARGETS;
+    const allow = new Set(ids);
+    return DEV_SMOKE_TARGETS.filter((t) => allow.has(t.id));
+  }
+
+  function waitForTabComplete(tabId, timeoutMs) {
+    const timeout = Math.max(2000, Number(timeoutMs) || 25000);
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const finish = (err, tab) => {
+        if (done) return;
+        done = true;
+        try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch {}
+        try { clearTimeout(timer); } catch {}
+        if (err) reject(err);
+        else resolve(tab || null);
+      };
+
+      const onUpdated = (id, changeInfo, tab) => {
+        try {
+          if (id !== tabId) return;
+          if (changeInfo && changeInfo.status === 'complete') finish(null, tab);
+        } catch (e) {
+          finish(e);
+        }
+      };
+      const timer = setTimeout(() => finish(new Error('Tab load timeout')), timeout);
+      try {
+        chrome.tabs.onUpdated.addListener(onUpdated);
+        chrome.tabs.get(tabId, (tab) => {
+          void chrome.runtime.lastError;
+          if (tab && tab.status === 'complete') finish(null, tab);
+        });
+      } catch (e) {
+        finish(e);
+      }
+    });
+  }
+
+  function execSmokeCheck(tabId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.scripting.executeScript(
+          {
+            target: { tabId },
+            world: 'ISOLATED',
+            func: () => {
+              const out = {
+                href: (() => {
+                  try {
+                    return location.href;
+                  } catch {
+                    return '';
+                  }
+                })(),
+                hasMenuBridge: typeof window.__quicknavRegisterMenuCommand === 'function',
+                navCount: 0,
+                hasNav: false,
+                hasLock: false,
+                keysBound: false
+              };
+              try {
+                out.navCount = document.querySelectorAll('#cgpt-compact-nav').length;
+                out.hasNav = !!document.getElementById('cgpt-compact-nav');
+                out.hasLock = !!document.querySelector('#cgpt-compact-nav .compact-lock');
+              } catch {}
+              try {
+                out.keysBound = !!window.__cgptKeysBound;
+              } catch {}
+              return out;
+            }
+          },
+          (res) => {
+            const err = chrome.runtime.lastError;
+            if (err) return resolve({ ok: false, error: err.message || String(err) });
+            const v = Array.isArray(res) && res[0] ? res[0].result : null;
+            resolve({ ok: true, result: v });
+          }
+        );
+      } catch (e) {
+        resolve({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    });
+  }
+
+  async function runDevSmokeTests(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const closeTabs = options.closeTabs !== false;
+    const timeoutMs = Math.max(2000, Number(options.timeoutMs) || 25000);
+    const targets = resolveDevSmokeTargets(options);
+
+    const summary = [];
+    for (const t of targets) {
+      const row = { id: t.id, url: t.url, ok: false, detail: null, error: null };
+      let tabId = null;
+      try {
+        const tab = await new Promise((resolve) => {
+          chrome.tabs.create({ url: t.url, active: false }, (tb) => {
+            void chrome.runtime.lastError;
+            resolve(tb || null);
+          });
+        });
+        tabId = tab?.id;
+        if (!Number.isFinite(tabId)) throw new Error('Failed to create tab');
+
+        await waitForTabComplete(tabId, timeoutMs);
+        const check = await execSmokeCheck(tabId);
+        if (!check.ok) throw new Error(check.error || 'Smoke check failed');
+        row.ok = true;
+        row.detail = check.result;
+      } catch (e) {
+        row.ok = false;
+        row.error = e instanceof Error ? e.message : String(e);
+      } finally {
+        if (closeTabs && Number.isFinite(tabId)) {
+          try {
+            chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+          } catch {}
+        }
+        summary.push(row);
+      }
+    }
+    return summary;
+  }
+
+  try {
+    // For service-worker DevTools console: `__quicknavDevSmoke.run()`
+    globalThis.__quicknavDevSmoke = { run: (opts) => runDevSmokeTests(opts) };
+  } catch {}
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (!msg || typeof msg !== 'object') return;
 
-      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
-        const tabId = sender?.tab?.id;
-        const href = typeof msg.href === 'string' ? msg.href : '';
-        getSettings()
-          .then((settings) =>
-            applySettingsAndReinject(settings)
-              .catch((e) => {
-                // even if registration fails, still best-effort inject into sender tab
-                try {
-                  if (Number.isFinite(tabId) && href) {
+	      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
+	        const tabId = sender?.tab?.id;
+	        const href = typeof msg.href === 'string' ? msg.href : '';
+	        getSettings()
+	          .then((settings) =>
+	            // NOTE: `registerContentScripts` already handles normal page loads.
+	            // Avoid reinjecting on every SW wake/ping (can double-run content scripts and cost memory/CPU).
+	            applySettingsAndRegister(settings)
+	              .catch((e) => {
+	                // even if registration fails, still best-effort inject into sender tab
+	                try {
+	                  if (Number.isFinite(tabId) && href) {
                     const enabled = getEnabledContentScriptDefs(settings);
                     const defsForUrl = enabled.filter((d) => urlMatchesAny(href, d.matches));
                     injectContentScriptDefsIntoTab(tabId, defsForUrl);
                   }
                 } catch {}
-                throw e;
+                // Return a dummy registration result so the bootstrap script won't retry ping
+                // (otherwise it can trigger multiple fallback injections).
+                return { registeredIds: [], unregisteredIds: [], error: e instanceof Error ? e.message : String(e) };
               })
               .then((reg) => ({ settings, reg }))
           )
@@ -1022,7 +1252,7 @@
 
       if (msg.type === 'QUICKNAV_SET_SETTINGS') {
         setSettings(msg.settings)
-          .then((settings) => applySettingsAndReinject(settings).then(() => settings))
+          .then((settings) => applySettingsAndInjectRegistered(settings).then(() => settings))
           .then((settings) => sendResponse({ ok: true, settings }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
@@ -1039,6 +1269,13 @@
         return true;
       }
 
+      if (msg.type === 'QUICKNAV_DEV_SMOKE_RUN') {
+        runDevSmokeTests(msg.opts)
+          .then((summary) => sendResponse({ ok: true, summary }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
       if (msg.type !== 'QUICKNAV_ENSURE_SCROLL_GUARD') return;
       const tabId = sender?.tab?.id;
       if (!Number.isFinite(tabId)) return sendResponse({ ok: false, error: 'No tabId' });
@@ -1051,14 +1288,17 @@
   });
 
   // 扩展重新加载/更新时，把内容脚本注入到已打开的匹配标签页里（便于开发时只点“重新加载”即可生效）
-  try {
-    chrome.runtime.onInstalled.addListener(() => {
-      getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
-    });
-    chrome.runtime.onStartup?.addListener(() => {
-      getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
-    });
-    // 对于“加载已解压扩展程序/手动重新加载”场景，service worker 启动本身也触发一次
-    getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
-  } catch {}
-})();
+	      try {
+	        chrome.runtime.onInstalled.addListener(() => {
+	          getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
+	        });
+	        chrome.runtime.onStartup?.addListener(() => {
+	          // On browser startup, restored tabs will load normally and trigger registered content scripts.
+	          // Avoid reinject here to prevent double-inject on session restore.
+	          getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+	        });
+	        // Service worker may wake up frequently (e.g. from page pings).
+	        // Keep registrations up-to-date but avoid reinjecting on every wake.
+	        getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+	      } catch {}
+	})();

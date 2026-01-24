@@ -27,13 +27,108 @@
   if (!__aichatUsageMonitorAllowedFrame) return;
 
   // MV3 MAIN-world helpers.
-  // Note: The upstream script uses GM_* naming; in this extension we back it with localStorage
-  // and the internal menu bridge (window.__quicknavRegisterMenuCommand).
+  // Note: The upstream script uses GM_* naming. In MV3 we prefer extension storage
+  // (chrome.storage.local) and keep a best-effort localStorage cache for sync reads.
 
   const __aichatGMKeyPrefix = '__aichat_gm_chatgpt_usage_monitor__:';
   function __aichatGMStorageKey(key) {
     return __aichatGMKeyPrefix + String(key || '');
   }
+
+  const __aichatHasChromeStorage = (() => {
+    try {
+      return !!(globalThis.chrome?.storage?.local?.get && globalThis.chrome?.storage?.local?.set);
+    } catch {
+      return false;
+    }
+  })();
+
+  const __aichatGMChromePendingSet = Object.create(null);
+  const __aichatGMChromePendingRemove = new Set();
+  let __aichatGMChromeFlushTimer = 0;
+  function __aichatFlushChromeStorage() {
+    if (!__aichatHasChromeStorage) return;
+    try {
+      const toSet = { ...__aichatGMChromePendingSet };
+      const toRemove = Array.from(__aichatGMChromePendingRemove);
+      for (const k of Object.keys(__aichatGMChromePendingSet)) delete __aichatGMChromePendingSet[k];
+      __aichatGMChromePendingRemove.clear();
+
+      if (Object.keys(toSet).length) {
+        try { chrome.storage.local.set(toSet, () => void chrome.runtime?.lastError); } catch {}
+      }
+      if (toRemove.length) {
+        try { chrome.storage.local.remove(toRemove, () => void chrome.runtime?.lastError); } catch {}
+      }
+    } catch {}
+  }
+
+  function __aichatQueueChromeSet(k, v) {
+    if (!__aichatHasChromeStorage) return;
+    __aichatGMChromePendingSet[String(k)] = v;
+    __aichatGMChromePendingRemove.delete(String(k));
+    if (__aichatGMChromeFlushTimer) return;
+    __aichatGMChromeFlushTimer = setTimeout(() => {
+      __aichatGMChromeFlushTimer = 0;
+      __aichatFlushChromeStorage();
+    }, 120);
+  }
+
+  function __aichatQueueChromeRemove(k) {
+    if (!__aichatHasChromeStorage) return;
+    const key = String(k);
+    delete __aichatGMChromePendingSet[key];
+    __aichatGMChromePendingRemove.add(key);
+    if (__aichatGMChromeFlushTimer) return;
+    __aichatGMChromeFlushTimer = setTimeout(() => {
+      __aichatGMChromeFlushTimer = 0;
+      __aichatFlushChromeStorage();
+    }, 120);
+  }
+
+  function __aichatWarmLocalStorageFromChromeStorage() {
+    if (!__aichatHasChromeStorage) return;
+    try {
+      chrome.storage.local.get(null, (items) => {
+        void chrome.runtime?.lastError;
+        try {
+          for (const [k, v] of Object.entries(items || {})) {
+            if (!String(k).startsWith(__aichatGMKeyPrefix)) continue;
+            try {
+              if (localStorage.getItem(k) != null) continue;
+              localStorage.setItem(k, JSON.stringify(v));
+            } catch {}
+          }
+        } catch {}
+      });
+    } catch {}
+  }
+
+  function __aichatMigrateLocalStorageToChromeStorage() {
+    if (!__aichatHasChromeStorage) return;
+    try {
+      const batch = Object.create(null);
+      const n = Number(localStorage.length || 0);
+      for (let i = 0; i < n; i++) {
+        const k = localStorage.key(i);
+        if (!k || !String(k).startsWith(__aichatGMKeyPrefix)) continue;
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw == null) continue;
+          batch[k] = JSON.parse(raw);
+        } catch {}
+      }
+      if (Object.keys(batch).length) {
+        chrome.storage.local.set(batch, () => void chrome.runtime?.lastError);
+      }
+    } catch {}
+  }
+
+  // Best-effort: keep chrome.storage in sync and allow recovery if localStorage is cleared.
+  try {
+    __aichatWarmLocalStorageFromChromeStorage();
+    __aichatMigrateLocalStorageToChromeStorage();
+  } catch {}
 
   function GM_getValue(key, defaultValue) {
     try {
@@ -47,7 +142,14 @@
 
   function GM_setValue(key, value) {
     try {
-      localStorage.setItem(__aichatGMStorageKey(key), JSON.stringify(value));
+      const sk = __aichatGMStorageKey(key);
+      if (typeof value === 'undefined') {
+        try { localStorage.removeItem(sk); } catch {}
+        __aichatQueueChromeRemove(sk);
+        return;
+      }
+      localStorage.setItem(sk, JSON.stringify(value));
+      __aichatQueueChromeSet(sk, value);
     } catch {}
   }
 
@@ -1519,8 +1621,8 @@
 
   // src/tracking/fetchInterceptor.js
   function installFetchInterceptor(modelRouting) {
-    const targetWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
-    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || window.__aichat_chatgpt_fetch_hub_v1__;
+    const targetWindow = window;
+    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
     if (hub && typeof hub.register === "function") {
       if (targetWindow.__chatgptUsageHubInstalled) return;
       targetWindow.__chatgptUsageHubInstalled = true;
@@ -3685,28 +3787,75 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        if (monitor.classList.contains("minimized")) {
-          monitor.classList.remove("minimized");
-          const currentData = Storage.get();
-          if (currentData.size?.width && currentData.size?.height) {
-            monitor.style.width = `${currentData.size.width}px`;
-            monitor.style.height = `${currentData.size.height}px`;
-          }
-          Storage.update((data) => {
-            data.minimized = false;
-          });
-        } else {
-          monitor.classList.add("minimized");
-          Storage.update((data) => {
-            data.minimized = true;
-          });
-        }
+        requestMonitorMinimized(!monitor.classList.contains("minimized"));
         return false;
       }
     };
     document.addEventListener("keydown", handleShortcut, true);
   }
   var _uiUpdateIntervalId = null;
+  // Coalesce rapid minimize/restore actions:
+  // 1) Intent wins (last request applies)
+  // 2) 0.1s cooldown to avoid UI thrash on spam clicks
+  var _minimizeDesired = null;
+  var _minimizeTimerId = null;
+  var _minimizeLastAppliedAt = 0;
+  function applyMonitorMinimized(nextMinimized) {
+    const monitor = document.getElementById("chatUsageMonitor");
+    if (!monitor) return;
+
+    const next = !!nextMinimized;
+    if (next) {
+      monitor.classList.add("minimized");
+    } else {
+      monitor.classList.remove("minimized");
+      const currentData = Storage.get();
+      if (currentData.size?.width && currentData.size?.height) {
+        monitor.style.width = `${currentData.size.width}px`;
+        monitor.style.height = `${currentData.size.height}px`;
+      }
+      // Ensure content is fresh when the user expands it.
+      try {
+        updateUI();
+      } catch {}
+    }
+
+    try {
+      Storage.update((data) => {
+        data.minimized = next;
+      });
+      refreshUsageData();
+    } catch {}
+  }
+  function requestMonitorMinimized(nextMinimized) {
+    const monitor = document.getElementById("chatUsageMonitor");
+    if (!monitor) return;
+    if (isSilent()) return;
+
+    const next = !!nextMinimized;
+    _minimizeDesired = next;
+
+    const COOLDOWN_MS = 100;
+    const now = Date.now();
+    const earliest = _minimizeLastAppliedAt + COOLDOWN_MS;
+    const waitMs = Math.max(0, earliest - now);
+
+    if (_minimizeTimerId) return;
+    if (waitMs === 0) {
+      _minimizeLastAppliedAt = now;
+      const desired = _minimizeDesired;
+      _minimizeDesired = null;
+      applyMonitorMinimized(desired);
+      return;
+    }
+    _minimizeTimerId = setTimeout(() => {
+      _minimizeTimerId = null;
+      _minimizeLastAppliedAt = Date.now();
+      const desired = _minimizeDesired;
+      _minimizeDesired = null;
+      applyMonitorMinimized(desired);
+    }, waitMs);
+  }
   function createMonitorUI() {
     if (isSilent()) return;
     if (document.getElementById("chatUsageMonitor")) return;
@@ -3739,10 +3888,7 @@
     minimizeBtn.title = "最小化监视器";
     minimizeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      container.classList.add("minimized");
-      Storage.update((data) => {
-        data.minimized = true;
-      });
+      requestMonitorMinimized(true);
     });
     header.appendChild(minimizeBtn);
     const usageTabBtn = document.createElement("button");
@@ -3776,14 +3922,7 @@
     });
     container.addEventListener("click", (e) => {
       if (!container.classList.contains("minimized")) return;
-      container.classList.remove("minimized");
-      if (usageData.size?.width && usageData.size?.height) {
-        container.style.width = `${usageData.size.width}px`;
-        container.style.height = `${usageData.size.height}px`;
-      }
-      Storage.update((data) => {
-        data.minimized = false;
-      });
+      requestMonitorMinimized(false);
       e.stopPropagation();
     });
     document.body.appendChild(container);
@@ -3818,15 +3957,29 @@
     installFetchInterceptor(modelRouting);
     onDataChanged(() => {
       if (isSilent()) return;
+      const monitor = document.getElementById("chatUsageMonitor");
+      if (monitor?.classList?.contains("minimized")) return;
       updateUI();
     });
     let _pendingInitTimerId = null;
+    let _pendingInitDueAt = 0;
     function scheduleInitialize(delay = 300) {
-      if (_pendingInitTimerId) return;
+      const now = Date.now();
+      const safeDelay = Math.max(0, Number(delay) || 0);
+      const dueAt = now + safeDelay;
+      if (_pendingInitTimerId) {
+        // If we already scheduled an init but now we need it sooner (e.g. user action),
+        // reschedule to the earlier time instead of ignoring the request.
+        if (dueAt >= _pendingInitDueAt) return;
+        try { clearTimeout(_pendingInitTimerId); } catch {}
+        _pendingInitTimerId = null;
+      }
+      _pendingInitDueAt = dueAt;
       _pendingInitTimerId = setTimeout(() => {
         _pendingInitTimerId = null;
+        _pendingInitDueAt = 0;
         initialize();
-      }, delay);
+      }, Math.max(0, dueAt - now));
     }
     function initialize() {
       if (!document?.body) {

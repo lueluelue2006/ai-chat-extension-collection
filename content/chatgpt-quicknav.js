@@ -225,6 +225,9 @@
   let refreshTimer = 0; // 新的尾随去抖定时器
   let lastStopCheckTs = 0;
   let lastHasStop = null;
+  let __cgptKeydownHandler = null;
+  let __cgptSendEventsBound = false;
+  let __cgptActiveTrackingBound = false;
 
   function isChatRoute() {
     try {
@@ -501,8 +504,6 @@
       }
       // 重置"正在启动"标志，避免新页面被卡住
       __cgptBooting = false;
-      // 重置键盘事件绑定标志，允许新页面重新绑定
-      window.__cgptKeysBound = false;
       lastTurnCount = 0;
       TURN_SELECTOR = null; // 同时重置选择器缓存
       previewCache.clear();
@@ -523,6 +524,17 @@
   const originalReplaceState = history.replaceState;
   history.pushState = function (...args) { originalPushState.apply(this, args); setTimeout(detectUrlChange, 0); };
   history.replaceState = function (...args) { originalReplaceState.apply(this, args); setTimeout(detectUrlChange, 0); };
+
+  // Fallback: some SPA navigations don't trigger events we can reliably observe from an isolated world.
+  // Polling `location.href` keeps the panel state in sync without relying on MAIN-world hooks.
+  try {
+    if (!window.__cgptUrlPollInstalled) {
+      window.__cgptUrlPollInstalled = true;
+      setInterval(() => {
+        try { detectUrlChange(); } catch {}
+      }, 500);
+    }
+  } catch {}
 
   function installNavSelfHeal() {
     try {
@@ -1561,7 +1573,38 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       state.mutationObserver = null;
     }
 
-    state.mutationObserver = new MutationObserver(() => scheduleEvaluation('mutation'));
+    const LAYOUT_WATCH_SELECTOR =
+      '#stage-slideover-sidebar, nav[aria-label="Chat history"], [data-testid="chat-history"], section[data-testid="screen-threadFlyOut"]';
+    const isLayoutRelevantNode = (node) => {
+      const el = node && node.nodeType === 1 ? node : null;
+      if (!el) return false;
+      try {
+        if (el.matches?.(LAYOUT_WATCH_SELECTOR)) return true;
+      } catch {}
+      try {
+        if (el.querySelector?.(LAYOUT_WATCH_SELECTOR)) return true;
+      } catch {}
+      return false;
+    };
+    state.mutationObserver = new MutationObserver((records) => {
+      try {
+        for (const r of records) {
+          if (!r || r.type !== 'childList') continue;
+          const added = r.addedNodes;
+          if (added && added.length) {
+            for (const n of added) {
+              if (isLayoutRelevantNode(n)) return scheduleEvaluation('mutation');
+            }
+          }
+          const removed = r.removedNodes;
+          if (removed && removed.length) {
+            for (const n of removed) {
+              if (isLayoutRelevantNode(n)) return scheduleEvaluation('mutation');
+            }
+          }
+        }
+      } catch {}
+    });
     try { state.mutationObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
 
     state.resizeHandler = () => scheduleEvaluation('resize');
@@ -2880,9 +2923,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (topBtn) topBtn.addEventListener('click', () => jumpToEdge('top'));
     if (bottomBtn) bottomBtn.addEventListener('click', () => jumpToEdge('bottom'));
 
-    // 键盘事件只绑定一次：避免重复绑定
-    if (!window.__cgptKeysBound) {
-      const onKeydown = (e) => {
+    // 键盘事件只绑定一次：避免重复绑定（ChatGPT SPA 路由切换不会刷新页面）
+    if (!__cgptKeydownHandler) {
+      __cgptKeydownHandler = (e) => {
+        const navEl = document.getElementById('cgpt-compact-nav');
+        const currentUi = navEl && navEl._ui ? navEl._ui : null;
+        if (!currentUi || !currentUi.nav) return;
+
         const t = e.target;
         const tag = t && t.tagName;
         const isEditable = t && ((tag === 'INPUT') || (tag === 'TEXTAREA') || (tag === 'SELECT') || (t.isContentEditable));
@@ -2900,22 +2947,33 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           e.preventDefault();
           return;
         }
+
         // Alt+/ 面板显隐
         if (e.altKey && e.key === '/') {
-          const list = ui.nav.querySelector('.compact-list');
-          const toggleText = ui.nav.querySelector('.compact-toggle .toggle-text');
+          const list = currentUi.nav.querySelector('.compact-list');
+          if (!list) return;
+          const toggleText = currentUi.nav.querySelector('.compact-toggle .toggle-text');
           const isHidden = list.getAttribute('data-hidden') === '1';
-          if (isHidden) { list.style.visibility = 'visible'; list.style.height = ''; list.style.overflow = ''; list.setAttribute('data-hidden', '0'); if (toggleText) toggleText.textContent = '−'; }
-          else { list.style.visibility = 'hidden'; list.style.height = '0'; list.style.overflow = 'hidden'; list.setAttribute('data-hidden', '1'); if (toggleText) toggleText.textContent = '+'; }
+          if (isHidden) {
+            list.style.visibility = 'visible';
+            list.style.height = '';
+            list.style.overflow = '';
+            list.setAttribute('data-hidden', '0');
+            if (toggleText) toggleText.textContent = '−';
+          } else {
+            list.style.visibility = 'hidden';
+            list.style.height = '0';
+            list.style.overflow = 'hidden';
+            list.setAttribute('data-hidden', '1');
+            if (toggleText) toggleText.textContent = '+';
+          }
           e.preventDefault();
         }
       };
 
-      document.addEventListener('keydown', onKeydown, { passive: false });
+      document.addEventListener('keydown', __cgptKeydownHandler, { passive: false });
       window.__cgptKeysBound = true;
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已绑定键盘事件');
-    } else {
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 键盘事件已存在，跳过绑定');
     }
   }
 
@@ -3045,6 +3103,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const hasStop = checkStreamingState(ui);
       const useSoft = isLongChat && !!hasStop;
       // 只要涉及消息区域的变更，就触发去抖刷新
+      let touchesConversation = false;
       for (const mut of muts) {
         // characterData 的 target 是 Text 节点，这里取其 parentElement 参与判断
         const t = mut.target && mut.target.nodeType === 1 ? mut.target : (mut.target?.parentElement || null);
@@ -3058,20 +3117,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           t.closest('[data-message-id]') ||
           t.closest('.markdown') || t.closest('.prose')
         ) {
-          handleScrollLockMutations(muts);
-          scheduleRefresh(ui, { delay: isLongChat ? 200 : 80, soft: useSoft });
-          return;
+          touchesConversation = true;
+          break;
         }
       }
-      handleScrollLockMutations(muts);
+      handleScrollLockMutations(muts, !!hasStop);
+      if (touchesConversation) scheduleRefresh(ui, { delay: isLongChat ? 260 : 80, soft: useSoft });
     });
 
     mo.observe(target, {
       childList: true,
       subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['data-message-author-role', 'data-testid', 'data-message-id', 'class']
+      characterData: true
     });
 
     ui._mo = mo;
@@ -3103,6 +3160,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // 防自动滚动（不改全局原型，避免与其他脚本冲突）
   function postScrollLockStateToMainWorld() {
     try {
+      // Cross-world sync: MAIN-world guard reads this synchronously from DOM dataset.
+      try { document.documentElement.dataset.quicknavScrollLockEnabled = scrollLockEnabled ? '1' : '0'; } catch {}
       window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_STATE', enabled: !!scrollLockEnabled }, '*');
     } catch {}
   }
@@ -3137,6 +3196,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // In MV3, many sites (ChatGPT/Gemini/etc.) drive autoscroll from the page JS (MAIN world).
   // Ask the extension service worker to inject the MAIN-world scroll guard, best-effort and throttled.
   let __quicknavMainGuardRequestedAt = 0;
+  let __quicknavMainGuardReady = false;
+  let __quicknavMainGuardRetryTimer = 0;
   function ensureMainWorldScrollGuard() {
     try {
       if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
@@ -3144,6 +3205,24 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (now - (__quicknavMainGuardRequestedAt || 0) < 2000) return;
       __quicknavMainGuardRequestedAt = now;
       chrome.runtime.sendMessage({ type: 'QUICKNAV_ENSURE_SCROLL_GUARD' }, () => void chrome.runtime?.lastError);
+    } catch {}
+  }
+
+  function scheduleMainWorldScrollGuardRetry() {
+    try {
+      if (__quicknavMainGuardReady) return;
+      if (!scrollLockEnabled) return;
+      if (__quicknavMainGuardRetryTimer) return;
+      __quicknavMainGuardRetryTimer = window.setTimeout(() => {
+        __quicknavMainGuardRetryTimer = 0;
+        if (__quicknavMainGuardReady) return;
+        if (!scrollLockEnabled) return;
+        ensureMainWorldScrollGuard();
+        // If the guard gets (re)installed after we posted state, re-sync once more.
+        postScrollLockStateToMainWorld();
+        postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
+        scheduleMainWorldScrollGuardRetry();
+      }, 2200);
     } catch {}
   }
 
@@ -3156,6 +3235,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const msg = e.data;
         if (!msg || typeof msg !== 'object' || msg.__quicknav !== 1) return;
         if (msg.type === 'QUICKNAV_SCROLL_GUARD_READY') {
+          __quicknavMainGuardReady = true;
+          if (__quicknavMainGuardRetryTimer) {
+            clearTimeout(__quicknavMainGuardRetryTimer);
+            __quicknavMainGuardRetryTimer = 0;
+          }
           postScrollLockStateToMainWorld();
           if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
         }
@@ -3423,11 +3507,62 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     window.__cgptScrollLockUserIntentsBound = true;
 
     const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
+    const isSendAction = (t) => {
+      try {
+        if (!t || !t.closest) return false;
+        return !!t.closest(
+          'button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="send"], button[aria-label*="发送"], form button[type="submit"]'
+        );
+      } catch {
+        return false;
+      }
+    };
+    const isSidebarToggle = (t) => {
+      try {
+        if (!t || !t.closest) return false;
+        return !!t.closest('button[aria-label*="sidebar"], button[aria-label*="Sidebar"], button[aria-label*="侧边栏"], button[data-testid*="sidebar"]');
+      } catch {
+        return false;
+      }
+    };
+    const isCopyCode = (t) => {
+      try {
+        if (!t || !t.closest) return false;
+        const btn = t.closest('button');
+        if (!btn) return false;
+        // Best-effort: copy buttons inside message/code areas.
+        if (!btn.closest('pre, code, .markdown, .prose, [data-message-id]')) return false;
+        const al = String(btn.getAttribute('aria-label') || '');
+        const ti = String(btn.getAttribute('title') || '');
+        const text = String(btn.textContent || '');
+        const hay = `${al} ${ti} ${text}`.toLowerCase();
+        return hay.includes('copy') || hay.includes('复制');
+      } catch {
+        return false;
+      }
+    };
     const mark = (e) => {
       if (!scrollLockEnabled) return;
       if (ignoreIfInNav(e?.target)) return;
       scrollLockLastUserIntentTs = Date.now();
     };
+
+    // Non-scroll UI interactions that can trigger layout-driven scrollTop adjustments.
+    // Treat them as "user intent" so the baseline follows naturally (no visible bounce).
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        try {
+          if (!scrollLockEnabled) return;
+          if (ignoreIfInNav(e?.target)) return;
+          if (isSendAction(e?.target)) return; // never allow send-triggered autoscroll to redefine baseline
+          if (isSidebarToggle(e?.target) || isCopyCode(e?.target)) {
+            scrollLockLastUserIntentTs = Date.now();
+          }
+        } catch {}
+      },
+      true
+    );
 
     document.addEventListener('wheel', mark, { passive: true, capture: true });
     document.addEventListener('touchstart', mark, { passive: true, capture: true });
@@ -3585,6 +3720,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     postScrollLockStateToMainWorld();
     if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
     ensureMainWorldScrollGuard();
+    if (scrollLockEnabled) scheduleMainWorldScrollGuardRetry();
     return scrollLockEnabled;
   }
 
@@ -3593,6 +3729,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scrollLockEnabled = loadScrollLockState();
     bindMainWorldScrollGuardHandshake();
     ensureMainWorldScrollGuard();
+    scheduleMainWorldScrollGuardRetry();
     ensureScrollLockBindings();
     updateLockBtnState(ui.nav);
     bindScrollLockUserIntents();
@@ -3629,14 +3766,50 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return false;
   }
 
-  function handleScrollLockMutations(muts) {
+  function isConversationTurnishNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    try {
+      if (node.matches('[data-message-id], [data-message-author-role], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
+      if (node.querySelector?.('[data-message-id], [data-message-author-role], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
+    } catch {}
+    return false;
+  }
+
+  function isWithinConversation(node) {
+    if (!node || node.nodeType !== 1) return false;
+    try {
+      if (node.closest?.('[data-testid="conversation-turns"], [data-message-author-role], [data-message-id], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
+    } catch {}
+    return false;
+  }
+
+  function handleScrollLockMutations(muts, streaming = false) {
     if (!scrollLockEnabled || !muts || !muts.length) return;
+    const isStreaming = !!streaming;
     let relevant = false;
     for (const mut of muts) {
-      if (mutationTouchesConversation(mut.target)) { relevant = true; break; }
-      if (mut.addedNodes && mut.addedNodes.length) {
-        for (const n of mut.addedNodes) {
-          if (mutationTouchesConversation(n)) { relevant = true; break; }
+      if (!mut) continue;
+      // Ignore pure attribute flips (theme/layout toggles, copy button states, etc.) when not streaming.
+      if (mut.type === 'attributes') continue;
+      if (mut.type === 'characterData') {
+        if (!isStreaming) continue;
+        const t = mut.target && mut.target.nodeType === 3 ? mut.target.parentElement : mut.target;
+        if (isWithinConversation(t)) { relevant = true; break; }
+        continue;
+      }
+      if (mut.type !== 'childList') continue;
+
+      // ChildList: only treat as relevant when actual turns/messages are added/removed.
+      const added = mut.addedNodes;
+      const removed = mut.removedNodes;
+      if (added && added.length) {
+        for (const n of added) {
+          if (isConversationTurnishNode(n)) { relevant = true; break; }
+        }
+      }
+      if (!relevant && removed && removed.length) {
+        for (const n of removed) {
+          if (isConversationTurnishNode(n)) { relevant = true; break; }
         }
       }
       if (relevant) break;
@@ -3668,6 +3841,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function bindActiveTracking() {
+    if (__cgptActiveTrackingBound) return;
+    __cgptActiveTrackingBound = true;
     document.addEventListener('scroll', onAnyScroll, { passive: true, capture: true });
     window.addEventListener('resize', onAnyScroll, { passive: true });
     scheduleActiveUpdateNow();
@@ -3676,6 +3851,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // 绑定 Option+单击 添加📌
   function bindAltPin(ui) {
     if (window.__cgptPinBound) return;
+    const getUi = () => {
+      try {
+        const nav = document.getElementById('cgpt-compact-nav');
+        return nav && nav._ui ? nav._ui : null;
+      } catch {
+        return null;
+      }
+    };
     // 非 Alt 点击锚点：阻止默认，避免文本选中/抖动
     document.addEventListener('mousedown', (e) => {
       const anc = e.target && e.target.closest && e.target.closest('.cgpt-pin-anchor');
@@ -3701,16 +3884,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
               if (v && v.anchorId === anc.id) { pid = k; break; }
             }
           }
-          if (pid && cpMap.has(pid)) {
-            cpMap.delete(pid);
-            try { anc.remove(); } catch {}
-            if (favSet.has(pid)) { favSet.delete(pid); favMeta.delete(pid); saveFavSet(); updateStarBtnState(ui); }
-            saveCPSet();
-            scheduleRefresh(ui);
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
+	          if (pid && cpMap.has(pid)) {
+	            cpMap.delete(pid);
+	            try { anc.remove(); } catch {}
+	            const currentUi = getUi();
+	            if (favSet.has(pid)) {
+	              favSet.delete(pid);
+	              favMeta.delete(pid);
+	              saveFavSet();
+	              if (currentUi) updateStarBtnState(currentUi);
+	            }
+	            saveCPSet();
+	            if (currentUi) scheduleRefresh(currentUi);
+	            e.preventDefault();
+	            e.stopPropagation();
+	            return;
+	          }
         }
         e.preventDefault();
         e.stopPropagation();
@@ -3733,18 +3922,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         // 新增：图钉默认自动加入收藏夹
         try {
           if (!favSet || !(favSet instanceof Set)) loadFavSet();
-          favSet.add(pinId);
-          favMeta.set(pinId, { created: Date.now() });
-          saveFavSet();
-          updateStarBtnState(ui);
-        } catch {}
-        saveCPSet();
-        runCheckpointGC(true);
-        scheduleRefresh(ui);
-      } catch (err) {
-        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
-      }
-    };
+	          favSet.add(pinId);
+	          favMeta.set(pinId, { created: Date.now() });
+	          saveFavSet();
+	          const currentUi = getUi();
+	          if (currentUi) updateStarBtnState(currentUi);
+	        } catch {}
+	        saveCPSet();
+	        runCheckpointGC(true);
+	        {
+	          const currentUi = getUi();
+	          if (currentUi) scheduleRefresh(currentUi);
+	        }
+	      } catch (err) {
+	        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
+	      }
+	    };
     document.addEventListener('click', onClick, true);
     window.__cgptPinBound = true;
   }
@@ -3987,6 +4180,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function watchSendEvents(ui) {
+    if (__cgptSendEventsBound) return;
+    __cgptSendEventsBound = true;
+
+    const getUi = () => {
+      try {
+        const nav = document.getElementById('cgpt-compact-nav');
+        return nav && nav._ui ? nav._ui : null;
+      } catch {
+        return null;
+      }
+    };
+
     const isComposerForm = (form) => {
       try {
         if (!form || typeof form.querySelector !== 'function') return false;
@@ -3999,9 +4204,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 点击发送按钮
     document.addEventListener('click', (e) => {
       if (e.target && e.target.closest && e.target.closest('[data-testid="send-button"]')) {
+        const currentUi = getUi();
+        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(ui);
+        startBurstRefresh(currentUi);
       }
     }, true);
 
@@ -4009,9 +4216,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     document.addEventListener('submit', (e) => {
       const form = e?.target;
       if (!isComposerForm(form)) return;
+      const currentUi = getUi();
+      if (!currentUi) return;
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到表单提交，启动突发刷新');
       armScrollLockGuard(2200);
-      startBurstRefresh(ui);
+      startBurstRefresh(currentUi);
     }, true);
 
     // ⌘/Ctrl + Enter 发送
@@ -4020,17 +4229,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (!t) return;
       const isTextarea = t.tagName === 'TEXTAREA' || t.isContentEditable;
       if (isTextarea && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        const currentUi = getUi();
+        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(ui);
+        startBurstRefresh(currentUi);
       }
     }, true);
 
     // 回到前台时强制跑一次
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
+        const currentUi = getUi();
+        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
-        scheduleRefresh(ui, { force: true });
+        scheduleRefresh(currentUi, { force: true });
       }
     });
   }

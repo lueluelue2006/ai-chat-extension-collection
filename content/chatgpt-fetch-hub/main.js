@@ -41,8 +41,20 @@
   const now = () => Date.now();
 
   function getStableNativeFetch() {
+    // Fast path: use the page's `fetch` when it looks native.
+    // This avoids creating an extra hidden iframe (which costs memory).
+    // Fallback to iframe-based fetch if `fetch` is wrapped by the site or other extensions.
+    try {
+      if (
+        typeof window.fetch === 'function' &&
+        Function.prototype.toString.call(window.fetch).includes('[native code]')
+      ) {
+        return window.fetch;
+      }
+    } catch {}
+
     // Prefer getting `fetch` from a clean realm (iframe) to avoid sites/extensions
-    // that wrap `window.fetch` but spoof `Function#toString`.
+    // that wrap `window.fetch` (sometimes with spoofed `Function#toString`).
     try {
       const IFRAME_ID = '__aichat_chatgpt_fetch_hub_native_iframe_v1__';
       let iframe = document.getElementById(IFRAME_ID);
@@ -61,15 +73,6 @@
 
       const f = iframe.contentWindow?.fetch;
       if (typeof f === 'function') return f;
-    } catch {}
-
-    try {
-      if (
-        typeof window.fetch === 'function' &&
-        Function.prototype.toString.call(window.fetch).includes('[native code]')
-      ) {
-        return window.fetch;
-      }
     } catch {}
 
     return typeof window.fetch === 'function' ? window.fetch : null;

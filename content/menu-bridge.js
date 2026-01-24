@@ -75,6 +75,7 @@
     if (!p) return 'unknown';
     if (p.includes('chatgpt-export-conversation')) return 'ChatGPT 对话导出';
     if (p.includes('chatgpt-quicknav')) return 'ChatGPT QuickNav';
+    if (p.includes('chatgpt-split-view')) return 'ChatGPT Split View';
     if (p.includes('ernie-quicknav')) return '文心一言 QuickNav';
     if (p.includes('deepseek-quicknav')) return 'DeepSeek QuickNav';
     if (p.includes('qwen-quicknav')) return 'Qwen QuickNav';
@@ -85,7 +86,7 @@
     if (p.includes('genspark-quicknav')) return 'Genspark QuickNav';
     // Fallback to path tail
     const tail = p.split('/').filter(Boolean).slice(-2).join('/');
-      return tail || p;
+    return tail || p;
   }
 
   try {

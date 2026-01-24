@@ -80,7 +80,33 @@
   let __lastMarkedScroller = null;
 
   const now = () => Date.now();
+  let __enabledDatasetCached = null;
+  function readEnabledFromDataset() {
+    try {
+      const v = document.documentElement?.dataset?.quicknavScrollLockEnabled;
+      if (v === '1' || v === 'true') return true;
+      if (v === '0' || v === 'false') return false;
+    } catch {}
+    return null;
+  }
+
+  function syncEnabledFromDataset() {
+    const v = readEnabledFromDataset();
+    if (typeof v !== 'boolean') return;
+    if (__enabledDatasetCached === v && STATE.enabled === v) return;
+    __enabledDatasetCached = v;
+    if (STATE.enabled !== v) {
+      STATE.enabled = v;
+      try {
+        refreshScrollerMarker();
+      } catch {}
+    }
+  }
+
   const isAllowed = () => {
+    try {
+      syncEnabledFromDataset();
+    } catch {}
     if (!STATE.enabled) return true;
     if (now() < (STATE.allowUntil || 0)) return true;
     // Cross-world allow window: use DOM dataset (survives hot reinject; auto-expires).

@@ -1,6 +1,12 @@
 (() => {
   'use strict';
 
+  const GLOBAL_STATE_KEY = '__cgpt_perf_mv3_state_v1__';
+  try {
+    const prev = globalThis[GLOBAL_STATE_KEY];
+    if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
+  } catch {}
+
   const EXT_VERSION = '0.1.20';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
@@ -62,6 +68,15 @@
     ioRestartTimer: 0,
     boostListenersAttached: false,
     rootAttrMo: null,
+    disposed: false,
+    onPointerDown: null,
+    onClick: null,
+    onKeydown: null,
+    onFocusIn: null,
+    onFocusOut: null,
+    onScroll: null,
+    onStorageChanged: null,
+    cleanup: null,
   };
 
   function clampInt(n, min, max) {
@@ -997,60 +1012,146 @@
     };
 
     // Use `window` capture so we still observe actions even if the app stops propagation on `document`.
-    window.addEventListener(
-      'pointerdown',
-      (e) => {
-        if (isCopyButtonTarget(e.target)) prepareCopyUnfreeze(e.target);
-        if (!shouldBoostFromTarget(e.target)) return;
-        state.lastActionBoostAt = performance.now();
-        runBench(actionLabelFromTarget(e.target), { via: 'pointerdown' });
-        scheduleActionBoost();
-      },
-      true,
-    );
+    state.onPointerDown = (e) => {
+      if (state.disposed) return;
+      if (isCopyButtonTarget(e.target)) prepareCopyUnfreeze(e.target);
+      if (!shouldBoostFromTarget(e.target)) return;
+      state.lastActionBoostAt = performance.now();
+      runBench(actionLabelFromTarget(e.target), { via: 'pointerdown' });
+      scheduleActionBoost();
+    };
+    window.addEventListener('pointerdown', state.onPointerDown, true);
 
-    window.addEventListener(
-      'click',
-      (e) => {
-        if (isCopyButtonTarget(e.target)) prepareCopyUnfreeze(e.target);
-        if (!shouldBoostFromTarget(e.target)) return;
-        const now = performance.now();
-        if (now - state.lastActionBoostAt < 120) return;
-        state.lastActionBoostAt = now;
-        runBench(actionLabelFromTarget(e.target), { via: 'click' });
-        scheduleActionBoost();
-      },
-      true,
-    );
+    state.onClick = (e) => {
+      if (state.disposed) return;
+      if (isCopyButtonTarget(e.target)) prepareCopyUnfreeze(e.target);
+      if (!shouldBoostFromTarget(e.target)) return;
+      const now = performance.now();
+      if (now - state.lastActionBoostAt < 120) return;
+      state.lastActionBoostAt = now;
+      runBench(actionLabelFromTarget(e.target), { via: 'click' });
+      scheduleActionBoost();
+    };
+    window.addEventListener('click', state.onClick, true);
 
-    document.addEventListener(
-      'keydown',
-      (e) => {
-        // Hitting Enter to send can be expensive; boost before submission.
-        if (e.key !== 'Enter') return;
-        if (!isTextInputElement(document.activeElement)) return;
-        state.lastActionBoostAt = performance.now();
-        runBench('Enter（发送）', { via: 'keydown' });
-        scheduleActionBoost(1100);
-      },
-      true,
-    );
+    state.onKeydown = (e) => {
+      if (state.disposed) return;
+      // Hitting Enter to send can be expensive; boost before submission.
+      if (e.key !== 'Enter') return;
+      if (!isTextInputElement(document.activeElement)) return;
+      state.lastActionBoostAt = performance.now();
+      runBench('Enter（发送）', { via: 'keydown' });
+      scheduleActionBoost(1100);
+    };
+    document.addEventListener('keydown', state.onKeydown, true);
 
-    document.addEventListener('focusin', schedule, true);
-    document.addEventListener('focusout', schedule, true);
+    state.onFocusIn = schedule;
+    state.onFocusOut = schedule;
+    document.addEventListener('focusin', state.onFocusIn, true);
+    document.addEventListener('focusout', state.onFocusOut, true);
 
-    window.addEventListener(
-      'scroll',
-      () => {
-        if (!state.reconcileArticles) return;
-        state.reconcileToken += 1;
-        state.reconcileArticles = null;
-      },
-      { passive: true },
-    );
+    state.onScroll = () => {
+      if (state.disposed) return;
+      if (!state.reconcileArticles) return;
+      state.reconcileToken += 1;
+      state.reconcileArticles = null;
+    };
+    window.addEventListener('scroll', state.onScroll, { passive: true });
+  }
+
+  function cleanup() {
+    if (state.disposed) return;
+    state.disposed = true;
+
+    try { closeMenu(); } catch {}
+    try { stopRouteWatch(); } catch {}
+    try { stopVirtualization(); } catch {}
+
+    try { state.rootAttrMo?.disconnect?.(); } catch {}
+    state.rootAttrMo = null;
+
+    try { state.containerMo?.disconnect?.(); } catch {}
+    state.containerMo = null;
+
+    try { state.io?.disconnect?.(); } catch {}
+    state.io = null;
+
+    try {
+      if (state.benchTimer) window.clearTimeout(state.benchTimer);
+    } catch {}
+    state.benchTimer = 0;
+
+    try {
+      if (state.boostFocusTimer) window.clearTimeout(state.boostFocusTimer);
+    } catch {}
+    state.boostFocusTimer = 0;
+
+    try {
+      if (state.boostActionTimer) window.clearTimeout(state.boostActionTimer);
+    } catch {}
+    state.boostActionTimer = 0;
+
+    try {
+      if (state.ioRestartTimer) window.clearTimeout(state.ioRestartTimer);
+    } catch {}
+    state.ioRestartTimer = 0;
+
+    try {
+      if (state.onPointerDown) window.removeEventListener('pointerdown', state.onPointerDown, true);
+    } catch {}
+    state.onPointerDown = null;
+
+    try {
+      if (state.onClick) window.removeEventListener('click', state.onClick, true);
+    } catch {}
+    state.onClick = null;
+
+    try {
+      if (state.onKeydown) document.removeEventListener('keydown', state.onKeydown, true);
+    } catch {}
+    state.onKeydown = null;
+
+    try {
+      if (state.onFocusIn) document.removeEventListener('focusin', state.onFocusIn, true);
+    } catch {}
+    state.onFocusIn = null;
+
+    try {
+      if (state.onFocusOut) document.removeEventListener('focusout', state.onFocusOut, true);
+    } catch {}
+    state.onFocusOut = null;
+
+    try {
+      if (state.onScroll) window.removeEventListener('scroll', state.onScroll, false);
+    } catch {}
+    state.onScroll = null;
+
+    try {
+      if (state.onStorageChanged) chrome?.storage?.onChanged?.removeListener?.(state.onStorageChanged);
+    } catch {}
+    state.onStorageChanged = null;
+
+    try { document.getElementById(UI_ID)?.remove?.(); } catch {}
+    try { document.getElementById(TOAST_ID)?.remove?.(); } catch {}
+
+    try { delete globalThis[GLOBAL_STATE_KEY]; } catch {}
   }
 
   function init() {
+    state.cleanup = cleanup;
+    try {
+      Object.defineProperty(globalThis, GLOBAL_STATE_KEY, {
+        value: state,
+        configurable: true,
+        enumerable: false,
+        writable: false,
+      });
+    } catch {
+      try {
+        globalThis[GLOBAL_STATE_KEY] = state;
+      } catch {}
+    }
+
     ensureBoostListeners();
     ensureRootAttrGuard();
 
@@ -1076,7 +1177,8 @@
     }
 
     try {
-      chrome?.storage?.onChanged?.addListener?.((changes, areaName) => {
+      state.onStorageChanged = (changes, areaName) => {
+        if (state.disposed) return;
         if (areaName === state.storageAreaName && changes?.[STORAGE_KEY]) {
           applySettings(changes[STORAGE_KEY].newValue);
         }
@@ -1088,9 +1190,10 @@
             // ignore
           }
         }
-      });
+      };
+      chrome?.storage?.onChanged?.addListener?.(state.onStorageChanged);
     } catch {
-      // ignore
+      state.onStorageChanged = null;
     }
   }
 

@@ -47,6 +47,12 @@
   const DESTROY_IFRAME_ON_CLOSE = true;
 
   let desiredOpen = false;
+  let __qnSplitGuardsActive = false;
+  let __qnSplitHtmlMo = null;
+  let __qnSplitBodyMo = null;
+  let __qnSplitRootMo = null;
+  let __qnSplitCurrentRoot = null;
+  let __qnSplitGuardTimer = 0;
 
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const BLOCK_TAGS = new Set([
@@ -500,6 +506,110 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     desiredOpen = on;
     applyDomOpenState(on);
     writeBool(OPEN_KEY, on);
+    try {
+      setSplitGuardsActive(on);
+    } catch {}
+  }
+
+  function scheduleSplitGuardRepair() {
+    try {
+      if (!desiredOpen) return;
+      if (__qnSplitGuardTimer) return;
+      __qnSplitGuardTimer = window.setTimeout(() => {
+        __qnSplitGuardTimer = 0;
+        if (!desiredOpen) return;
+
+        // 1) Some sites rewrite `html.className` (theme, etc.). Keep our open flag stable.
+        try {
+          if (!document.documentElement.classList.contains('qn-split-open')) applyDomOpenState(true);
+        } catch {}
+
+        // 2) The host container can get its inline styles reset by SPA re-renders.
+        try { ensureHostLayout(true); } catch {}
+
+        // 3) The UI nodes might get removed. Recreate if missing.
+        try {
+          const missing =
+            !document.getElementById(ROOT_ID) ||
+            !document.getElementById(PANE_ID) ||
+            !document.getElementById(DIVIDER_ID) ||
+            !document.getElementById(HANDLE_ID) ||
+            !document.getElementById(ASK_ID);
+          if (missing) {
+            const ui = ensureUI();
+            applyRightWidthPx(loadRightWidthPx());
+            applyDomOpenState(true);
+            const iframe = ensurePaneIframe(ui.pane);
+            ensureIframeLoaded(iframe);
+            void ensureIframeTweaks();
+          }
+        } catch {}
+
+        // 4) Root swap: reattach root observer.
+        try {
+          const nextRoot = findHostAppRoot();
+          if (nextRoot && nextRoot !== __qnSplitCurrentRoot) {
+            try { __qnSplitRootMo && __qnSplitRootMo.disconnect(); } catch {}
+            __qnSplitCurrentRoot = nextRoot;
+            if (typeof MutationObserver === 'function') {
+              __qnSplitRootMo = new MutationObserver(() => {
+                if (!desiredOpen) return;
+                ensureHostLayout(true);
+              });
+              try { __qnSplitRootMo.observe(__qnSplitCurrentRoot, { attributes: true, attributeFilter: ['style', 'class'] }); } catch {}
+            }
+          }
+        } catch {}
+      }, 0);
+    } catch {}
+  }
+
+  function setSplitGuardsActive(on) {
+    const active = !!on;
+    if (!active) {
+      __qnSplitGuardsActive = false;
+      try { __qnSplitHtmlMo && __qnSplitHtmlMo.disconnect(); } catch {}
+      try { __qnSplitBodyMo && __qnSplitBodyMo.disconnect(); } catch {}
+      try { __qnSplitRootMo && __qnSplitRootMo.disconnect(); } catch {}
+      __qnSplitHtmlMo = null;
+      __qnSplitBodyMo = null;
+      __qnSplitRootMo = null;
+      __qnSplitCurrentRoot = null;
+      if (__qnSplitGuardTimer) {
+        clearTimeout(__qnSplitGuardTimer);
+        __qnSplitGuardTimer = 0;
+      }
+      return;
+    }
+
+    if (__qnSplitGuardsActive) return;
+    __qnSplitGuardsActive = true;
+
+    if (typeof MutationObserver !== 'function') return;
+
+    try {
+      const html = document.documentElement;
+      if (!__qnSplitHtmlMo && html) {
+        __qnSplitHtmlMo = new MutationObserver(() => {
+          if (!desiredOpen) return;
+          scheduleSplitGuardRepair();
+        });
+        __qnSplitHtmlMo.observe(html, { attributes: true, attributeFilter: ['class'] });
+      }
+    } catch {}
+
+    try {
+      const body = document.body;
+      if (!__qnSplitBodyMo && body) {
+        __qnSplitBodyMo = new MutationObserver(() => {
+          if (!desiredOpen) return;
+          scheduleSplitGuardRepair();
+        });
+        __qnSplitBodyMo.observe(body, { childList: true });
+      }
+    } catch {}
+
+    scheduleSplitGuardRepair();
   }
 
   function ensureUI() {
@@ -709,8 +819,20 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     if (!node) return;
     const looksPatched = () => {
       try {
-        const pr = String(node.style?.paddingRight || '');
+        const pr = String(node.style?.paddingRight || '').trim();
+        if (!pr) return false;
         if (pr.includes('--qn-split-right-width')) return true;
+        // Legacy versions might have written a literal px value instead of the CSS var.
+        // Only treat "large padding-right" as ours when this node looks like the host app root.
+        const m = pr.match(/^(\d+(?:\.\d+)?)px$/);
+        if (!m) return false;
+        const px = Number(m[1]);
+        if (!Number.isFinite(px)) return false;
+        if (px < MIN_RIGHT_WIDTH_PX) return false;
+        if (px > getMaxRightWidthPx() + 64) return false;
+        try {
+          if (node.querySelector?.('#main, main, [role="main"], [data-testid="conversation-turns"], [data-message-id]')) return true;
+        } catch {}
       } catch {}
       return false;
     };
@@ -839,6 +961,58 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     const on = document.documentElement.classList.contains('qn-split-open');
     if (on) closeSplit();
     else openSplit();
+  }
+
+  function clearSplitViewStorage() {
+    try {
+      const prefix = `${STORE_NS}:`;
+      const keys = [];
+      const n = Number(window.localStorage.length || 0);
+      for (let i = 0; i < n; i++) {
+        const k = window.localStorage.key(i);
+        if (!k || typeof k !== 'string') continue;
+        if (k.startsWith(prefix)) keys.push(k);
+      }
+      for (const k of keys) {
+        try { window.localStorage.removeItem(k); } catch {}
+      }
+      return;
+    } catch {}
+    // Fallback (best-effort)
+    try { window.localStorage.removeItem(OPEN_KEY); } catch {}
+    try { window.localStorage.removeItem(WIDTH_KEY); } catch {}
+    try { window.localStorage.removeItem(SRC_KEY); } catch {}
+  }
+
+  function resetSplitViewState() {
+    try {
+      // Force-close and fully reset the right pane (iframe + layout + persisted state).
+      setOpen(false);
+      ensureHostLayout(false);
+      hideAsk();
+    } catch {}
+
+    try {
+      const pane = document.getElementById(PANE_ID);
+      const iframe = pane && pane.querySelector && pane.querySelector(`#${IFRAME_ID}`);
+      try { unloadIframe(iframe); } catch {}
+      try { if (pane) destroyPaneIframe(pane); } catch {}
+    } catch {}
+
+    clearSplitViewStorage();
+
+    // Re-open with defaults so "blank/misaligned" states can be recovered in one click.
+    try {
+      openSplit();
+    } catch {}
+  }
+
+  function registerMenuCommands() {
+    try {
+      const reg = window.__quicknavRegisterMenuCommand;
+      if (typeof reg !== 'function') return;
+      reg('重置右侧状态 / 清理 Split View 存储', resetSplitViewState);
+    } catch {}
   }
 
   function showAskAt(rect, text) {
@@ -1153,8 +1327,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     ensureUI();
     applyRightWidthPx(loadRightWidthPx());
     bindGlobalEvents();
-    ensureOpenStateGuards();
-    ensureUiResilience();
+    registerMenuCommands();
 
     const persistedOpen = readBool(OPEN_KEY, false);
     if (persistedOpen) {
@@ -1163,6 +1336,14 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
           if (document.visibilityState === 'visible') openSplit();
         } catch {}
       }, 600);
+    } else {
+      // Clean up any stray host padding left by older versions / unexpected shutdowns.
+      // Run once after the SPA mounts to avoid missing the real host root.
+      setTimeout(() => {
+        try {
+          if (!document.documentElement.classList.contains('qn-split-open')) ensureHostLayout(false);
+        } catch {}
+      }, 1200);
     }
   } catch {}
 })();

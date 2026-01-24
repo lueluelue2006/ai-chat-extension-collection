@@ -1274,9 +1274,13 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
           const data = event.data;
           if (!data || data.type !== CLOSE_REQUEST_MESSAGE_TYPE) return;
 
-          const iframe = document.getElementById(IFRAME_ID);
-          const iframeWin = iframe && iframe.contentWindow;
-          if (iframeWin && event.source !== iframeWin) return;
+          // Best-effort: only allow the request from our split-view iframe.
+          // In extension isolated worlds, direct WindowProxy equality can be unreliable.
+          try {
+            const src = event.source;
+            const fe = src && src.frameElement;
+            if (fe && String(fe.id || '') !== IFRAME_ID) return;
+          } catch {}
 
           if (!document.documentElement.classList.contains('qn-split-open')) return;
           closeSplit();

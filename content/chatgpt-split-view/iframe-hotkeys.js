@@ -276,6 +276,18 @@
 
   function requestCloseSplit() {
     try {
+      const doc = window.top && window.top.document;
+      const topbar = doc && doc.getElementById('qn-split-topbar');
+      const btns = topbar && topbar.querySelectorAll && topbar.querySelectorAll('button');
+      const closeBtn = btns && btns.length ? btns[btns.length - 1] : null;
+      if (closeBtn) {
+        closeBtn.click();
+        return;
+      }
+    } catch {}
+
+    // Fallback (in case the UI structure changes).
+    try {
       window.top.postMessage({ type: CLOSE_REQUEST_MESSAGE_TYPE }, location.origin);
     } catch {}
   }

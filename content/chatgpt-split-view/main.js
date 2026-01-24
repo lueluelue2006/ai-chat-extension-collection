@@ -37,7 +37,7 @@
   const BLANK_SRC = 'about:blank';
   const IFRAME_TWEAK_STYLE_ID = 'qn-split-iframe-tweaks';
 
-  const DEFAULT_RIGHT_WIDTH_PX = 520;
+  const DEFAULT_RIGHT_WIDTH_PX = 560;
   const MIN_RIGHT_WIDTH_PX = 320;
   const MAX_RIGHT_WIDTH_RATIO = 0.7;
 
@@ -150,7 +150,7 @@ html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
 #${PANE_ID}{
   position:absolute;
   top:0; right:0; bottom:0;
-  width: var(--qn-split-right-width, 520px);
+  width: var(--qn-split-right-width, ${DEFAULT_RIGHT_WIDTH_PX}px);
   min-width:${MIN_RIGHT_WIDTH_PX}px;
   max-width:${Math.round(MAX_RIGHT_WIDTH_RATIO * 100)}vw;
   background: var(--token-main-surface, #fff);
@@ -190,7 +190,7 @@ html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
 #${DIVIDER_ID}{
   position:absolute;
   top:0; bottom:0;
-  right: calc(var(--qn-split-right-width, 520px) - 5px);
+  right: calc(var(--qn-split-right-width, ${DEFAULT_RIGHT_WIDTH_PX}px) - 5px);
   width: 10px;
   cursor: col-resize;
   pointer-events:auto;
@@ -207,6 +207,11 @@ html.qn-split-open #${DIVIDER_ID}{ display:block; }
   box-shadow: 0 0 0 1px rgba(59,130,246,0.25);
 }
 html.qn-split-drag *{ cursor: col-resize !important; user-select:none !important; }
+
+/* Auto-hide ChatGPT left sidebar (only when we explicitly opt-in per-session). */
+html.qn-split-open.qn-split-hide-left-sidebar #stage-slideover-sidebar > div > div:not(#stage-sidebar-tiny-bar){
+  display: none !important;
+}
 
 /* Closed-state handle */
 #${HANDLE_ID}{
@@ -929,6 +934,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
   }
 
   function openSplit() {
+    try {
+      // If the user keeps the left sidebar open, split view becomes very cramped.
+      // Auto-collapse it on open, and restore it on close (only if we changed it).
+      maybeAutoCollapseLeftSidebar();
+    } catch {}
     const ui = ensureUI();
     applyRightWidthPx(loadRightWidthPx());
     ensureHostLayout(true);
@@ -944,6 +954,13 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     setOpen(false);
     ensureHostLayout(false);
     hideAsk();
+    // Best-effort restore: only when we are sure we're staying closed.
+    try {
+      setTimeout(() => {
+        if (document.documentElement.classList.contains('qn-split-open')) return;
+        maybeRestoreLeftSidebar();
+      }, 250);
+    } catch {}
     if (!UNLOAD_IFRAME_ON_CLOSE) return;
     try {
       // Only unload after we are sure we're closed (avoid a quick toggle flicker).
@@ -961,6 +978,67 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     const on = document.documentElement.classList.contains('qn-split-open');
     if (on) closeSplit();
     else openSplit();
+  }
+
+  // Sidebar auto-collapse (host page only)
+  let __qnSplitLeftSidebarRestoreWanted = false;
+  function isVisibleEl(el) {
+    try {
+      if (!el) return false;
+      if (el.nodeType !== 1) return false;
+      const rect = el.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const cs = window.getComputedStyle?.(el);
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function findExpandedSidebarPanel() {
+    // ChatGPT 2025/2026 UI: `#stage-slideover-sidebar` contains a tiny rail and an expanded panel sibling.
+    // We hide only the expanded panel so the tiny bar remains usable.
+    try {
+      const panels = Array.from(
+        document.querySelectorAll('#stage-slideover-sidebar > div > div:not(#stage-sidebar-tiny-bar)')
+      );
+      for (const el of panels) {
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width < 120 || rect.height < 120) continue;
+        return el;
+      }
+    } catch {}
+    return null;
+  }
+
+  function maybeAutoCollapseLeftSidebar() {
+    try {
+      if (window !== window.top) return false;
+    } catch {}
+
+    // If the expanded panel is visible, hide it while split view is open.
+    const panel = findExpandedSidebarPanel();
+    if (!panel || !isVisibleEl(panel)) return false;
+    try {
+      document.documentElement.classList.add('qn-split-hide-left-sidebar');
+      __qnSplitLeftSidebarRestoreWanted = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function maybeRestoreLeftSidebar() {
+    if (!__qnSplitLeftSidebarRestoreWanted) return false;
+    __qnSplitLeftSidebarRestoreWanted = false;
+
+    try {
+      document.documentElement.classList.remove('qn-split-hide-left-sidebar');
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function clearSplitViewStorage() {

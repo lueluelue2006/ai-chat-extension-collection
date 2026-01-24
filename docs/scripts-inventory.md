@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.60
-- Generated: 2026-01-24 07:11
+- Version: 1.1.62
+- Generated: 2026-01-24 08:47
 - Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -39,7 +39,7 @@
 - `chatgpt_thinking_toggle`: ChatGPT 推理强度快捷切换 — ⌘O 推理强度 / ⌘J 模型切换
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
-  - 注入: document_idle / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-thinking-toggle/main.js`
+  - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-thinking-toggle/main.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）

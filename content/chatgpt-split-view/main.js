@@ -34,14 +34,41 @@
   const TOPBAR_ID = 'qn-split-topbar';
   const ASK_ID = 'qn-split-ask';
 
+  const BLANK_SRC = 'about:blank';
+  const IFRAME_TWEAK_STYLE_ID = 'qn-split-iframe-tweaks';
+
   const DEFAULT_RIGHT_WIDTH_PX = 520;
   const MIN_RIGHT_WIDTH_PX = 320;
   const MAX_RIGHT_WIDTH_RATIO = 0.7;
 
   const DEFAULT_IFRAME_SRC = 'https://chatgpt.com/';
   const SELECTION_MAX_CHARS = 1600;
+  const UNLOAD_IFRAME_ON_CLOSE = true;
 
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+  const BLOCK_TAGS = new Set([
+    'P',
+    'DIV',
+    'LI',
+    'TR',
+    'TD',
+    'TH',
+    'SECTION',
+    'ARTICLE',
+    'HEADER',
+    'FOOTER',
+    'ASIDE',
+    'MAIN',
+    'NAV',
+    'H1',
+    'H2',
+    'H3',
+    'H4',
+    'H5',
+    'H6',
+    'PRE',
+    'BLOCKQUOTE'
+  ]);
 
   function readNumber(key, fallback) {
     try {
@@ -97,6 +124,11 @@
 /* When open, reposition QuickNav to stay on the left side of the divider. */
 html.qn-split-open #cgpt-compact-nav{
   right: calc(var(--qn-split-right-width, 0px) + 10px) !important;
+}
+
+/* Keep fixed bottom-right micro UIs on the left side while split view is open. */
+html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
+  right: calc(var(--qn-split-right-width, 0px) + 2px) !important;
 }
 
 #${PANE_ID}{
@@ -208,6 +240,47 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     document.documentElement.appendChild(style);
   }
 
+  function getDesiredIframeSrc(iframe) {
+    try {
+      const v = String(iframe?.dataset?.qnDesiredSrc || '').trim();
+      if (v) return v;
+    } catch {}
+    return readString(SRC_KEY, DEFAULT_IFRAME_SRC);
+  }
+
+  function setDesiredIframeSrc(iframe, url) {
+    const v = String(url || '').trim();
+    if (!v) return;
+    try {
+      if (iframe) iframe.dataset.qnDesiredSrc = v;
+    } catch {}
+    writeString(SRC_KEY, v);
+  }
+
+  function ensureIframeLoaded(iframe) {
+    if (!iframe) return false;
+    const desired = getDesiredIframeSrc(iframe);
+    if (!desired) return false;
+    const current = String(iframe.getAttribute('src') || iframe.src || '').trim();
+    if (!current || current === BLANK_SRC) {
+      try {
+        iframe.src = desired;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function unloadIframe(iframe) {
+    if (!iframe) return;
+    try {
+      const current = String(iframe.getAttribute('src') || iframe.src || '').trim();
+      if (!current || current === BLANK_SRC) return;
+      iframe.src = BLANK_SRC;
+    } catch {}
+  }
+
   function getMaxRightWidthPx() {
     return Math.max(MIN_RIGHT_WIDTH_PX, Math.floor(window.innerWidth * MAX_RIGHT_WIDTH_RATIO));
   }
@@ -228,6 +301,131 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       window.localStorage.setItem(WIDTH_KEY, String(v));
     } catch {}
     return v;
+  }
+
+  function findTexFromKatex(katexEl) {
+    // Avoid `instanceof Element` here: in extension isolated worlds, DOM wrappers can be cross-realm.
+    if (!katexEl || katexEl.nodeType !== 1) return null;
+    try {
+      const ann = katexEl.querySelector('annotation[encoding="application/x-tex"], annotation');
+      const raw = String(ann?.textContent || '').trim();
+      if (!raw) return null;
+      const isDisplay = katexEl.classList.contains('katex-display');
+      return isDisplay ? `$$${raw}$$` : `$${raw}$`;
+    } catch {
+      return null;
+    }
+  }
+
+  function transformFragmentForText(frag) {
+    if (!frag || typeof frag.querySelectorAll !== 'function') return false;
+    let changed = false;
+
+    // Prefer replacing the full KaTeX root to avoid duplicated text (katex-html + katex-mathml).
+    const roots = frag.querySelectorAll('.katex');
+    for (const el of Array.from(roots)) {
+      const tex = findTexFromKatex(el);
+      if (!tex) continue;
+      try {
+        el.replaceWith(document.createTextNode(tex));
+        changed = true;
+      } catch {}
+    }
+
+    // Fallback: some ranges clone only KaTeX internals (no `.katex` wrapper). Handle `.katex-mathml`.
+    const mathmlList = frag.querySelectorAll('.katex-mathml');
+    for (const el of Array.from(mathmlList)) {
+      try {
+        if (el.closest && el.closest('.katex')) continue; // already handled via root replacement
+      } catch {}
+
+      const parent = el.parentNode;
+      let raw = '';
+      try {
+        const ann = el.querySelector('annotation[encoding="application/x-tex"], annotation');
+        raw = String(ann?.textContent || '').trim();
+      } catch {}
+      if (!raw) continue;
+
+      let isDisplay = false;
+      try {
+        isDisplay = !!(el.closest && el.closest('.katex-display'));
+      } catch {}
+      const tex = isDisplay ? `$$${raw}$$` : `$${raw}$`;
+
+      try {
+        el.replaceWith(document.createTextNode(tex));
+        changed = true;
+      } catch {}
+
+      // Best-effort: remove possible `.katex-html` siblings in the same subtree to avoid duplicates.
+      try {
+        if (parent && parent.nodeType === 1 && parent.querySelectorAll) {
+          for (const sib of Array.from(parent.querySelectorAll('.katex-html'))) sib.remove();
+        }
+      } catch {}
+    }
+
+    return changed;
+  }
+
+  function fragmentTextWithNewlines(root) {
+    let out = '';
+    const ensureTrailingNewline = () => {
+      if (out && !out.endsWith('\n')) out += '\n';
+    };
+
+    const walk = (node) => {
+      if (!node) return;
+      const t = node.nodeType;
+
+      // Text node
+      if (t === 3) {
+        out += node.nodeValue || '';
+        return;
+      }
+
+      // Element / Fragment
+      if (t !== 1 && t !== 11) return;
+
+      if (t === 1) {
+        const tag = node.tagName;
+        if (tag === 'BR') {
+          out += '\n';
+          return;
+        }
+
+        const isBlock = BLOCK_TAGS.has(tag);
+        if (isBlock) ensureTrailingNewline();
+        for (const child of Array.from(node.childNodes || [])) walk(child);
+        if (isBlock) ensureTrailingNewline();
+        return;
+      }
+
+      // DocumentFragment
+      for (const child of Array.from(node.childNodes || [])) walk(child);
+    };
+
+    walk(root);
+    return String(out)
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function selectionToCleanText(sel) {
+    try {
+      if (!sel || sel.rangeCount <= 0) return '';
+      const range = sel.getRangeAt(0);
+      if (!range) return String(sel.toString() || '').trim();
+
+      const frag = range.cloneContents();
+      transformFragmentForText(frag);
+      return fragmentTextWithNewlines(frag);
+    } catch {
+      return String(sel?.toString?.() || '').trim();
+    }
   }
 
   function setOpen(open) {
@@ -272,7 +470,23 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
       const iframe = document.createElement('iframe');
       iframe.id = IFRAME_ID;
-      iframe.src = readString(SRC_KEY, DEFAULT_IFRAME_SRC);
+      // IMPORTANT: don't load ChatGPT until the user actually opens split view.
+      // This avoids doubling memory/CPU just by enabling the module.
+      iframe.src = BLANK_SRC;
+      try {
+        iframe.loading = 'lazy';
+      } catch {}
+      setDesiredIframeSrc(iframe, readString(SRC_KEY, DEFAULT_IFRAME_SRC));
+      iframe.addEventListener(
+        'load',
+        () => {
+          try {
+            if (!document.documentElement.classList.contains('qn-split-open')) return;
+            void ensureIframeTweaks();
+          } catch {}
+        },
+        true
+      );
 
       pane.appendChild(topbar);
       pane.appendChild(iframe);
@@ -281,17 +495,15 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       btnClose.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        setOpen(false);
+        closeSplit();
       });
 
       btnNew.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         const url = DEFAULT_IFRAME_SRC;
-        try {
-          iframe.src = url;
-        } catch {}
-        writeString(SRC_KEY, url);
+        setDesiredIframeSrc(iframe, url);
+        ensureIframeLoaded(iframe);
       });
     }
 
@@ -383,19 +595,61 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     return { root, pane, divider, handle, ask };
   }
 
+  async function ensureIframeTweaks() {
+    try {
+      const iframe = document.getElementById(IFRAME_ID);
+      if (!iframe) return false;
+      const current = String(iframe.getAttribute('src') || iframe.src || '').trim();
+      if (!current || current === BLANK_SRC) return false;
+      await waitForIframeReady(iframe, 9000);
+      const doc = iframe.contentDocument;
+      if (!doc) return false;
+      try {
+        const href = String(doc.location?.href || '');
+        if (!href || href === BLANK_SRC) return false;
+      } catch {}
+      const css = `
+        #thread-bottom-container [class*="vt-disclaimer"],
+        div.text-token-text-secondary.min-h-8.text-xs[class*="md:px-"] {
+          display: none !important;
+        }
+      `;
+      let style = doc.getElementById(IFRAME_TWEAK_STYLE_ID);
+      if (!style) {
+        style = doc.createElement('style');
+        style.id = IFRAME_TWEAK_STYLE_ID;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      style.textContent = css;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function openSplit() {
     const ui = ensureUI();
     applyRightWidthPx(loadRightWidthPx());
     setOpen(true);
-
     try {
       const iframe = ui.pane.querySelector(`#${IFRAME_ID}`);
-      if (iframe && iframe.src) writeString(SRC_KEY, iframe.src);
+      ensureIframeLoaded(iframe);
     } catch {}
+    void ensureIframeTweaks();
   }
 
   function closeSplit() {
     setOpen(false);
+    hideAsk();
+    if (!UNLOAD_IFRAME_ON_CLOSE) return;
+    try {
+      const iframe = document.getElementById(IFRAME_ID);
+      // Only unload after we are sure we're closed (avoid a quick toggle flicker).
+      setTimeout(() => {
+        if (document.documentElement.classList.contains('qn-split-open')) return;
+        unloadIframe(iframe);
+      }, 250);
+    } catch {}
   }
 
   function toggleSplit() {
@@ -441,7 +695,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const sel = window.getSelection && window.getSelection();
       if (!sel || sel.rangeCount <= 0) return null;
 
-      const text = String(sel.toString() || '').trim();
+      const text = selectionToCleanText(sel);
       if (!text) return null;
       if (text.length > SELECTION_MAX_CHARS) return null;
 
@@ -475,7 +729,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     while (Date.now() - started < timeoutMs) {
       try {
         const doc = iframe && iframe.contentDocument;
-        if (doc && doc.readyState === 'complete') return true;
+        const href = String(doc?.location?.href || '');
+        if (doc && doc.readyState === 'complete' && href && href !== BLANK_SRC) return true;
       } catch {}
       await wait(200);
     }
@@ -487,6 +742,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const iframe = document.getElementById(IFRAME_ID);
       if (!iframe) return false;
 
+      ensureIframeLoaded(iframe);
       await waitForIframeReady(iframe, 9000);
 
       const doc = iframe.contentDocument;
@@ -496,25 +752,30 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const prompt = doc.querySelector('#prompt-textarea');
       if (!prompt) return false;
 
-      const lines = String(text || '')
-        .split(/\r?\n/)
-        .map((l) => `> ${l}`);
-      const msg = `${lines.join('\n')}\n\n`;
+      const msg = `${String(text || '').trim()}\n\n`;
 
       prompt.focus();
 
-      // ChatGPT currently uses a textarea (#prompt-textarea), but keep this generic.
-      if (typeof prompt.value === 'string') prompt.value = msg;
-      else prompt.textContent = msg;
+      // Prefer execCommand to preserve newlines for contenteditable prompts.
+      let ok = false;
+      try {
+        if (typeof doc.execCommand === 'function') {
+          try {
+            doc.execCommand('selectAll', false);
+          } catch {}
+          ok = !!doc.execCommand('insertText', false, msg);
+        }
+      } catch {}
 
       try {
-        const InputEv = win.InputEvent || window.InputEvent;
-        prompt.dispatchEvent(
-          new InputEv('input', { bubbles: true, inputType: 'insertText', data: msg })
-        );
+        if (!ok) prompt.textContent = msg;
+      } catch {}
+
+      try {
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
       } catch {
         try {
-          prompt.dispatchEvent(new Event('input', { bubbles: true }));
+          // ignore
         } catch {}
       }
 

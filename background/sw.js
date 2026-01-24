@@ -291,7 +291,8 @@
       moduleId: 'chatgpt_thinking_toggle',
       matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-thinking-toggle/main.js'],
-      runAt: 'document_idle',
+      // Needs to grab Cmd+O / Cmd+J early, otherwise the browser's Cmd+O may win (Open File...).
+      runAt: 'document_start',
       world: 'MAIN'
     },
     {
@@ -630,9 +631,33 @@
     return DEFAULT_SETTINGS.siteModules?.[siteId]?.[moduleId] === true;
   }
 
+  const CHATGPT_SPLIT_VIEW_IFRAME_MODULE_IDS = new Set([
+    // Keep this list tight: only enable iframe injection for modules that are useful in split view.
+    'chatgpt_thinking_toggle',
+    'chatgpt_cmdenter_send',
+    'chatgpt_readaloud_speed_controller',
+    'chatgpt_reply_timer',
+    'chatgpt_usage_monitor',
+    'chatgpt_download_file_fix',
+    'chatgpt_strong_highlight_lite',
+    'chatgpt_quick_deep_search',
+    'chatgpt_hide_feedback_buttons',
+    'chatgpt_tex_copy_quote'
+  ]);
+
   function getEnabledContentScriptDefs(settings) {
     if (!settings?.enabled) return [];
-    return CONTENT_SCRIPT_DEFS.filter((d) => isModuleEnabled(settings, d.siteId, d.moduleId));
+    const splitViewOn = isModuleEnabled(settings, 'chatgpt', 'chatgpt_split_view');
+    const out = [];
+    for (const d of CONTENT_SCRIPT_DEFS) {
+      if (!isModuleEnabled(settings, d.siteId, d.moduleId)) continue;
+      if (splitViewOn && d.siteId === 'chatgpt' && CHATGPT_SPLIT_VIEW_IFRAME_MODULE_IDS.has(d.moduleId)) {
+        out.push({ ...d, allFrames: true });
+        continue;
+      }
+      out.push(d);
+    }
+    return out;
   }
 
   const URL_PATTERN_RE_CACHE = new Map();
@@ -673,9 +698,8 @@
         }
         chrome.scripting.executeScript(
           {
-            target: { tabId },
+            target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
             files: rule.js,
-            ...(rule.allFrames ? { allFrames: true } : {}),
             ...(rule.world ? { world: rule.world } : {})
           },
           () => void chrome.runtime.lastError
@@ -704,7 +728,7 @@
               if (rule.css?.length) {
                 chrome.scripting.insertCSS(
                   {
-                    target: { tabId },
+                    target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
                     files: rule.css
                   },
                   () => void chrome.runtime.lastError
@@ -712,9 +736,8 @@
               }
               chrome.scripting.executeScript(
                 {
-                  target: { tabId },
+                  target: { tabId, ...(rule.allFrames ? { allFrames: true } : {}) },
                   files: rule.js,
-                  ...(rule.allFrames ? { allFrames: true } : {}),
                   ...(rule.world ? { world: rule.world } : {})
                 },
                 () => void chrome.runtime.lastError

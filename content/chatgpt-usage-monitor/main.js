@@ -563,6 +563,11 @@
   // If set to true/false, it forces the monitor to always be silent/visible.
   // Keep null to allow the user to toggle via stored usageData.silentMode.
   var SILENT_MODE = null;
+  // In split-view iframes we never want a second monitor UI.
+  try {
+    if (window !== window.top) SILENT_MODE = true;
+  } catch {
+  }
 
   // src/utils.js
   function formatTimeAgo(timestamp) {

@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.58
-- Generated: 2026-01-23 21:51
+- Version: 1.1.59
+- Generated: 2026-01-24 07:05
 - Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -12,7 +12,7 @@
 当前 registry 标注了菜单预览（menuPreview）的模块：
 
 - `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天/31天）” / “清理无效收藏”）
-- `chatgpt_usage_monitor`: ChatGPT 用量统计（“重置监视器位置” / “导出用量统计数据” / “导入用量统计数据”）
+- `chatgpt_usage_monitor`: ChatGPT 用量统计（“重置监视器位置” / “切换静默模式（隐藏/显示面板）” / “导出用量统计数据” / “导入用量统计数据”）
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
 
 ## Sites

@@ -129,7 +129,7 @@
       name: 'ChatGPT 用量统计',
       sub: '实时统计各模型调用量，支持导入/导出与分析报告',
       hotkeys: ['⌘I', 'Ctrl+I'],
-      menuPreview: ['重置监视器位置', '导出用量统计数据', '导入用量统计数据'],
+      menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
       authors: ['tizee（原始脚本）', 'schweigen（修改）', 'lueluelue2006（MV3 适配/集成）'],
       license: 'MIT',
       upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'

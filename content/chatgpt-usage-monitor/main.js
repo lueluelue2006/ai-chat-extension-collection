@@ -506,7 +506,9 @@
   }
 
   // src/userConfig.js
-  var SILENT_MODE = false;
+  // If set to true/false, it forces the monitor to always be silent/visible.
+  // Keep null to allow the user to toggle via stored usageData.silentMode.
+  var SILENT_MODE = null;
 
   // src/utils.js
   function formatTimeAgo(timestamp) {
@@ -3794,6 +3796,20 @@
           alert("监视器重置完成。如果没有看到监视器，请刷新页面。");
         }
       }, 500);
+    });
+    GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", () => {
+      const current = Storage.get();
+      const nextSilent = !current?.silentMode;
+      Storage.update((data) => {
+        data.silentMode = nextSilent;
+        if (nextSilent) data.minimized = false;
+      });
+      const existingMonitor = document.getElementById("chatUsageMonitor");
+      if (existingMonitor) existingMonitor.remove();
+      scheduleInitialize(50);
+      try {
+        console.log(`[monitor] Silent mode: ${nextSilent ? "ON" : "OFF"}`);
+      } catch {}
     });
     GM_registerMenuCommand("导出用量统计数据", exportUsageData);
     GM_registerMenuCommand("导入用量统计数据", importUsageData);

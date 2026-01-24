@@ -29,9 +29,13 @@
   // Only run inside the split-view iframe.
   if (!isSplitViewIframe()) return;
 
+  const DOUBLE_ESC_WINDOW_MS = 420;
+  const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
+
   const HOTKEY_COOLDOWN_MS = 120;
   let busy = false;
   let lastHotkeyAt = 0;
+  let lastEscAt = 0;
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -270,6 +274,37 @@
     if (item) clickLikeUser(item);
   }
 
+  function requestCloseSplit() {
+    try {
+      window.top.postMessage({ type: CLOSE_REQUEST_MESSAGE_TYPE }, location.origin);
+    } catch {}
+  }
+
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      try {
+        if (!event) return;
+        if (event.key !== 'Escape') return;
+        if (event.repeat) return;
+
+        const now = Date.now();
+        if (now - lastEscAt < DOUBLE_ESC_WINDOW_MS) {
+          lastEscAt = 0;
+          requestCloseSplit();
+          event.preventDefault();
+          event.stopPropagation();
+          try {
+            event.stopImmediatePropagation();
+          } catch {}
+          return;
+        }
+        lastEscAt = now;
+      } catch {}
+    },
+    true
+  );
+
   window.addEventListener(
     'keydown',
     (event) => {
@@ -298,4 +333,3 @@
     true
   );
 })();
-

@@ -37,6 +37,9 @@
   const BLANK_SRC = 'about:blank';
   const IFRAME_TWEAK_STYLE_ID = 'qn-split-iframe-tweaks';
 
+  const DOUBLE_ESC_WINDOW_MS = 420;
+  const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
+
   const DEFAULT_RIGHT_WIDTH_PX = 560;
   const MIN_RIGHT_WIDTH_PX = 320;
   const MAX_RIGHT_WIDTH_RATIO = 0.7;
@@ -645,7 +648,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const btnClose = document.createElement('button');
       btnClose.type = 'button';
       btnClose.textContent = 'Close';
-      btnClose.title = 'Close split view (Esc)';
+      btnClose.title = 'Close split view (Esc×2)';
 
       topbar.appendChild(btnNew);
       topbar.appendChild(btnClose);
@@ -1226,6 +1229,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     if (window.__qnSplitBound) return;
     window.__qnSplitBound = true;
 
+    let lastEscAt = 0;
+
     window.addEventListener(
       'keydown',
       (e) => {
@@ -1233,7 +1238,19 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
           if (!e) return;
 
           if (e.key === 'Escape' && document.documentElement.classList.contains('qn-split-open')) {
-            closeSplit();
+            if (e.repeat) return;
+            const now = Date.now();
+            if (now - lastEscAt < DOUBLE_ESC_WINDOW_MS) {
+              lastEscAt = 0;
+              closeSplit();
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                e.stopImmediatePropagation();
+              } catch {}
+              return;
+            }
+            lastEscAt = now;
           }
 
           // Alt+Shift+S toggles (best-effort; do not override inside inputs).
@@ -1244,6 +1261,25 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
             toggleSplit();
             e.preventDefault();
           }
+        } catch {}
+      },
+      true
+    );
+
+    window.addEventListener(
+      'message',
+      (event) => {
+        try {
+          if (!event || event.origin !== location.origin) return;
+          const data = event.data;
+          if (!data || data.type !== CLOSE_REQUEST_MESSAGE_TYPE) return;
+
+          const iframe = document.getElementById(IFRAME_ID);
+          const iframeWin = iframe && iframe.contentWindow;
+          if (iframeWin && event.source !== iframeWin) return;
+
+          if (!document.documentElement.classList.contains('qn-split-open')) return;
+          closeSplit();
         } catch {}
       },
       true

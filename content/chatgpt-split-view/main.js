@@ -707,9 +707,27 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
   function restoreHostLayout(el) {
     const node = el && el.nodeType === 1 ? el : null;
     if (!node) return;
+    const looksPatched = () => {
+      try {
+        const pr = String(node.style?.paddingRight || '');
+        if (pr.includes('--qn-split-right-width')) return true;
+      } catch {}
+      return false;
+    };
+
+    // If our dataset markers are gone (some SPA re-renders/clones), we still want to undo the padding.
+    // We only touch nodes that clearly look like ours.
     try {
-      if (node.dataset?.qnSplitHostPatched !== '1') return;
+      if (node.dataset?.qnSplitHostPatched !== '1') {
+        if (!looksPatched()) return;
+        try { node.style.paddingRight = ''; } catch {}
+        try { node.style.boxSizing = ''; } catch {}
+        return;
+      }
     } catch {
+      if (!looksPatched()) return;
+      try { node.style.paddingRight = ''; } catch {}
+      try { node.style.boxSizing = ''; } catch {}
       return;
     }
 
@@ -730,6 +748,15 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       try {
         document.querySelectorAll('[data-qn-split-host-patched="1"]').forEach(restoreHostLayout);
       } catch {}
+      // Safety net: if the SPA stripped our data marker but left the padding, clean it up.
+      try {
+        for (const el of Array.from(document.body?.children || [])) {
+          if (!el || el.nodeType !== 1) continue;
+          if (el.id === ROOT_ID) continue;
+          if (el.id === 'cgpt-compact-nav') continue;
+          restoreHostLayout(el);
+        }
+      } catch {}
       return;
     }
 
@@ -741,6 +768,17 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       document.querySelectorAll('[data-qn-split-host-patched="1"]').forEach((n) => {
         if (n !== root) restoreHostLayout(n);
       });
+    } catch {}
+
+    // Also clear any stray padding markers (in case a re-render dropped our dataset attributes).
+    try {
+      for (const el of Array.from(document.body?.children || [])) {
+        if (!el || el.nodeType !== 1) continue;
+        if (el === root) continue;
+        if (el.id === ROOT_ID) continue;
+        if (el.id === 'cgpt-compact-nav') continue;
+        restoreHostLayout(el);
+      }
     } catch {}
 
     try {

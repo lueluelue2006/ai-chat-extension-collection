@@ -48,14 +48,68 @@
     }
   }
 
+  const __aichatMainMenuRegisterEvent = '__quicknav_menu_bridge_register_main_command_v1__';
+  const __aichatMainMenuRunEvent = '__quicknav_menu_bridge_run_main_command_v1__';
+  const __aichatMainMenuGroup = 'ChatGPT 用量统计';
+  const __aichatMainMenuHandlers = (() => {
+    try {
+      const k = '__aichat_chatgpt_usage_monitor_main_menu_handlers_v1__';
+      const prev = window[k];
+      if (prev && typeof prev === 'object') return prev;
+      const next = Object.create(null);
+      Object.defineProperty(window, k, { value: next, configurable: true, enumerable: false, writable: false });
+      return next;
+    } catch {
+      return Object.create(null);
+    }
+  })();
+
+  function __aichatDispatchMainMenuRegister(name, handlerKey) {
+    const detail = { name, handlerKey, group: __aichatMainMenuGroup };
+    try {
+      window.dispatchEvent(new CustomEvent(__aichatMainMenuRegisterEvent, { detail }));
+    } catch {}
+  }
+
+  // Register a MAIN-world handler with the isolated-world menu bridge (via CustomEvent).
   function GM_registerMenuCommand(name, fn) {
+    const n = String(name || '').trim();
+    if (!n || typeof fn !== 'function') return null;
+
+    // In some environments, isolated-world functions aren't callable from MAIN world. We keep this as best-effort.
     try {
       const reg = window.__quicknavRegisterMenuCommand;
-      if (typeof reg === 'function') return reg(name, fn);
+      if (typeof reg === 'function') return reg(n, fn);
     } catch {}
-    // Fallback: the monitor UI already provides buttons for the main actions.
-    return null;
+
+    const handlerKey = `chatgpt_usage_monitor:${n}`;
+    __aichatMainMenuHandlers[handlerKey] = fn;
+
+    __aichatDispatchMainMenuRegister(n, handlerKey);
+    // Retry in case the menu bridge isn't ready yet (both run at document_start).
+    setTimeout(() => __aichatDispatchMainMenuRegister(n, handlerKey), 500);
+    setTimeout(() => __aichatDispatchMainMenuRegister(n, handlerKey), 1500);
+    return handlerKey;
   }
+
+  // Receive run requests from the isolated-world menu proxy.
+  try {
+    if (!window.__aichatChatGptUsageMonitorMainMenuListenerInstalled) {
+      window.__aichatChatGptUsageMonitorMainMenuListenerInstalled = true;
+      window.addEventListener(
+        __aichatMainMenuRunEvent,
+        (e) => {
+          try {
+            const d = e?.detail && typeof e.detail === 'object' ? e.detail : {};
+            const handlerKey = String(d.handlerKey || '').trim();
+            const fn = handlerKey ? __aichatMainMenuHandlers[handlerKey] : null;
+            if (typeof fn === 'function') fn();
+          } catch {}
+        },
+        true
+      );
+    }
+  } catch {}
 
   // src/config.js
   var COLORS = {

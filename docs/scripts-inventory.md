@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.59
-- Generated: 2026-01-24 07:05
+- Version: 1.1.60
+- Generated: 2026-01-24 07:11
 - Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？

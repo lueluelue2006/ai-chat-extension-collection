@@ -8,6 +8,12 @@
   // This is an internal API for this extension (not a userscript compatibility layer).
   const STATE_KEY = '__quicknav_menu_bridge_state_v1__';
   const REGISTER_FN_KEY = '__quicknavRegisterMenuCommand';
+  // Bridge MAIN-world modules that can't directly share function references with the isolated world.
+  // MAIN -> isolated: register command
+  // isolated -> MAIN: run command
+  const MAIN_MENU_REGISTER_EVENT = '__quicknav_menu_bridge_register_main_command_v1__';
+  const MAIN_MENU_RUN_EVENT = '__quicknav_menu_bridge_run_main_command_v1__';
+  const MAIN_MENU_SOURCE = 'main-world';
   /** @type {{commands: Array<{id: string, name: string, fn: Function, group?: string, source?: string}>, nextId: number, listenerInstalled: boolean, __deduped?: boolean}} */
   const state = (() => {
     try {
@@ -103,6 +109,44 @@
       };
       register.__quicknav_menu_bridge = true;
       window[REGISTER_FN_KEY] = register;
+    }
+  } catch {}
+
+  // MAIN-world menu command bridge (via CustomEvent).
+  // Note: We store only {name, group, handlerKey}; the actual handler lives in MAIN world.
+  try {
+    if (!state.__mainMenuBridgeInstalled) {
+      state.__mainMenuBridgeInstalled = true;
+      window.addEventListener(
+        MAIN_MENU_REGISTER_EVENT,
+        (e) => {
+          try {
+            const d = e?.detail && typeof e.detail === 'object' ? e.detail : {};
+            const name = String(d.name || '').trim();
+            const handlerKey = String(d.handlerKey || '').trim();
+            const group = String(d.group || 'Main').trim() || 'Main';
+            if (!name || !handlerKey) return;
+
+            const runProxy = () => {
+              try {
+                window.dispatchEvent(new CustomEvent(MAIN_MENU_RUN_EVENT, { detail: { handlerKey } }));
+              } catch {}
+            };
+
+            // De-dupe (group+name) and update handlerKey if re-registered.
+            const existingCmd = state.commands.find((c) => c && c.source === MAIN_MENU_SOURCE && c.group === group && c.name === name);
+            if (existingCmd) {
+              existingCmd.fn = runProxy;
+              existingCmd.handlerKey = handlerKey;
+              return;
+            }
+
+            const id = String(state.nextId++);
+            state.commands.push({ id, name, fn: runProxy, group, source: MAIN_MENU_SOURCE, handlerKey });
+          } catch {}
+        },
+        true
+      );
     }
   } catch {}
 

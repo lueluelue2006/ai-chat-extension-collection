@@ -245,6 +245,7 @@
   function mapGroupToModuleId(group, activeSiteId) {
     const g = String(group || '');
     if (/对话导出/.test(g)) return 'chatgpt_export_conversation';
+    if (/用量统计/.test(g)) return 'chatgpt_usage_monitor';
     if (/QuickNav/.test(g)) return 'quicknav';
     // Future: map more groups to module ids here.
     return null;

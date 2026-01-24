@@ -46,6 +46,8 @@
   const UNLOAD_IFRAME_ON_CLOSE = true;
   const DESTROY_IFRAME_ON_CLOSE = true;
 
+  let desiredOpen = false;
+
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const BLOCK_TAGS = new Set([
     'P',
@@ -485,11 +487,18 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     }
   }
 
-  function setOpen(open) {
-    const on = !!open;
+  function applyDomOpenState(on) {
     const pane = document.getElementById(PANE_ID);
     if (pane) pane.dataset.open = on ? '1' : '0';
-    document.documentElement.classList.toggle('qn-split-open', on);
+    try {
+      document.documentElement.classList.toggle('qn-split-open', !!on);
+    } catch {}
+  }
+
+  function setOpen(open) {
+    const on = !!open;
+    desiredOpen = on;
+    applyDomOpenState(on);
     writeBool(OPEN_KEY, on);
   }
 
@@ -986,6 +995,79 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     );
   }
 
+
+  function ensureOpenStateGuards() {
+    if (window.__qnSplitOpenStateGuard) return;
+    window.__qnSplitOpenStateGuard = true;
+
+    // Track desired state from storage on first run.
+    try { desiredOpen = readBool(OPEN_KEY, false); } catch {}
+
+    if (typeof MutationObserver !== 'function') return;
+
+    // 1) Some sites rewrite `html.className` (theme, etc.). Keep our open flag stable.
+    try {
+      const html = document.documentElement;
+      if (html) {
+        let repairing = false;
+        const mo = new MutationObserver(() => {
+          if (repairing) return;
+          if (!html) return;
+          const has = html.classList.contains('qn-split-open');
+          if (desiredOpen && !has) {
+            repairing = true;
+            applyDomOpenState(true);
+            try { ensureHostLayout(true); } catch {}
+            repairing = false;
+          }
+          if (!desiredOpen && has) {
+            repairing = true;
+            applyDomOpenState(false);
+            try { ensureHostLayout(false); } catch {}
+            repairing = false;
+          }
+        });
+        mo.observe(html, { attributes: true, attributeFilter: ['class'] });
+      }
+    } catch {}
+
+    // 2) The host container can get its inline styles reset by SPA re-renders.
+    try {
+      let currentRoot = null;
+      let rootMo = null;
+
+      const watchRoot = () => {
+        if (!desiredOpen) return;
+        const nextRoot = findHostAppRoot();
+        if (!nextRoot || nextRoot === currentRoot) return;
+
+        try { rootMo && rootMo.disconnect(); } catch {}
+        currentRoot = nextRoot;
+
+        try {
+          rootMo = new MutationObserver(() => {
+            if (!desiredOpen) return;
+            // Re-apply layout if the app overwrote our inline styles.
+            ensureHostLayout(true);
+          });
+          rootMo.observe(currentRoot, { attributes: true, attributeFilter: ['style', 'class'] });
+        } catch {}
+      };
+
+      // Observe body child changes (root swaps) and also run once.
+      const body = document.body;
+      if (body) {
+        const bodyMo = new MutationObserver(() => {
+          watchRoot();
+          if (desiredOpen) ensureHostLayout(true);
+        });
+        bodyMo.observe(body, { childList: true });
+      }
+
+      watchRoot();
+    } catch {}
+  }
+
   function ensureUiResilience() {
     if (window.__qnSplitUiGuard) return;
     window.__qnSplitUiGuard = true;
@@ -1033,6 +1115,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     ensureUI();
     applyRightWidthPx(loadRightWidthPx());
     bindGlobalEvents();
+    ensureOpenStateGuards();
     ensureUiResilience();
 
     const persistedOpen = readBool(OPEN_KEY, false);

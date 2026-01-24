@@ -4,6 +4,28 @@
   const HUB_KEY = '__aichat_chatgpt_fetch_hub_v1__';
   const FETCH_PATCH_FLAG = '__aichatChatGPTFetchHubPatchedV1__';
 
+  // When split-view is enabled, some modules are injected with `allFrames: true`.
+  // Avoid patching fetch in every internal ChatGPT iframe: only allow top-frame
+  // (normal usage) and our split-view iframe.
+  const isAllowedFrame = (() => {
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    if (!inIframe) return true;
+
+    try {
+      const fe = window.frameElement;
+      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!isAllowedFrame) return;
+
   try {
     const existing = window[HUB_KEY];
     if (existing && typeof existing === 'object' && existing.__installed) {

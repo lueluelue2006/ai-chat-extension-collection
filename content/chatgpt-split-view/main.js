@@ -44,6 +44,7 @@
   const DEFAULT_IFRAME_SRC = 'https://chatgpt.com/';
   const SELECTION_MAX_CHARS = 1600;
   const UNLOAD_IFRAME_ON_CLOSE = true;
+  const DESTROY_IFRAME_ON_CLOSE = true;
 
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const BLOCK_TAGS = new Set([
@@ -237,7 +238,56 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 #${ASK_ID}:hover{ background: rgba(2,132,199,0.95); }
 #${ASK_ID}:active{ transform: translateY(1px); }
 `;
-    document.documentElement.appendChild(style);
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function createSplitIframe() {
+    const iframe = document.createElement('iframe');
+    iframe.id = IFRAME_ID;
+    // IMPORTANT: don't load ChatGPT until the user actually opens split view.
+    // This avoids doubling memory/CPU just by enabling the module.
+    iframe.src = BLANK_SRC;
+    try {
+      iframe.loading = 'lazy';
+    } catch {}
+    setDesiredIframeSrc(iframe, readString(SRC_KEY, DEFAULT_IFRAME_SRC));
+    iframe.addEventListener(
+      'load',
+      () => {
+        try {
+          if (!document.documentElement.classList.contains('qn-split-open')) return;
+          void ensureIframeTweaks();
+        } catch {}
+      },
+      true
+    );
+    return iframe;
+  }
+
+  function ensurePaneIframe(pane) {
+    if (!pane) return null;
+    let iframe = pane.querySelector(`#${IFRAME_ID}`);
+    if (iframe) return iframe;
+    iframe = createSplitIframe();
+    pane.appendChild(iframe);
+    return iframe;
+  }
+
+  function destroyPaneIframe(pane) {
+    if (!pane) return false;
+    const iframe = pane.querySelector(`#${IFRAME_ID}`);
+    if (!iframe) return false;
+    try {
+      iframe.src = BLANK_SRC;
+    } catch {}
+    try {
+      iframe.remove();
+    } catch {
+      try {
+        pane.removeChild(iframe);
+      } catch {}
+    }
+    return true;
   }
 
   function getDesiredIframeSrc(iframe) {
@@ -443,7 +493,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     if (!root) {
       root = document.createElement('div');
       root.id = ROOT_ID;
-      document.documentElement.appendChild(root);
+      (document.body || document.documentElement).appendChild(root);
     }
 
     let pane = document.getElementById(PANE_ID);
@@ -468,28 +518,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       topbar.appendChild(btnNew);
       topbar.appendChild(btnClose);
 
-      const iframe = document.createElement('iframe');
-      iframe.id = IFRAME_ID;
-      // IMPORTANT: don't load ChatGPT until the user actually opens split view.
-      // This avoids doubling memory/CPU just by enabling the module.
-      iframe.src = BLANK_SRC;
-      try {
-        iframe.loading = 'lazy';
-      } catch {}
-      setDesiredIframeSrc(iframe, readString(SRC_KEY, DEFAULT_IFRAME_SRC));
-      iframe.addEventListener(
-        'load',
-        () => {
-          try {
-            if (!document.documentElement.classList.contains('qn-split-open')) return;
-            void ensureIframeTweaks();
-          } catch {}
-        },
-        true
-      );
-
       pane.appendChild(topbar);
-      pane.appendChild(iframe);
+      pane.appendChild(createSplitIframe());
       root.appendChild(pane);
 
       btnClose.addEventListener('click', (e) => {
@@ -502,8 +532,9 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
         e.preventDefault();
         e.stopPropagation();
         const url = DEFAULT_IFRAME_SRC;
-        setDesiredIframeSrc(iframe, url);
-        ensureIframeLoaded(iframe);
+        const currentIframe = ensurePaneIframe(pane);
+        setDesiredIframeSrc(currentIframe, url);
+        ensureIframeLoaded(currentIframe);
       });
     }
 
@@ -530,11 +561,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     let ask = document.getElementById(ASK_ID);
     if (!ask) {
       ask = document.createElement('button');
-      ask.id = ASK_ID;
-      ask.type = 'button';
-      ask.textContent = 'Ask';
+    ask.id = ASK_ID;
+    ask.type = 'button';
+    ask.textContent = 'Ask';
       ask.title = 'Quote selection into the right ChatGPT pane';
-      document.documentElement.appendChild(ask);
+      (document.body || document.documentElement).appendChild(ask);
     }
 
     // Divider drag logic (only when open).
@@ -632,7 +663,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     applyRightWidthPx(loadRightWidthPx());
     setOpen(true);
     try {
-      const iframe = ui.pane.querySelector(`#${IFRAME_ID}`);
+      const iframe = ensurePaneIframe(ui.pane);
       ensureIframeLoaded(iframe);
     } catch {}
     void ensureIframeTweaks();
@@ -643,11 +674,13 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     hideAsk();
     if (!UNLOAD_IFRAME_ON_CLOSE) return;
     try {
-      const iframe = document.getElementById(IFRAME_ID);
       // Only unload after we are sure we're closed (avoid a quick toggle flicker).
       setTimeout(() => {
         if (document.documentElement.classList.contains('qn-split-open')) return;
+        const pane = document.getElementById(PANE_ID);
+        const iframe = pane && pane.querySelector(`#${IFRAME_ID}`);
         unloadIframe(iframe);
+        if (DESTROY_IFRAME_ON_CLOSE && pane) destroyPaneIframe(pane);
       }, 250);
     } catch {}
   }
@@ -739,7 +772,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
   async function prefillRightPrompt(text) {
     try {
-      const iframe = document.getElementById(IFRAME_ID);
+      const pane = document.getElementById(PANE_ID);
+      const iframe = pane && pane.querySelector(`#${IFRAME_ID}`);
       if (!iframe) return false;
 
       ensureIframeLoaded(iframe);
@@ -849,11 +883,52 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     );
   }
 
+  function ensureUiResilience() {
+    if (window.__qnSplitUiGuard) return;
+    window.__qnSplitUiGuard = true;
+    if (typeof MutationObserver !== 'function') return;
+    const target = document.body;
+    if (!target) return;
+
+    let timer = 0;
+    const schedule = () => {
+      if (timer) return;
+      timer = window.setTimeout(() => {
+        timer = 0;
+        try {
+          const missing =
+            !document.getElementById(ROOT_ID) ||
+            !document.getElementById(PANE_ID) ||
+            !document.getElementById(DIVIDER_ID) ||
+            !document.getElementById(HANDLE_ID) ||
+            !document.getElementById(ASK_ID);
+          if (!missing) return;
+
+          const wasOpen = document.documentElement.classList.contains('qn-split-open');
+          const ui = ensureUI();
+          applyRightWidthPx(loadRightWidthPx());
+          if (wasOpen) {
+            setOpen(true);
+            const iframe = ensurePaneIframe(ui.pane);
+            ensureIframeLoaded(iframe);
+            void ensureIframeTweaks();
+          }
+        } catch {}
+      }, 0);
+    };
+
+    try {
+      const mo = new MutationObserver(schedule);
+      mo.observe(target, { childList: true });
+    } catch {}
+  }
+
   // Init (default closed; only auto-open if user explicitly left it open previously).
   try {
     ensureUI();
     applyRightWidthPx(loadRightWidthPx());
     bindGlobalEvents();
+    ensureUiResilience();
 
     const persistedOpen = readBool(OPEN_KEY, false);
     if (persistedOpen) {

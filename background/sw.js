@@ -489,6 +489,18 @@
       runAt: 'document_idle'
     },
     {
+      // Only active when split-view is enabled. Runs in all frames but bails unless it is our split iframe.
+      // This avoids injecting the heavier thinking-toggle + fetch-hub stack into the iframe.
+      id: 'quicknav_chatgpt_split_view_iframe_hotkeys',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_split_view',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-split-view/iframe-hotkeys.js'],
+      runAt: 'document_start',
+      allFrames: true,
+      world: 'MAIN'
+    },
+    {
       id: 'quicknav_gemini_math_fix',
       siteId: 'gemini_business',
       moduleId: 'gemini_math_fix',
@@ -633,7 +645,6 @@
 
   const CHATGPT_SPLIT_VIEW_IFRAME_MODULE_IDS = new Set([
     // Keep this list tight: only enable iframe injection for modules that are useful in split view.
-    'chatgpt_thinking_toggle',
     'chatgpt_cmdenter_send',
     'chatgpt_readaloud_speed_controller',
     'chatgpt_reply_timer',

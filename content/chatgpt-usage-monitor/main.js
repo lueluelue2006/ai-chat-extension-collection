@@ -7,6 +7,25 @@
     Object.defineProperty(globalThis, __aichatUsageMonitorGuardKey, { value: true, configurable: false, enumerable: false, writable: false });
   } catch {}
 
+  // When split-view is enabled, some ChatGPT modules may be injected with `allFrames: true`.
+  // Keep this module out of internal iframes to avoid duplicated monitors and extra fetch patch work.
+  const __aichatUsageMonitorAllowedFrame = (() => {
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    if (!inIframe) return true;
+    try {
+      const fe = window.frameElement;
+      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
+    } catch {
+      return false;
+    }
+  })();
+  if (!__aichatUsageMonitorAllowedFrame) return;
+
   // MV3 MAIN-world helpers.
   // Note: The upstream script uses GM_* naming; in this extension we back it with localStorage
   // and the internal menu bridge (window.__quicknavRegisterMenuCommand).

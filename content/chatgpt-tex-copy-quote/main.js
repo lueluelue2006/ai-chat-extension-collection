@@ -1,6 +1,24 @@
 (() => {
   'use strict';
 
+  // Avoid patching Range.prototype in internal ChatGPT iframes when split-view enables `allFrames` injection.
+  const ALLOWED_FRAME = (() => {
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    if (!inIframe) return true;
+    try {
+      const fe = window.frameElement;
+      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
+    } catch {
+      return false;
+    }
+  })();
+  if (!ALLOWED_FRAME) return;
+
   const GUARD_KEY = '__aichat_chatgpt_better_tex_quote_v1__';
   if (window[GUARD_KEY]) return;
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
@@ -266,4 +284,3 @@
     }
   }
 })();
-

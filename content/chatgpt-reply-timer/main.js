@@ -4,6 +4,24 @@
   // ChatGPT reply timer (send -> done), minimal UI (a small number at bottom-right).
   // Uses the shared fetch/SSE hub (content/chatgpt-fetch-hub/main.js) to avoid stacked fetch patches.
 
+  // Avoid running inside internal ChatGPT iframes when split-view enables `allFrames` injection.
+  const ALLOWED_FRAME = (() => {
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    if (!inIframe) return true;
+    try {
+      const fe = window.frameElement;
+      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
+    } catch {
+      return false;
+    }
+  })();
+  if (!ALLOWED_FRAME) return;
+
   const GLOBAL_KEY = '__aichat_chatgpt_reply_timer_v1__';
   const STYLE_ID = '__aichat_chatgpt_reply_timer_style_v1__';
   const EL_ID = '__aichat_chatgpt_reply_timer_el_v1__';
@@ -276,4 +294,3 @@
   render();
   installHubHooks();
 })();
-

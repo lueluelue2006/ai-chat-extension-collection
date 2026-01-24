@@ -574,19 +574,23 @@
 
   // src/state.js
   var usageData = null;
+  function isSilent() {
+    return !!(usageData?.silentMode || FORCE_SILENT_MODE);
+  }
   function setUsageData(next) {
     usageData = next;
   }
 
   // src/userConfig.js
-  // If set to true/false, it forces the monitor to always be silent/visible.
-  // Keep null to allow the user to toggle via stored usageData.silentMode.
-  var SILENT_MODE = null;
-  // In split-view iframes we never want a second monitor UI.
+  // User-controlled silent mode (stored in usageData.silentMode) applies to the top frame.
+  // In split-view iframes we always force silent mode, but never persist it back to shared storage.
+  var FORCE_SILENT_MODE = false;
   try {
-    if (window !== window.top) SILENT_MODE = true;
+    if (window !== window.top) FORCE_SILENT_MODE = true;
   } catch {
+    FORCE_SILENT_MODE = true;
   }
+  var SILENT_MODE_USER_KEY = "silentModeUserSetV1";
 
   // src/utils.js
   function formatTimeAgo(timestamp) {
@@ -654,8 +658,19 @@
       if (data.silentMode === void 0) {
         data.silentMode = false;
       }
-      if (typeof SILENT_MODE === "boolean") {
-        data.silentMode = SILENT_MODE;
+      // Legacy fix: older split-view builds could accidentally persist silentMode=true from the iframe.
+      // If the user never toggled silent mode explicitly, default to visible in the top frame.
+      if (!FORCE_SILENT_MODE) {
+        try {
+          const userSet = !!GM_getValue(SILENT_MODE_USER_KEY, false);
+          if (!userSet && data.silentMode === true) {
+            data.silentMode = false;
+            try {
+              // Best-effort: persist the repair so it doesn't "stick" on refresh.
+              GM_setValue(this.key, data);
+            } catch {}
+          }
+        } catch {}
       }
       if (!data.progressType) {
         data.progressType = "bar";
@@ -3661,12 +3676,15 @@
     if (_keyboardShortcutsInstalled) return;
     _keyboardShortcutsInstalled = true;
     const handleShortcut = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
+      if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === "i") {
+        // In silent mode we do not intercept Cmd/Ctrl+I at all.
+        if (isSilent()) return;
+        const monitor = document.getElementById("chatUsageMonitor");
+        if (!monitor) return;
+
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        const monitor = document.getElementById("chatUsageMonitor");
-        if (!monitor) return false;
         if (monitor.classList.contains("minimized")) {
           monitor.classList.remove("minimized");
           const currentData = Storage.get();
@@ -3690,7 +3708,7 @@
   }
   var _uiUpdateIntervalId = null;
   function createMonitorUI() {
-    if (usageData?.silentMode) return;
+    if (isSilent()) return;
     if (document.getElementById("chatUsageMonitor")) return;
     const container = document.createElement("div");
     container.id = "chatUsageMonitor";
@@ -3799,7 +3817,7 @@
     const modelRouting = createModelRouting();
     installFetchInterceptor(modelRouting);
     onDataChanged(() => {
-      if (usageData?.silentMode) return;
+      if (isSilent()) return;
       updateUI();
     });
     let _pendingInitTimerId = null;
@@ -3846,7 +3864,7 @@
         }
       }
       cleanupExpiredRequests();
-      if (usageData.silentMode) {
+      if (isSilent()) {
         const existingMonitor = document.getElementById("chatUsageMonitor");
         if (existingMonitor) existingMonitor.remove();
         return;
@@ -3878,6 +3896,7 @@
     GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", () => {
       const current = Storage.get();
       const nextSilent = !current?.silentMode;
+      try { GM_setValue(SILENT_MODE_USER_KEY, Date.now()); } catch {}
       Storage.update((data) => {
         data.silentMode = nextSilent;
         if (nextSilent) data.minimized = false;
@@ -3897,7 +3916,7 @@
       scheduleInitialize(0);
     }
     const observer = new MutationObserver(() => {
-      if (usageData?.silentMode) return;
+      if (isSilent()) return;
       if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(300);
     });
     observer.observe(document.documentElement || document.body, { childList: true, subtree: true });

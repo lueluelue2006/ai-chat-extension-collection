@@ -127,6 +127,12 @@ html.qn-split-open #cgpt-compact-nav{
   right: calc(var(--qn-split-right-width, 0px) + 10px) !important;
 }
 
+/* When open, keep the Conversation Tree panel/toggle on the left side as well. */
+html.qn-split-open #__aichat_chatgpt_message_tree_panel_v1__,
+html.qn-split-open #__aichat_chatgpt_message_tree_toggle_v1__{
+  right: calc(var(--qn-split-right-width, 0px) + 12px) !important;
+}
+
 /* Keep fixed bottom-right micro UIs on the left side while split view is open. */
 html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
   right: calc(var(--qn-split-right-width, 0px) + 2px) !important;

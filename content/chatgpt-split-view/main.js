@@ -122,6 +122,7 @@
 /* Split view overlay (right side) */
 #${ROOT_ID}{ position:fixed; inset:0; z-index:2147483590; pointer-events:none; }
 
+
 /* When open, reposition QuickNav to stay on the left side of the divider. */
 html.qn-split-open #cgpt-compact-nav{
   right: calc(var(--qn-split-right-width, 0px) + 10px) !important;
@@ -664,9 +665,104 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     }
   }
 
+
+  function findHostAppRoot() {
+    try {
+      const main = document.getElementById('main') || document.querySelector('main');
+      const root = main && main.closest && main.closest('body > div');
+      if (root && root.id !== ROOT_ID) return root;
+    } catch {}
+
+    // Fallback: pick the largest body child DIV (excluding our own UI).
+    try {
+      let best = null;
+      let bestArea = 0;
+      for (const el of Array.from(document.body?.children || [])) {
+        if (!el || el.nodeType !== 1) continue;
+        if (el.tagName !== 'DIV') continue;
+        if (el.id === ROOT_ID) continue;
+        if (el.id === 'cgpt-compact-nav') continue;
+        const r = el.getBoundingClientRect();
+        const area = Math.max(0, r.width) * Math.max(0, r.height);
+        if (area > bestArea) {
+          best = el;
+          bestArea = area;
+        }
+      }
+      return best;
+    } catch {
+      return null;
+    }
+  }
+
+  function restoreHostLayout(el) {
+    const node = el && el.nodeType === 1 ? el : null;
+    if (!node) return;
+    try {
+      if (node.dataset?.qnSplitHostPatched !== '1') return;
+    } catch {
+      return;
+    }
+
+    const prevPr = node.dataset?.qnSplitHostPrevPaddingRight ?? '';
+    const prevBs = node.dataset?.qnSplitHostPrevBoxSizing ?? '';
+    try { node.style.paddingRight = prevPr; } catch {}
+    try { node.style.boxSizing = prevBs; } catch {}
+
+    try {
+      delete node.dataset.qnSplitHostPatched;
+      delete node.dataset.qnSplitHostPrevPaddingRight;
+      delete node.dataset.qnSplitHostPrevBoxSizing;
+    } catch {}
+  }
+
+  function ensureHostLayout(open) {
+    if (!open) {
+      try {
+        document.querySelectorAll('[data-qn-split-host-patched="1"]').forEach(restoreHostLayout);
+      } catch {}
+      return;
+    }
+
+    const root = findHostAppRoot();
+    if (!root) return;
+
+    // ChatGPT may swap the root container during navigation; keep only one patched.
+    try {
+      document.querySelectorAll('[data-qn-split-host-patched="1"]').forEach((n) => {
+        if (n !== root) restoreHostLayout(n);
+      });
+    } catch {}
+
+    try {
+      if (root.dataset.qnSplitHostPatched === '1') {
+        // Ensure it follows divider drag and remains stable.
+        if (String(root.style.paddingRight || '') !== 'var(--qn-split-right-width, 0px)') {
+          root.style.paddingRight = 'var(--qn-split-right-width, 0px)';
+        }
+        if (String(root.style.boxSizing || '') !== 'border-box') {
+          root.style.boxSizing = 'border-box';
+        }
+        return;
+      }
+    } catch {}
+
+    try {
+      root.dataset.qnSplitHostPatched = '1';
+      root.dataset.qnSplitHostPrevPaddingRight = root.style.paddingRight || '';
+      root.dataset.qnSplitHostPrevBoxSizing = root.style.boxSizing || '';
+    } catch {}
+
+    try {
+      root.style.boxSizing = 'border-box';
+      root.style.paddingRight = 'var(--qn-split-right-width, 0px)';
+    } catch {}
+  }
+
   function openSplit() {
     const ui = ensureUI();
     applyRightWidthPx(loadRightWidthPx());
+    ensureHostLayout(true);
     setOpen(true);
     try {
       const iframe = ensurePaneIframe(ui.pane);
@@ -677,6 +773,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
   function closeSplit() {
     setOpen(false);
+    ensureHostLayout(false);
     hideAsk();
     if (!UNLOAD_IFRAME_ON_CLOSE) return;
     try {
@@ -902,6 +999,9 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       timer = window.setTimeout(() => {
         timer = 0;
         try {
+          const wasOpen = document.documentElement.classList.contains('qn-split-open');
+          if (wasOpen) ensureHostLayout(true);
+
           const missing =
             !document.getElementById(ROOT_ID) ||
             !document.getElementById(PANE_ID) ||
@@ -910,7 +1010,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
             !document.getElementById(ASK_ID);
           if (!missing) return;
 
-          const wasOpen = document.documentElement.classList.contains('qn-split-open');
           const ui = ensureUI();
           applyRightWidthPx(loadRightWidthPx());
           if (wasOpen) {

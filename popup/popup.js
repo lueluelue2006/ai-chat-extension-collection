@@ -256,6 +256,8 @@
     const unmapped = [];
     for (const c of Array.isArray(commands) ? commands : []) {
       if (!c || typeof c.id !== 'string' || typeof c.name !== 'string') continue;
+      // QuickNav 维护操作已移到配置页执行，弹窗里不再展示（避免菜单过长）。
+      if (/QuickNav/.test(String(c.group || ''))) continue;
       const moduleId = mapGroupToModuleId(c.group, activeSiteId);
       if (!moduleId) {
         unmapped.push(c);

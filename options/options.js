@@ -77,6 +77,34 @@
     });
   }
 
+  function tabsQuery(query) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.tabs.query(query, (tabs) => {
+          const err = chrome.runtime.lastError;
+          if (err) return reject(new Error(err.message || String(err)));
+          resolve(tabs || []);
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function tabsSendMessage(tabId, msg) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.tabs.sendMessage(tabId, msg, (resp) => {
+          const err = chrome.runtime.lastError;
+          if (err) return reject(new Error(err.message || String(err)));
+          resolve(resp);
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   async function getSettings() {
     const resp = await sendMessage({ type: 'QUICKNAV_GET_SETTINGS' });
     if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to get settings');
@@ -438,7 +466,115 @@
     if (!items.length) return;
 
     addPanelDivider();
-    addPanelTitle('菜单栏预览', '设置页仅展示预览；请在扩展图标弹窗里点击执行。');
+    addPanelTitle('菜单操作', '直接在配置页执行（会在已打开的目标站点页面中运行）。');
+
+    const getSiteUrlPatterns = (siteId) => {
+      const s = String(siteId || '');
+      if (s === 'chatgpt') return ['https://chatgpt.com/*'];
+      if (s === 'ernie') return ['https://ernie.baidu.com/*'];
+      if (s === 'deepseek') return ['https://chat.deepseek.com/*'];
+      if (s === 'qwen') return ['https://chat.qwen.ai/*'];
+      if (s === 'zai') return ['https://chat.z.ai/*'];
+      if (s === 'grok') return ['https://grok.com/*'];
+      if (s === 'gemini_app') return ['https://gemini.google.com/app*'];
+      if (s === 'gemini_business') return ['https://business.gemini.google/*'];
+      if (s === 'genspark') return ['https://www.genspark.ai/*'];
+      return [];
+    };
+
+    const groupMatchesModule = (group, modId) => {
+      const g = String(group || '');
+      const m = String(modId || '');
+      if (!g) return true;
+      if (m === 'quicknav') return /QuickNav/.test(g);
+      if (m === 'chatgpt_usage_monitor') return /用量统计/.test(g);
+      if (m === 'chatgpt_export_conversation') return /对话导出/.test(g);
+      if (m === 'chatgpt_split_view') return /Split View|拆分视图/i.test(g);
+      return true;
+    };
+
+    const baseMenuName = (name) => String(name || '').replace(/（[^）]*）/g, '').trim();
+
+    const findMenuCommand = (commands, modId, label) => {
+      const list = Array.isArray(commands) ? commands : [];
+      const filtered = list.filter((c) => groupMatchesModule(c?.group, modId));
+
+      const exact = filtered.find((c) => String(c?.name || '') === String(label || ''));
+      if (exact) return exact;
+
+      const base = baseMenuName(label);
+      if (base) {
+        const starts = filtered.find((c) => String(c?.name || '').startsWith(base));
+        if (starts) return starts;
+        const contains = filtered.find((c) => String(c?.name || '').includes(base));
+        if (contains) return contains;
+      }
+
+      return null;
+    };
+
+    const pickBestTab = async (siteId) => {
+      const patterns = getSiteUrlPatterns(siteId);
+      if (!patterns.length) return null;
+      const tabs = await tabsQuery({ url: patterns });
+      if (!tabs.length) return null;
+
+      return tabs
+        .slice()
+        .sort((a, b) => {
+          if (!!b?.active !== !!a?.active) return b.active ? 1 : -1;
+          return Number(b?.lastAccessed || 0) - Number(a?.lastAccessed || 0);
+        })[0];
+    };
+
+    const runMenuAction = async (siteId, modId, label) => {
+      const sid = String(siteId || '');
+      const mid = String(modId || '');
+      const name = String(label || '').trim();
+      if (!sid || !mid || !name) return;
+
+      try {
+        const siteDef = SITES.find((s) => s.id === sid) || null;
+        const siteLabel = siteDef ? `${siteDef.name}（${siteDef.sub}）` : sid;
+
+        const tab = await pickBestTab(sid);
+        const tabId = tab?.id;
+        if (!Number.isFinite(tabId)) {
+          setStatus(`未找到已打开的 ${siteLabel} 页面：请先打开该站点任意页面再执行。`, 'warn');
+          return;
+        }
+
+        setStatus(`正在执行：${name}…`);
+
+        let menuResp = null;
+        try {
+          menuResp = await tabsSendMessage(tabId, { type: 'QUICKNAV_GET_MENU' });
+        } catch (e) {
+          setStatus(`未能连接到页面菜单：${e instanceof Error ? e.message : String(e)}（可能需要刷新该页面）`, 'warn');
+          return;
+        }
+
+        if (!menuResp || menuResp.ok !== true || !Array.isArray(menuResp.commands)) {
+          setStatus(`未能获取页面菜单：请确认该站点已启用并刷新页面后再试。`, 'warn');
+          return;
+        }
+
+        const cmd = findMenuCommand(menuResp.commands, mid, name);
+        if (!cmd || typeof cmd.id !== 'string') {
+          setStatus(`未找到对应菜单项：${name}（请确认该模块已注入到页面）`, 'warn');
+          return;
+        }
+
+        const runResp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
+        if (runResp && runResp.ok === true) {
+          setStatus(`已执行：${cmd.name}`, 'ok');
+        } else {
+          setStatus(`执行失败：${runResp?.error || 'unknown'}`, 'err');
+        }
+      } catch (e) {
+        setStatus(`执行失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      }
+    };
 
     const wrap = document.createElement('div');
     wrap.className = 'menuPreview';
@@ -447,7 +583,16 @@
       btn.type = 'button';
       btn.className = 'menuPreviewBtn';
       btn.textContent = label;
-      btn.disabled = true;
+      btn.disabled = !(currentSettings?.enabled && isSiteEnabled(selectedSiteId) && isModuleEnabled(selectedSiteId, moduleId));
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        try {
+          await runMenuAction(selectedSiteId, moduleId, label);
+        } finally {
+          btn.disabled = !(currentSettings?.enabled && isSiteEnabled(selectedSiteId) && isModuleEnabled(selectedSiteId, moduleId));
+        }
+      });
       wrap.appendChild(btn);
     }
     elModuleSettings.appendChild(wrap);

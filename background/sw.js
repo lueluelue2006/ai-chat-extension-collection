@@ -423,6 +423,23 @@
       world: 'MAIN'
     },
     {
+      id: 'quicknav_chatgpt_usage_monitor_bridge',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_usage_monitor',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
+      runAt: 'document_start'
+    },
+    // Menu bridge (isolated world) for MAIN-world modules that expose menu commands (popup/options execution).
+    {
+      id: 'quicknav_chatgpt_usage_monitor_menu_bridge',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_usage_monitor',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/menu-bridge.js'],
+      runAt: 'document_start'
+    },
+    {
       id: 'quicknav_chatgpt_usage_monitor',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',

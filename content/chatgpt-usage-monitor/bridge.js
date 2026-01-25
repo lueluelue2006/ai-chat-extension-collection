@@ -1,0 +1,144 @@
+(() => {
+  'use strict';
+
+  const GUARD_KEY = '__aichat_chatgpt_usage_monitor_bridge_v1__';
+  try {
+    if (window[GUARD_KEY]) return;
+    Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  } catch {
+    try {
+      if (window[GUARD_KEY]) return;
+      window[GUARD_KEY] = true;
+    } catch {}
+  }
+
+  // Keep this bridge in the top frame only:
+  // - Avoid duplicate storage listeners in split-view iframes
+  // - localStorage is shared (same origin), so planType still propagates
+  try {
+    if (window.self !== window.top) return;
+  } catch {}
+
+  const PLAN_STORAGE_KEY = 'cgpt_usage_monitor_plan_type_v1';
+  const DEFAULT_PLAN = 'team';
+  const ALLOWED_PLANS = new Set(['free', 'go', 'k12_teacher', 'plus', 'team', 'edu', 'enterprise', 'pro']);
+
+  const SET_PLAN_EVENT = '__aichat_chatgpt_usage_monitor_set_plan_v1__';
+  const PLAN_CHANGED_EVENT = '__aichat_chatgpt_usage_monitor_plan_changed_v1__';
+  const ACTION_EVENT = '__aichat_chatgpt_usage_monitor_action_v1__';
+  const USAGE_DATA_LS_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
+
+  let lastAppliedPlan = '';
+  let lastAppliedAt = 0;
+
+  function normalizePlanType(raw) {
+    const s = String(raw || '').trim();
+    return ALLOWED_PLANS.has(s) ? s : DEFAULT_PLAN;
+  }
+
+  function dispatchSetPlan(planType, source = '') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(SET_PLAN_EVENT, { detail: { planType: String(planType || ''), source: String(source || '') } })
+      );
+    } catch {}
+  }
+
+  function patchLocalStoragePlan(planType) {
+    try {
+      const raw = localStorage.getItem(USAGE_DATA_LS_KEY);
+      if (raw == null) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return;
+      if (data.planType === planType) return;
+      data.planType = planType;
+      localStorage.setItem(USAGE_DATA_LS_KEY, JSON.stringify(data));
+    } catch {}
+  }
+
+  function applyPlan(planType, source) {
+    const next = normalizePlanType(planType);
+    const now = Date.now();
+    if (next === lastAppliedPlan && now - lastAppliedAt < 250) return;
+    lastAppliedPlan = next;
+    lastAppliedAt = now;
+    patchLocalStoragePlan(next);
+    dispatchSetPlan(next, source);
+  }
+
+  function dispatchAction(action) {
+    try {
+      window.dispatchEvent(new CustomEvent(ACTION_EVENT, { detail: { action: String(action || '') } }));
+    } catch {}
+  }
+
+  function tryRegisterMenuCommands() {
+    try {
+      if (window.__aichatChatGptUsageMonitorBridgeMenuRegistered) return true;
+      const reg = window.__quicknavRegisterMenuCommand;
+      if (typeof reg !== 'function') return false;
+
+      reg('重置监视器位置', () => dispatchAction('reset_position'));
+      reg('切换静默模式（隐藏/显示面板）', () => dispatchAction('toggle_silent'));
+      reg('导出用量统计数据', () => dispatchAction('export'));
+      reg('导入用量统计数据', () => dispatchAction('import'));
+
+      window.__aichatChatGptUsageMonitorBridgeMenuRegistered = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function readPlanFromSync() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.sync.get({ [PLAN_STORAGE_KEY]: DEFAULT_PLAN }, (res) => {
+          void chrome.runtime?.lastError;
+          resolve(normalizePlanType(res?.[PLAN_STORAGE_KEY]));
+        });
+      } catch {
+        resolve(DEFAULT_PLAN);
+      }
+    });
+  }
+
+  // Initial sync -> page
+  void readPlanFromSync().then((planType) => applyPlan(planType, 'sync:init'));
+  tryRegisterMenuCommands();
+  setTimeout(tryRegisterMenuCommands, 400);
+  setTimeout(tryRegisterMenuCommands, 1500);
+
+  // Keep page in sync when options changes plan
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'sync') return;
+      const ch = changes?.[PLAN_STORAGE_KEY];
+      if (!ch) return;
+      applyPlan(ch.newValue, 'sync:changed');
+    });
+  } catch {}
+
+  // Keep options in sync when user changes plan inside the panel
+  try {
+    window.addEventListener(
+      PLAN_CHANGED_EVENT,
+      (e) => {
+        const planType = normalizePlanType(e?.detail?.planType);
+        lastAppliedPlan = planType;
+        lastAppliedAt = Date.now();
+        try {
+          chrome.storage.sync.get({ [PLAN_STORAGE_KEY]: DEFAULT_PLAN }, (res) => {
+            void chrome.runtime?.lastError;
+            const current = normalizePlanType(res?.[PLAN_STORAGE_KEY]);
+            if (current === planType) return;
+            try {
+              chrome.storage.sync.set({ [PLAN_STORAGE_KEY]: planType }, () => void chrome.runtime?.lastError);
+            } catch {}
+          });
+        } catch {}
+      },
+      true
+    );
+  } catch {}
+})();

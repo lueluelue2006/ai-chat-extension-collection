@@ -76,6 +76,7 @@
     if (p.includes('chatgpt-export-conversation')) return 'ChatGPT 对话导出';
     if (p.includes('chatgpt-quicknav')) return 'ChatGPT QuickNav';
     if (p.includes('chatgpt-split-view')) return 'ChatGPT Split View';
+    if (p.includes('chatgpt-usage-monitor')) return 'ChatGPT 用量统计';
     if (p.includes('ernie-quicknav')) return '文心一言 QuickNav';
     if (p.includes('deepseek-quicknav')) return 'DeepSeek QuickNav';
     if (p.includes('qwen-quicknav')) return 'Qwen QuickNav';
@@ -134,11 +135,12 @@
               } catch {}
             };
 
-            // De-dupe (group+name) and update handlerKey if re-registered.
-            const existingCmd = state.commands.find((c) => c && c.source === MAIN_MENU_SOURCE && c.group === group && c.name === name);
+            // De-dupe (group+name) across all sources and update handlerKey if re-registered.
+            const existingCmd = state.commands.find((c) => c && c.group === group && c.name === name);
             if (existingCmd) {
               existingCmd.fn = runProxy;
               existingCmd.handlerKey = handlerKey;
+              existingCmd.source = MAIN_MENU_SOURCE;
               return;
             }
 

@@ -43,6 +43,19 @@
   const CGPT_READALOUD_SPEED_MIN = 0.01;
   const CGPT_READALOUD_SPEED_MAX = 100;
 
+  const CGPT_USAGE_MONITOR_PLAN_STORAGE_KEY = 'cgpt_usage_monitor_plan_type_v1';
+  const CGPT_USAGE_MONITOR_PLAN_DEFAULT = 'team';
+  const CGPT_USAGE_MONITOR_PLAN_OPTIONS = Object.freeze([
+    ['free', 'Free'],
+    ['go', 'Go'],
+    ['k12_teacher', 'K12 Teacher'],
+    ['plus', 'Plus'],
+    ['team', 'Team'],
+    ['edu', 'Edu'],
+    ['enterprise', 'Enterprise'],
+    ['pro', 'Pro']
+  ]);
+
   function setStatus(text, kind = '') {
     if (!elStatus) return;
     elStatus.textContent = text || '';
@@ -152,6 +165,12 @@
     return Math.max(CGPT_READALOUD_SPEED_MIN, Math.min(CGPT_READALOUD_SPEED_MAX, n));
   }
 
+  function sanitizeCgptUsageMonitorPlanType(raw) {
+    const s = String(raw || '').trim();
+    const found = CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([key]) => key === s)?.[0];
+    return found || CGPT_USAGE_MONITOR_PLAN_DEFAULT;
+  }
+
   function storageGet(area, defaults) {
     return new Promise((resolve) => {
       try {
@@ -195,6 +214,17 @@
   async function saveCgptReadaloudSpeed(next) {
     const sanitized = sanitizeCgptReadaloudSpeed(next);
     await storageSet(chrome.storage.sync, { [CGPT_READALOUD_SPEED_STORAGE_KEY]: sanitized });
+    return sanitized;
+  }
+
+  async function loadCgptUsageMonitorPlanType() {
+    const res = await storageGet(chrome.storage.sync, { [CGPT_USAGE_MONITOR_PLAN_STORAGE_KEY]: CGPT_USAGE_MONITOR_PLAN_DEFAULT });
+    return sanitizeCgptUsageMonitorPlanType(res?.[CGPT_USAGE_MONITOR_PLAN_STORAGE_KEY]);
+  }
+
+  async function saveCgptUsageMonitorPlanType(next) {
+    const sanitized = sanitizeCgptUsageMonitorPlanType(next);
+    await storageSet(chrome.storage.sync, { [CGPT_USAGE_MONITOR_PLAN_STORAGE_KEY]: sanitized });
     return sanitized;
   }
 
@@ -1043,7 +1073,7 @@
     elModuleSettings.appendChild(hint);
   }
 
-  function renderChatGPTUsageMonitorModuleSettings(siteId) {
+  async function renderChatGPTUsageMonitorModuleSettings(siteId, token) {
     addModuleHeader('chatgpt_usage_monitor', 'ChatGPT 用量统计', '实时统计各模型调用量（支持导入/导出、一周/一月分析报告）。');
 
     const rowInject = document.createElement('label');
@@ -1071,6 +1101,62 @@
     hint.textContent =
       '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I 可快速最小化。';
     elModuleSettings.appendChild(hint);
+
+    let planType;
+    try {
+      planType = await loadCgptUsageMonitorPlanType();
+    } catch (e) {
+      if (token !== renderSeq) return;
+      planType = CGPT_USAGE_MONITOR_PLAN_DEFAULT;
+      const err = document.createElement('div');
+      err.className = 'smallHint';
+      err.textContent = `读取套餐设置失败：${e instanceof Error ? e.message : String(e)}`;
+      elModuleSettings.appendChild(err);
+    }
+    if (token !== renderSeq) return;
+
+    addPanelDivider();
+    addPanelTitle('套餐（Plan）', '默认 Team；配置页与面板会自动保持一致（写入 storage.sync）。');
+
+    const rowPlan = document.createElement('label');
+    rowPlan.className = 'formRow';
+    const leftPlan = document.createElement('span');
+    leftPlan.textContent = '默认套餐';
+    const selectPlan = document.createElement('select');
+    for (const [key, label] of CGPT_USAGE_MONITOR_PLAN_OPTIONS) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = label;
+      selectPlan.appendChild(opt);
+    }
+    selectPlan.value = planType;
+    selectPlan.addEventListener('change', async () => {
+      const next = sanitizeCgptUsageMonitorPlanType(selectPlan.value);
+      if (next === planType) return;
+      if (
+        !confirm(
+          `切换套餐为 ${CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === next)?.[1] || next}？\n\n提示：切换套餐会按官方限制自动调整所有模型的配额和时间窗口设置（会保留使用历史）。`
+        )
+      ) {
+        selectPlan.value = planType;
+        return;
+      }
+      selectPlan.disabled = true;
+      setStatus('正在保存套餐设置…');
+      try {
+        planType = await saveCgptUsageMonitorPlanType(next);
+        selectPlan.value = planType;
+        setStatus('套餐设置已保存', 'ok');
+      } catch (e) {
+        selectPlan.value = planType;
+        setStatus(`套餐设置保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        selectPlan.disabled = false;
+      }
+    });
+    rowPlan.appendChild(leftPlan);
+    rowPlan.appendChild(selectPlan);
+    elModuleSettings.appendChild(rowPlan);
 
     addPanelMenuPreview('chatgpt_usage_monitor');
   }
@@ -1533,7 +1619,7 @@
     if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
     if (moduleId === 'chatgpt_cmdenter_send') return renderChatGPTCmdEnterSendModuleSettings(siteId);
     if (moduleId === 'chatgpt_readaloud_speed_controller') return void renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token);
-    if (moduleId === 'chatgpt_usage_monitor') return renderChatGPTUsageMonitorModuleSettings(siteId);
+    if (moduleId === 'chatgpt_usage_monitor') return void renderChatGPTUsageMonitorModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_reply_timer') return renderChatGPTReplyTimerModuleSettings(siteId);
     if (moduleId === 'chatgpt_download_file_fix') return renderChatGPTDownloadFileFixModuleSettings(siteId);
     if (moduleId === 'chatgpt_strong_highlight_lite') return renderChatGPTStrongHighlightLiteModuleSettings(siteId);

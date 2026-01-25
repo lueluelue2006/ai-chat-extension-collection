@@ -172,6 +172,9 @@
   const __aichatMainMenuRegisterEvent = '__quicknav_menu_bridge_register_main_command_v1__';
   const __aichatMainMenuRunEvent = '__quicknav_menu_bridge_run_main_command_v1__';
   const __aichatMainMenuGroup = 'ChatGPT 用量统计';
+  const __aichatUsageMonitorSetPlanEvent = '__aichat_chatgpt_usage_monitor_set_plan_v1__';
+  const __aichatUsageMonitorPlanChangedEvent = '__aichat_chatgpt_usage_monitor_plan_changed_v1__';
+  const __aichatUsageMonitorActionEvent = '__aichat_chatgpt_usage_monitor_action_v1__';
   const __aichatMainMenuHandlers = (() => {
     try {
       const k = '__aichat_chatgpt_usage_monitor_main_menu_handlers_v1__';
@@ -3426,6 +3429,9 @@
       applyPlanConfig(newPlan);
       updateUI();
       showToast(`已切换到 ${PLAN_CONFIGS[newPlan].name} 套餐`, "success");
+      try {
+        window.dispatchEvent(new CustomEvent(__aichatUsageMonitorPlanChangedEvent, { detail: { planType: newPlan } }));
+      } catch {}
     });
     planSelectContainer.appendChild(planTypeSelect);
     planSelectorContainer.appendChild(planSelectContainer);
@@ -4004,6 +4010,59 @@
         initialize();
       }, Math.max(0, dueAt - now));
     }
+
+    // External plan sync (Options -> page). The bridge runs in isolated-world and dispatches a CustomEvent here.
+    try {
+      if (!window.__aichatChatGptUsageMonitorExternalPlanListenerInstalled) {
+        window.__aichatChatGptUsageMonitorExternalPlanListenerInstalled = true;
+        window.addEventListener(
+          __aichatUsageMonitorSetPlanEvent,
+          (e) => {
+            try {
+              const nextPlan = String(e?.detail?.planType || "").trim();
+              if (!nextPlan || !PLAN_CONFIGS[nextPlan]) return;
+              const currentPlan = refreshUsageData().planType || "team";
+              if (currentPlan === nextPlan) return;
+              updateUsageData((data) => {
+                data.planType = nextPlan;
+              });
+              applyPlanConfig(nextPlan);
+              if (isSilent()) return;
+              try {
+                updateUI();
+              } catch {}
+              try {
+                showToast(`已切换到 ${PLAN_CONFIGS[nextPlan].name} 套餐`, "success");
+              } catch {}
+              scheduleInitialize(0);
+            } catch {}
+          },
+          true
+        );
+      }
+    } catch {}
+
+    // Menu actions dispatched from isolated-world bridge (Options/Popup -> page)
+    try {
+      if (!window.__aichatChatGptUsageMonitorActionListenerInstalled) {
+        window.__aichatChatGptUsageMonitorActionListenerInstalled = true;
+        window.addEventListener(
+          __aichatUsageMonitorActionEvent,
+          (e) => {
+            try {
+              const action = String(e?.detail?.action || "").trim();
+              if (!action) return;
+              if (action === "reset_position") return void resetMonitorPosition();
+              if (action === "toggle_silent") return void toggleSilentMode();
+              if (action === "export") return void exportUsageData();
+              if (action === "import") return void importUsageData();
+            } catch {}
+          },
+          true
+        );
+      }
+    } catch {}
+
     function initialize() {
       if (!document?.body) {
         setTimeout(initialize, 300);
@@ -4048,7 +4107,7 @@
       createMonitorUI();
       setupKeyboardShortcuts();
     }
-    GM_registerMenuCommand("重置监视器位置", () => {
+    function resetMonitorPosition() {
       cancelPendingMonitorMinimized();
       Storage.update((data) => {
         data.position = { x: null, y: null };
@@ -4069,8 +4128,9 @@
           alert("监视器重置完成。如果没有看到监视器，请刷新页面。");
         }
       }, 500);
-    });
-    GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", () => {
+    }
+
+    function toggleSilentMode() {
       cancelPendingMonitorMinimized();
       const current = Storage.get();
       const nextSilent = !current?.silentMode;
@@ -4085,7 +4145,10 @@
       try {
         console.log(`[monitor] Silent mode: ${nextSilent ? "ON" : "OFF"}`);
       } catch {}
-    });
+    }
+
+    GM_registerMenuCommand("重置监视器位置", resetMonitorPosition);
+    GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", toggleSilentMode);
     GM_registerMenuCommand("导出用量统计数据", exportUsageData);
     GM_registerMenuCommand("导入用量统计数据", importUsageData);
     if (document.readyState === "loading") {

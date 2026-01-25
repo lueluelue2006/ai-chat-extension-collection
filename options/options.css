@@ -116,6 +116,9 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr 1.4fr;
   gap: 10px;
+  /* Keep the config area bounded so lists scroll instead of stretching the whole page. */
+  height: min(70vh, 720px);
+  overflow: hidden;
 }
 
 .triCol {
@@ -225,11 +228,19 @@ body {
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   min-height: 220px;
+  overflow: auto;
 }
 
 .panelTitle {
   font-weight: 900;
   margin-bottom: 6px;
+}
+
+@media (max-width: 860px) {
+  /* On narrow screens we stack the columns; allow the page to scroll naturally. */
+  .triGrid {
+    height: auto;
+  }
 }
 
 .panelSubtitle {

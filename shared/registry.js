@@ -73,7 +73,7 @@
 	      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
 	      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
 	      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
-	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式等补丁）'],
+	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式+回弹补丁）'],
 	      license: 'MIT（上游脚本声明）',
 	      upstream: 'https://github.com/lueluelue2006/ChatGPT-QuickNav'
 	    },

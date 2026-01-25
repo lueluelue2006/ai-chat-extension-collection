@@ -191,11 +191,11 @@ html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
 
 #${TOPBAR_ID}{
   position:absolute;
-  /* Avoid sticking to the top edge (and respect safe-area insets on notched displays). */
-  top: max(14px, env(safe-area-inset-top));
-  right: max(14px, env(safe-area-inset-right));
+  /* Stick to the top edge (respect safe-area insets on notched displays). */
+  top: env(safe-area-inset-top);
+  right: env(safe-area-inset-right);
   display:flex;
-  gap:8px;
+  gap:6px;
   z-index:2;
 }
 #${TOPBAR_ID} button{

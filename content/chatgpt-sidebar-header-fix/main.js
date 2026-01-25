@@ -24,7 +24,9 @@
   const STYLE_ID = 'qn-chatgpt-sidebar-header-fix-style';
 
   // === Rapid-toggle misclick guard ===
-  const LOCK_MS = 100;
+  // ChatGPT sidebar transitions can take a couple hundred ms (DOM re-render + CSS transition).
+  // Keep the guard window slightly longer to fully cover rapid-click scenarios.
+  const LOCK_MS = 220;
   const LOCK_CLASS = 'qn-chatgpt-sidebar-header-fix-lock';
   const FORCE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-force-expanded';
   const root = document.documentElement;
@@ -63,12 +65,17 @@
   function isGuardedClickTarget(target) {
     try {
       if (!target || typeof target.closest !== 'function') return false;
-      // 1) Sidebar header Home link (this can trigger "New chat" / Home depending on UI state).
-      const headerHome = target.closest('#stage-slideover-sidebar .h-header-height.flex.items-center.justify-between > a[href="/"]');
-      if (headerHome) return true;
+      // 1) Any Home/New chat link inside the sidebar that navigates to "/".
+      // ChatGPT uses "/" for both Home and New chat, and the layout may morph during sidebar toggles.
+      const homeOrNewChatLink = target.closest(
+        '#stage-slideover-sidebar a[href="/"], #stage-slideover-sidebar a[href="https://chatgpt.com/"], #stage-slideover-sidebar a[href="https://chatgpt.com"]'
+      );
+      if (homeOrNewChatLink) return true;
 
       // 2) Sidebar New chat button/link (ChatGPT may render 1-2 variants).
-      const newChat = target.closest('#stage-slideover-sidebar [data-testid="create-new-chat-button"]');
+      const newChat = target.closest(
+        '#stage-slideover-sidebar [data-testid="create-new-chat-button"], #stage-slideover-sidebar [aria-label*="new chat" i]'
+      );
       if (newChat) return true;
 
       return false;
@@ -128,12 +135,13 @@
 /* Sidebar header controls swap + overlap fix (ChatGPT 2025/2026 UI). */
 
 /* Rapid-toggle guard: temporarily disable the Home/New chat control to prevent misclicks. */
-html.${LOCK_CLASS} #stage-slideover-sidebar .h-header-height.flex.items-center.justify-between > a[href="/"]{
+html.${LOCK_CLASS} #stage-slideover-sidebar a[href="/"],
+html.${LOCK_CLASS} #stage-slideover-sidebar a[href="https://chatgpt.com/"],
+html.${LOCK_CLASS} #stage-slideover-sidebar a[href="https://chatgpt.com"],
+html.${LOCK_CLASS} #stage-slideover-sidebar [data-testid="create-new-chat-button"],
+html.${LOCK_CLASS} #stage-slideover-sidebar [aria-label*="new chat" i]{
   pointer-events: none !important;
   cursor: default !important;
-}
-html.${LOCK_CLASS} #stage-slideover-sidebar [data-testid="create-new-chat-button"]{
-  pointer-events: none !important;
 }
 
 /* During expand transition, force the swapped layout early for a few frames. */

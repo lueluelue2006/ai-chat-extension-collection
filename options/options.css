@@ -153,7 +153,6 @@ body {
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   min-height: 220px;
-  max-height: clamp(420px, 70vh, 820px);
   overflow: auto;
 }
 
@@ -205,14 +204,11 @@ body {
 
 .triPanel {
   flex: 1 1 auto;
-  min-height: 0;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   min-height: 220px;
-  max-height: clamp(420px, 70vh, 820px);
-  overflow: auto;
 }
 
 .panelTitle {

@@ -44,6 +44,15 @@
   const MIN_RIGHT_WIDTH_PX = 320;
   const MAX_RIGHT_WIDTH_RATIO = 0.7;
 
+  // Auto-expand the iframe (right pane) *internal* ChatGPT sidebar when the split pane becomes wide enough.
+  // This makes the right pane feel more like a full ChatGPT tab when you drag the divider left.
+  const IFRAME_AUTO_SIDEBAR_ENABLED = true;
+  const IFRAME_AUTO_SIDEBAR_WIDTH_PX = 260; // ChatGPT expanded sidebar is ~260px
+  const IFRAME_AUTO_SIDEBAR_MIN_MAIN_PX = 480; // avoid making the chat area too cramped
+  const IFRAME_AUTO_SIDEBAR_OPEN_THRESHOLD_PX = IFRAME_AUTO_SIDEBAR_WIDTH_PX + IFRAME_AUTO_SIDEBAR_MIN_MAIN_PX; // 740px
+  const IFRAME_AUTO_SIDEBAR_HYSTERESIS_PX = 80;
+  const IFRAME_AUTO_SIDEBAR_COOLDOWN_MS = 260;
+
   const DEFAULT_IFRAME_SRC = 'https://chatgpt.com/';
   const SELECTION_MAX_CHARS = 1600;
   const UNLOAD_IFRAME_ON_CLOSE = true;
@@ -56,6 +65,11 @@
   let __qnSplitRootMo = null;
   let __qnSplitCurrentRoot = null;
   let __qnSplitGuardTimer = 0;
+
+  let __qnSplitIframeSidebarWanted = null; // boolean | null
+  let __qnSplitIframeSidebarPending = null; // boolean | null
+  let __qnSplitIframeSidebarTimer = 0;
+  let __qnSplitIframeSidebarLastAt = 0;
 
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const BLOCK_TAGS = new Set([
@@ -414,7 +428,172 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     try {
       window.localStorage.setItem(WIDTH_KEY, String(v));
     } catch {}
+    try {
+      scheduleIframeSidebarAutoByWidth(v);
+    } catch {}
     return v;
+  }
+
+  function resetIframeSidebarAutoState() {
+    __qnSplitIframeSidebarWanted = null;
+    __qnSplitIframeSidebarPending = null;
+    if (__qnSplitIframeSidebarTimer) {
+      try {
+        clearTimeout(__qnSplitIframeSidebarTimer);
+      } catch {}
+      __qnSplitIframeSidebarTimer = 0;
+    }
+  }
+
+  function getIframeSidebarState(iframe) {
+    let doc;
+    try {
+      doc = iframe?.contentDocument;
+    } catch {
+      return 'unknown';
+    }
+    if (!doc) return 'unknown';
+
+    // Desktop layout: a persistent sidebar container with width toggled between rail/expanded.
+    let stage = null;
+    try {
+      stage = doc.getElementById('stage-slideover-sidebar');
+    } catch {}
+    if (stage) {
+      try {
+        const w = String(stage.style.width || '').trim();
+        if (w.includes('--sidebar-width')) return 'expanded';
+        if (w.includes('--sidebar-rail-width')) return 'collapsed';
+      } catch {}
+
+      try {
+        const px = stage.getBoundingClientRect?.().width || 0;
+        if (px >= 140) return 'expanded';
+        if (px > 0) return 'collapsed';
+      } catch {}
+
+      return 'unknown';
+    }
+
+    // Compact layout: popover sidebar that is mounted only when open.
+    try {
+      const pop = doc.getElementById('stage-popover-sidebar');
+      if (pop) return 'expanded';
+    } catch {}
+
+    try {
+      const openBtn = doc.querySelector('button[data-testid="open-sidebar-button"]');
+      if (openBtn) {
+        const expanded = openBtn.getAttribute('aria-expanded') === 'true';
+        return expanded ? 'expanded' : 'collapsed';
+      }
+    } catch {}
+
+    return 'unknown';
+  }
+
+  function clickEl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    try {
+      el.click();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function syncIframeSidebarExpanded(expanded) {
+    if (!IFRAME_AUTO_SIDEBAR_ENABLED) return false;
+    if (!document.documentElement.classList.contains('qn-split-open')) return false;
+
+    const iframe = document.getElementById(IFRAME_ID);
+    if (!iframe) return false;
+
+    let doc;
+    try {
+      doc = iframe.contentDocument;
+    } catch {
+      return false;
+    }
+    if (!doc) return false;
+
+    try {
+      const href = String(doc.location?.href || '');
+      if (!href || href === BLANK_SRC) return false;
+    } catch {}
+
+    const state = getIframeSidebarState(iframe);
+    if (expanded && state === 'expanded') return true;
+    if (!expanded && state === 'collapsed') return true;
+    if (state !== 'expanded' && state !== 'collapsed') return false;
+
+    // Prefer locale-agnostic selectors.
+    const openBtnSelector =
+      'button[data-testid="open-sidebar-button"][aria-expanded="false"],' +
+      '#stage-sidebar-tiny-bar button[aria-controls="stage-slideover-sidebar"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="false"]:not([data-testid="close-sidebar-button"]),' +
+      'button[aria-label="Open sidebar"]';
+    const closeBtnSelector =
+      'button[data-testid="close-sidebar-button"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="true"],' +
+      'button[aria-label="Close sidebar"]';
+
+    if (expanded && state === 'collapsed') {
+      const btn = doc.querySelector(openBtnSelector);
+      return clickEl(btn);
+    }
+    if (!expanded && state === 'expanded') {
+      const btn = doc.querySelector(closeBtnSelector);
+      return clickEl(btn);
+    }
+    return false;
+  }
+
+  function scheduleIframeSidebarAutoByWidth(rightWidthPx) {
+    if (!IFRAME_AUTO_SIDEBAR_ENABLED) return;
+    if (!document.documentElement.classList.contains('qn-split-open')) return;
+
+    const max = getMaxRightWidthPx();
+    const w = clamp(Math.round(rightWidthPx), MIN_RIGHT_WIDTH_PX, max);
+
+    const openAt = IFRAME_AUTO_SIDEBAR_OPEN_THRESHOLD_PX;
+    const closeAt = openAt - IFRAME_AUTO_SIDEBAR_HYSTERESIS_PX;
+
+    let next = null;
+    if (__qnSplitIframeSidebarWanted === true) {
+      if (w <= closeAt) next = false;
+    } else if (__qnSplitIframeSidebarWanted === false) {
+      if (w >= openAt) next = true;
+    } else {
+      if (w >= openAt) next = true;
+      else if (w <= closeAt) next = false;
+    }
+    if (typeof next !== 'boolean') return;
+
+    __qnSplitIframeSidebarWanted = next;
+    __qnSplitIframeSidebarPending = next;
+
+    const now = Date.now();
+    const delay = Math.max(120, (__qnSplitIframeSidebarLastAt + IFRAME_AUTO_SIDEBAR_COOLDOWN_MS) - now);
+
+    if (__qnSplitIframeSidebarTimer) {
+      try {
+        clearTimeout(__qnSplitIframeSidebarTimer);
+      } catch {}
+      __qnSplitIframeSidebarTimer = 0;
+    }
+
+    __qnSplitIframeSidebarTimer = setTimeout(() => {
+      __qnSplitIframeSidebarTimer = 0;
+      const desired = __qnSplitIframeSidebarPending;
+      __qnSplitIframeSidebarPending = null;
+      if (typeof desired !== 'boolean') return;
+
+      __qnSplitIframeSidebarLastAt = Date.now();
+      try {
+        syncIframeSidebarExpanded(desired);
+      } catch {}
+    }, delay);
   }
 
   function findTexFromKatex(katexEl) {
@@ -839,6 +1018,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
         (doc.head || doc.documentElement).appendChild(style);
       }
       style.textContent = css;
+      try {
+        if (document.documentElement.classList.contains('qn-split-open')) {
+          scheduleIframeSidebarAutoByWidth(loadRightWidthPx());
+        }
+      } catch {}
       return true;
     } catch {
       return false;
@@ -996,9 +1180,12 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       maybeAutoCollapseLeftSidebar();
     } catch {}
     const ui = ensureUI();
-    applyRightWidthPx(loadRightWidthPx());
+    const width = applyRightWidthPx(loadRightWidthPx());
     ensureHostLayout(true);
     setOpen(true);
+    try {
+      scheduleIframeSidebarAutoByWidth(width);
+    } catch {}
     try {
       const iframe = ensurePaneIframe(ui.pane);
       ensureIframeLoaded(iframe);
@@ -1010,6 +1197,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     setOpen(false);
     ensureHostLayout(false);
     hideAsk();
+    resetIframeSidebarAutoState();
     // Best-effort restore: only when we are sure we're staying closed.
     try {
       setTimeout(() => {
@@ -1124,6 +1312,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       setOpen(false);
       ensureHostLayout(false);
       hideAsk();
+      resetIframeSidebarAutoState();
     } catch {}
 
     try {

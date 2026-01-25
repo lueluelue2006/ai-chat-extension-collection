@@ -118,6 +118,12 @@ body {
   gap: 10px;
 }
 
+.triCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 @media (max-width: 720px) {
   .grid,
   .siteGrid {
@@ -139,13 +145,15 @@ body {
 .triList {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 6px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   min-height: 220px;
-  max-height: 420px;
+  max-height: clamp(420px, 70vh, 820px);
   overflow: auto;
 }
 
@@ -196,11 +204,15 @@ body {
 }
 
 .triPanel {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   min-height: 220px;
+  max-height: clamp(420px, 70vh, 820px);
+  overflow: auto;
 }
 
 .panelTitle {

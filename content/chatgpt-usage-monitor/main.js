@@ -1760,8 +1760,14 @@
       const groups = data.sharedQuotaGroups && typeof data.sharedQuotaGroups === "object" ? data.sharedQuotaGroups : null;
       if (!groups) return false;
       for (const groupId of Object.keys(groupsCfg)) {
+        const expected = groupsCfg[groupId];
         const g = groups[groupId];
         if (!g || typeof g !== "object") return false;
+        // Shared group quotas are not user-editable in UI, so keep them strictly in sync with plan defaults.
+        if (expected && typeof expected === "object") {
+          if (typeof expected.quota === "number" && g.quota !== expected.quota) return false;
+          if (typeof expected.windowType === "string" && g.windowType !== expected.windowType) return false;
+        }
       }
     }
     return true;

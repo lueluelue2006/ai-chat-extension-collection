@@ -265,6 +265,46 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function normalizeChatgptUrl(input) {
+    const raw = String(input || '').trim();
+    if (!raw || raw === BLANK_SRC) return DEFAULT_IFRAME_SRC;
+    try {
+      const u = new URL(raw, location.href);
+      if (u.protocol !== 'https:') return DEFAULT_IFRAME_SRC;
+      if (u.origin !== location.origin) return DEFAULT_IFRAME_SRC;
+      return u.href;
+    } catch {
+      return DEFAULT_IFRAME_SRC;
+    }
+  }
+
+  function resolveRightPaneUrl() {
+    try {
+      const pane = document.getElementById(PANE_ID);
+      const iframe = pane && pane.querySelector && pane.querySelector(`#${IFRAME_ID}`);
+      if (iframe) {
+        try {
+          const href = String(iframe.contentWindow?.location?.href || '').trim();
+          if (href && href !== BLANK_SRC) return normalizeChatgptUrl(href);
+        } catch {}
+        try {
+          const src = String(iframe.getAttribute('src') || iframe.src || '').trim();
+          if (src && src !== BLANK_SRC) return normalizeChatgptUrl(src);
+        } catch {}
+        return normalizeChatgptUrl(getDesiredIframeSrc(iframe));
+      }
+    } catch {}
+    return normalizeChatgptUrl(readString(SRC_KEY, DEFAULT_IFRAME_SRC));
+  }
+
+  function openRightPaneInNewTab({ close = true } = {}) {
+    const url = resolveRightPaneUrl();
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {}
+    if (close) closeSplit();
+  }
+
   function createSplitIframe() {
     const iframe = document.createElement('iframe');
     iframe.id = IFRAME_ID;
@@ -645,12 +685,18 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       btnNew.textContent = 'New';
       btnNew.title = 'Open a new chat (chatgpt.com)';
 
+      const btnTab = document.createElement('button');
+      btnTab.type = 'button';
+      btnTab.textContent = 'Tab';
+      btnTab.title = 'Open right pane in a new tab';
+
       const btnClose = document.createElement('button');
       btnClose.type = 'button';
       btnClose.textContent = 'Close';
       btnClose.title = 'Close split view (Esc×2)';
 
       topbar.appendChild(btnNew);
+      topbar.appendChild(btnTab);
       topbar.appendChild(btnClose);
 
       pane.appendChild(topbar);
@@ -670,6 +716,12 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
         const currentIframe = ensurePaneIframe(pane);
         setDesiredIframeSrc(currentIframe, url);
         ensureIframeLoaded(currentIframe);
+      });
+
+      btnTab.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openRightPaneInNewTab({ close: true });
       });
     }
 
@@ -1094,6 +1146,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const reg = window.__quicknavRegisterMenuCommand;
       if (typeof reg !== 'function') return;
       reg('重置右侧状态 / 清理 Split View 存储', resetSplitViewState);
+      reg('在新标签页打开右侧（并关闭 Split View）', () => openRightPaneInNewTab({ close: true }));
     } catch {}
   }
 

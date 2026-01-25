@@ -142,6 +142,22 @@ body {
   margin-bottom: 8px;
 }
 
+.triSearch {
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--btn);
+  color: var(--text);
+  font: inherit;
+}
+
+.triSearch:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent 60%);
+  outline-offset: 2px;
+}
+
 .triList {
   display: flex;
   flex-direction: column;

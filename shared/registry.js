@@ -129,7 +129,7 @@
       id: 'chatgpt_usage_monitor',
       name: 'ChatGPT 用量统计',
       sub: '实时统计各模型调用量，支持导入/导出与分析报告',
-      hotkeys: ['⌘I', 'Ctrl+I'],
+      hotkeys: ['⌘I'],
       menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
       authors: ['tizee（原始脚本）', 'schweigen（修改）', 'lueluelue2006（MV3 适配/集成）'],
       license: 'MIT',
@@ -148,7 +148,7 @@
       name: 'ChatGPT 下载修复',
       sub: '修复文件下载失败（sandbox_path 解码）',
       hotkeys: [],
-      authors: ['lueluelue2006'],
+      authors: ['Marx@linux.do'],
       license: '未标注（内部脚本）'
     },
     chatgpt_strong_highlight_lite: {
@@ -222,6 +222,7 @@
       name: 'ChatGPT 拆分视图（实验）',
       sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
       hotkeys: ['Esc×3'],
+      menuPreview: ['重置右侧状态 / 清理 Split View 存储', '在新标签页打开右侧（并关闭 Split View）'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

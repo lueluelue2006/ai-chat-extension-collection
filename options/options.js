@@ -12,6 +12,8 @@
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
   const elModuleSettings = document.getElementById('moduleSettings');
+  const elSiteSearch = document.getElementById('siteSearch');
+  const elModuleSearch = document.getElementById('moduleSearch');
 
   const REGISTRY = (() => {
     try {
@@ -209,19 +211,69 @@
   let currentSettings = null;
   let selectedSiteId = SITES[0]?.id || 'chatgpt';
   let selectedModuleId = 'quicknav';
+  let siteSearchText = '';
+  let moduleSearchText = '';
+
+  function normalizeSearchText(s) {
+    return String(s || '').trim().toLowerCase();
+  }
+
+  function siteMatchesSearch(site, term) {
+    const t = normalizeSearchText(term);
+    if (!t) return true;
+    const hay = `${site?.name || ''} ${site?.sub || ''} ${site?.id || ''}`.toLowerCase();
+    return hay.includes(t);
+  }
+
+  function moduleMatchesSearch(moduleId, term) {
+    const t = normalizeSearchText(term);
+    if (!t) return true;
+    const def = MODULES?.[moduleId];
+    const hay = `${def?.name || ''} ${def?.sub || ''} ${moduleId || ''}`.toLowerCase();
+    return hay.includes(t);
+  }
 
   function getSite(id) {
     return SITES.find((s) => s.id === id) || null;
   }
 
+  function getFilteredSites() {
+    return SITES.filter((s) => siteMatchesSearch(s, siteSearchText));
+  }
+
   function effectiveSelectedSiteId() {
-    return getSite(selectedSiteId)?.id || SITES[0]?.id || 'chatgpt';
+    const picked = getSite(selectedSiteId);
+    const filtered = getFilteredSites();
+    if (picked && (siteMatchesSearch(picked, siteSearchText) || filtered.length === 0)) return picked.id;
+    return filtered[0]?.id || SITES[0]?.id || 'chatgpt';
+  }
+
+  function getFilteredModuleIds(siteId) {
+    const rawMods = getSite(siteId)?.modules || [];
+    const mods = rawMods
+      .map((id, idx) => ({
+        id,
+        idx,
+        hasMenu: !!(MODULES[id]?.menuPreview && MODULES[id].menuPreview.length)
+      }))
+      .sort((a, b) => {
+        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
+        return a.idx - b.idx;
+      })
+      .map((x) => x.id)
+      .filter((id) => moduleMatchesSearch(id, moduleSearchText));
+    return mods;
   }
 
   function effectiveSelectedModuleId(siteId) {
-    const mods = getSite(siteId)?.modules || [];
-    if (mods.includes(selectedModuleId)) return selectedModuleId;
-    return mods[0] || 'quicknav';
+    const allMods = getSite(siteId)?.modules || [];
+    const filtered = getFilteredModuleIds(siteId);
+    if (filtered.length) {
+      if (filtered.includes(selectedModuleId)) return selectedModuleId;
+      return filtered[0];
+    }
+    if (allMods.includes(selectedModuleId)) return selectedModuleId;
+    return allMods[0] || 'quicknav';
   }
 
   async function saveQuickNavSettings(next) {
@@ -264,7 +316,7 @@
     if (!elSiteList) return;
     elSiteList.textContent = '';
 
-    for (const s of SITES) {
+    for (const s of getFilteredSites()) {
       const row = document.createElement('div');
       row.className = 'triRow' + (s.id === activeSiteId ? ' selected' : '');
 
@@ -312,18 +364,7 @@
     if (!elModuleList) return;
     elModuleList.textContent = '';
 
-    const rawMods = getSite(siteId)?.modules || [];
-    const mods = rawMods
-      .map((id, idx) => ({
-        id,
-        idx,
-        hasMenu: !!(MODULES[id]?.menuPreview && MODULES[id].menuPreview.length)
-      }))
-      .sort((a, b) => {
-        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
-        return a.idx - b.idx;
-      })
-      .map((x) => x.id);
+    const mods = getFilteredModuleIds(siteId);
 
     for (const moduleId of mods) {
       const def = MODULES[moduleId];
@@ -1028,7 +1069,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I / Ctrl+I 可快速最小化。';
+      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I 可快速最小化。';
     elModuleSettings.appendChild(hint);
 
     addPanelMenuPreview('chatgpt_usage_monitor');
@@ -1544,6 +1585,15 @@
     patchQuickNavSettings((next) => {
       next.enabled = checked;
     });
+  });
+
+  elSiteSearch?.addEventListener('input', () => {
+    siteSearchText = normalizeSearchText(elSiteSearch.value);
+    renderAll();
+  });
+  elModuleSearch?.addEventListener('input', () => {
+    moduleSearchText = normalizeSearchText(elModuleSearch.value);
+    renderAll();
   });
 
   btnRestoreDefault?.addEventListener('click', () => {

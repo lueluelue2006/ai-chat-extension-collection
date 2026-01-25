@@ -10,12 +10,22 @@
   // - When closed, should not affect normal usage (minimal DOM/CSS, no layout rewrites)
 
   const FLAG = '__quicknavChatgptSplitViewV1';
+  const __qnMaybeHasUi = () => {
+    try {
+      return !!(document.getElementById('qn-split-root') || document.getElementById('qn-split-handle'));
+    } catch {
+      return false;
+    }
+  };
   try {
-    if (globalThis[FLAG]) return;
+    // If we already ran and the UI exists, bail out.
+    // If we ran but failed early (e.g. injected too early before <html>/<body> exists),
+    // allow re-entry so we can self-heal and mount the UI.
+    if (globalThis[FLAG] && __qnMaybeHasUi()) return;
     Object.defineProperty(globalThis, FLAG, { value: true, configurable: true });
   } catch {
     try {
-      if (globalThis[FLAG]) return;
+      if (globalThis[FLAG] && __qnMaybeHasUi()) return;
       globalThis[FLAG] = true;
     } catch {}
   }
@@ -277,7 +287,9 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 #${ASK_ID}:hover{ background: rgba(2,132,199,0.95); }
 #${ASK_ID}:active{ transform: translateY(1px); }
 `;
-    (document.head || document.documentElement).appendChild(style);
+    const mount = document.head || document.documentElement;
+    if (!mount) return;
+    mount.appendChild(style);
   }
 
   function normalizeChatgptUrl(input) {
@@ -928,9 +940,9 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     let ask = document.getElementById(ASK_ID);
     if (!ask) {
       ask = document.createElement('button');
-    ask.id = ASK_ID;
-    ask.type = 'button';
-    ask.textContent = 'Ask';
+      ask.id = ASK_ID;
+      ask.type = 'button';
+      ask.textContent = 'Ask';
       ask.title = 'Quote selection into the right ChatGPT pane';
       (document.body || document.documentElement).appendChild(ask);
     }
@@ -1333,6 +1345,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
   function registerMenuCommands() {
     try {
+      if (window.__qnSplitMenuRegistered) return;
+      window.__qnSplitMenuRegistered = true;
       const reg = window.__quicknavRegisterMenuCommand;
       if (typeof reg !== 'function') return;
       reg('重置右侧状态 / 清理 Split View 存储', resetSplitViewState);
@@ -1682,28 +1696,63 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     } catch {}
   }
 
-  // Init (default closed; only auto-open if user explicitly left it open previously).
-  try {
-    ensureUI();
-    applyRightWidthPx(loadRightWidthPx());
-    bindGlobalEvents();
-    registerMenuCommands();
+  function tryInit() {
+    try {
+      if (!document.documentElement) return false;
+      // ChatGPT can briefly swap the whole document during navigation; avoid binding in hidden docs.
+      if (document.visibilityState === 'prerender') return false;
 
-    const persistedOpen = readBool(OPEN_KEY, false);
-    if (persistedOpen) {
-      setTimeout(() => {
-        try {
-          if (document.visibilityState === 'visible') openSplit();
-        } catch {}
-      }, 600);
+      ensureUI();
+      applyRightWidthPx(loadRightWidthPx());
+      bindGlobalEvents();
+      registerMenuCommands();
+
+      const persistedOpen = readBool(OPEN_KEY, false);
+      if (persistedOpen) {
+        setTimeout(() => {
+          try {
+            if (document.visibilityState === 'visible') openSplit();
+          } catch {}
+        }, 600);
+      } else {
+        // Clean up any stray host padding left by older versions / unexpected shutdowns.
+        // Run once after the SPA mounts to avoid missing the real host root.
+        setTimeout(() => {
+          try {
+            if (!document.documentElement.classList.contains('qn-split-open')) ensureHostLayout(false);
+          } catch {}
+        }, 1200);
+      }
+
+      return true;
+    } catch (e) {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn('[QuickNav][SplitView] init failed:', e);
+      } catch {}
+      return false;
+    }
+  }
+
+  // Init (default closed; only auto-open if user explicitly left it open previously).
+  // NOTE: this file can be injected "too early" via reinject/registration sync; keep it self-healing.
+  try {
+    let attempts = 0;
+    const maxAttempts = 80;
+    const retryMs = 120;
+
+    const schedule = () => {
+      if (tryInit()) return;
+      attempts += 1;
+      if (attempts >= maxAttempts) return;
+      setTimeout(schedule, retryMs);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', schedule, { once: true, capture: true });
+      setTimeout(schedule, 600);
     } else {
-      // Clean up any stray host padding left by older versions / unexpected shutdowns.
-      // Run once after the SPA mounts to avoid missing the real host root.
-      setTimeout(() => {
-        try {
-          if (!document.documentElement.classList.contains('qn-split-open')) ensureHostLayout(false);
-        } catch {}
-      }, 1200);
+      schedule();
     }
   } catch {}
 })();

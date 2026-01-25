@@ -3784,15 +3784,17 @@
     if (_keyboardShortcutsInstalled) return;
     _keyboardShortcutsInstalled = true;
     const handleShortcut = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === "i") {
-        // In silent mode we do not intercept Cmd/Ctrl+I at all.
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key && e.key.toLowerCase() === "i") {
+        // In silent mode we do not intercept Cmd+I at all.
         if (isSilent()) return;
         const monitor = document.getElementById("chatUsageMonitor");
         if (!monitor) return;
 
         e.preventDefault();
         e.stopPropagation();
-        e.stopImmediatePropagation();
+        try {
+          e.stopImmediatePropagation();
+        } catch {}
         requestMonitorMinimized(!monitor.classList.contains("minimized"));
         return false;
       }

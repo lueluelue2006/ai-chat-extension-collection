@@ -29,13 +29,15 @@
   // Only run inside the split-view iframe.
   if (!isSplitViewIframe()) return;
 
-  const DOUBLE_ESC_WINDOW_MS = 420;
+  const MULTI_ESC_WINDOW_MS = 600;
+  const CLOSE_ESC_PRESS_COUNT = 3;
   const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
 
   const HOTKEY_COOLDOWN_MS = 120;
   let busy = false;
   let lastHotkeyAt = 0;
   let lastEscAt = 0;
+  let escStreak = 0;
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -301,17 +303,23 @@
         if (event.repeat) return;
 
         const now = Date.now();
-        if (now - lastEscAt < DOUBLE_ESC_WINDOW_MS) {
+        if (now - lastEscAt < MULTI_ESC_WINDOW_MS) {
+          escStreak += 1;
+        } else {
+          escStreak = 1;
+        }
+        lastEscAt = now;
+
+        if (escStreak >= CLOSE_ESC_PRESS_COUNT) {
           lastEscAt = 0;
+          escStreak = 0;
           requestCloseSplit();
           event.preventDefault();
           event.stopPropagation();
           try {
             event.stopImmediatePropagation();
           } catch {}
-          return;
         }
-        lastEscAt = now;
       } catch {}
     },
     true

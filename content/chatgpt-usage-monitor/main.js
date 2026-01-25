@@ -8,18 +8,10 @@
   } catch {}
 
   // When split-view is enabled, some ChatGPT modules may be injected with `allFrames: true`.
-  // Keep this module out of internal iframes to avoid duplicated monitors and extra fetch patch work.
+  // Keep this module out of iframes to avoid duplicated monitors and extra fetch patch work.
   const __aichatUsageMonitorAllowedFrame = (() => {
-    let inIframe = false;
     try {
-      inIframe = window.self !== window.top;
-    } catch {
-      inIframe = true;
-    }
-    if (!inIframe) return true;
-    try {
-      const fe = window.frameElement;
-      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
+      return window.self === window.top;
     } catch {
       return false;
     }
@@ -1856,7 +1848,7 @@
   function createModelRouting() {
     const pendingAutoRequests = /* @__PURE__ */ new Map();
     const seenAssistantMessageIds = /* @__PURE__ */ new Set();
-    let assistantObserverStarted = false;
+    let assistantObserver = null;
     let lastSelectedModelConfig = {
       modelSlug: null,
       thinkingEffort: null,
@@ -1910,6 +1902,10 @@
       req.resolvedAt = Date.now();
       req.routed = routed;
       recordModelUsageByModelId(modelKey);
+      try {
+        if (!getOldestUnresolvedAutoRequest()) stopAssistantMessageObserver();
+      } catch {
+      }
     }
     async function parseSseFromResponse(response, onJson) {
       const body = response?.body;
@@ -1975,15 +1971,26 @@
       } catch {
       }
     }
+    function stopAssistantMessageObserver() {
+      if (!assistantObserver) return;
+      try {
+        assistantObserver.disconnect();
+      } catch {
+      }
+      assistantObserver = null;
+    }
     function startAssistantMessageObserver() {
-      if (assistantObserverStarted) return;
-      assistantObserverStarted = true;
+      if (assistantObserver) return;
       const start = () => {
+        if (assistantObserver) return;
         if (!document?.body) {
           setTimeout(start, 300);
           return;
         }
+        const target = document.querySelector("main") || document.body;
         const observer = new MutationObserver((mutations) => {
+          const oldest0 = getOldestUnresolvedAutoRequest();
+          if (!oldest0) return stopAssistantMessageObserver();
           for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
               if (!(node instanceof Element)) continue;
@@ -2001,11 +2008,17 @@
                 const ageMs = Date.now() - oldest.startedAt;
                 if (ageMs < 0 || ageMs > 2 * 60 * 1e3) continue;
                 resolveAutoRequest(oldest.id, { source: "dom", modelSlug });
+                if (!getOldestUnresolvedAutoRequest()) return;
               }
             }
           }
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        try {
+          observer.observe(target, { childList: true, subtree: true });
+          assistantObserver = observer;
+        } catch {
+          // ignore
+        }
       };
       start();
     }
@@ -4210,12 +4223,42 @@
     } else {
       scheduleInitialize(0);
     }
-    const observer = new MutationObserver(() => {
-      if (isSilent()) return;
-      if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(300);
-    });
-    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
-    window.addEventListener("popstate", () => scheduleInitialize(300));
+    // SPA navigation: re-init when route changes (pushState/replaceState/popstate).
+    try {
+      if (!window.__aichatChatGptUsageMonitorRouteWatchInstalled) {
+        window.__aichatChatGptUsageMonitorRouteWatchInstalled = true;
+        const onRoute = () => scheduleInitialize(300);
+        window.addEventListener("popstate", onRoute);
+        const originalPushState = history.pushState;
+        const originalReplaceState = history.replaceState;
+        history.pushState = function(...args) {
+          const ret = originalPushState.apply(this, args);
+          try { onRoute(); } catch {}
+          return ret;
+        };
+        history.replaceState = function(...args) {
+          const ret = originalReplaceState.apply(this, args);
+          try { onRoute(); } catch {}
+          return ret;
+        };
+      }
+    } catch {
+    }
+
+    // Cheap self-heal: periodic presence check (avoid global subtree MutationObserver on ChatGPT).
+    try {
+      if (!window.__aichatChatGptUsageMonitorEnsureInstalled) {
+        window.__aichatChatGptUsageMonitorEnsureInstalled = true;
+        setInterval(() => {
+          try {
+            if (isSilent()) return;
+            if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(0);
+          } catch {}
+        }, 4000);
+      }
+    } catch {
+    }
+
     scheduleInitialize(300);
     console.log("🚀 ChatGPT Usage Monitor loaded");
   }

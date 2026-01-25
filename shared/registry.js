@@ -67,16 +67,16 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-    quicknav: {
-      id: 'quicknav',
-      name: 'QuickNav',
-      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
-      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
-      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
-      authors: ['schweigen（原始脚本）', 'loongphy（暗色模式等补丁）', 'lueluelue2006（MV3 扩展封装/改造）'],
-      license: 'MIT（上游脚本声明）',
-      upstream: 'https://github.com/lueluelue2006/ChatGPT-QuickNav'
-    },
+	    quicknav: {
+	      id: 'quicknav',
+	      name: 'QuickNav',
+	      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
+	      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
+	      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
+	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式等补丁）'],
+	      license: 'MIT（上游脚本声明）',
+	      upstream: 'https://github.com/lueluelue2006/ChatGPT-QuickNav'
+	    },
     chatgpt_perf: {
       id: 'chatgpt_perf',
       name: 'ChatGPT 性能优化',
@@ -125,16 +125,16 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-    chatgpt_usage_monitor: {
-      id: 'chatgpt_usage_monitor',
-      name: 'ChatGPT 用量统计',
-      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
-      hotkeys: ['⌘I'],
-      menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
-      authors: ['tizee（原始脚本）', 'schweigen（修改）', 'lueluelue2006（MV3 适配/集成）'],
-      license: 'MIT',
-      upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
-    },
+	    chatgpt_usage_monitor: {
+	      id: 'chatgpt_usage_monitor',
+	      name: 'ChatGPT 用量统计',
+	      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
+	      hotkeys: ['⌘I'],
+	      menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
+	      authors: ['lueluelue2006（抄了 tizee@Github 的 GUI）'],
+	      license: 'MIT',
+	      upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
+	    },
     chatgpt_reply_timer: {
       id: 'chatgpt_reply_timer',
       name: 'ChatGPT 回复计时器',
@@ -266,15 +266,15 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-    genspark_inline_upload_fix: {
-      id: 'genspark_inline_upload_fix',
-      name: 'Genspark 消息编辑上传修复',
-      sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
-      hotkeys: [],
-      authors: ['schweigen（原始脚本）', 'lueluelue2006（MV3 集成）'],
-      license: '未标注（内部脚本）'
-    }
-  };
+	    genspark_inline_upload_fix: {
+	      id: 'genspark_inline_upload_fix',
+	      name: 'Genspark 消息编辑上传修复',
+	      sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
+	      hotkeys: [],
+	      authors: ['lueluelue2006（原始脚本 / MV3 集成）'],
+	      license: '未标注（内部脚本）'
+	    }
+	  };
 
   const freezeArrayShallow = (arr) => {
     if (!Array.isArray(arr)) return Object.freeze([]);

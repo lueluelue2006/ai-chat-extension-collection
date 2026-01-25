@@ -267,6 +267,20 @@
     return SITES.find((s) => s.id === id) || null;
   }
 
+  function getSiteUrlPatterns(siteId) {
+    const s = String(siteId || '');
+    if (s === 'chatgpt') return ['https://chatgpt.com/*'];
+    if (s === 'ernie') return ['https://ernie.baidu.com/*'];
+    if (s === 'deepseek') return ['https://chat.deepseek.com/*'];
+    if (s === 'qwen') return ['https://chat.qwen.ai/*'];
+    if (s === 'zai') return ['https://chat.z.ai/*'];
+    if (s === 'grok') return ['https://grok.com/*'];
+    if (s === 'gemini_app') return ['https://gemini.google.com/app*'];
+    if (s === 'gemini_business') return ['https://business.gemini.google/*'];
+    if (s === 'genspark') return ['https://www.genspark.ai/*'];
+    return [];
+  }
+
   function getFilteredSites() {
     return SITES.filter((s) => siteMatchesSearch(s, siteSearchText));
   }
@@ -539,20 +553,6 @@
     addPanelDivider();
     addPanelTitle('菜单操作', '直接在配置页执行（会在已打开的目标站点页面中运行）。');
 
-    const getSiteUrlPatterns = (siteId) => {
-      const s = String(siteId || '');
-      if (s === 'chatgpt') return ['https://chatgpt.com/*'];
-      if (s === 'ernie') return ['https://ernie.baidu.com/*'];
-      if (s === 'deepseek') return ['https://chat.deepseek.com/*'];
-      if (s === 'qwen') return ['https://chat.qwen.ai/*'];
-      if (s === 'zai') return ['https://chat.z.ai/*'];
-      if (s === 'grok') return ['https://grok.com/*'];
-      if (s === 'gemini_app') return ['https://gemini.google.com/app*'];
-      if (s === 'gemini_business') return ['https://business.gemini.google/*'];
-      if (s === 'genspark') return ['https://www.genspark.ai/*'];
-      return [];
-    };
-
     const groupMatchesModule = (group, modId) => {
       const g = String(group || '');
       const m = String(modId || '');
@@ -792,30 +792,76 @@
       elModuleSettings.appendChild(row);
     }
 
-    const rowMargin = document.createElement('label');
-    rowMargin.className = 'formRow';
+    const rowMargin = document.createElement('div');
+    rowMargin.className = 'formRow rangeRow';
     const leftMargin = document.createElement('span');
     leftMargin.textContent = 'rootMarginPx（越大越不激进）';
-    const inputMargin = document.createElement('input');
-    inputMargin.type = 'number';
-    inputMargin.min = '0';
-    inputMargin.step = '50';
-    inputMargin.value = String(settings.rootMarginPx);
-    inputMargin.addEventListener('change', async () => {
-      const n = Number(inputMargin.value);
-      const next = { ...settings, rootMarginPx: Number.isFinite(n) ? Math.max(0, n) : settings.rootMarginPx };
+
+    const marginStep = 50;
+    const marginBaseMax = 4000;
+
+    const inputMarginRange = document.createElement('input');
+    inputMarginRange.type = 'range';
+    inputMarginRange.min = '0';
+    inputMarginRange.step = String(marginStep);
+
+    const inputMarginNumber = document.createElement('input');
+    inputMarginNumber.type = 'number';
+    inputMarginNumber.min = '0';
+    inputMarginNumber.step = String(marginStep);
+
+    const marginVal = document.createElement('span');
+    marginVal.className = 'rangeVal';
+
+    const sanitizeMargin = (raw) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return settings.rootMarginPx;
+      return Math.max(0, Math.round(n / marginStep) * marginStep);
+    };
+
+    const applyMarginUi = (raw) => {
+      const v = sanitizeMargin(raw);
+      const max = Math.max(marginBaseMax, v);
+      inputMarginRange.max = String(max);
+      inputMarginRange.value = String(v);
+      inputMarginNumber.value = String(v);
+      marginVal.textContent = `${v}px`;
+      return v;
+    };
+
+    const commitMargin = async (raw) => {
+      const v = sanitizeMargin(raw);
+      const next = { ...settings, rootMarginPx: v };
       setStatus('正在保存模块设置…');
       try {
         settings = await saveCgptPerfSettings(next);
-        inputMargin.value = String(settings.rootMarginPx);
+        applyMarginUi(settings.rootMarginPx);
         setStatus('模块设置已保存', 'ok');
       } catch (e) {
-        inputMargin.value = String(settings.rootMarginPx);
+        applyMarginUi(settings.rootMarginPx);
         setStatus(`模块设置保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       }
+    };
+
+    applyMarginUi(settings.rootMarginPx);
+
+    inputMarginRange.addEventListener('input', () => applyMarginUi(inputMarginRange.value));
+    inputMarginRange.addEventListener('change', () => void commitMargin(inputMarginRange.value));
+    inputMarginNumber.addEventListener('input', () => {
+      const v = sanitizeMargin(inputMarginNumber.value);
+      marginVal.textContent = `${v}px`;
+      inputMarginRange.value = String(Math.min(Number(inputMarginRange.max || marginBaseMax), v));
     });
+    inputMarginNumber.addEventListener('change', () => void commitMargin(inputMarginNumber.value));
+
+    const marginControls = document.createElement('div');
+    marginControls.className = 'rangeControl';
+    marginControls.appendChild(inputMarginRange);
+    marginControls.appendChild(inputMarginNumber);
+    marginControls.appendChild(marginVal);
+
     rowMargin.appendChild(leftMargin);
-    rowMargin.appendChild(inputMargin);
+    rowMargin.appendChild(marginControls);
     elModuleSettings.appendChild(rowMargin);
 
     const resetBtn = document.createElement('button');
@@ -1022,30 +1068,76 @@
 
     addPanelDivider();
 
-    const rowSpeed = document.createElement('label');
-    rowSpeed.className = 'formRow';
+    const rowSpeed = document.createElement('div');
+    rowSpeed.className = 'formRow rangeRow';
     const leftSpeed = document.createElement('span');
     leftSpeed.textContent = '朗读速度倍速（0.01–100）';
-    const inputSpeed = document.createElement('input');
-    inputSpeed.type = 'number';
-    inputSpeed.min = String(CGPT_READALOUD_SPEED_MIN);
-    inputSpeed.max = String(CGPT_READALOUD_SPEED_MAX);
-    inputSpeed.step = '0.01';
-    inputSpeed.value = String(speed);
-    inputSpeed.addEventListener('change', async () => {
-      const next = Number(inputSpeed.value);
+
+    const SPEED_SLIDER_MIN = 0.5;
+    const SPEED_SLIDER_MAX = 4;
+    const SPEED_SLIDER_STEP = 0.05;
+
+    const inputSpeedRange = document.createElement('input');
+    inputSpeedRange.type = 'range';
+    inputSpeedRange.min = String(SPEED_SLIDER_MIN);
+    inputSpeedRange.max = String(SPEED_SLIDER_MAX);
+    inputSpeedRange.step = String(SPEED_SLIDER_STEP);
+
+    const inputSpeedNumber = document.createElement('input');
+    inputSpeedNumber.type = 'number';
+    inputSpeedNumber.min = String(CGPT_READALOUD_SPEED_MIN);
+    inputSpeedNumber.max = String(CGPT_READALOUD_SPEED_MAX);
+    inputSpeedNumber.step = '0.01';
+
+    const speedVal = document.createElement('span');
+    speedVal.className = 'rangeVal';
+
+    const clampForSlider = (v) => Math.max(SPEED_SLIDER_MIN, Math.min(SPEED_SLIDER_MAX, v));
+    const formatSpeed = (v) => {
+      if (!Number.isFinite(v)) return '';
+      return String(Number(v.toFixed(2))).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+    };
+
+    const applySpeedUi = (raw) => {
+      const v = sanitizeCgptReadaloudSpeed(raw);
+      inputSpeedNumber.value = String(v);
+      inputSpeedRange.value = String(clampForSlider(v));
+      speedVal.textContent = `${formatSpeed(v)}x`;
+      return v;
+    };
+
+    const commitSpeed = async (raw) => {
+      const next = sanitizeCgptReadaloudSpeed(raw);
       setStatus('正在保存模块设置…');
       try {
         speed = await saveCgptReadaloudSpeed(next);
-        inputSpeed.value = String(speed);
+        applySpeedUi(speed);
         setStatus('模块设置已保存', 'ok');
       } catch (e) {
-        inputSpeed.value = String(speed);
+        applySpeedUi(speed);
         setStatus(`模块设置保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       }
+    };
+
+    applySpeedUi(speed);
+
+    inputSpeedRange.addEventListener('input', () => applySpeedUi(inputSpeedRange.value));
+    inputSpeedRange.addEventListener('change', () => void commitSpeed(inputSpeedRange.value));
+    inputSpeedNumber.addEventListener('input', () => {
+      const v = sanitizeCgptReadaloudSpeed(inputSpeedNumber.value);
+      speedVal.textContent = `${formatSpeed(v)}x`;
+      inputSpeedRange.value = String(clampForSlider(v));
     });
+    inputSpeedNumber.addEventListener('change', () => void commitSpeed(inputSpeedNumber.value));
+
+    const speedControls = document.createElement('div');
+    speedControls.className = 'rangeControl';
+    speedControls.appendChild(inputSpeedRange);
+    speedControls.appendChild(inputSpeedNumber);
+    speedControls.appendChild(speedVal);
+
     rowSpeed.appendChild(leftSpeed);
-    rowSpeed.appendChild(inputSpeed);
+    rowSpeed.appendChild(speedControls);
     elModuleSettings.appendChild(rowSpeed);
 
     const resetBtn = document.createElement('button');
@@ -1705,7 +1797,21 @@
       const settings = await reinjectNow();
       currentSettings = settings;
       renderAll();
-      setStatus('已重新注入（已打开的匹配页面会立即生效；关闭功能需刷新页面）', 'ok');
+      let openTabs = null;
+      try {
+        const patterns = Array.from(new Set(SITES.flatMap((s) => getSiteUrlPatterns(s.id))));
+        if (patterns.length) {
+          const tabs = await tabsQuery({ url: patterns });
+          openTabs = tabs.length;
+        }
+      } catch {}
+
+      if (typeof openTabs === 'number') {
+        if (openTabs === 0) setStatus('已重新注入：当前没有已打开的匹配页面（0 个）；后续打开页面会自动注入。', 'ok');
+        else setStatus(`已重新注入：已打开的匹配页面（${openTabs} 个）会立即生效；关闭功能需刷新页面。`, 'ok');
+      } else {
+        setStatus('已重新注入（已打开的匹配页面会立即生效；关闭功能需刷新页面）', 'ok');
+      }
     } catch (e) {
       setStatus(`重新注入失败：${e instanceof Error ? e.message : String(e)}`, 'err');
     } finally {

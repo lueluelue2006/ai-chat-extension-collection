@@ -34,6 +34,7 @@
   const OPEN_KEY = `${STORE_NS}:open`;
   const WIDTH_KEY = `${STORE_NS}:rightWidthPx`;
   const SRC_KEY = `${STORE_NS}:src`;
+  const IFRAME_SIDEBAR_USER_WANTED_KEY = `${STORE_NS}:iframeSidebarUserWanted`;
 
   const STYLE_ID = 'qn-split-style';
   const ROOT_ID = 'qn-split-root';
@@ -51,13 +52,15 @@
   const CLOSE_ESC_PRESS_COUNT = 3;
   const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
 
-  const DEFAULT_RIGHT_WIDTH_PX = 560;
+  const DEFAULT_RIGHT_WIDTH_PX = 600;
   const MIN_RIGHT_WIDTH_PX = 320;
   const MAX_RIGHT_WIDTH_RATIO = 0.7;
 
   // Auto-expand the iframe (right pane) *internal* ChatGPT sidebar when the split pane becomes wide enough.
   // This makes the right pane feel more like a full ChatGPT tab when you drag the divider left.
-  const IFRAME_AUTO_SIDEBAR_ENABLED = true;
+  // NOTE: This can cause unwanted sidebar pop-outs and layout glitches when resizing.
+  // Keep it off by default; users can still expand/collapse the sidebar manually inside the iframe.
+  const IFRAME_AUTO_SIDEBAR_ENABLED = false;
   const IFRAME_AUTO_SIDEBAR_WIDTH_PX = 260; // ChatGPT expanded sidebar is ~260px
   const IFRAME_AUTO_SIDEBAR_MIN_MAIN_PX = 480; // avoid making the chat area too cramped
   const IFRAME_AUTO_SIDEBAR_OPEN_THRESHOLD_PX = IFRAME_AUTO_SIDEBAR_WIDTH_PX + IFRAME_AUTO_SIDEBAR_MIN_MAIN_PX; // 740px
@@ -81,6 +84,8 @@
   let __qnSplitIframeSidebarPending = null; // boolean | null
   let __qnSplitIframeSidebarTimer = 0;
   let __qnSplitIframeSidebarLastAt = 0;
+  let __qnSplitIframeSidebarUserWanted = false;
+  let __qnSplitIframeSidebarEnforceTimer = 0;
 
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const BLOCK_TAGS = new Set([
@@ -189,28 +194,28 @@ html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
 }
 #${PANE_ID}[data-open="1"]{ display:block; }
 
-#${TOPBAR_ID}{
-  position:absolute;
-  /* Stick to the top edge (respect safe-area insets on notched displays). */
-  top: env(safe-area-inset-top);
-  right: env(safe-area-inset-right);
-  display:flex;
-  gap:6px;
-  z-index:2;
-}
-#${TOPBAR_ID} button{
-  appearance:none;
-  border:1px solid rgba(148,163,184,0.55);
-  background: rgba(255,255,255,0.88);
-  color:#0f172a;
-  border-radius:10px;
-  padding:6px 10px;
-  font-size:12px;
-  line-height:1;
-  cursor:pointer;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-}
+	#${TOPBAR_ID}{
+	  position:absolute;
+	  /* Stick to the top edge (respect safe-area insets on notched displays). */
+	  top: env(safe-area-inset-top);
+	  right: env(safe-area-inset-right);
+	  display:flex;
+	  gap:4px;
+	  z-index:2;
+	}
+	#${TOPBAR_ID} button{
+	  appearance:none;
+	  border:1px solid rgba(148,163,184,0.55);
+	  background: rgba(255,255,255,0.88);
+	  color:#0f172a;
+	  border-radius:10px;
+	  padding:5px 8px;
+	  font-size:12px;
+	  line-height:1;
+	  cursor:pointer;
+	  backdrop-filter: blur(10px);
+	  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+	}
 #${TOPBAR_ID} button:hover{ border-color: rgba(59,130,246,0.6); }
 #${TOPBAR_ID} button:active{ transform: translateY(1px); }
 
@@ -236,11 +241,6 @@ html.qn-split-open #${DIVIDER_ID}{ display:block; }
   box-shadow: 0 0 0 1px rgba(59,130,246,0.25);
 }
 html.qn-split-drag *{ cursor: col-resize !important; user-select:none !important; }
-
-/* Auto-hide ChatGPT left sidebar (only when we explicitly opt-in per-session). */
-html.qn-split-open.qn-split-hide-left-sidebar #stage-slideover-sidebar > div > div:not(#stage-sidebar-tiny-bar){
-  display: none !important;
-}
 
 /* Closed-state handle */
 #${HANDLE_ID}{
@@ -444,6 +444,10 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     try {
       scheduleIframeSidebarAutoByWidth(v);
     } catch {}
+    try {
+      // Prevent ChatGPT's responsive layout from auto-expanding the iframe sidebar while resizing.
+      scheduleEnforceIframeSidebarUserWanted();
+    } catch {}
     return v;
   }
 
@@ -456,6 +460,97 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       } catch {}
       __qnSplitIframeSidebarTimer = 0;
     }
+  }
+
+  function setIframeSidebarUserWanted(next) {
+    const v = !!next;
+    __qnSplitIframeSidebarUserWanted = v;
+    try {
+      writeBool(IFRAME_SIDEBAR_USER_WANTED_KEY, v);
+    } catch {}
+  }
+
+  function enforceIframeSidebarUserWanted() {
+    if (!document.documentElement.classList.contains('qn-split-open')) return false;
+    if (__qnSplitIframeSidebarUserWanted !== false) return true;
+    // Keep collapsed unless the user explicitly opened it.
+    return syncIframeSidebarExpanded(false);
+  }
+
+  function scheduleEnforceIframeSidebarUserWanted(delay = 120) {
+    if (__qnSplitIframeSidebarEnforceTimer) {
+      try {
+        clearTimeout(__qnSplitIframeSidebarEnforceTimer);
+      } catch {}
+      __qnSplitIframeSidebarEnforceTimer = 0;
+    }
+    const wait = Math.max(0, Number(delay) || 0);
+    __qnSplitIframeSidebarEnforceTimer = setTimeout(() => {
+      __qnSplitIframeSidebarEnforceTimer = 0;
+      try {
+        enforceIframeSidebarUserWanted();
+      } catch {}
+    }, wait);
+  }
+
+  function ensureIframeSidebarUserIntentBridge(iframe) {
+    let doc;
+    try {
+      doc = iframe?.contentDocument;
+    } catch {
+      return false;
+    }
+    if (!doc) return false;
+    try {
+      if (doc.__qnSplitSidebarIntentBridgeInstalled) return true;
+      doc.__qnSplitSidebarIntentBridgeInstalled = true;
+    } catch {}
+
+    // Track user intent (open/close) so we can prevent responsive auto-open while resizing.
+    const openSelector =
+      'button[data-testid="open-sidebar-button"],' +
+      '#stage-sidebar-tiny-bar button[aria-controls="stage-slideover-sidebar"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="false"],' +
+      'button[aria-label="Open sidebar"]';
+    const closeSelector =
+      'button[data-testid="close-sidebar-button"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="true"],' +
+      'button[aria-label="Close sidebar"]';
+
+    try {
+      doc.addEventListener(
+        'click',
+        (e) => {
+          try {
+            const t = e?.target;
+            if (!t || typeof t.closest !== 'function') return;
+            if (t.closest(openSelector)) return void setIframeSidebarUserWanted(true);
+            if (t.closest(closeSelector)) return void setIframeSidebarUserWanted(false);
+          } catch {}
+        },
+        true
+      );
+    } catch {}
+
+    // Watch for responsive auto-open/close and enforce user's explicit preference.
+    // (We only auto-close when userWanted=false; we never auto-open.)
+    try {
+      if (!doc.__qnSplitSidebarIntentMo && typeof MutationObserver === 'function') {
+        const stage = doc.getElementById('stage-slideover-sidebar');
+        if (stage) {
+          const mo = new MutationObserver(() => {
+            try {
+              scheduleEnforceIframeSidebarUserWanted(60);
+            } catch {}
+          });
+          try {
+            mo.observe(stage, { attributes: true, attributeFilter: ['style', 'class'] });
+            doc.__qnSplitSidebarIntentMo = mo;
+          } catch {}
+        }
+      }
+    } catch {}
+    return true;
   }
 
   function getIframeSidebarState(iframe) {
@@ -516,7 +611,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
   }
 
   function syncIframeSidebarExpanded(expanded) {
-    if (!IFRAME_AUTO_SIDEBAR_ENABLED) return false;
     if (!document.documentElement.classList.contains('qn-split-open')) return false;
 
     const iframe = document.getElementById(IFRAME_ID);
@@ -1032,6 +1126,13 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       }
       style.textContent = css;
       try {
+        ensureIframeSidebarUserIntentBridge(iframe);
+      } catch {}
+      try {
+        // If ChatGPT's responsive layout auto-expanded the sidebar, immediately enforce user's preference.
+        scheduleEnforceIframeSidebarUserWanted(0);
+      } catch {}
+      try {
         if (document.documentElement.classList.contains('qn-split-open')) {
           scheduleIframeSidebarAutoByWidth(loadRightWidthPx());
         }
@@ -1187,15 +1288,15 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
   }
 
   function openSplit() {
+    const ui = ensureUI();
+    const width = applyRightWidthPx(loadRightWidthPx());
+    ensureHostLayout(true);
+    setOpen(true);
     try {
       // If the user keeps the left sidebar open, split view becomes very cramped.
       // Auto-collapse it on open, and restore it on close (only if we changed it).
       maybeAutoCollapseLeftSidebar();
     } catch {}
-    const ui = ensureUI();
-    const width = applyRightWidthPx(loadRightWidthPx());
-    ensureHostLayout(true);
-    setOpen(true);
     try {
       scheduleIframeSidebarAutoByWidth(width);
     } catch {}
@@ -1211,6 +1312,16 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     ensureHostLayout(false);
     hideAsk();
     resetIframeSidebarAutoState();
+    clearHostSidebarCollapseSchedule();
+    // ChatGPT SPA can re-render right after close; run a delayed cleanup to avoid leftover padding/blank space.
+    try {
+      setTimeout(() => {
+        try {
+          if (document.documentElement.classList.contains('qn-split-open')) return;
+          ensureHostLayout(false);
+        } catch {}
+      }, 600);
+    } catch {}
     // Best-effort restore: only when we are sure we're staying closed.
     try {
       setTimeout(() => {
@@ -1239,34 +1350,105 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
   // Sidebar auto-collapse (host page only)
   let __qnSplitLeftSidebarRestoreWanted = false;
-  function isVisibleEl(el) {
+  let __qnSplitLeftSidebarCollapseTimer = 0;
+  let __qnSplitLeftSidebarCollapseAttempts = 0;
+  const HOST_SIDEBAR_COLLAPSE_MAX_ATTEMPTS = 18;
+  const HOST_SIDEBAR_COLLAPSE_RETRY_MS = 160;
+
+  function getHostSidebarState() {
     try {
-      if (!el) return false;
-      if (el.nodeType !== 1) return false;
-      const rect = el.getBoundingClientRect?.();
-      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-      const cs = window.getComputedStyle?.(el);
-      if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')) return false;
-      return true;
-    } catch {
-      return false;
+      const stage = document.getElementById('stage-slideover-sidebar');
+      if (stage) {
+        try {
+          const s = String(stage.getAttribute('style') || '');
+          if (s.includes('--sidebar-width')) return 'expanded';
+          if (s.includes('--sidebar-rail-width')) return 'collapsed';
+        } catch {}
+
+        try {
+          const px = stage.getBoundingClientRect?.().width || 0;
+          if (px >= 140) return 'expanded';
+          if (px > 0) return 'collapsed';
+        } catch {}
+
+        return 'unknown';
+      }
+
+      // Compact layout: a popover sidebar that exists only when open.
+      try {
+        const pop = document.getElementById('stage-popover-sidebar');
+        if (pop) return 'expanded';
+      } catch {}
+
+      try {
+        const openBtn = document.querySelector('button[data-testid="open-sidebar-button"]');
+        if (openBtn) {
+          const expanded = openBtn.getAttribute('aria-expanded') === 'true';
+          return expanded ? 'expanded' : 'collapsed';
+        }
+      } catch {}
+    } catch {}
+    return 'unknown';
+  }
+
+  function syncHostSidebarExpanded(expanded) {
+    const desired = !!expanded;
+    const state = getHostSidebarState();
+    if (desired && state === 'expanded') return true;
+    if (!desired && state === 'collapsed') return true;
+    if (state !== 'expanded' && state !== 'collapsed') return false;
+
+    // Prefer locale-agnostic selectors.
+    const openBtnSelector =
+      'button[data-testid="open-sidebar-button"][aria-expanded="false"],' +
+      '#stage-sidebar-tiny-bar button[aria-controls="stage-slideover-sidebar"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="false"]:not([data-testid="close-sidebar-button"]),' +
+      'button[aria-label="Open sidebar"]';
+    const closeBtnSelector =
+      'button[data-testid="close-sidebar-button"],' +
+      '#stage-slideover-sidebar button[aria-controls="stage-slideover-sidebar"][aria-expanded="true"],' +
+      'button[aria-label="Close sidebar"]';
+
+    if (desired && state === 'collapsed') return clickEl(document.querySelector(openBtnSelector));
+    if (!desired && state === 'expanded') return clickEl(document.querySelector(closeBtnSelector));
+    return false;
+  }
+
+  function clearHostSidebarCollapseSchedule() {
+    __qnSplitLeftSidebarCollapseAttempts = 0;
+    if (__qnSplitLeftSidebarCollapseTimer) {
+      try {
+        clearTimeout(__qnSplitLeftSidebarCollapseTimer);
+      } catch {}
+      __qnSplitLeftSidebarCollapseTimer = 0;
     }
   }
 
-  function findExpandedSidebarPanel() {
-    // ChatGPT 2025/2026 UI: `#stage-slideover-sidebar` contains a tiny rail and an expanded panel sibling.
-    // We hide only the expanded panel so the tiny bar remains usable.
-    try {
-      const panels = Array.from(
-        document.querySelectorAll('#stage-slideover-sidebar > div > div:not(#stage-sidebar-tiny-bar)')
-      );
-      for (const el of panels) {
-        const rect = el.getBoundingClientRect?.();
-        if (!rect || rect.width < 120 || rect.height < 120) continue;
-        return el;
+  function scheduleHostSidebarCollapse() {
+    if (__qnSplitLeftSidebarCollapseTimer) return true;
+    __qnSplitLeftSidebarCollapseAttempts = 0;
+
+    const tick = () => {
+      if (!document.documentElement.classList.contains('qn-split-open')) return clearHostSidebarCollapseSchedule();
+
+      const ok = syncHostSidebarExpanded(false);
+      if (ok) {
+        __qnSplitLeftSidebarRestoreWanted = true;
+        return clearHostSidebarCollapseSchedule();
       }
-    } catch {}
-    return null;
+
+      __qnSplitLeftSidebarCollapseAttempts += 1;
+      if (__qnSplitLeftSidebarCollapseAttempts >= HOST_SIDEBAR_COLLAPSE_MAX_ATTEMPTS) {
+        return clearHostSidebarCollapseSchedule();
+      }
+      __qnSplitLeftSidebarCollapseTimer = setTimeout(() => {
+        __qnSplitLeftSidebarCollapseTimer = 0;
+        tick();
+      }, HOST_SIDEBAR_COLLAPSE_RETRY_MS);
+    };
+
+    tick();
+    return true;
   }
 
   function maybeAutoCollapseLeftSidebar() {
@@ -1274,16 +1456,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       if (window !== window.top) return false;
     } catch {}
 
-    // If the expanded panel is visible, hide it while split view is open.
-    const panel = findExpandedSidebarPanel();
-    if (!panel || !isVisibleEl(panel)) return false;
-    try {
-      document.documentElement.classList.add('qn-split-hide-left-sidebar');
-      __qnSplitLeftSidebarRestoreWanted = true;
-      return true;
-    } catch {
-      return false;
-    }
+    // Collapse (by clicking the real ChatGPT toggle), instead of hiding via CSS.
+    // This avoids "black cover" layouts where the sidebar width remains but contents are hidden.
+    const state = getHostSidebarState();
+    if (state !== 'expanded') return false;
+    return scheduleHostSidebarCollapse();
   }
 
   function maybeRestoreLeftSidebar() {
@@ -1291,8 +1468,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     __qnSplitLeftSidebarRestoreWanted = false;
 
     try {
-      document.documentElement.classList.remove('qn-split-hide-left-sidebar');
-      return true;
+      // Only restore if it is still collapsed; if the user manually opened it during split view,
+      // don't fight their intent.
+      const state = getHostSidebarState();
+      if (state !== 'collapsed') return false;
+      return syncHostSidebarExpanded(true);
     } catch {
       return false;
     }
@@ -1317,6 +1497,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     try { window.localStorage.removeItem(OPEN_KEY); } catch {}
     try { window.localStorage.removeItem(WIDTH_KEY); } catch {}
     try { window.localStorage.removeItem(SRC_KEY); } catch {}
+    try { window.localStorage.removeItem(IFRAME_SIDEBAR_USER_WANTED_KEY); } catch {}
   }
 
   function resetSplitViewState() {
@@ -1701,6 +1882,12 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       if (!document.documentElement) return false;
       // ChatGPT can briefly swap the whole document during navigation; avoid binding in hidden docs.
       if (document.visibilityState === 'prerender') return false;
+
+      try {
+        __qnSplitIframeSidebarUserWanted = readBool(IFRAME_SIDEBAR_USER_WANTED_KEY, false);
+      } catch {
+        __qnSplitIframeSidebarUserWanted = false;
+      }
 
       ensureUI();
       applyRightWidthPx(loadRightWidthPx());

@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.62
-- Generated: 2026-01-24 08:47
+- Version: 1.1.94
+- Generated: 2026-01-25
 - Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -14,6 +14,7 @@
 - `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天/31天）” / “清理无效收藏”）
 - `chatgpt_usage_monitor`: ChatGPT 用量统计（“重置监视器位置” / “切换静默模式（隐藏/显示面板）” / “导出用量统计数据” / “导入用量统计数据”）
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
+- `chatgpt_split_view`: ChatGPT 拆分视图（实验）（“重置右侧状态 / 清理 Split View 存储” / “在新标签页打开右侧（并关闭 Split View）”）
 
 ## Sites
 
@@ -27,7 +28,7 @@
 ### ChatGPT (chatgpt.com)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / ISOLATED: `content/menu-bridge.js`, `content/chatgpt-quicknav.js`
@@ -49,7 +50,7 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-readaloud-speed-controller/main.js`
 - `chatgpt_usage_monitor`: ChatGPT 用量统计 — 实时统计各模型调用量，支持导入/导出与分析报告
-  - 作者: tizee（原始脚本） / schweigen（修改） / lueluelue2006（MV3 适配/集成）
+  - 作者: tizee（原始脚本） / lueluelue2006（MV3 集成/改造）
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-usage-monitor/main.js`
@@ -58,7 +59,7 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-reply-timer/main.js`
 - `chatgpt_download_file_fix`: ChatGPT 下载修复 — 修复文件下载失败（sandbox_path 解码）
-  - 作者: lueluelue2006
+  - 作者: Marx@linux.do
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-download-file-fix/main.js`
 - `chatgpt_strong_highlight_lite`: ChatGPT 回复粗体高亮（Lite） — 高亮粗体 + 隐藏免责声明
@@ -94,11 +95,12 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_idle / ISOLATED: `content/chatgpt-split-view/main.js`
+  - 注入: document_start / MAIN（allFrames）: `content/chatgpt-split-view/iframe-hotkeys.js`
 
 ### Gemini Business (business.gemini.google)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -119,7 +121,7 @@
 ### Gemini App (gemini.google.com/app)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -132,7 +134,7 @@
 ### Genspark (genspark.ai/agents)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -154,14 +156,14 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/genspark-codeblock-fold/main.js`
 - `genspark_inline_upload_fix`: Genspark 消息编辑上传修复 — 修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器
-  - 作者: schweigen（原始脚本） / lueluelue2006（MV3 集成）
+  - 作者: lueluelue2006（原始脚本 / MV3 集成）
   - 许可证: 未标注（内部脚本）
   - 注入: document_idle / MAIN: `content/genspark-inline-upload-fix/main.js`
 
 ### Grok (grok.com)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -182,7 +184,7 @@
 ### DeepSeek (chat.deepseek.com)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -195,7 +197,7 @@
 ### GLM (chat.z.ai)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -208,7 +210,7 @@
 ### 文心一言 (ernie.baidu.com)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
@@ -221,7 +223,7 @@
 ### Qwen (chat.qwen.ai)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: schweigen（原始脚本） / loongphy（暗色模式等补丁） / lueluelue2006（MV3 扩展封装/改造）
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`

@@ -27,9 +27,33 @@
   const PLAN_CHANGED_EVENT = '__aichat_chatgpt_usage_monitor_plan_changed_v1__';
   const ACTION_EVENT = '__aichat_chatgpt_usage_monitor_action_v1__';
   const USAGE_DATA_LS_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
+  const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
 
   let lastAppliedPlan = '';
   let lastAppliedAt = 0;
+  let __aichatPlanDispatchSeq = 0;
+  let __aichatPlanRetryTimers = [];
+
+  function clearPlanDispatchRetries() {
+    if (!__aichatPlanRetryTimers.length) return;
+    for (const t of __aichatPlanRetryTimers) {
+      try {
+        clearTimeout(t);
+      } catch {}
+    }
+    __aichatPlanRetryTimers = [];
+  }
+
+  function scheduleSetPlanRetry(seq, planType, source, delayMs) {
+    const wait = Math.max(0, Number(delayMs) || 0);
+    const id = setTimeout(() => {
+      try {
+        if (seq !== __aichatPlanDispatchSeq) return;
+        dispatchSetPlan(planType, source);
+      } catch {}
+    }, wait);
+    __aichatPlanRetryTimers.push(id);
+  }
 
   function normalizePlanType(raw) {
     const s = String(raw || '').trim();
@@ -46,6 +70,15 @@
 
   function patchLocalStoragePlan(planType) {
     try {
+      // Keep a dedicated key so MAIN-world code can read planType even when usageData hasn't been created yet.
+      // (CustomEvent dispatch can race with MAIN-world listener installation during document_start injection.)
+      try {
+        localStorage.setItem(PLAN_TYPE_GM_KEY, JSON.stringify(planType));
+      } catch {}
+      try {
+        chrome.storage.local.set({ [PLAN_TYPE_GM_KEY]: planType }, () => void chrome.runtime?.lastError);
+      } catch {}
+
       const raw = localStorage.getItem(USAGE_DATA_LS_KEY);
       if (raw == null) return;
       const data = JSON.parse(raw);
@@ -53,6 +86,9 @@
       if (data.planType === planType) return;
       data.planType = planType;
       localStorage.setItem(USAGE_DATA_LS_KEY, JSON.stringify(data));
+      try {
+        chrome.storage.local.set({ [USAGE_DATA_LS_KEY]: data }, () => void chrome.runtime?.lastError);
+      } catch {}
     } catch {}
   }
 
@@ -62,9 +98,17 @@
     if (next === lastAppliedPlan && now - lastAppliedAt < 250) return;
     lastAppliedPlan = next;
     lastAppliedAt = now;
+    __aichatPlanDispatchSeq += 1;
+    clearPlanDispatchRetries();
+    const seq = __aichatPlanDispatchSeq;
     // Dispatch first so MAIN-world code can apply the full plan config (models + shared groups).
     // We still keep a localStorage best-effort cache in case MAIN isn't ready yet.
     dispatchSetPlan(next, source);
+    // Retry a couple times: in some races, MAIN-world listener may not be installed yet.
+    try {
+      scheduleSetPlanRetry(seq, next, `${String(source || '')}:retry1`, 700);
+      scheduleSetPlanRetry(seq, next, `${String(source || '')}:retry2`, 1700);
+    } catch {}
     patchLocalStoragePlan(next);
   }
 
@@ -127,6 +171,7 @@
       PLAN_CHANGED_EVENT,
       (e) => {
         const planType = normalizePlanType(e?.detail?.planType);
+        patchLocalStoragePlan(planType);
         lastAppliedPlan = planType;
         lastAppliedAt = Date.now();
         try {

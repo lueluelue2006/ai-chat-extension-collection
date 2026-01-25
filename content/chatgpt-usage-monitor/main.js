@@ -780,11 +780,19 @@
       if (!data.progressType) {
         data.progressType = "bar";
       }
+      const planFallbackRaw = (() => {
+        try {
+          return GM_getValue("planType", "team");
+        } catch {
+          return "team";
+        }
+      })();
+      const planFallback = String(planFallbackRaw || "").trim();
       if (!data.planType) {
-        data.planType = "team";
+        data.planType = PLAN_CONFIGS[planFallback] ? planFallback : "team";
       }
       if (!PLAN_CONFIGS[data.planType]) {
-        data.planType = "team";
+        data.planType = PLAN_CONFIGS[planFallback] ? planFallback : "team";
       }
       if (!data.sharedQuotaGroups) {
         data.sharedQuotaGroups = {};
@@ -3844,7 +3852,8 @@
         try {
           e.stopImmediatePropagation();
         } catch {}
-        requestMonitorMinimized(!monitor.classList.contains("minimized"));
+        const current = _minimizeDesired !== null ? _minimizeDesired : monitor.classList.contains("minimized");
+        requestMonitorMinimized(!current);
         return false;
       }
     };

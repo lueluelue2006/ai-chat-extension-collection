@@ -361,6 +361,45 @@ body {
   outline-offset: 2px;
 }
 
+.formRow.rangeRow {
+  display: grid;
+  grid-template-columns: 1fr minmax(220px, 340px);
+  justify-content: normal;
+  user-select: none;
+}
+
+@media (max-width: 860px) {
+  .formRow.rangeRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+}
+
+.rangeControl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rangeControl input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.rangeControl input[type='number'] {
+  width: 84px;
+}
+
+.rangeVal {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .smallHint {
   margin-top: 8px;
   color: var(--muted);

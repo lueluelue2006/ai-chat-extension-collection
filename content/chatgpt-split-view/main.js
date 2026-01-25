@@ -37,7 +37,8 @@
   const BLANK_SRC = 'about:blank';
   const IFRAME_TWEAK_STYLE_ID = 'qn-split-iframe-tweaks';
 
-  const DOUBLE_ESC_WINDOW_MS = 420;
+  const MULTI_ESC_WINDOW_MS = 600;
+  const CLOSE_ESC_PRESS_COUNT = 3;
   const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
 
   const DEFAULT_RIGHT_WIDTH_PX = 560;
@@ -872,7 +873,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const btnClose = document.createElement('button');
       btnClose.type = 'button';
       btnClose.textContent = 'Close';
-      btnClose.title = 'Close split view (Esc×2)';
+      btnClose.title = 'Close split view (Esc×3)';
 
       topbar.appendChild(btnNew);
       topbar.appendChild(btnTab);
@@ -1472,6 +1473,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     window.__qnSplitBound = true;
 
     let lastEscAt = 0;
+    let escStreak = 0;
 
     window.addEventListener(
       'keydown',
@@ -1482,8 +1484,15 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
           if (e.key === 'Escape' && document.documentElement.classList.contains('qn-split-open')) {
             if (e.repeat) return;
             const now = Date.now();
-            if (now - lastEscAt < DOUBLE_ESC_WINDOW_MS) {
+            if (now - lastEscAt < MULTI_ESC_WINDOW_MS) {
+              escStreak += 1;
+            } else {
+              escStreak = 1;
+            }
+            lastEscAt = now;
+            if (escStreak >= CLOSE_ESC_PRESS_COUNT) {
               lastEscAt = 0;
+              escStreak = 0;
               closeSplit();
               e.preventDefault();
               e.stopPropagation();
@@ -1492,16 +1501,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
               } catch {}
               return;
             }
-            lastEscAt = now;
-          }
-
-          // Alt+Shift+S toggles (best-effort; do not override inside inputs).
-          if (e.key && (e.key === 'S' || e.key === 's') && e.altKey && e.shiftKey) {
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))
-              return;
-            toggleSplit();
-            e.preventDefault();
           }
         } catch {}
       },

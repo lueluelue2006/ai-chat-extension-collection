@@ -221,7 +221,7 @@
       id: 'chatgpt_split_view',
       name: 'ChatGPT 拆分视图（实验）',
       sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
-      hotkeys: ['Alt+Shift+S', 'Esc'],
+      hotkeys: ['Esc×3'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

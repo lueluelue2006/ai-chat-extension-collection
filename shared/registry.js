@@ -27,6 +27,7 @@
         'chatgpt_export_conversation',
         'chatgpt_image_message_edit',
         'chatgpt_message_tree',
+        'chatgpt_sidebar_header_fix',
         'chatgpt_split_view'
       ]
     },
@@ -204,6 +205,14 @@
       id: 'chatgpt_message_tree',
       name: 'ChatGPT 消息树（只读）',
       sub: '显示当前对话的完整消息树/分支结构（右侧面板）',
+      hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    chatgpt_sidebar_header_fix: {
+      id: 'chatgpt_sidebar_header_fix',
+      name: 'ChatGPT 侧边栏顶部按钮修复',
+      sub: '左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

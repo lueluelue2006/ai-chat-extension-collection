@@ -47,6 +47,7 @@
         chatgpt_export_conversation: true,
         chatgpt_image_message_edit: true,
         chatgpt_message_tree: true,
+        chatgpt_sidebar_header_fix: true,
         chatgpt_split_view: false
       },
       ernie: { quicknav: true, chatgpt_cmdenter_send: true },
@@ -301,6 +302,14 @@
       moduleId: 'chatgpt_cmdenter_send',
       matches: ['https://chatgpt.com/*'],
       js: ['content/chatgpt-cmdenter-send/main.js'],
+      runAt: 'document_start'
+    },
+    {
+      id: 'quicknav_chatgpt_sidebar_header_fix',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_sidebar_header_fix',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-sidebar-header-fix/main.js'],
       runAt: 'document_start'
     },
     {

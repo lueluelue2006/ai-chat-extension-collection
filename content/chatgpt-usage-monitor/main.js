@@ -3607,6 +3607,7 @@
     resetPositionBtn.textContent = "重置";
     resetPositionBtn.style.padding = "4px 8px";
     resetPositionBtn.addEventListener("click", () => {
+      cancelPendingMonitorMinimized();
       const nextData = updateUsageData((data) => {
         data.position = { x: null, y: null };
         data.minimized = false;
@@ -3712,6 +3713,7 @@
       showToast(`未找到模型 "${modelKey}"。`, "warning");
     }
   }
+  var __aichatDragSuppressClickKey = "__aichat_chatgpt_usage_monitor_drag_suppress_click_v1__";
   function setupDraggable(element) {
     let isDragging = false;
     let startX;
@@ -3760,6 +3762,10 @@
       document.removeEventListener("mousemove", handleDrag);
       document.removeEventListener("mouseup", stopDrag);
       if (isDragging) {
+        try {
+          element[__aichatDragSuppressClickKey] = Date.now();
+        } catch {
+        }
         const newLeft = parseInt(element.style.left, 10);
         const newTop = parseInt(element.style.top, 10);
         Storage.update((data) => {
@@ -3800,6 +3806,16 @@
   var _minimizeDesired = null;
   var _minimizeTimerId = null;
   var _minimizeLastAppliedAt = 0;
+  function cancelPendingMonitorMinimized() {
+    _minimizeDesired = null;
+    if (_minimizeTimerId) {
+      try {
+        clearTimeout(_minimizeTimerId);
+      } catch {
+      }
+      _minimizeTimerId = null;
+    }
+  }
   function applyMonitorMinimized(nextMinimized) {
     const monitor = document.getElementById("chatUsageMonitor");
     if (!monitor) return;
@@ -3922,6 +3938,11 @@
     });
     container.addEventListener("click", (e) => {
       if (!container.classList.contains("minimized")) return;
+      const lastDragAt = Number(container[__aichatDragSuppressClickKey] || 0);
+      if (lastDragAt && Date.now() - lastDragAt < 250) {
+        e.stopPropagation();
+        return;
+      }
       requestMonitorMinimized(false);
       e.stopPropagation();
     });
@@ -4026,6 +4047,7 @@
       setupKeyboardShortcuts();
     }
     GM_registerMenuCommand("重置监视器位置", () => {
+      cancelPendingMonitorMinimized();
       Storage.update((data) => {
         data.position = { x: null, y: null };
         data.minimized = false;
@@ -4047,6 +4069,7 @@
       }, 500);
     });
     GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", () => {
+      cancelPendingMonitorMinimized();
       const current = Storage.get();
       const nextSilent = !current?.silentMode;
       try { GM_setValue(SILENT_MODE_USER_KEY, Date.now()); } catch {}

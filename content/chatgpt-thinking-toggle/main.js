@@ -6,6 +6,8 @@
   const HOTKEY_COOLDOWN_MS = 100;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
+  const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
+  const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
   const PULSE_STYLE_ID = '__tm_thinking_toggle_pulse_style';
@@ -355,6 +357,22 @@ button.${HINT_CLASS}::after {
     return { mode, model, effort };
   }
 
+  function readBoolLS(key, fallback) {
+    try {
+      const raw = localStorage.getItem(String(key || ''));
+      if (raw == null) return fallback;
+      return raw === '1';
+    } catch {
+      return fallback;
+    }
+  }
+
+  function isHotkeyEnabled(action) {
+    if (action === 'toggle_effort') return readBoolLS(HOTKEY_EFFORT_ENABLED_KEY, true);
+    if (action === 'toggle_model') return readBoolLS(HOTKEY_MODEL_ENABLED_KEY, true);
+    return true;
+  }
+
   function getHotkeyAction(event) {
     if (!event.metaKey) return null;
     if (event.ctrlKey || event.altKey || event.shiftKey) return null;
@@ -363,9 +381,14 @@ button.${HINT_CLASS}::after {
     const key = typeof event.key === 'string' ? event.key : '';
     const k = key.toLowerCase();
 
-    if (code === 'KeyO' || k === 'o') return 'toggle_effort';
-    if (code === 'KeyJ' || k === 'j') return 'toggle_model';
-    return null;
+    const action = (() => {
+      if (code === 'KeyO' || k === 'o') return 'toggle_effort';
+      if (code === 'KeyJ' || k === 'j') return 'toggle_model';
+      return null;
+    })();
+    if (!action) return null;
+    if (!isHotkeyEnabled(action)) return null;
+    return action;
   }
 
   function installFetchSniffer() {

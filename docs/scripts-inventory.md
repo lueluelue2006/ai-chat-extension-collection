@@ -36,7 +36,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_idle / ISOLATED: `content/chatgpt-perf/content.js`, `content/chatgpt-perf/content.css`
-- `chatgpt_thinking_toggle`: ChatGPT 推理强度快捷切换 — ⌘O 推理强度 / ⌘J 模型切换
+- `chatgpt_thinking_toggle`: ChatGPT 推理强度/模型 快捷切换 — ⌘O 推理强度 / ⌘J 模型切换
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-thinking-toggle/main.js`
@@ -230,4 +230,3 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-cmdenter-send/main.js`
-

@@ -87,7 +87,7 @@
     },
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
-      name: 'ChatGPT 推理强度快捷切换',
+      name: 'ChatGPT 推理强度/模型 快捷切换',
       sub: '⌘O 推理强度 / ⌘J 模型切换',
       hotkeys: ['⌘O', '⌘J'],
       authors: ['lueluelue2006'],

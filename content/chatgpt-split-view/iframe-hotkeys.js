@@ -33,6 +33,10 @@
   const CLOSE_ESC_PRESS_COUNT = 3;
   const CLOSE_REQUEST_MESSAGE_TYPE = '__qn_split_close_request_v1__';
 
+  // Respect the same config as the main ChatGPT thinking toggle module.
+  const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
+  const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
+
   const HOTKEY_COOLDOWN_MS = 120;
   let busy = false;
   let lastHotkeyAt = 0;
@@ -82,9 +86,23 @@
     const k = key.toLowerCase();
 
     // Keep consistent with chatgpt-thinking-toggle defaults.
-    if (code === 'KeyO' || k === 'o') return 'toggle_effort';
-    if (code === 'KeyJ' || k === 'j') return 'toggle_model';
-    return null;
+    const action = (() => {
+      if (code === 'KeyO' || k === 'o') return 'toggle_effort';
+      if (code === 'KeyJ' || k === 'j') return 'toggle_model';
+      return null;
+    })();
+    if (!action) return null;
+
+    const enabled = (() => {
+      try {
+        if (action === 'toggle_effort') return localStorage.getItem(HOTKEY_EFFORT_ENABLED_KEY) !== '0';
+        if (action === 'toggle_model') return localStorage.getItem(HOTKEY_MODEL_ENABLED_KEY) !== '0';
+      } catch {}
+      return true;
+    })();
+    if (!enabled) return null;
+
+    return action;
   }
 
   function getComposerRoot() {

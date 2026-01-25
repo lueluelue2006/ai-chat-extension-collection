@@ -659,7 +659,7 @@
   function renderChatGPTThinkingToggleModuleSettings(siteId) {
     addModuleHeader(
       'chatgpt_thinking_toggle',
-      'ChatGPT 推理强度快捷切换',
+      'ChatGPT 推理强度/模型 快捷切换',
       '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在 GPT 5.2 thinking ↔ GPT 5.2 pro 之间切换。'
     );
 
@@ -683,10 +683,55 @@
     rowInject.appendChild(inputInject);
     elModuleSettings.appendChild(rowInject);
 
+    const isHotkeyEnabled = (key) => {
+      const v = currentSettings?.siteModules?.[siteId]?.[key];
+      return typeof v === 'boolean' ? v : true;
+    };
+
+    const rowHotkeyO = document.createElement('label');
+    rowHotkeyO.className = 'formRow';
+    const leftHotkeyO = document.createElement('span');
+    leftHotkeyO.textContent = '启用 ⌘O（切换推理强度）';
+    const inputHotkeyO = document.createElement('input');
+    inputHotkeyO.type = 'checkbox';
+    inputHotkeyO.checked = isHotkeyEnabled('chatgpt_thinking_toggle_hotkey_effort');
+    inputHotkeyO.addEventListener('change', () => {
+      const checked = !!inputHotkeyO.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_thinking_toggle_hotkey_effort = checked;
+      });
+    });
+    rowHotkeyO.appendChild(leftHotkeyO);
+    rowHotkeyO.appendChild(inputHotkeyO);
+    elModuleSettings.appendChild(rowHotkeyO);
+
+    const rowHotkeyJ = document.createElement('label');
+    rowHotkeyJ.className = 'formRow';
+    const leftHotkeyJ = document.createElement('span');
+    leftHotkeyJ.textContent = '启用 ⌘J（切换模型）';
+    const inputHotkeyJ = document.createElement('input');
+    inputHotkeyJ.type = 'checkbox';
+    inputHotkeyJ.checked = isHotkeyEnabled('chatgpt_thinking_toggle_hotkey_model');
+    inputHotkeyJ.addEventListener('change', () => {
+      const checked = !!inputHotkeyJ.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_thinking_toggle_hotkey_model = checked;
+      });
+    });
+    rowHotkeyJ.appendChild(leftHotkeyJ);
+    rowHotkeyJ.appendChild(inputHotkeyJ);
+    elModuleSettings.appendChild(rowHotkeyJ);
+
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J（可分别关闭）；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 

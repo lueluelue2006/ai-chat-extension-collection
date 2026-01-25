@@ -35,6 +35,8 @@
         quicknav: true,
         chatgpt_perf: true,
         chatgpt_thinking_toggle: true,
+        chatgpt_thinking_toggle_hotkey_effort: true,
+        chatgpt_thinking_toggle_hotkey_model: true,
         chatgpt_cmdenter_send: true,
         chatgpt_readaloud_speed_controller: true,
         chatgpt_reply_timer: true,
@@ -285,6 +287,15 @@
       js: ['content/chatgpt-perf/content.js'],
       css: ['content/chatgpt-perf/content.css'],
       runAt: 'document_idle'
+    },
+    {
+      // Bridge extension settings into localStorage so MAIN-world hotkeys can be configured.
+      id: 'quicknav_chatgpt_thinking_toggle_config',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_thinking_toggle',
+      matches: ['https://chatgpt.com/*'],
+      js: ['content/chatgpt-thinking-toggle/config-bridge.js'],
+      runAt: 'document_start'
     },
     {
       id: 'quicknav_chatgpt_thinking_toggle',

@@ -486,6 +486,13 @@
             clearInterval(oldNav._ui._forceRefreshTimer);
             if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已清理定时器');
           }
+          if (oldNav._ui._moBootstrapTimer) {
+            try {
+              clearInterval(oldNav._ui._moBootstrapTimer);
+            } catch {}
+            oldNav._ui._moBootstrapTimer = 0;
+            oldNav._ui._moBootstrapAttempts = 0;
+          }
           // 断开MutationObserver
           if (oldNav._ui._mo) {
             try {
@@ -1204,6 +1211,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         <button class="nav-btn" type="button" id="cgpt-nav-bottom" title="回到底部">⤓</button>
       </div>
     `;
+    // Apply saved position before attaching to DOM to avoid sync layout work during startup.
+    applySavedPosition(nav);
     document.body.appendChild(nav);
     // 分支悬浮提示（固定定位，不受列表 overflow 影响）
     try {
@@ -1214,7 +1223,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     branchTip.id = TREE_TOOLTIP_ID;
     branchTip.setAttribute('data-open', '0');
     nav.appendChild(branchTip);
-    applySavedPosition(nav);
     let layout = {
       beginUserInteraction: () => {},
       endUserInteraction: () => {},
@@ -1270,14 +1278,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       rightEl: null,
       leftObserver: null,
       rightObserver: null,
-      mutationObserver: null,
       resizeHandler: null,
       pendingEval: false,
       rafId: 0,
       rightRecheckTimer: 0,
       rightRecheckAttempts: 0,
       rightSavedPosition: null,
-      rightFollowLoopId: 0
+      rightFollowLoopId: 0,
+      pollTimer: 0
     };
 
     function captureManualPositions() {
@@ -1556,7 +1564,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       cancelPending();
       if (state.leftObserver) { try { state.leftObserver.disconnect(); } catch {} }
       if (state.rightObserver) { try { state.rightObserver.disconnect(); } catch {} }
-      if (state.mutationObserver) { try { state.mutationObserver.disconnect(); } catch {} }
       if (state.resizeHandler) { window.removeEventListener('resize', state.resizeHandler); }
       if (state.rightRecheckTimer) {
         clearTimeout(state.rightRecheckTimer);
@@ -1568,44 +1575,30 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         cancelAnimationFrame(state.rightFollowLoopId);
         state.rightFollowLoopId = 0;
       }
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = 0;
+      }
       state.leftObserver = null;
       state.rightObserver = null;
-      state.mutationObserver = null;
     }
 
-    const LAYOUT_WATCH_SELECTOR =
-      '#stage-slideover-sidebar, nav[aria-label="Chat history"], [data-testid="chat-history"], section[data-testid="screen-threadFlyOut"]';
-    const isLayoutRelevantNode = (node) => {
-      const el = node && node.nodeType === 1 ? node : null;
-      if (!el) return false;
-      try {
-        if (el.matches?.(LAYOUT_WATCH_SELECTOR)) return true;
-      } catch {}
-      try {
-        if (el.querySelector?.(LAYOUT_WATCH_SELECTOR)) return true;
-      } catch {}
-      return false;
-    };
-    state.mutationObserver = new MutationObserver((records) => {
-      try {
-        for (const r of records) {
-          if (!r || r.type !== 'childList') continue;
-          const added = r.addedNodes;
-          if (added && added.length) {
-            for (const n of added) {
-              if (isLayoutRelevantNode(n)) return scheduleEvaluation('mutation');
-            }
-          }
-          const removed = r.removedNodes;
-          if (removed && removed.length) {
-            for (const n of removed) {
-              if (isLayoutRelevantNode(n)) return scheduleEvaluation('mutation');
-            }
-          }
-        }
-      } catch {}
-    });
-    try { state.mutationObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
+    // Layout changes are largely driven by:
+    // - window resize
+    // - sidebar/panel width changes (ResizeObserver on those elements)
+    // We avoid a global `MutationObserver({subtree:true})` here because ChatGPT hydration can produce
+    // extremely high mutation rates during first load, causing forced reflow spikes.
+    // Instead, a low-frequency poll keeps element presence in sync (when they are mounted/unmounted).
+    try {
+      state.pollTimer = setInterval(() => {
+        try {
+          if (state.destroyed || state.userAdjusting) return;
+          const leftNow = findLeftSidebarElement();
+          const rightNow = findRightPanelElement();
+          if (leftNow !== state.leftEl || rightNow !== state.rightEl) scheduleEvaluation('layout-poll');
+        } catch {}
+      }, 1200);
+    } catch {}
 
     state.resizeHandler = () => scheduleEvaluation('resize');
     window.addEventListener('resize', state.resizeHandler, { passive: true });
@@ -1928,7 +1921,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function applySavedPosition(nav) {
     const saved = loadSavedPosition();
     if (!nav || !saved) return;
-    const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
+    // Avoid forced reflow on startup:
+    // - `document.documentElement.clientHeight` can trigger a synchronous layout right after we append the panel.
+    // - `window.innerHeight` / `visualViewport.height` are enough for clamping.
+    const vh = Math.max(window.visualViewport?.height || 0, window.innerHeight || 0);
     const maxTop = Math.max(0, vh - 40);
     const top = Number.isFinite(saved.top) ? Math.min(Math.max(0, saved.top), maxTop || saved.top) : null;
     if (Number.isFinite(top)) nav.style.top = `${Math.round(top)}px`;
@@ -3060,24 +3056,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function getTurnsContainer() {
+    // Prefer the stable ChatGPT turns root.
+    try {
+      const root = document.querySelector('[data-testid="conversation-turns"]');
+      if (root) return root;
+    } catch {}
+
     const nodes = qsTurns();
     if (!nodes.length) {
-      // 如果没有找到对话节点，尝试找到可能的对话容器
-      const potentialContainers = [
-        document.querySelector('[data-testid="conversation-turns"]'),
-        document.querySelector('main[role="main"]'),
-        document.querySelector('main'),
-        document.querySelector('[role="main"]'),
-        document.querySelector('div[class*="conversation"]'),
-        document.querySelector('div[class*="chat"]'),
-        document.body
-      ].filter(Boolean);
-
-      if (DEBUG && potentialContainers.length > 1) {
-        console.log('ChatGPT Navigation: 没有找到对话，使用备用容器:', potentialContainers[0]);
-      }
-
-      return potentialContainers[0] || document.body;
+      // No turns yet: don't attach a wide observer (it would cover the whole app and be very noisy).
+      // `observeChat()` will bootstrap a narrow observer later when turns appear.
+      return null;
     }
 
     // 找到包含所有对话节点的最小公共父元素
@@ -3094,55 +3083,87 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function observeChat(ui) {
-    const target = getTurnsContainer() || document.body;
+    const target = getTurnsContainer();
     if (ui._mo) {
       try { ui._mo.disconnect(); } catch {}
     }
-    const mo = new MutationObserver((muts) => {
-      const isLongChat = (lastDomTurnCount || 0) > 120;
-      const hasStop = checkStreamingState(ui);
-      const useSoft = isLongChat && !!hasStop;
-      // 只要涉及消息区域的变更，就触发去抖刷新
-      let touchesConversation = false;
-      for (const mut of muts) {
-        // characterData 的 target 是 Text 节点，这里取其 parentElement 参与判断
-        const t = mut.target && mut.target.nodeType === 1 ? mut.target : (mut.target?.parentElement || null);
-        if (!t) continue;
 
-        // 尽量廉价地判断：在主区域/turn/markdown/消息块内的任何变更都算
-        if (
-          t.closest('[data-testid="conversation-turns"]') ||
-          t.closest('[data-message-author-role]') ||
-          t.closest('[data-testid*="conversation-turn"]') ||
-          t.closest('[data-message-id]') ||
-          t.closest('.markdown') || t.closest('.prose')
-        ) {
-          touchesConversation = true;
-          break;
-        }
+    // Clear any bootstrap poller.
+    try {
+      if (ui._moBootstrapTimer) {
+        clearInterval(ui._moBootstrapTimer);
+        ui._moBootstrapTimer = 0;
       }
-      handleScrollLockMutations(muts, !!hasStop);
-      if (touchesConversation) scheduleRefresh(ui, { delay: isLongChat ? 260 : 80, soft: useSoft });
-    });
+      ui._moBootstrapAttempts = 0;
+    } catch {}
 
-    mo.observe(target, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
+    // No turns yet (home/library/etc.): keep a short-lived poller to mount the observer later.
+    if (!target) {
+      ui._mo = null;
+      ui._moTarget = null;
 
-    ui._mo = mo;
-    ui._moTarget = target;
+      try {
+        if (!ui._moBootstrapTimer) {
+          ui._moBootstrapTimer = setInterval(() => {
+            try {
+              const nav = document.getElementById('cgpt-compact-nav');
+              if (!nav || !nav._ui) {
+                clearInterval(ui._moBootstrapTimer);
+                ui._moBootstrapTimer = 0;
+                return;
+              }
+              ui._moBootstrapAttempts = (ui._moBootstrapAttempts || 0) + 1;
+              // Stop after ~18s to avoid keeping a watcher on pages without turns.
+              if (ui._moBootstrapAttempts > 30) {
+                clearInterval(ui._moBootstrapTimer);
+                ui._moBootstrapTimer = 0;
+                return;
+              }
+              const next = getTurnsContainer();
+              if (!next) return;
+              clearInterval(ui._moBootstrapTimer);
+              ui._moBootstrapTimer = 0;
+              ui._moBootstrapAttempts = 0;
+              observeChat(nav._ui);
+              scheduleRefresh(nav._ui, { force: true });
+            } catch {}
+          }, 600);
+        }
+      } catch {}
+    } else {
+      const mo = new MutationObserver((muts) => {
+        const isLongChat = (lastDomTurnCount || 0) > 120;
+        const hasStop = checkStreamingState(ui);
+        const useSoft = isLongChat && !!hasStop;
+        handleScrollLockMutations(muts, !!hasStop);
+        const delay = isLongChat ? (hasStop ? 420 : 140) : 80;
+        scheduleRefresh(ui, { delay, soft: useSoft });
+      });
+
+      mo.observe(target, {
+        childList: true,
+        subtree: true
+      });
+
+      ui._mo = mo;
+      ui._moTarget = target;
+    }
 
     // 定期兜底（10s 一次，别等 30s）
     if (forceRefreshTimer) clearInterval(forceRefreshTimer);
     forceRefreshTimer = setInterval(() => {
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
-      const targetGone = !ui._moTarget || !ui._moTarget.isConnected;
+      const bootstrapRunning = !!ui._moBootstrapTimer;
+      const targetGone = !!(ui._moTarget && !ui._moTarget.isConnected);
       if (targetGone) {
         observeChat(ui);
         scheduleRefresh(ui, { force: true });
+        return;
+      }
+      // If we don't have a target yet (no turns rendered), let the bootstrap poller do its job.
+      if (!ui._moTarget) {
+        if (!bootstrapRunning) observeChat(ui);
         return;
       }
       // 某些切换会话场景：turn selector 暂时抓不到元素（一直 0），这里强制重绑+刷新，避免长期“暂无对话”

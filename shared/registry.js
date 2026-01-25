@@ -17,6 +17,7 @@
         'chatgpt_thinking_toggle',
         'chatgpt_cmdenter_send',
         'chatgpt_readaloud_speed_controller',
+        'chatgpt_usage_counter_lite',
         'chatgpt_usage_monitor',
         'chatgpt_reply_timer',
         'chatgpt_download_file_fix',
@@ -121,6 +122,14 @@
       id: 'chatgpt_readaloud_speed_controller',
       name: 'ChatGPT 朗读速度控制器',
       sub: '控制 ChatGPT 朗读音频播放速度（0.01–100x）',
+      hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    chatgpt_usage_counter_lite: {
+      id: 'chatgpt_usage_counter_lite',
+      name: 'ChatGPT 用量计数器（Lite）',
+      sub: '轻量计数：仅统计发送次数（无全局 DOM 监听）',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

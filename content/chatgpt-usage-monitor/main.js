@@ -1729,6 +1729,43 @@
     refreshUsageData();
     emitDataChanged();
   }
+  function __aichatIsPlanStructureApplied(planType, data) {
+    const planConfig = PLAN_CONFIGS[planType];
+    if (!planConfig) return true;
+    if (!data || typeof data !== "object") return false;
+
+    const models = data.models && typeof data.models === "object" ? data.models : null;
+    if (!models) return false;
+
+    const planModels = planConfig.models && typeof planConfig.models === "object" ? planConfig.models : null;
+    if (!planModels) return true;
+    const firstModelKey = Object.keys(planModels)[0];
+    if (!firstModelKey) return true;
+
+    const firstCfg = planModels[firstModelKey];
+    const firstModel = models[firstModelKey];
+    if (!firstModel || typeof firstModel !== "object") return false;
+
+    if (firstCfg && typeof firstCfg === "object" && typeof firstCfg.sharedGroup === "string") {
+      if (firstModel.sharedGroup !== firstCfg.sharedGroup) return false;
+    } else {
+      // Base structure check only: don't force exact quotas (user may customize), but ensure it is not bound to a shared group.
+      if (typeof firstModel.sharedGroup === "string" && firstModel.sharedGroup) return false;
+      if (typeof firstModel.quota !== "number") return false;
+      if (!firstModel.windowType) return false;
+    }
+
+    const groupsCfg = planConfig.sharedQuotaGroups && typeof planConfig.sharedQuotaGroups === "object" ? planConfig.sharedQuotaGroups : null;
+    if (groupsCfg) {
+      const groups = data.sharedQuotaGroups && typeof data.sharedQuotaGroups === "object" ? data.sharedQuotaGroups : null;
+      if (!groups) return false;
+      for (const groupId of Object.keys(groupsCfg)) {
+        const g = groups[groupId];
+        if (!g || typeof g !== "object") return false;
+      }
+    }
+    return true;
+  }
   function applyPlanConfig(planType) {
     const planConfig = PLAN_CONFIGS[planType];
     if (!planConfig) return;
@@ -4021,11 +4058,15 @@
             try {
               const nextPlan = String(e?.detail?.planType || "").trim();
               if (!nextPlan || !PLAN_CONFIGS[nextPlan]) return;
-              const currentPlan = refreshUsageData().planType || "team";
-              if (currentPlan === nextPlan) return;
-              updateUsageData((data) => {
-                data.planType = nextPlan;
-              });
+              const currentData = refreshUsageData();
+              const currentPlan = currentData.planType || "team";
+              const alreadyApplied = __aichatIsPlanStructureApplied(nextPlan, currentData);
+              if (currentPlan === nextPlan && alreadyApplied) return;
+              if (currentPlan !== nextPlan) {
+                updateUsageData((data) => {
+                  data.planType = nextPlan;
+                });
+              }
               applyPlanConfig(nextPlan);
               if (isSilent()) return;
               try {
@@ -4072,9 +4113,7 @@
       const currentPlan = usageData.planType || "team";
       const planConfig = PLAN_CONFIGS[currentPlan];
       if (planConfig) {
-        const firstModelKey = Object.keys(planConfig.models)[0];
-        const firstModelCfg = planConfig.models[firstModelKey];
-        const shouldReapply = !usageData.models[firstModelKey] || usageData.models[firstModelKey].quota !== firstModelCfg.quota;
+        const shouldReapply = !__aichatIsPlanStructureApplied(currentPlan, usageData);
         if (shouldReapply) {
           applyPlanConfig(currentPlan);
         } else {

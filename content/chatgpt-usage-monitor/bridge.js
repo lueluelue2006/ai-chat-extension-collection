@@ -62,8 +62,10 @@
     if (next === lastAppliedPlan && now - lastAppliedAt < 250) return;
     lastAppliedPlan = next;
     lastAppliedAt = now;
-    patchLocalStoragePlan(next);
+    // Dispatch first so MAIN-world code can apply the full plan config (models + shared groups).
+    // We still keep a localStorage best-effort cache in case MAIN isn't ready yet.
     dispatchSetPlan(next, source);
+    patchLocalStoragePlan(next);
   }
 
   function dispatchAction(action) {

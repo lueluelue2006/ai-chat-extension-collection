@@ -543,7 +543,10 @@
     if (!window.__cgptUrlPollInstalled) {
       window.__cgptUrlPollInstalled = true;
       setInterval(() => {
-        try { detectUrlChange(); } catch {}
+        try {
+          if (document.hidden) return;
+          detectUrlChange();
+        } catch {}
       }, 500);
     }
   } catch {}
@@ -598,6 +601,7 @@
     try {
       setInterval(() => {
         try {
+          if (document.hidden) return;
           if (!isChatRoute()) return;
           if (document.getElementById('cgpt-compact-nav')) return;
           scheduleEnsure(0);
@@ -612,6 +616,22 @@
   });
 
   function qsTurns(root = document) {
+    // Narrow the scan root when possible: ChatGPT exposes a stable turns container.
+    // This avoids scanning the full page DOM on long chats.
+    try {
+      if (root === document) {
+        const stable = document.querySelector('[data-testid="conversation-turns"]');
+        if (
+          stable &&
+          stable.querySelector?.(
+            'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id], [data-message-author-role]'
+          )
+        ) {
+          root = stable;
+        }
+      }
+    } catch {}
+
     if (TURN_SELECTOR) {
       const els = root.querySelectorAll(TURN_SELECTOR);
       if (els.length) return Array.from(els);
@@ -621,8 +641,9 @@
 
     // 快速返回：没有任何消息时，避免触发大量 fallback 选择器扫描（新会话/加载中常见）
     try {
-      const hasAnyTurn =
-        root.querySelectorAll('article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]').length > 0;
+      const hasAnyTurn = !!root.querySelector(
+        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]'
+      );
       if (!hasAnyTurn) {
         const hasRoleMarker = !!root.querySelector('[data-message-author-role]');
         if (!hasRoleMarker) return [];
@@ -660,12 +681,15 @@
     }
 
     for (const selector of selectors) {
+      // Probe with `querySelector` first (cheaper than `querySelectorAll`).
+      let hit = null;
+      try { hit = root.querySelector(selector); } catch {}
+      if (!hit) continue;
       const els = root.querySelectorAll(selector);
-      if (els.length) {
-        TURN_SELECTOR = selector;
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
-      }
+      if (!els.length) continue;
+      TURN_SELECTOR = selector;
+      if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
+      return Array.from(els);
     }
 
     if (DEBUG || window.DEBUG_TEMP) {
@@ -690,7 +714,20 @@
     ];
 
     for (const fallbackSelector of fallbackSelectors) {
-      const candidates = [...root.querySelectorAll(fallbackSelector)].filter(el => {
+      let raw = null;
+      try { raw = root.querySelectorAll(fallbackSelector); } catch { raw = null; }
+      if (!raw || !raw.length) continue;
+
+      // Avoid creating huge arrays on weird pages; a bounded sample is enough for heuristics.
+      const HARD_CAP = 2500;
+      const list = [];
+      if (raw.length > HARD_CAP) {
+        for (let i = 0; i < raw.length && i < HARD_CAP; i++) list.push(raw[i]);
+      } else {
+        for (const el of raw) list.push(el);
+      }
+
+      const candidates = list.filter(el => {
         // 检查是否包含消息相关的内容
         return (
           el.querySelector('div[data-message-author-role]') ||
@@ -1599,6 +1636,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       state.pollTimer = setInterval(() => {
         try {
+          if (document.hidden) return;
           if (state.destroyed || state.userAdjusting) return;
           const leftNow = findLeftSidebarElement();
           const rightNow = findRightPanelElement();
@@ -3118,6 +3156,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (!ui._moBootstrapTimer) {
           ui._moBootstrapTimer = setInterval(() => {
             try {
+              if (document.hidden) return;
               const nav = document.getElementById('cgpt-compact-nav');
               if (!nav || !nav._ui) {
                 clearInterval(ui._moBootstrapTimer);
@@ -3198,6 +3237,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 定期兜底（10s 一次，别等 30s）
     if (forceRefreshTimer) clearInterval(forceRefreshTimer);
     forceRefreshTimer = setInterval(() => {
+      if (document.hidden) return;
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
       const bootstrapRunning = !!ui._moBootstrapTimer;
@@ -4345,6 +4385,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 回到前台时强制跑一次
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
+        try { detectUrlChange(); } catch {}
         const currentUi = getUi();
         if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');

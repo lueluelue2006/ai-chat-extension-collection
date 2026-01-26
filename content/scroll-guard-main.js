@@ -81,6 +81,25 @@
 
   const now = () => Date.now();
   let __enabledDatasetCached = null;
+  let __enabledDatasetSyncAt = 0;
+
+  // Dataset reads are relatively expensive and can land on very hot paths
+  // (e.g. scrollTop setter wrappers). Throttle them aggressively.
+  let __allowUntilDatasetCached = 0;
+  let __allowUntilDatasetCachedAt = 0;
+  let __baselineDatasetCached = null;
+  let __baselineDatasetCachedAt = 0;
+
+  function readNumberDataset(key) {
+    try {
+      const v = document.documentElement?.dataset?.[key];
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  }
+
   function readEnabledFromDataset() {
     try {
       const v = document.documentElement?.dataset?.quicknavScrollLockEnabled;
@@ -90,7 +109,12 @@
     return null;
   }
 
-  function syncEnabledFromDataset() {
+  function syncEnabledFromDataset(ts = now(), force = false) {
+    if (!force) {
+      const last = Number(__enabledDatasetSyncAt || 0);
+      if (ts - last < 250) return;
+    }
+    __enabledDatasetSyncAt = ts;
     const v = readEnabledFromDataset();
     if (typeof v !== 'boolean') return;
     if (__enabledDatasetCached === v && STATE.enabled === v) return;
@@ -103,20 +127,35 @@
     }
   }
 
-  const isAllowed = () => {
+  function readAllowUntilFromDataset(ts = now()) {
+    const last = Number(__allowUntilDatasetCachedAt || 0);
+    if (ts - last < 80) return __allowUntilDatasetCached;
+    __allowUntilDatasetCachedAt = ts;
+    const n = readNumberDataset('quicknavAllowScrollUntil');
+    __allowUntilDatasetCached = n && n > 0 ? n : 0;
+    return __allowUntilDatasetCached;
+  }
+
+  function readBaselineFromDataset(ts = now()) {
+    const last = Number(__baselineDatasetCachedAt || 0);
+    if (ts - last < 80) return __baselineDatasetCached;
+    __baselineDatasetCachedAt = ts;
+    const n = readNumberDataset('quicknavScrollLockBaseline');
+    __baselineDatasetCached = n != null && n >= 0 ? Math.max(0, Math.round(n)) : null;
+    return __baselineDatasetCached;
+  }
+
+  function isAllowed(ts = now()) {
     try {
-      syncEnabledFromDataset();
+      syncEnabledFromDataset(ts);
     } catch {}
     if (!STATE.enabled) return true;
-    if (now() < (STATE.allowUntil || 0)) return true;
+    if (ts < (STATE.allowUntil || 0)) return true;
     // Cross-world allow window: use DOM dataset (survives hot reinject; auto-expires).
-    try {
-      const v = document.documentElement?.dataset?.quicknavAllowScrollUntil;
-      const until = Number(v);
-      if (Number.isFinite(until) && now() < until) return true;
-    } catch {}
+    const until = readAllowUntilFromDataset(ts);
+    if (until && ts < until) return true;
     return false;
-  };
+  }
 
   function clampAllow(ms) {
     const n = Number(ms);
@@ -135,6 +174,8 @@
 
         if (msg.type === 'QUICKNAV_SCROLLLOCK_STATE') {
           STATE.enabled = !!msg.enabled;
+          __enabledDatasetCached = STATE.enabled;
+          __enabledDatasetSyncAt = now();
           // When scroll-lock toggles, also toggle scroll anchoring mitigation.
           try {
             refreshScrollerMarker();
@@ -345,13 +386,7 @@
 
   function getChatScroller() {
     const t = now();
-    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) {
-      try {
-        // Keep the marker in sync even when we return the cached scroller.
-        if (STATE.enabled) refreshScrollerMarker(__cachedScroller);
-      } catch {}
-      return __cachedScroller;
-    }
+    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) return __cachedScroller;
     __cachedScrollerAt = t;
     const sc = getGeminiScroller() || detectChatScrollerFallback();
     __cachedScroller = sc || null;
@@ -380,11 +415,9 @@
   function getBaselineTop(scroller) {
     // Prefer the DOM dataset baseline written by the isolated-world content script.
     // This is synchronous (no postMessage race) and survives hot-reinjects.
-    try {
-      const v = document.documentElement?.dataset?.quicknavScrollLockBaseline;
-      const n = Number(v);
-      if (Number.isFinite(n) && n >= 0) return Math.max(0, Math.round(n));
-    } catch {}
+    const ts = now();
+    const cached = readBaselineFromDataset(ts);
+    if (typeof cached === 'number') return cached;
     const b = Number(STATE.baselineTop);
     if (Number.isFinite(b) && b >= 0) return b;
     return getScrollPos(scroller);
@@ -413,11 +446,31 @@
   }
 
   function shouldBlockElementScroll(el, nextTop) {
-    if (isAllowed()) return false;
+    const ts = now();
+    // Fast path: if we already know the chat scroller and this isn't it, don't block
+    // (and avoid expensive dataset reads on random scrollTop writes).
+    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    if (cached) {
+      if (isWindowScroller(cached)) return false;
+      if (el !== cached) return false;
+      // Occasionally refresh the cached scroller in case SPA navigation replaced it.
+      if (ts - (__cachedScrollerAt || 0) > 1200) {
+        try {
+          getChatScroller();
+        } catch {}
+      }
+      if (isAllowed(ts)) return false;
+      const baseline = getBaselineTop(cached);
+      const targetTop = Number(nextTop);
+      if (!Number.isFinite(targetTop)) return false;
+      if (targetTop > baseline + DRIFT) return true;
+      if (targetTop < baseline - UP_JUMP) return true;
+      return false;
+    }
+
+    if (isAllowed(ts)) return false;
     const sc = getChatScroller();
-    if (!sc) return false;
-    if (isWindowScroller(sc)) return false;
-    if (el !== sc) return false;
+    if (!sc || isWindowScroller(sc) || el !== sc) return false;
     const baseline = getBaselineTop(sc);
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
@@ -427,7 +480,25 @@
   }
 
   function shouldBlockWindowScroll(nextTop) {
-    if (isAllowed()) return false;
+    const ts = now();
+    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    if (cached) {
+      if (!isWindowScroller(cached)) return false;
+      if (ts - (__cachedScrollerAt || 0) > 1200) {
+        try {
+          getChatScroller();
+        } catch {}
+      }
+      if (isAllowed(ts)) return false;
+      const baseline = getBaselineTop(cached);
+      const targetTop = Number(nextTop);
+      if (!Number.isFinite(targetTop)) return false;
+      if (targetTop > baseline + DRIFT) return true;
+      if (targetTop < baseline - UP_JUMP) return true;
+      return false;
+    }
+
+    if (isAllowed(ts)) return false;
     const sc = getChatScroller();
     if (!sc || !isWindowScroller(sc)) return false;
     const baseline = getBaselineTop(sc);
@@ -493,7 +564,7 @@
           try {
             if (shouldBlockElementScroll(this, v)) return;
             // If the chat scroller is window-based, it might set on documentElement/body.
-            if (shouldBlockWindowScroll(v) && isWindowScroller(this)) return;
+            if (isWindowScroller(this) && shouldBlockWindowScroll(v)) return;
           } catch {}
           return scrollTopOwner.desc.set.call(this, v);
         }
@@ -511,68 +582,68 @@
 
   // window.scrollTo / scrollBy (only when chat scroller is window-based)
   if (typeof ORIGINAL_WINDOW_SCROLL_TO === 'function') {
-    window.scrollTo = function (...args) {
+    window.scrollTo = function () {
       const current = getScrollPos(getChatScroller());
-      const targetTop = getScrollTopFromArgs(args, current);
+      const targetTop = getScrollTopFromArgs(arguments, current);
       if (shouldBlockWindowScroll(targetTop)) return;
-      return ORIGINAL_WINDOW_SCROLL_TO.apply(window, args);
+      return ORIGINAL_WINDOW_SCROLL_TO.apply(window, arguments);
     };
   }
 
   // window.scroll (alias of scrollTo; some apps call this)
   if (typeof ORIGINAL_WINDOW_SCROLL === 'function') {
-    window.scroll = function (...args) {
+    window.scroll = function () {
       const current = getScrollPos(getChatScroller());
-      const targetTop = getScrollTopFromArgs(args, current);
+      const targetTop = getScrollTopFromArgs(arguments, current);
       if (shouldBlockWindowScroll(targetTop)) return;
-      return ORIGINAL_WINDOW_SCROLL.apply(window, args);
+      return ORIGINAL_WINDOW_SCROLL.apply(window, arguments);
     };
   }
 
   if (typeof ORIGINAL_WINDOW_SCROLL_BY === 'function') {
-    window.scrollBy = function (...args) {
+    window.scrollBy = function () {
       if (!isAllowed()) {
         const sc = getChatScroller();
         if (sc && isWindowScroller(sc)) {
-          const dy = getScrollDeltaFromArgs(args);
+          const dy = getScrollDeltaFromArgs(arguments);
           if (Number(dy) > DRIFT) return;
         }
       }
-      return ORIGINAL_WINDOW_SCROLL_BY.apply(window, args);
+      return ORIGINAL_WINDOW_SCROLL_BY.apply(window, arguments);
     };
   }
 
   // element.scrollTo / scrollBy (only when called on the chat scroller element)
   if (typeof ORIGINAL_ELEM_SCROLL_TO === 'function') {
-    Element.prototype.scrollTo = function (...args) {
+    Element.prototype.scrollTo = function () {
       const current = getScrollPos(this);
-      const targetTop = getScrollTopFromArgs(args, current);
+      const targetTop = getScrollTopFromArgs(arguments, current);
       if (shouldBlockElementScroll(this, targetTop)) return;
-      return ORIGINAL_ELEM_SCROLL_TO.apply(this, args);
+      return ORIGINAL_ELEM_SCROLL_TO.apply(this, arguments);
     };
   }
 
   // Element.scroll (alias of scrollTo; ChatGPT uses this for autoscroll)
   if (typeof ORIGINAL_ELEM_SCROLL === 'function') {
-    Element.prototype.scroll = function (...args) {
+    Element.prototype.scroll = function () {
       const current = getScrollPos(this);
-      const targetTop = getScrollTopFromArgs(args, current);
+      const targetTop = getScrollTopFromArgs(arguments, current);
       try {
         if (shouldBlockElementScroll(this, targetTop)) return;
         // If the chat scroller is window-based, it might call .scroll on documentElement/body.
-        if (shouldBlockWindowScroll(targetTop) && isWindowScroller(this)) return;
+        if (isWindowScroller(this) && shouldBlockWindowScroll(targetTop)) return;
       } catch {}
-      return ORIGINAL_ELEM_SCROLL.apply(this, args);
+      return ORIGINAL_ELEM_SCROLL.apply(this, arguments);
     };
   }
 
   if (typeof ORIGINAL_ELEM_SCROLL_BY === 'function') {
-    Element.prototype.scrollBy = function (...args) {
+    Element.prototype.scrollBy = function () {
       if (!isAllowed()) {
-        const dy = getScrollDeltaFromArgs(args);
+        const dy = getScrollDeltaFromArgs(arguments);
         if (Number(dy) > DRIFT && shouldBlockElementScroll(this, getScrollPos(this) + dy)) return;
       }
-      return ORIGINAL_ELEM_SCROLL_BY.apply(this, args);
+      return ORIGINAL_ELEM_SCROLL_BY.apply(this, arguments);
     };
   }
 

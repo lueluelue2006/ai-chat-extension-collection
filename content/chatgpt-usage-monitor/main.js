@@ -1622,63 +1622,81 @@
   `);
   }
 
-		  // src/tracking/fetchInterceptor.js
-		  function installFetchInterceptor() {
-		    const targetWindow = window;
-		    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
-		    if (hub && typeof hub.register === "function") {
-		      if (targetWindow.__chatgptUsageHubInstalled) return;
-		      targetWindow.__chatgptUsageHubInstalled = true;
+			  // src/tracking/fetchInterceptor.js
+			  function installFetchInterceptor() {
+			    const targetWindow = window;
+			    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
+			    if (hub && typeof hub.register === "function") {
+			      if (targetWindow.__chatgptUsageHubInstalled) return;
+			      targetWindow.__chatgptUsageHubInstalled = true;
 
-		      hub.register({
-		        // Run after other modules that may rewrite the outgoing payload (e.g. model/effort toggles).
-		        priority: 200,
-		        beforeFetch: (ctx) => {
-		          try {
-			            const method = String(ctx?.method || "").toUpperCase();
-			            const url = String(ctx?.url || "");
-			            if (method !== "POST") return;
-			            if (!/\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url)) return;
-		            const modelKey = getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
-		            if (!modelKey) return;
-		            setTimeout(() => {
-		              try {
-		                recordModelUsageByModelId(modelKey);
-	              } catch {}
-	            }, 0);
-	          } catch {
-	          }
-	        },
-	      });
-	      return;
-	    }
+			      hub.register({
+			        // Run after other modules that may rewrite the outgoing payload (e.g. model/effort toggles).
+			        priority: 200,
+			        onConversationStart: (ctx) => {
+			          try {
+			            // Use the final outgoing payload (after other modules rewrite the request).
+			            const payload = ctx?.conversation?.payload;
+			            const modelId =
+			              payload && typeof payload === "object" && typeof payload.model === "string" ? payload.model : null;
+			            const modelKey = modelId ? normalizeUsageModelKey(modelId) : getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
+			            if (!modelKey) return;
+			            setTimeout(() => {
+			              try {
+			                recordModelUsageByModelId(modelKey);
+			              } catch {}
+			            }, 0);
+			          } catch {}
+			        },
+		      });
+		      return;
+		    }
 
     // Fallback: patch fetch (legacy). Should not happen when the extension injects the shared hub.
-	    const originalFetch = targetWindow.fetch;
-	    if (originalFetch?.__chatgptUsagePatched) return;
-	    const wrapped = new Proxy(originalFetch, {
-	      apply: async function(target, thisArg, args) {
-	        let modelKey = null;
-	        try {
-	          const [requestInfo, requestInit] = args;
-	          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
-	          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
-	          if (String(requestMethod || "").toUpperCase() === "POST" && /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(fetchUrl || "")) {
-	            modelKey = getUsageModelKeyFromCookieOrBody(requestInit?.body);
-	          }
-	        } catch {
-	        }
-	        const response = await target.apply(thisArg, args);
-	        if (modelKey) {
-	          setTimeout(() => {
-	            try {
-	              recordModelUsageByModelId(modelKey);
-	            } catch {}
-	          }, 0);
-	        }
-	        return response;
-	      }
-	    });
+		    const originalFetch = targetWindow.fetch;
+		    if (originalFetch?.__chatgptUsagePatched) return;
+		    const wrapped = new Proxy(originalFetch, {
+		      apply: async function(target, thisArg, args) {
+		        let modelKey = null;
+		        /** @type {Promise<string|null>|null} */
+		        let bodyTextPromise = null;
+		        try {
+		          const [requestInfo, requestInit] = args;
+		          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
+		          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
+		          if (String(requestMethod || "").toUpperCase() === "POST" && /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(fetchUrl || "")) {
+		            if (typeof requestInit?.body === "string") {
+		              modelKey = getUsageModelKeyFromCookieOrBody(requestInit.body);
+		            } else if (requestInfo && typeof requestInfo === "object" && typeof requestInfo.clone === "function") {
+		              // If fetch is called with a Request object, its body is not in init; read from a clone (best-effort).
+		              bodyTextPromise = requestInfo
+		                .clone()
+		                .text()
+		                .then((t) => (typeof t === "string" ? t : null))
+		                .catch(() => null);
+		            } else {
+		              modelKey = getUsageModelKeyFromCookieOrBody(null);
+		            }
+		          }
+		        } catch {
+		        }
+		        const response = await target.apply(thisArg, args);
+		        if (!modelKey && bodyTextPromise) {
+		          try {
+		            const text = await bodyTextPromise;
+		            modelKey = getUsageModelKeyFromCookieOrBody(text);
+		          } catch {}
+		        }
+		        if (modelKey) {
+		          setTimeout(() => {
+		            try {
+		              recordModelUsageByModelId(modelKey);
+		            } catch {}
+		          }, 0);
+		        }
+		        return response;
+		      }
+		    });
     wrapped.__chatgptUsagePatched = true;
     targetWindow.fetch = wrapped;
   }
@@ -1819,7 +1837,7 @@
   }
 
 	  // src/tracking/modelRouting.js
-	  function resolveRedirectedModelId(originalModelId) {
+		  function resolveRedirectedModelId(originalModelId) {
 	    if (originalModelId === "chatgpt_alpha_model_external_access_reserved_gate_13") {
 	      return "alpha";
 	    }
@@ -1836,20 +1854,23 @@
 	      if (originalModelId === "o3-pro" && plan !== "pro") return "gpt-5-2-instant";
 	    } catch {
 	    }
-	    return originalModelId;
-	  }
-		  function getUsageModelKeyFromCookieOrBody(bodyLike) {
-		    // Prefer the actual outgoing request payload, because the cookie can lag behind
-		    // right after switching models (first message would be mis-attributed otherwise).
-		    const fromBody = typeof bodyLike === "string" ? extractModelIdFromJsonBodyText(bodyLike) : null;
-		    const fromCookie = readLastModelIdFromCookie();
-		    const modelId = fromBody || fromCookie;
-		    if (!modelId) return null;
+		    return originalModelId;
+		  }
+		  function normalizeUsageModelKey(modelId) {
 		    const redirected = resolveRedirectedModelId(modelId);
 		    if (redirected === "gpt-5-instant") return "gpt-5";
 		    if (redirected === "gpt-5-1-instant") return "gpt-5-1";
 		    return redirected;
 		  }
+			  function getUsageModelKeyFromCookieOrBody(bodyLike) {
+			    // Prefer the actual outgoing request payload, because the cookie can lag behind
+			    // right after switching models (first message would be mis-attributed otherwise).
+			    const fromBody = typeof bodyLike === "string" ? extractModelIdFromJsonBodyText(bodyLike) : null;
+			    const fromCookie = readLastModelIdFromCookie();
+			    const modelId = fromBody || fromCookie;
+			    if (!modelId) return null;
+			    return normalizeUsageModelKey(modelId);
+			  }
 	  function readLastModelIdFromCookie() {
 	    try {
 	      const rawCookie = String(document.cookie || "");

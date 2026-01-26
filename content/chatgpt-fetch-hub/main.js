@@ -246,8 +246,9 @@
           const { done, value } = await reader.read();
           if (done) break;
           if (!firstByteAt) firstByteAt = now();
-          buffer += decoder.decode(value, { stream: true });
-          buffer = buffer.replace(/\r\n/g, '\n');
+          let chunk = decoder.decode(value, { stream: true });
+          if (chunk.includes('\r')) chunk = chunk.replace(/\r/g, '');
+          buffer += chunk;
 
           let idx;
           while ((idx = buffer.indexOf('\n')) !== -1) {
@@ -267,6 +268,9 @@
               if (!data) continue;
               if (data === '[DONE]') {
                 sawDone = true;
+                try {
+                  await reader.cancel();
+                } catch {}
                 break;
               }
 

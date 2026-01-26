@@ -21,12 +21,19 @@
     pending: null,
     bannerEl: null,
     lastHref: location.href,
+    seenTurns: null,
     scanTimer: null,
+    retryTimer: null,
+    retryDelayMs: 0,
+    bootstrapTimer: null,
+    hoverHandler: null,
     bannerPosRaf: 0,
     bannerResizeObserver: null,
     bannerResizeTarget: null,
     mo: null,
+    moRoot: null,
     hubUnsub: null,
+    unwatchHref: null,
     cleanup: null
   };
 
@@ -323,15 +330,41 @@
     state.scanTimer = null;
 
     try {
+      if (state.retryTimer) clearTimeout(state.retryTimer);
+    } catch {}
+    state.retryTimer = null;
+
+    try {
+      if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
+    } catch {}
+    state.bootstrapTimer = null;
+
+    try {
       state.mo?.disconnect?.();
     } catch {}
     state.mo = null;
+    state.moRoot = null;
 
     try {
       state.hubUnsub?.();
     } catch {}
     state.hubUnsub = null;
 
+    try {
+      state.unwatchHref?.();
+    } catch {}
+    state.unwatchHref = null;
+
+    try {
+      if (state.hoverHandler) {
+        document.removeEventListener('mouseover', state.hoverHandler, true);
+        document.removeEventListener('focusin', state.hoverHandler, true);
+      }
+    } catch {}
+    state.hoverHandler = null;
+
+    state.seenTurns = null;
+    state.retryDelayMs = 0;
     cancelEditMode();
   }
 
@@ -468,62 +501,292 @@
   }
 
   function ensureEditButtonForTurn(turnEl) {
-    if (!turnEl || turnEl.nodeType !== 1) return;
-    const userMsg = getUserMessageEl(turnEl);
-    if (!userMsg) return;
+    try {
+      if (!turnEl || turnEl.nodeType !== 1) return false;
+      const userMsg = getUserMessageEl(turnEl);
+      if (!userMsg) return false;
 
-    // Ensure our styling (including icon color) is present before injecting the button.
-    ensureStyles();
+      // Ensure our styling (including icon color) is present before injecting the button.
+      ensureStyles();
 
-    const copyBtn = findCopyButton(turnEl);
-    if (!copyBtn) return;
-    const actionBar = copyBtn.parentElement;
-    if (!actionBar) return;
+      const copyBtn = findCopyButton(turnEl);
+      if (!copyBtn) return false;
+      const actionBar = copyBtn.parentElement;
+      if (!actionBar) return false;
 
-    if (actionBar.querySelector('button[data-aichat-img-edit="1"]')) return;
+      if (actionBar.querySelector('button[data-aichat-img-edit="1"]')) return true;
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.dataset.aichatImgEdit = '1';
-    btn.className = copyBtn.className || '';
-    btn.setAttribute('aria-label', 'QuickNav edit');
-    btn.setAttribute('title', 'QuickNav 编辑（可加图/文件，分叉编辑）');
-    btn.innerHTML = buildPencilSvg();
-    btn.addEventListener(
-      'click',
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void enterEditMode(turnEl);
-      },
-      true
-    );
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.aichatImgEdit = '1';
+      btn.className = copyBtn.className || '';
+      btn.setAttribute('aria-label', 'QuickNav edit');
+      btn.setAttribute('title', 'QuickNav 编辑（可加图/文件，分叉编辑）');
+      btn.innerHTML = buildPencilSvg();
+      btn.addEventListener(
+        'click',
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void enterEditMode(turnEl);
+        },
+        true
+      );
 
-    const nativeEdit = actionBar.querySelector(
-      'button[aria-label="Edit message"],button[aria-label="Edit"],button[aria-label="编辑消息"],button[aria-label="编辑"]'
-    );
-    actionBar.insertBefore(btn, nativeEdit || copyBtn.nextSibling);
-  }
-
-  function scan() {
-    const href = location.href;
-    if (href !== state.lastHref) {
-      state.lastHref = href;
-      cancelEditMode();
+      const nativeEdit = actionBar.querySelector(
+        'button[aria-label="Edit message"],button[aria-label="Edit"],button[aria-label="编辑消息"],button[aria-label="编辑"]'
+      );
+      actionBar.insertBefore(btn, nativeEdit || copyBtn.nextSibling);
+      return true;
+    } catch {
+      return false;
     }
-
-    const turns = Array.from(
-      document.querySelectorAll('article[data-testid^="conversation-turn-"][data-turn="user"], article[data-turn="user"]')
-    );
-    for (const t of turns) ensureEditButtonForTurn(t);
   }
 
-  function scheduleScan() {
+  const USER_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"][data-turn="user"], article[data-turn="user"]';
+  const ANY_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], article[data-turn]';
+
+  function onRouteChange() {
+    state.lastHref = location.href;
+    state.seenTurns = new WeakSet();
+    state.retryDelayMs = 0;
+    try {
+      if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
+    } catch {}
+    state.bootstrapTimer = null;
+    cancelEditMode();
+    try {
+      state.mo?.disconnect?.();
+    } catch {}
+    state.mo = null;
+    state.moRoot = null;
+    scheduleScan(150);
+  }
+
+  function installHrefWatcher() {
+    let last = location.href;
+    const check = () => {
+      const href = location.href;
+      if (href === last) return;
+      last = href;
+      onRouteChange();
+    };
+    const onPop = () => check();
+    try {
+      window.addEventListener('popstate', onPop, true);
+      window.addEventListener('hashchange', onPop, true);
+    } catch {}
+
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    const patchedPush = function (...args) {
+      const ret = origPush.apply(this, args);
+      setTimeout(check, 0);
+      return ret;
+    };
+    const patchedReplace = function (...args) {
+      const ret = origReplace.apply(this, args);
+      setTimeout(check, 0);
+      return ret;
+    };
+    try {
+      patchedPush.__aichatImgEditPatched = true;
+      patchedReplace.__aichatImgEditPatched = true;
+    } catch {}
+    try {
+      history.pushState = patchedPush;
+      history.replaceState = patchedReplace;
+    } catch {}
+
+    return () => {
+      try {
+        window.removeEventListener('popstate', onPop, true);
+        window.removeEventListener('hashchange', onPop, true);
+      } catch {}
+      try {
+        if (history.pushState === patchedPush) history.pushState = origPush;
+        if (history.replaceState === patchedReplace) history.replaceState = origReplace;
+      } catch {}
+    };
+  }
+
+  function ensureTurnsObserver() {
+    const first = document.querySelector(ANY_TURN_SELECTOR);
+    const root = first?.parentElement || null;
+    if (!root) return false;
+    if (state.mo && state.moRoot === root) return true;
+
+    try {
+      state.mo?.disconnect?.();
+    } catch {}
+    state.mo = null;
+    state.moRoot = null;
+    try {
+      if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
+    } catch {}
+    state.bootstrapTimer = null;
+
+    const mo = new MutationObserver((records) => {
+      try {
+        const seen = state.seenTurns || (state.seenTurns = new WeakSet());
+        const set = new Set();
+        for (const rec of records) {
+          for (const n of rec.addedNodes) {
+            if (!n || n.nodeType !== 1) continue;
+            const el = /** @type {Element} */ (n);
+            if (el.matches?.(USER_TURN_SELECTOR)) set.add(el);
+            const nested = el.querySelectorAll?.(USER_TURN_SELECTOR);
+            if (nested && nested.length) {
+              for (const t of nested) set.add(t);
+            }
+          }
+        }
+        if (!set.size) return;
+        let needRetry = false;
+        for (const t of set) {
+          if (seen.has(t)) continue;
+          if (ensureEditButtonForTurn(t)) {
+            seen.add(t);
+          } else {
+            needRetry = true;
+          }
+        }
+        if (needRetry) scheduleRetryScan();
+        else state.retryDelayMs = 0;
+      } catch {}
+    });
+
+    try {
+      mo.observe(root, { childList: true });
+      state.mo = mo;
+      state.moRoot = root;
+      return true;
+    } catch {
+      try {
+        mo.disconnect();
+      } catch {}
+      return false;
+    }
+  }
+
+  function ensureBootstrapObserver() {
+    try {
+      if (state.mo) return true;
+      // Only needed when loading an existing conversation: React often renders turns after DOMContentLoaded.
+      if (!getConversationIdFromUrl()) return false;
+
+      const root =
+        document.getElementById('thread') || document.getElementById('main') || document.body || document.documentElement || null;
+      if (!root) return false;
+
+      const mo = new MutationObserver(() => {
+        try {
+          if (!document.querySelector(USER_TURN_SELECTOR)) return;
+          try {
+            mo.disconnect();
+          } catch {}
+          state.mo = null;
+          state.moRoot = null;
+          if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
+          state.bootstrapTimer = null;
+          scheduleScan(0);
+        } catch {}
+      });
+      try {
+        mo.observe(root, { subtree: true, childList: true });
+      } catch {
+        return false;
+      }
+      state.mo = mo;
+      state.moRoot = root;
+      state.bootstrapTimer = setTimeout(() => {
+        try {
+          if (state.mo !== mo) return;
+          mo.disconnect();
+          state.mo = null;
+          state.moRoot = null;
+        } catch {}
+        state.bootstrapTimer = null;
+      }, 10_000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function scanAllTurns() {
+    if (location.href !== state.lastHref) onRouteChange();
+
+    if (!state.seenTurns) state.seenTurns = new WeakSet();
+    ensureTurnsObserver();
+
+    const seen = state.seenTurns;
+    const turns = document.querySelectorAll(USER_TURN_SELECTOR);
+    if (!turns.length) {
+      ensureBootstrapObserver();
+      return;
+    }
+    let needRetry = false;
+    for (const t of turns) {
+      if (seen.has(t)) continue;
+      if (ensureEditButtonForTurn(t)) {
+        seen.add(t);
+      } else {
+        needRetry = true;
+      }
+    }
+    if (needRetry) scheduleRetryScan();
+    else state.retryDelayMs = 0;
+  }
+
+  function scheduleRetryScan() {
+    if (state.retryTimer) return;
+    const delay = state.retryDelayMs || 600;
+    state.retryDelayMs = Math.min(Math.max(delay, 300) * 2, 5000);
+    state.retryTimer = setTimeout(() => {
+      state.retryTimer = null;
+      try {
+        scanAllTurns();
+      } catch {}
+    }, delay);
+  }
+
+  function scheduleScan(delayMs = 300) {
     if (state.scanTimer) return;
     state.scanTimer = setTimeout(() => {
       state.scanTimer = null;
-      scan();
-    }, 300);
+      scanAllTurns();
+    }, Math.max(0, Number(delayMs) || 0));
+  }
+
+  function installTurnActivator() {
+    if (state.hoverHandler) return;
+    let lastTurn = null;
+    let lastAt = 0;
+    const handler = (e) => {
+      try {
+        const target = e?.target;
+        if (!target || typeof target.closest !== 'function') return;
+        const turn = target.closest(USER_TURN_SELECTOR);
+        if (!turn) return;
+        const nowMs = now();
+        if (turn === lastTurn && nowMs - lastAt < 250) return;
+        lastTurn = turn;
+        lastAt = nowMs;
+        const seen = state.seenTurns || (state.seenTurns = new WeakSet());
+        if (ensureEditButtonForTurn(turn)) {
+          seen.add(turn);
+          state.retryDelayMs = 0;
+        } else {
+          scheduleRetryScan();
+        }
+      } catch {}
+    };
+    state.hoverHandler = handler;
+    try {
+      document.addEventListener('mouseover', handler, true);
+      document.addEventListener('focusin', handler, true);
+    } catch {}
   }
 
   function installPayloadRewriter() {
@@ -534,6 +797,10 @@
       } catch {}
       state.hubUnsub = hub.register({
         priority: 100,
+        onConversationStart: () => {
+          // Helps on the "new chat" page where turns container doesn't exist until the first send.
+          scheduleScan(250);
+        },
         onConversationPayload: (payload, ctx) => {
           try {
             const pending = state.pending;
@@ -604,16 +871,30 @@
   }
 
   installPayloadRewriter();
+  installTurnActivator();
 
-  const mo = new MutationObserver(scheduleScan);
-  state.mo = mo;
   try {
-    mo.observe(document.documentElement, { subtree: true, childList: true });
+    state.unwatchHref = installHrefWatcher();
   } catch {}
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', scheduleScan, { once: true });
-  } else {
-    scheduleScan();
+  function bootScan() {
+    try {
+      scanAllTurns();
+    } catch {}
+
+    // ChatGPT can hydrate/re-render the turn action bar after the initial render.
+    setTimeout(() => {
+      try {
+        if (!document.querySelector('button[data-aichat-img-edit="1"]')) scanAllTurns();
+      } catch {}
+    }, 1200);
+    setTimeout(() => {
+      try {
+        if (!document.querySelector('button[data-aichat-img-edit="1"]')) scanAllTurns();
+      } catch {}
+    }, 3500);
   }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootScan, { once: true });
+  else bootScan();
 })();

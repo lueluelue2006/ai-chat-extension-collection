@@ -214,6 +214,10 @@
       );
     }
 
+    function shouldParseConversationStreamFully() {
+      return state.hooks.conversationSseJson.length > 0 || state.hooks.conversationSseText.length > 0;
+    }
+
     async function parseConversationSseStream(response, ctx) {
       if (!responseLooksLikeSse(response)) {
         ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'non-sse' };
@@ -282,6 +286,62 @@
           }
 
           if (sawDone) break;
+        }
+      } catch (e) {
+        streamError = e instanceof Error ? e : new Error(String(e));
+      }
+
+      ctx.stream = {
+        ...ctx.stream,
+        firstByteAt: ctx.stream.firstByteAt || firstByteAt,
+        doneAt: now(),
+        sawDone,
+        error: streamError
+      };
+      for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+    }
+
+    const SSE_DONE_RE = /(?:^|\n)data:\s*\[DONE\]\s*(?:\n|$)/;
+
+    async function drainConversationSseStream(response, ctx) {
+      if (!responseLooksLikeSse(response)) {
+        ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'non-sse' };
+        for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+        return;
+      }
+
+      const body = response?.body;
+      if (!body || typeof body.getReader !== 'function') {
+        ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'no-body' };
+        for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+        return;
+      }
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let firstByteAt = null;
+      let sawDone = false;
+      let streamError = null;
+      let tail = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!firstByteAt) firstByteAt = now();
+          if (value) {
+            let chunk = decoder.decode(value, { stream: true });
+            if (chunk.includes('\r')) chunk = chunk.replace(/\r/g, '');
+            tail += chunk;
+            if (tail.length > 4096) tail = tail.slice(-4096);
+            if (SSE_DONE_RE.test(tail)) {
+              sawDone = true;
+              try {
+                await reader.cancel();
+              } catch {}
+              break;
+            }
+          }
         }
       } catch (e) {
         streamError = e instanceof Error ? e : new Error(String(e));
@@ -423,7 +483,7 @@
         try {
           const clone = response?.clone?.();
           if (clone) {
-            void parseConversationSseStream(clone, ctx);
+            void (shouldParseConversationStreamFully() ? parseConversationSseStream(clone, ctx) : drainConversationSseStream(clone, ctx));
           } else {
             ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'no-clone' };
             for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);

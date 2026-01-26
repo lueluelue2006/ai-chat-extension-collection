@@ -40,7 +40,6 @@
         chatgpt_cmdenter_send: true,
         chatgpt_readaloud_speed_controller: true,
         chatgpt_reply_timer: true,
-        chatgpt_usage_counter_lite: false,
         chatgpt_usage_monitor: true,
         chatgpt_download_file_fix: true,
         chatgpt_strong_highlight_lite: true,
@@ -414,29 +413,20 @@
       js: ['content/chatgpt-readaloud-speed-controller/main.js'],
       runAt: 'document_start'
     },
-    {
-      id: 'quicknav_chatgpt_reply_timer',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_reply_timer',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_usage_counter_lite',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_usage_counter_lite',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-counter-lite/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_usage_monitor_bridge',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_usage_monitor',
-      matches: ['https://chatgpt.com/*'],
+	    {
+	      id: 'quicknav_chatgpt_reply_timer',
+	      siteId: 'chatgpt',
+	      moduleId: 'chatgpt_reply_timer',
+	      matches: ['https://chatgpt.com/*'],
+	      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
+	      runAt: 'document_start',
+	      world: 'MAIN'
+	    },
+	    {
+	      id: 'quicknav_chatgpt_usage_monitor_bridge',
+	      siteId: 'chatgpt',
+	      moduleId: 'chatgpt_usage_monitor',
+	      matches: ['https://chatgpt.com/*'],
       js: ['content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
       runAt: 'document_start'
     },

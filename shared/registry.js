@@ -17,7 +17,6 @@
         'chatgpt_thinking_toggle',
         'chatgpt_cmdenter_send',
         'chatgpt_readaloud_speed_controller',
-        'chatgpt_usage_counter_lite',
         'chatgpt_usage_monitor',
         'chatgpt_reply_timer',
         'chatgpt_download_file_fix',
@@ -126,18 +125,10 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-    chatgpt_usage_counter_lite: {
-      id: 'chatgpt_usage_counter_lite',
-      name: 'ChatGPT 用量计数器（Lite）',
-      sub: '轻量计数：仅统计发送次数（无全局 DOM 监听）',
-      hotkeys: [],
-      authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
-    },
-	    chatgpt_usage_monitor: {
-	      id: 'chatgpt_usage_monitor',
-	      name: 'ChatGPT 用量统计',
-	      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
+		    chatgpt_usage_monitor: {
+		      id: 'chatgpt_usage_monitor',
+		      name: 'ChatGPT 用量统计',
+		      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
 	      hotkeys: ['⌘I'],
 	      menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
 	      authors: ['lueluelue2006（抄了 tizee@Github 的 GUI）'],

@@ -30,6 +30,8 @@
   const SCROLL_LOCK_INTENT_MS = 1200;
   let scrollLockEnabled = false;
   let scrollLockScrollEl = null;
+  let __cgptChatScrollContainer = null;
+  let __cgptChatScrollContainerTs = 0;
   let scrollLockBoundTarget = null;
   let scrollLockLastUserTs = 0;
   let scrollLockLastUserIntentTs = 0;
@@ -513,6 +515,9 @@
       __cgptBooting = false;
       lastTurnCount = 0;
       TURN_SELECTOR = null; // 同时重置选择器缓存
+      __cgptChatScrollContainer = null;
+      __cgptChatScrollContainerTs = 0;
+      scrollLockScrollEl = null;
       previewCache.clear();
       roleCache.clear();
       turnIdToPos.clear();
@@ -2459,12 +2464,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     // 构建合成列表
     const combined = [];
-    // 先预计算锚点y用于排序
-    const getY = (id) => {
-      const el = document.getElementById(id);
-      if (!el) return Infinity;
-      const r = el.getBoundingClientRect();
-      return r ? r.top : Infinity;
+    // Sort pins inside a message by DOM order (avoids layout reads).
+    const compareDomOrder = (aId, bId) => {
+      try {
+        const aEl = document.getElementById(aId);
+        const bEl = document.getElementById(bId);
+        if (!aEl || !bEl || aEl === bEl) return 0;
+        const pos = aEl.compareDocumentPosition(bEl);
+        if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+        if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      } catch {}
+      return 0;
     };
 
     // 全局📌编号
@@ -2473,9 +2483,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       combined.push(item);
       const arr = byMsg.get(item.key);
       if (!arr || !arr.length) continue;
-      arr.sort((a,b) => {
-        const ya = getY(a.anchorId), yb = getY(b.anchorId);
-        if (ya !== yb) return ya - yb;
+      arr.sort((a, b) => {
+        const d = compareDomOrder(a.anchorId, b.anchorId);
+        if (d) return d;
         return a.created - b.created;
       });
       for (const p of arr) {
@@ -3136,6 +3146,40 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const hasStop = checkStreamingState(ui);
         const useSoft = isLongChat && !!hasStop;
         handleScrollLockMutations(muts, !!hasStop);
+
+        // Avoid refreshing on every subtree mutation. We only need to rebuild the index
+        // when turns/messages are structurally added/removed. Streaming text changes are
+        // covered by `checkStreamingState()` (force refresh on stop-button transition).
+        let turnsChanged = false;
+        try {
+          for (const mut of muts || []) {
+            if (!mut || mut.type !== 'childList') continue;
+            const added = mut.addedNodes;
+            if (added && added.length) {
+              for (const n of added) {
+                if (isConversationTurnishNode(n)) {
+                  turnsChanged = true;
+                  break;
+                }
+              }
+            }
+            if (!turnsChanged) {
+              const removed = mut.removedNodes;
+              if (removed && removed.length) {
+                for (const n of removed) {
+                  if (isConversationTurnishNode(n)) {
+                    turnsChanged = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (turnsChanged) break;
+          }
+        } catch {}
+
+        if (!turnsChanged) return;
+
         const delay = isLongChat ? (hasStop ? 420 : 140) : 80;
         scheduleRefresh(ui, { delay, soft: useSoft });
       });
@@ -3324,15 +3368,53 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
-      const turns = document.querySelector('[data-testid="conversation-turns"]');
-      const msg = document.querySelector('[data-message-id]');
-      const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
-      const target = turns || msg || main || document.body;
-      const closest = findClosestScrollContainer(target);
-      if (closest) return closest;
-      return getScrollRoot(target);
-    } catch { return getScrollRoot(document.body); }
+      // Hot path: reuse the last known scroll container when possible.
+      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
+      if (cached && cached.nodeType === 1 && cached.isConnected) {
+        __cgptChatScrollContainer = cached;
+        return cached;
+      }
+    } catch {}
+
+    try {
+      const anchor =
+        document.querySelector(
+          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-message-id]'
+        ) ||
+        document.querySelector('main') ||
+        document.querySelector('[role="main"]') ||
+        document.getElementById('main') ||
+        document.body;
+
+      // Walk up from a known message/root to find the first scrollable container.
+      let el = anchor;
+      for (let i = 0; i < 16 && el && el.nodeType === 1; i++) {
+        try {
+          // Cheap check first (layout read).
+          if (el.scrollHeight > el.clientHeight + 1) {
+            const oy = getComputedStyle(el).overflowY;
+            if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
+              __cgptChatScrollContainer = el;
+              __cgptChatScrollContainerTs = Date.now();
+              return el;
+            }
+          }
+        } catch {}
+        el = el.parentElement;
+      }
+
+      const fallback = getScrollRoot(anchor);
+      __cgptChatScrollContainer = fallback;
+      __cgptChatScrollContainerTs = Date.now();
+      return fallback;
+    } catch {
+      const fallback = getScrollRoot(document.body);
+      __cgptChatScrollContainer = fallback;
+      __cgptChatScrollContainerTs = Date.now();
+      return fallback;
+    }
   }
+
 
   function getScrollPos(el) {
     if (!el) return window.scrollY || 0;

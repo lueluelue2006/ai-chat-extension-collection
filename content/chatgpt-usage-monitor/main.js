@@ -1622,87 +1622,70 @@
   `);
   }
 
-  // src/tracking/fetchInterceptor.js
-  function installFetchInterceptor(modelRouting) {
-    const targetWindow = window;
-    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
-    if (hub && typeof hub.register === "function") {
-      if (targetWindow.__chatgptUsageHubInstalled) return;
-      targetWindow.__chatgptUsageHubInstalled = true;
+	  // src/tracking/fetchInterceptor.js
+	  function installFetchInterceptor() {
+	    const targetWindow = window;
+	    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
+	    if (hub && typeof hub.register === "function") {
+	      if (targetWindow.__chatgptUsageHubInstalled) return;
+	      targetWindow.__chatgptUsageHubInstalled = true;
 
-      hub.register({
-        priority: 5,
-        beforeFetch: (ctx) => {
-          try {
-            const method = String(ctx?.method || "").toUpperCase();
-            const url = String(ctx?.url || "");
-            if (method === "PATCH" && url.includes("/backend-api/settings/user_last_used_model_config")) {
-              modelRouting.updateLastSelectedModelConfigFromUrl(url);
-            }
-          } catch {
-          }
-        },
-        onConversationPayload: (payload) => payload,
-        onConversationStart: (ctx) => {
-          try {
-            const modelId = ctx?.conversation?.payload?.model;
-            if (typeof modelId === "string" && modelId) {
-              const autoRequestId = modelRouting.handleConversationRequest(modelId);
-              if (autoRequestId) ctx.__chatgptUsageAutoRequestId = autoRequestId;
-            }
-          } catch {
-          }
-        },
-        onConversationSseJson: (json, ctx) => {
-          try {
-            const autoId = ctx && ctx.__chatgptUsageAutoRequestId;
-            if (autoId) modelRouting.handleAutoSseJson(autoId, json);
-          } catch {
-          }
-        }
-      });
-      return;
-    }
+	      hub.register({
+	        priority: 5,
+	        beforeFetch: (ctx) => {
+	          try {
+		            const method = String(ctx?.method || "").toUpperCase();
+		            const url = String(ctx?.url || "");
+		            if (method !== "POST") return;
+		            if (!/\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url)) return;
+		            const modelKey = getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
+		            if (!modelKey) return;
+		            setTimeout(() => {
+		              try {
+		                recordModelUsageByModelId(modelKey);
+	              } catch {}
+	            }, 0);
+	          } catch {
+	          }
+	        },
+	      });
+	      return;
+	    }
 
     // Fallback: patch fetch (legacy). Should not happen when the extension injects the shared hub.
-    const originalFetch = targetWindow.fetch;
-    if (originalFetch?.__chatgptUsagePatched) return;
-    const wrapped = new Proxy(originalFetch, {
-      apply: async function(target, thisArg, args) {
-        let autoRequestId = null;
-        try {
-          const [requestInfo, requestInit] = args;
-          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
-          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
-          if (requestMethod === "PATCH" && fetchUrl?.includes("/backend-api/settings/user_last_used_model_config")) {
-            modelRouting.updateLastSelectedModelConfigFromUrl(fetchUrl);
-          }
-          if (requestMethod === "POST" && /\/conversation(?:\?|$)/.test(fetchUrl || "")) {
-            const bodyText = requestInit?.body;
-            if (typeof bodyText === "string") {
-              const bodyObj = JSON.parse(bodyText);
-              if (bodyObj?.model) {
-                autoRequestId = modelRouting.handleConversationRequest(bodyObj.model);
-              }
-            }
-          }
-        } catch {
-        }
-        const response = await target.apply(thisArg, args);
-        if (autoRequestId) {
-          modelRouting.attachAutoSseParser(autoRequestId, response);
-        }
-        return response;
-      }
-    });
+	    const originalFetch = targetWindow.fetch;
+	    if (originalFetch?.__chatgptUsagePatched) return;
+	    const wrapped = new Proxy(originalFetch, {
+	      apply: async function(target, thisArg, args) {
+	        let modelKey = null;
+	        try {
+	          const [requestInfo, requestInit] = args;
+	          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
+	          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
+	          if (String(requestMethod || "").toUpperCase() === "POST" && /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(fetchUrl || "")) {
+	            modelKey = getUsageModelKeyFromCookieOrBody(requestInit?.body);
+	          }
+	        } catch {
+	        }
+	        const response = await target.apply(thisArg, args);
+	        if (modelKey) {
+	          setTimeout(() => {
+	            try {
+	              recordModelUsageByModelId(modelKey);
+	            } catch {}
+	          }, 0);
+	        }
+	        return response;
+	      }
+	    });
     wrapped.__chatgptUsagePatched = true;
     targetWindow.fetch = wrapped;
   }
 
   // src/usage.js
-  function cleanupExpiredRequests() {
-    const now = Date.now();
-    const maxWindow = TIME_WINDOWS.monthly;
+	  function cleanupExpiredRequests() {
+	    const now = Date.now();
+	    const maxWindow = TIME_WINDOWS.monthly;
     Object.values(usageData.models || {}).forEach((model) => {
       if (!Array.isArray(model.requests)) return;
       model.requests = model.requests.map((req) => tsOf(req)).filter((ts) => now - ts < maxWindow);
@@ -1712,23 +1695,28 @@
         if (!Array.isArray(group.requests)) return;
         group.requests = group.requests.filter((req) => now - tsOf(req) < maxWindow);
       });
-    }
-  }
-  function recordModelUsageByModelId(modelId) {
-    refreshUsageData();
-    cleanupExpiredRequests();
-    if (!usageData.models[modelId]) {
-      usageData.models[modelId] = {
-        requests: [],
-        quota: 50,
-        windowType: "daily"
-      };
-    }
-    usageData.models[modelId].requests.push(Date.now());
-    Storage.set(usageData);
-    refreshUsageData();
-    emitDataChanged();
-  }
+	    }
+	  }
+	  let __aichatUsageMonitorLastCleanupAt = 0;
+	  function recordModelUsageByModelId(modelId) {
+	    if (!usageData || typeof usageData !== "object") refreshUsageData();
+	    const now = Date.now();
+	    // Avoid scanning all models on every request; monthly cleanup is enough.
+	    if (!__aichatUsageMonitorLastCleanupAt || now - __aichatUsageMonitorLastCleanupAt > 3e4) {
+	      __aichatUsageMonitorLastCleanupAt = now;
+	      cleanupExpiredRequests();
+	    }
+	    if (!usageData.models[modelId]) {
+	      usageData.models[modelId] = {
+	        requests: [],
+	        quota: 50,
+	        windowType: "daily"
+	      };
+	    }
+	    usageData.models[modelId].requests.push(now);
+	    Storage.set(usageData);
+	    emitDataChanged();
+	  }
   function __aichatIsPlanStructureApplied(planType, data) {
     const planConfig = PLAN_CONFIGS[planType];
     if (!planConfig) return true;
@@ -1829,243 +1817,59 @@
     };
   }
 
-  // src/tracking/modelRouting.js
-  function resolveRedirectedModelId(originalModelId) {
-    if (originalModelId === "chatgpt_alpha_model_external_access_reserved_gate_13") {
-      return "alpha";
-    }
-    if (originalModelId === "auto") {
-      return "gpt-5-2";
-    }
-    try {
-      const plan = usageData && usageData.planType || "team";
-      if (originalModelId === "gpt-4-5" && plan !== "pro") return "gpt-5-2-instant";
-      if (originalModelId === "o3-pro" && plan !== "pro") return "gpt-5-2-instant";
-    } catch {
-    }
-    return originalModelId;
-  }
-  function createModelRouting() {
-    const pendingAutoRequests = /* @__PURE__ */ new Map();
-    const seenAssistantMessageIds = /* @__PURE__ */ new Set();
-    let assistantObserver = null;
-    let lastSelectedModelConfig = {
-      modelSlug: null,
-      thinkingEffort: null,
-      updatedAt: 0
-    };
-    function parseUrl(urlLike) {
-      try {
-        return new URL(urlLike, location.origin);
-      } catch {
-        return null;
-      }
-    }
-    function updateLastSelectedModelConfigFromUrl(urlLike) {
-      const url = parseUrl(urlLike);
-      if (!url) return;
-      const modelSlug = url.searchParams.get("model_slug") || url.searchParams.get("model");
-      const thinkingEffort = url.searchParams.get("thinking_effort") || url.searchParams.get("effort");
-      if (!modelSlug && !thinkingEffort) return;
-      lastSelectedModelConfig = {
-        modelSlug: modelSlug ?? lastSelectedModelConfig.modelSlug,
-        thinkingEffort: thinkingEffort ?? lastSelectedModelConfig.thinkingEffort,
-        updatedAt: Date.now()
-      };
-    }
-    function getOldestUnresolvedAutoRequest() {
-      let oldest = null;
-      for (const [id, req] of pendingAutoRequests.entries()) {
-        if (req.resolved) continue;
-        if (!oldest || req.startedAt < oldest.startedAt) oldest = { id, ...req };
-      }
-      return oldest;
-    }
-    function mapRoutedSlugToModelKey(baseModelKey, routedModelSlug, didAutoSwitchToReasoning) {
-      const slug = (routedModelSlug || "").toLowerCase();
-      if (baseModelKey === "gpt-5-2") {
-        if (slug.includes("pro")) return "gpt-5-2-pro";
-        const looksReasoning = didAutoSwitchToReasoning === true || slug.includes("thinking") || slug.includes("reasoning");
-        return looksReasoning ? "gpt-5-2-thinking" : "gpt-5-2-instant";
-      }
-      return routedModelSlug || baseModelKey;
-    }
-    function resolveAutoRequest(requestId, routed) {
-      const req = pendingAutoRequests.get(requestId);
-      if (!req || req.resolved) return;
-      const modelKey = mapRoutedSlugToModelKey(
-        req.baseModelKey,
-        routed?.modelSlug,
-        routed?.didAutoSwitchToReasoning
-      );
-      req.resolved = true;
-      req.resolvedAt = Date.now();
-      req.routed = routed;
-      recordModelUsageByModelId(modelKey);
-      try {
-        if (!getOldestUnresolvedAutoRequest()) stopAssistantMessageObserver();
-      } catch {
-      }
-    }
-    async function parseSseFromResponse(response, onJson) {
-      const body = response?.body;
-      if (!body || typeof body.getReader !== "function") return;
-      const reader = body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, "\n");
-        let sepIdx;
-        while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
-          const rawEvent = buffer.slice(0, sepIdx);
-          buffer = buffer.slice(sepIdx + 2);
-          const dataLines = rawEvent.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart());
-          if (!dataLines.length) continue;
-          const data = dataLines.join("\n");
-          if (!data || data === "[DONE]") continue;
-          try {
-            onJson(JSON.parse(data));
-          } catch {
-          }
-        }
-      }
-    }
-    function extractRoutingInfo(json) {
-      if (!json || typeof json !== "object") return null;
-      const ste = json.server_ste_metadata && typeof json.server_ste_metadata === "object" ? json.server_ste_metadata : json;
-      if (ste && (ste.type === "server_ste_metadata" || json.type === "server_ste_metadata")) {
-        const modelSlug2 = ste.model_slug || ste.model || ste.modelSlug;
-        const didAutoSwitchToReasoning = ste.did_auto_switch_to_reasoning ?? ste.didAutoSwitchToReasoning;
-        const thinkingEffort2 = ste.thinking_effort ?? ste.thinkingEffort ?? ste.effort;
-        if (modelSlug2 || didAutoSwitchToReasoning !== void 0 || thinkingEffort2) {
-          return { source: "sse", modelSlug: modelSlug2, didAutoSwitchToReasoning, thinkingEffort: thinkingEffort2 };
-        }
-      }
-      const message = json.message && typeof json.message === "object" ? json.message : null;
-      const metadata = message?.metadata && typeof message.metadata === "object" ? message.metadata : null;
-      const modelSlug = metadata?.model_slug || metadata?.modelSlug;
-      const thinkingEffort = metadata?.thinking_effort || metadata?.thinkingEffort;
-      if (modelSlug || thinkingEffort) {
-        return { source: "sse-message", modelSlug, thinkingEffort };
-      }
-      return null;
-    }
-    function attachAutoSseParser(requestId, response) {
-      try {
-        const clone = response.clone();
-        parseSseFromResponse(clone, (json) => {
-          const info = extractRoutingInfo(json);
-          if (info) resolveAutoRequest(requestId, info);
-        }).catch(() => {
-        });
-      } catch {
-      }
-    }
-    function handleAutoSseJson(requestId, json) {
-      try {
-        const info = extractRoutingInfo(json);
-        if (info) resolveAutoRequest(requestId, info);
-      } catch {
-      }
-    }
-    function stopAssistantMessageObserver() {
-      if (!assistantObserver) return;
-      try {
-        assistantObserver.disconnect();
-      } catch {
-      }
-      assistantObserver = null;
-    }
-    function startAssistantMessageObserver() {
-      if (assistantObserver) return;
-      const start = () => {
-        if (assistantObserver) return;
-        if (!document?.body) {
-          setTimeout(start, 300);
-          return;
-        }
-        const target = document.querySelector("main") || document.body;
-        const observer = new MutationObserver((mutations) => {
-          const oldest0 = getOldestUnresolvedAutoRequest();
-          if (!oldest0) return stopAssistantMessageObserver();
-          for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-              if (!(node instanceof Element)) continue;
-              const candidates = [];
-              if (node.matches?.('[data-message-author-role="assistant"]')) candidates.push(node);
-              node.querySelectorAll?.('[data-message-author-role="assistant"]').forEach((el) => candidates.push(el));
-              for (const el of candidates) {
-                const msgId = el.getAttribute("data-message-id") || el.id || null;
-                if (msgId && seenAssistantMessageIds.has(msgId)) continue;
-                if (msgId) seenAssistantMessageIds.add(msgId);
-                const modelSlug = el.getAttribute("data-message-model-slug");
-                if (!modelSlug) continue;
-                const oldest = getOldestUnresolvedAutoRequest();
-                if (!oldest) continue;
-                const ageMs = Date.now() - oldest.startedAt;
-                if (ageMs < 0 || ageMs > 2 * 60 * 1e3) continue;
-                resolveAutoRequest(oldest.id, { source: "dom", modelSlug });
-                if (!getOldestUnresolvedAutoRequest()) return;
-              }
-            }
-          }
-        });
-        try {
-          observer.observe(target, { childList: true, subtree: true });
-          assistantObserver = observer;
-        } catch {
-          // ignore
-        }
-      };
-      start();
-    }
-    function beginAutoRequest(requestedModelId, baseModelKey = "gpt-5-2") {
-      startAssistantMessageObserver();
-      const requestId = crypto?.randomUUID && crypto.randomUUID() || `auto_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      pendingAutoRequests.set(requestId, {
-        baseModelKey,
-        requestedModel: requestedModelId,
-        startedAt: Date.now(),
-        resolved: false,
-        lastSelectedModelConfig: { ...lastSelectedModelConfig }
-      });
-      setTimeout(() => {
-        const req = pendingAutoRequests.get(requestId);
-        if (!req || req.resolved) return;
-        resolveAutoRequest(requestId, {
-          source: "timeout",
-          modelSlug: req.baseModelKey,
-          didAutoSwitchToReasoning: false
-        });
-      }, 60 * 1e3);
-      return requestId;
-    }
-    function handleConversationRequest(modelId) {
-      const effectiveModelId = resolveRedirectedModelId(modelId);
-      if (effectiveModelId === "gpt-5-instant") {
-        recordModelUsageByModelId("gpt-5");
-        return null;
-      }
-      if (effectiveModelId === "gpt-5-1-instant") {
-        recordModelUsageByModelId("gpt-5-1");
-        return null;
-      }
-      if (effectiveModelId === "gpt-5-2") {
-        return beginAutoRequest(modelId, "gpt-5-2");
-      }
-      recordModelUsageByModelId(resolveRedirectedModelId(effectiveModelId));
-      return null;
-    }
-    return {
-      handleConversationRequest,
-      attachAutoSseParser,
-      handleAutoSseJson,
-      updateLastSelectedModelConfigFromUrl
-    };
-  }
+	  // src/tracking/modelRouting.js
+	  function resolveRedirectedModelId(originalModelId) {
+	    if (originalModelId === "chatgpt_alpha_model_external_access_reserved_gate_13") {
+	      return "alpha";
+	    }
+	    if (originalModelId === "auto") {
+	      return "gpt-5-2-instant";
+	    }
+	    // Treat bare GPT-5.x slugs as instant for counting.
+	    if (originalModelId === "gpt-5-2") {
+	      return "gpt-5-2-instant";
+	    }
+	    try {
+	      const plan = usageData && usageData.planType || "team";
+	      if (originalModelId === "gpt-4-5" && plan !== "pro") return "gpt-5-2-instant";
+	      if (originalModelId === "o3-pro" && plan !== "pro") return "gpt-5-2-instant";
+	    } catch {
+	    }
+	    return originalModelId;
+	  }
+	  function getUsageModelKeyFromCookieOrBody(bodyLike) {
+	    const fromCookie = readLastModelIdFromCookie();
+	    const modelId = fromCookie || (typeof bodyLike === "string" ? extractModelIdFromJsonBodyText(bodyLike) : null);
+	    if (!modelId) return null;
+	    const redirected = resolveRedirectedModelId(modelId);
+	    if (redirected === "gpt-5-instant") return "gpt-5";
+	    if (redirected === "gpt-5-1-instant") return "gpt-5-1";
+	    return redirected;
+	  }
+	  function readLastModelIdFromCookie() {
+	    try {
+	      const rawCookie = String(document.cookie || "");
+	      const m = rawCookie.match(/(?:^|;\s*)oai-last-model-config=([^;]+)/);
+	      const encoded = m && m[1] ? m[1] : null;
+	      if (!encoded) return null;
+	      const decoded = decodeURIComponent(encoded);
+	      const obj = JSON.parse(decoded);
+	      const model = obj && typeof obj === "object" ? obj.model : null;
+	      return typeof model === "string" && model ? model : null;
+	    } catch {
+	      return null;
+	    }
+	  }
+	  function extractModelIdFromJsonBodyText(bodyText) {
+	    try {
+	      const s = String(bodyText || "");
+	      // Fast path: look for the first `"model":"..."` occurrence without JSON.parse.
+	      const m = s.match(/"model"\s*:\s*"([^"]+)"/);
+	      return m && m[1] ? m[1] : null;
+	    } catch {
+	      return null;
+	    }
+	  }
 
   // src/textScrambler.js
   function installTextScrambler() {
@@ -4044,14 +3848,13 @@
 
   // src/main.js
   function main() {
-    installTextScrambler();
-    injectStyles();
-    refreshUsageData();
-    const modelRouting = createModelRouting();
-    installFetchInterceptor(modelRouting);
-    onDataChanged(() => {
-      if (isSilent()) return;
-      const monitor = document.getElementById("chatUsageMonitor");
+	    installTextScrambler();
+	    injectStyles();
+	    refreshUsageData();
+	    installFetchInterceptor();
+	    onDataChanged(() => {
+	      if (isSilent()) return;
+	      const monitor = document.getElementById("chatUsageMonitor");
       if (monitor?.classList?.contains("minimized")) return;
       updateUI();
     });

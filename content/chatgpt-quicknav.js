@@ -715,7 +715,9 @@
   }
 
   function getTextPreview(el) {
-    if (!el) return '';
+    // Some turns (e.g. streaming assistant placeholder / image-only messages) may not have
+    // a markdown/prose block yet. Keep a placeholder preview so the last turn won't disappear.
+    if (!el) return '...';
     // 注意：innerText 会触发同步样式/布局计算（长对话非常慢），尽量只用 textContent
     const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
     if (!text) return '...';

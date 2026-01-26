@@ -1622,22 +1622,23 @@
   `);
   }
 
-	  // src/tracking/fetchInterceptor.js
-	  function installFetchInterceptor() {
-	    const targetWindow = window;
-	    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
-	    if (hub && typeof hub.register === "function") {
-	      if (targetWindow.__chatgptUsageHubInstalled) return;
-	      targetWindow.__chatgptUsageHubInstalled = true;
+		  // src/tracking/fetchInterceptor.js
+		  function installFetchInterceptor() {
+		    const targetWindow = window;
+		    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
+		    if (hub && typeof hub.register === "function") {
+		      if (targetWindow.__chatgptUsageHubInstalled) return;
+		      targetWindow.__chatgptUsageHubInstalled = true;
 
-	      hub.register({
-	        priority: 5,
-	        beforeFetch: (ctx) => {
-	          try {
-		            const method = String(ctx?.method || "").toUpperCase();
-		            const url = String(ctx?.url || "");
-		            if (method !== "POST") return;
-		            if (!/\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url)) return;
+		      hub.register({
+		        // Run after other modules that may rewrite the outgoing payload (e.g. model/effort toggles).
+		        priority: 200,
+		        beforeFetch: (ctx) => {
+		          try {
+			            const method = String(ctx?.method || "").toUpperCase();
+			            const url = String(ctx?.url || "");
+			            if (method !== "POST") return;
+			            if (!/\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(url)) return;
 		            const modelKey = getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
 		            if (!modelKey) return;
 		            setTimeout(() => {
@@ -1837,15 +1838,18 @@
 	    }
 	    return originalModelId;
 	  }
-	  function getUsageModelKeyFromCookieOrBody(bodyLike) {
-	    const fromCookie = readLastModelIdFromCookie();
-	    const modelId = fromCookie || (typeof bodyLike === "string" ? extractModelIdFromJsonBodyText(bodyLike) : null);
-	    if (!modelId) return null;
-	    const redirected = resolveRedirectedModelId(modelId);
-	    if (redirected === "gpt-5-instant") return "gpt-5";
-	    if (redirected === "gpt-5-1-instant") return "gpt-5-1";
-	    return redirected;
-	  }
+		  function getUsageModelKeyFromCookieOrBody(bodyLike) {
+		    // Prefer the actual outgoing request payload, because the cookie can lag behind
+		    // right after switching models (first message would be mis-attributed otherwise).
+		    const fromBody = typeof bodyLike === "string" ? extractModelIdFromJsonBodyText(bodyLike) : null;
+		    const fromCookie = readLastModelIdFromCookie();
+		    const modelId = fromBody || fromCookie;
+		    if (!modelId) return null;
+		    const redirected = resolveRedirectedModelId(modelId);
+		    if (redirected === "gpt-5-instant") return "gpt-5";
+		    if (redirected === "gpt-5-1-instant") return "gpt-5-1";
+		    return redirected;
+		  }
 	  function readLastModelIdFromCookie() {
 	    try {
 	      const rawCookie = String(document.cookie || "");

@@ -353,6 +353,22 @@
   }
 
   // ===== 主流程：严格分步 + 确认 + 延时 =====
+  function editorStartsWith(prefixText) {
+    const prefix = String(prefixText || '').trimEnd();
+    if (!prefix) return true;
+    const fb = editorFallback();
+    if (fb && typeof fb.value === 'string') {
+      const t = fb.value.trim();
+      if (t.startsWith(prefix)) return true;
+    }
+    const el = editorEl();
+    if (el) {
+      const t = readContentEditableText(el);
+      if (t.startsWith(prefix)) return true;
+    }
+    return false;
+  }
+
   async function runPrefixThenSend(prefixText) {
     if (isSending) return;
     isSending = true;
@@ -363,7 +379,7 @@
       // 第 1 步：写前缀
       insertPrefixAtBeginning(prefixText);
       await sleep(DELAYS.afterInsert);
-      await waitUntil(() => editorText().startsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
+      await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
       setDebug({ step: 'editorCommitted', editorPreview: editorText().slice(0, 120) });
 
       // 第 2 步：等待发送按钮 → 锁 → 切模型 → 点击

@@ -389,7 +389,12 @@
     const firstArticle = main.querySelector('article');
     const container = firstArticle?.parentElement;
     if (!(container instanceof HTMLElement)) return null;
-    if (container.querySelectorAll(':scope > article').length === 0) return null;
+    // Cheap existence check (avoid scanning all children).
+    try {
+      if (!container.querySelector(':scope > article')) return null;
+    } catch {
+      return null;
+    }
     return container;
   }
 
@@ -613,6 +618,9 @@
     if (state.routeTimer) return;
     state.routeTimer = setInterval(() => {
       if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+      if (document.visibilityState === 'hidden') return;
+      // Steady state: the existing container is still connected; avoid any DOM queries.
+      if (state.containerEl && state.containerEl.isConnected) return;
       const current = findArticlesContainer();
       if (!current) return;
       if (state.containerEl && current === state.containerEl) return;

@@ -296,15 +296,18 @@
     }
   }
   function editorText() {
+    const fb = editorFallback();
+    // ChatGPT keeps a textarea mirror of the composer; prefer it for fast, layout-free reads.
+    if (SITE === 'chatgpt' && fb && typeof fb.value === 'string') return fb.value.trim();
     const el = editorEl();
     if (el) return readContentEditableText(el);
-    const fb = editorFallback();
     return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
   }
   function isLongContent() {
+    const fb = editorFallback();
+    if (SITE === 'chatgpt' && fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
     const el = editorEl();
     if (el) return readContentEditableText(el).length > LONG_CONTENT_THRESHOLD;
-    const fb = editorFallback();
     if (fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
     return false;
   }
@@ -846,6 +849,18 @@
 
   // ===== 注入与保活 =====
   function addInlineButtons() {
+    // Fast path: already injected. Avoid repeated document-wide selector work.
+    try {
+      if (
+        document.getElementById('o4-inline-btn-wrap') ||
+        document.getElementById('o4-translate-inline-btn') ||
+        document.getElementById('o4-mini-inline-btn') ||
+        document.getElementById('o4-think-inline-btn')
+      ) {
+        return true;
+      }
+    } catch {}
+
     let container = null;
     let insertBefore = null;
 
@@ -958,6 +973,12 @@
 
   function boot() {
     if (!document.body) return;
+    try {
+      if (document.getElementById('o4-inline-btn-wrap')) {
+        removeFloatingButtonsIfAny();
+        return;
+      }
+    } catch {}
     const inlineOk = addInlineButtons();
     if (inlineOk) {
       removeFloatingButtonsIfAny();
@@ -987,6 +1008,10 @@
 
     let lastBootAt = 0;
     let timer = 0;
+    /** @type {MutationObserver|null} */
+    let rootMo = null;
+    /** @type {MutationObserver|null} */
+    let hostMo = null;
 
     function scheduleBoot(delayMs = 0) {
       if (timer) return;
@@ -997,19 +1022,100 @@
         timer = 0;
         lastBootAt = Date.now();
         boot();
+        // Once inline buttons exist, switch to a narrow observer and drop the global subtree watcher.
+        try {
+          if (hasInlineButtons()) {
+            ensureHostObserver();
+            disconnectRootObserver();
+          }
+        } catch {}
       }, wait);
+    }
+
+    function hasInlineButtons() {
+      try {
+        const wrap = document.getElementById('o4-inline-btn-wrap');
+        return !!(wrap && wrap.isConnected);
+      } catch {
+        return false;
+      }
+    }
+
+    function getInlineHost() {
+      try {
+        const wrap = document.getElementById('o4-inline-btn-wrap');
+        const host = wrap?.parentElement || null;
+        return host && host.isConnected ? host : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function disconnectRootObserver() {
+      if (!rootMo) return;
+      try { rootMo.disconnect(); } catch {}
+      rootMo = null;
+    }
+
+    function ensureRootObserver() {
+      if (rootMo) return;
+      try {
+        const root = document.documentElement;
+        if (!root || typeof MutationObserver !== 'function') return;
+        rootMo = new MutationObserver(() => {
+          // When injected, do nothing; we drop this observer anyway.
+          if (hasInlineButtons()) return;
+          scheduleBoot(250);
+        });
+        rootMo.observe(root, { childList: true, subtree: true });
+      } catch {
+        disconnectRootObserver();
+      }
+    }
+
+    function ensureHostObserver() {
+      const host = getInlineHost();
+      if (!host || typeof MutationObserver !== 'function') return;
+      try {
+        if (hostMo && hostMo.__aichatHost === host) return;
+      } catch {}
+      try { hostMo?.disconnect(); } catch {}
+
+      try {
+        hostMo = new MutationObserver(() => {
+          if (hasInlineButtons()) return;
+          // Inline buttons were removed/re-rendered: re-enable the global watcher briefly and reboot.
+          try { hostMo?.disconnect(); } catch {}
+          hostMo = null;
+          ensureRootObserver();
+          scheduleBoot(0);
+        });
+        // @ts-ignore: attach host marker for cheap reuse checks.
+        hostMo.__aichatHost = host;
+        hostMo.observe(host, { childList: true, subtree: false });
+      } catch {
+        try { hostMo?.disconnect(); } catch {}
+        hostMo = null;
+      }
     }
 
     scheduleBoot(0);
 
     try {
-      const root = document.documentElement;
-      if (root && typeof MutationObserver === 'function') {
-        const mo = new MutationObserver(() => scheduleBoot(250));
-        mo.observe(root, { childList: true, subtree: true });
-      }
+      ensureRootObserver();
     } catch {}
 
-    setInterval(() => scheduleBoot(0), BOOT_FALLBACK_INTERVAL_MS);
+    // Fallback: only wake up when inline buttons are missing.
+    setInterval(() => {
+      try {
+        if (hasInlineButtons()) {
+          // keep host observer attached (in case the host changes)
+          ensureHostObserver();
+          return;
+        }
+      } catch {}
+      ensureRootObserver();
+      scheduleBoot(0);
+    }, BOOT_FALLBACK_INTERVAL_MS);
   })();
 })();

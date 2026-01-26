@@ -90,23 +90,28 @@
   }
 
   function setupAudioObserver() {
+    // Avoid a global subtree MutationObserver (very noisy on ChatGPT).
+    // `play`/`ratechange` listeners already cover the hot path; keep a tiny poller as fallback.
     try {
-      const mo = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          for (const node of m.addedNodes || []) {
-            if (!(node instanceof Element)) continue;
-            if (node.nodeName === 'AUDIO' || node.querySelector?.('audio')) {
-              applySpeedToAllAudios();
-              return;
-            }
-          }
+      if (document.querySelector('audio')) return;
+    } catch {}
+
+    let tries = 0;
+    const MAX_TRIES = 30; // ~60s
+    const INTERVAL_MS = 2000;
+    const timer = setInterval(() => {
+      tries += 1;
+      try {
+        if (document.querySelector('audio')) {
+          applySpeedToAllAudios();
+          clearInterval(timer);
+          return;
         }
-      });
-      const root = document.documentElement;
-      if (root) mo.observe(root, { childList: true, subtree: true });
-    } catch {
-      // ignore
-    }
+      } catch {}
+      if (tries >= MAX_TRIES) {
+        try { clearInterval(timer); } catch {}
+      }
+    }, INTERVAL_MS);
   }
 
   function initStorage() {

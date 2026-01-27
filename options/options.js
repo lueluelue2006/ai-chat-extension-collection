@@ -33,7 +33,10 @@
     virtualizeMarkdownBlocks: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
+    disableBackdropFilters: false,
+    extremeLite: false,
     boostDuringInput: true,
+    unfreezeOnFind: true,
     showOverlay: false,
     rootMarginPx: 1200
   });
@@ -152,8 +155,12 @@
         typeof s.optimizeHeavyBlocks === 'boolean' ? s.optimizeHeavyBlocks : CGPT_PERF_DEFAULT_SETTINGS.optimizeHeavyBlocks,
       disableAnimations:
         typeof s.disableAnimations === 'boolean' ? s.disableAnimations : CGPT_PERF_DEFAULT_SETTINGS.disableAnimations,
+      disableBackdropFilters:
+        typeof s.disableBackdropFilters === 'boolean' ? s.disableBackdropFilters : CGPT_PERF_DEFAULT_SETTINGS.disableBackdropFilters,
+      extremeLite: typeof s.extremeLite === 'boolean' ? s.extremeLite : CGPT_PERF_DEFAULT_SETTINGS.extremeLite,
       boostDuringInput:
         typeof s.boostDuringInput === 'boolean' ? s.boostDuringInput : CGPT_PERF_DEFAULT_SETTINGS.boostDuringInput,
+      unfreezeOnFind: typeof s.unfreezeOnFind === 'boolean' ? s.unfreezeOnFind : CGPT_PERF_DEFAULT_SETTINGS.unfreezeOnFind,
       showOverlay: typeof s.showOverlay === 'boolean' ? s.showOverlay : CGPT_PERF_DEFAULT_SETTINGS.showOverlay,
       rootMarginPx: Number.isFinite(Number(s.rootMarginPx)) ? Math.max(0, Number(s.rootMarginPx)) : CGPT_PERF_DEFAULT_SETTINGS.rootMarginPx
     };
@@ -764,7 +771,10 @@
       ['virtualizeMarkdownBlocks', '虚拟化 Markdown 块（virtualizeMarkdownBlocks）'],
       ['optimizeHeavyBlocks', '重块优化（optimizeHeavyBlocks）'],
       ['disableAnimations', '禁用动画（disableAnimations）'],
+      ['disableBackdropFilters', '禁用毛玻璃（disableBackdropFilters）'],
+      ['extremeLite', '极限轻量（extremeLite）'],
       ['boostDuringInput', '输入时加强优化（boostDuringInput）'],
+      ['unfreezeOnFind', 'Ctrl/Cmd+F 临时解冻（unfreezeOnFind）'],
       ['showOverlay', '显示调试覆盖层（showOverlay）']
     ];
 

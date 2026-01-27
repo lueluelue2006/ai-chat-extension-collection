@@ -5,6 +5,8 @@
   const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
+  const DEFAULT_NAV_TOP = 60;
+  const DEFAULT_NAV_RIGHT = 10;
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
@@ -155,8 +157,8 @@
   function resetPanelPosition() {
     const nav = document.getElementById('cgpt-compact-nav');
     if (nav) {
-      nav.style.top = '60px';
-      nav.style.right = '10px';
+      nav.style.top = `${DEFAULT_NAV_TOP}px`;
+      nav.style.right = `${DEFAULT_NAV_RIGHT}px`;
       nav.style.left = 'auto';
       nav.style.bottom = 'auto';
       persistNavPosition(nav);
@@ -250,6 +252,15 @@
       return '';
     } catch {
       return '';
+    }
+  }
+
+  function getRouteKey() {
+    try {
+      // For our UI lifecycle, `pathname` is what matters (ChatGPT may change query/hash during hydration).
+      return String(location.pathname || '/');
+    } catch {
+      return '/';
     }
   }
 
@@ -475,67 +486,112 @@
     boot();
   }
 
-  let currentUrl = location.href;
+  let currentRouteKey = getRouteKey();
   function detectUrlChange() {
-    if (location.href !== currentUrl) {
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: URL变化，清理旧实例', currentUrl, '->', location.href);
-      currentUrl = location.href;
-      const oldNav = document.getElementById('cgpt-compact-nav');
-      if (oldNav) {
-        if (oldNav._ui) {
-          // 清理定时器
-          if (oldNav._ui._forceRefreshTimer) {
-            clearInterval(oldNav._ui._forceRefreshTimer);
-            if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已清理定时器');
-          }
-          if (oldNav._ui._moBootstrapTimer) {
-            try {
-              clearInterval(oldNav._ui._moBootstrapTimer);
-            } catch {}
-            oldNav._ui._moBootstrapTimer = 0;
-            oldNav._ui._moBootstrapAttempts = 0;
-          }
-          // 断开MutationObserver
-          if (oldNav._ui._mo) {
-            try {
-              oldNav._ui._mo.disconnect();
-              if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已断开MutationObserver');
-            } catch (e) {
-              if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 断开MutationObserver失败', e);
-            }
-          }
-          if (oldNav._ui.layout && typeof oldNav._ui.layout.destroy === 'function') {
-            try { oldNav._ui.layout.destroy(); } catch {}
-          }
+    const nextKey = getRouteKey();
+    if (nextKey === currentRouteKey) return;
+
+    if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: route changed', currentRouteKey, '->', nextKey);
+    currentRouteKey = nextKey;
+
+    // Leaving chat route: remove panel to avoid showing in Library/GPTs/etc.
+    if (!isChatRoute()) {
+      try {
+        const nav = document.getElementById('cgpt-compact-nav');
+        if (nav && nav._ui) {
+          try {
+            if (nav._ui._forceRefreshTimer) clearInterval(nav._ui._forceRefreshTimer);
+          } catch {}
+          try {
+            if (nav._ui._moBootstrapTimer) clearInterval(nav._ui._moBootstrapTimer);
+          } catch {}
+          try {
+            nav._ui._mo?.disconnect?.();
+          } catch {}
         }
-        oldNav.remove();
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已移除旧面板');
-      }
-      // 重置"正在启动"标志，避免新页面被卡住
-      __cgptBooting = false;
-      lastTurnCount = 0;
-      TURN_SELECTOR = null; // 同时重置选择器缓存
-      __cgptChatScrollContainer = null;
-      __cgptChatScrollContainerTs = 0;
-      scrollLockScrollEl = null;
-      previewCache.clear();
-      roleCache.clear();
-      turnIdToPos.clear();
-      cachedTurns = [];
-      lastDomTurnCount = 0;
-      currentActiveTurnPos = 0;
-      treeSummary = null;
-      treePathSet = new Set();
-      treeSummaryPendingReqId = '';
-      if (treeSummaryReqTimer) { clearTimeout(treeSummaryReqTimer); treeSummaryReqTimer = 0; }
-      setTimeout(init, 100);
+        if (nav) nav.remove();
+      } catch {}
+      return;
     }
+
+    // Reset per-route caches and restart observers, but keep the panel DOM to avoid flicker.
+    const nav = document.getElementById('cgpt-compact-nav');
+    const ui = nav && nav._ui ? nav._ui : null;
+    if (!ui) {
+      // If DOM exists but context is gone (e.g. extension reload), rebuild cleanly.
+      try {
+        if (nav) nav.remove();
+      } catch {}
+      setTimeout(init, 0);
+      return;
+    }
+
+    try {
+      if (ui._forceRefreshTimer) clearInterval(ui._forceRefreshTimer);
+    } catch {}
+    try {
+      if (ui._moBootstrapTimer) clearInterval(ui._moBootstrapTimer);
+    } catch {}
+    try {
+      ui._mo?.disconnect?.();
+    } catch {}
+    ui._mo = null;
+    ui._moTarget = null;
+    ui._moBootstrapTimer = 0;
+    ui._moBootstrapAttempts = 0;
+    ui._forceRefreshTimer = null;
+
+    try {
+      if (refreshTimer) clearTimeout(refreshTimer);
+    } catch {}
+    refreshTimer = 0;
+    try {
+      if (activeUpdateTimer) clearTimeout(activeUpdateTimer);
+    } catch {}
+    activeUpdateTimer = 0;
+    try {
+      if (forceRefreshTimer) clearInterval(forceRefreshTimer);
+    } catch {}
+    forceRefreshTimer = null;
+    try {
+      if (scrollLockRestoreTimer) clearTimeout(scrollLockRestoreTimer);
+    } catch {}
+    scrollLockRestoreTimer = 0;
+
+    // Re-load per-conversation state (pins/favorites/filter) because keys are derived from `location.pathname`.
+    try { loadCPSet(); } catch {}
+    try { loadFavSet(); } catch {}
+    try { loadFavFilterState(); } catch {}
+
+    lastTurnCount = 0;
+    TURN_SELECTOR = null;
+    __cgptChatScrollContainer = null;
+    __cgptChatScrollContainerTs = 0;
+    scrollLockScrollEl = null;
+    previewCache.clear();
+    roleCache.clear();
+    turnIdToPos.clear();
+    cachedTurns = [];
+    lastDomTurnCount = 0;
+    currentActiveTurnPos = 0;
+    currentActiveId = null;
+    treeSummary = null;
+    treePathSet = new Set();
+    treeSummaryPendingReqId = '';
+    if (treeSummaryReqTimer) {
+      try { clearTimeout(treeSummaryReqTimer); } catch {}
+      treeSummaryReqTimer = 0;
+    }
+
+    try { updateStarBtnState(ui); } catch {}
+    try { updateTreeBtnState(ui); } catch {}
+    try { observeChat(ui); } catch {}
+    try { scheduleRefresh(ui, { force: true, delay: 120 }); } catch {}
+    try { scheduleActiveUpdateNow(); } catch {}
+    try { scheduleTreeSummaryRequest(240); } catch {}
   }
   window.addEventListener('popstate', detectUrlChange);
-  const originalPushState = history.pushState;
-  const originalReplaceState = history.replaceState;
-  history.pushState = function (...args) { originalPushState.apply(this, args); setTimeout(detectUrlChange, 0); };
-  history.replaceState = function (...args) { originalReplaceState.apply(this, args); setTimeout(detectUrlChange, 0); };
+  window.addEventListener('hashchange', detectUrlChange);
 
   // Fallback: some SPA navigations don't trigger events we can reliably observe from an isolated world.
   // Polling `location.href` keeps the panel state in sync without relying on MAIN-world hooks.
@@ -611,8 +667,32 @@
   }
 
   whenBodyReady(() => {
-    init();
-    installNavSelfHeal();
+    const start = () => {
+      try {
+        init();
+        installNavSelfHeal();
+      } catch {}
+    };
+
+    // ChatGPT sometimes does a fast "hydrate / router bootstrap" pass right after first paint,
+    // which can wipe early-injected DOM nodes and make UIs flicker (looks like a refresh).
+    // Delay the initial mount slightly so our UI appears once and stays.
+    const INITIAL_MOUNT_DELAY_MS = 350;
+
+    try {
+      if (document.readyState === 'loading') {
+        document.addEventListener(
+          'DOMContentLoaded',
+          () => {
+            setTimeout(start, INITIAL_MOUNT_DELAY_MS);
+          },
+          { once: true }
+        );
+        return;
+      }
+    } catch {}
+
+    setTimeout(start, INITIAL_MOUNT_DELAY_MS);
   });
 
   function qsTurns(root = document) {
@@ -913,10 +993,12 @@
   --cgpt-nav-fav-bg: var(--cgpt-nav-accent-subtle);
   --cgpt-nav-fav-border: var(--cgpt-nav-accent-subtle);
   --cgpt-nav-positive: var(--token-text-positive, #00c896);
-  --cgpt-nav-info: var(--token-text-info, #2ea5ff);
-  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(255,255,255,0.92));
-  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(15,23,42,0.08));
-}
+	  --cgpt-nav-info: var(--token-text-info, #2ea5ff);
+	  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(255,255,255,0.92));
+	  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(15,23,42,0.08));
+	  /* Performance: blur/backdrop-filter is expensive; default off. */
+	  --cgpt-nav-backdrop: none;
+	}
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -1035,12 +1117,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 #cgpt-compact-nav > .compact-header,
 #cgpt-compact-nav > .compact-list,
 #cgpt-compact-nav > .compact-footer { width:100%; }
-.compact-header { display:flex; align-items:center; justify-content:space-between; padding:4px 8px; margin-bottom:4px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-panel-border); pointer-events:auto; cursor:move; box-shadow:var(--cgpt-nav-panel-shadow); min-width:100px; backdrop-filter:saturate(180%) blur(18px); width:100%; padding-inline-end: calc(8px + var(--cgpt-nav-gutter)); }
+.compact-header { display:flex; align-items:center; justify-content:space-between; padding:4px 8px; margin-bottom:4px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-panel-border); pointer-events:auto; cursor:move; box-shadow:var(--cgpt-nav-panel-shadow); min-width:100px; -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); width:100%; padding-inline-end: calc(8px + var(--cgpt-nav-gutter)); }
 .compact-actions { display:flex; align-items:center; gap:4px; width:100%; }
 .compact-title { font-size:11px; font-weight:600; color:var(--cgpt-nav-text-muted); display:flex; align-items:center; gap:3px; text-transform:uppercase; letter-spacing:.04em; }
 .compact-title span { color:var(--cgpt-nav-text-strong); }
 .compact-title svg { width:12px; height:12px; opacity:.55; }
-.compact-toggle, .compact-refresh, .compact-lock, .compact-tree { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); }
+.compact-toggle, .compact-refresh, .compact-lock, .compact-tree { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); }
 .compact-toggle { font-size:clamp(14px, calc(var(--cgpt-nav-width, 210px) / 14), 18px); }
 .compact-refresh { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 18), 14px); margin-left:4px; }
 .compact-lock { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
@@ -1065,7 +1147,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 .compact-empty { padding:10px; text-align:center; color:var(--cgpt-nav-text-muted); font-size:11px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); pointer-events:auto; min-height:20px; line-height:1.4; border:1px dashed var(--cgpt-nav-border-muted); }
 
 /* 收藏与锚点 */
-  .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
+  .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
   .compact-star:hover { border-color:var(--cgpt-nav-fav-border); color:var(--cgpt-nav-fav-color); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
   .compact-star.active { background:var(--cgpt-nav-fav-bg); color:var(--cgpt-nav-fav-color); border-color:var(--cgpt-nav-fav-border); }
   .compact-lock.active { background:var(--cgpt-nav-arrow-bg); color:var(--cgpt-nav-arrow-color); border-color:var(--cgpt-nav-arrow-border); box-shadow:0 4px 14px color-mix(in srgb, var(--cgpt-nav-arrow-color) 26%, transparent); }
@@ -1111,7 +1193,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
   .branch-badge:hover { background:color-mix(in srgb, var(--cgpt-nav-accent) 14%, transparent); }
 
-  #${TREE_TOOLTIP_ID}{
+	  #${TREE_TOOLTIP_ID}{
     position:fixed;
     z-index:2147483647;
     display:none;
@@ -1120,11 +1202,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     background:var(--cgpt-nav-panel-bg);
     border:1px solid var(--cgpt-nav-panel-border);
     border-radius:var(--cgpt-nav-radius-lg);
-    box-shadow:var(--cgpt-nav-panel-shadow);
-    color:var(--cgpt-nav-text-strong);
-    padding:8px 10px;
-    backdrop-filter:saturate(180%) blur(18px);
-  }
+	    box-shadow:var(--cgpt-nav-panel-shadow);
+	    color:var(--cgpt-nav-text-strong);
+	    padding:8px 10px;
+	    -webkit-backdrop-filter:var(--cgpt-nav-backdrop);
+	    backdrop-filter:var(--cgpt-nav-backdrop);
+	  }
   #${TREE_TOOLTIP_ID}[data-open="1"]{ display:block; }
   #${TREE_TOOLTIP_ID} .hdr{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:700; color:var(--cgpt-nav-text-muted); margin-bottom:8px; }
   #${TREE_TOOLTIP_ID} .rows{ display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; padding-right:2px; }
@@ -1154,7 +1237,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
 /* 底部导航条 */
 .compact-footer { margin-top:6px; display:flex; gap:clamp(3px, calc(var(--cgpt-nav-width, 210px) / 70), 6px); width:100%; padding-right: var(--cgpt-nav-gutter); }
-.nav-btn { flex:1 1 25%; min-width:0; padding: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 56), 6px) clamp(6px, calc(var(--cgpt-nav-width, 210px) / 35), 8px); font-size: clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 14px); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); cursor:pointer; box-shadow:var(--cgpt-nav-item-shadow); line-height:1; color:var(--cgpt-nav-text-strong); transition:all .18s ease; backdrop-filter:saturate(180%) blur(18px); }
+.nav-btn { flex:1 1 25%; min-width:0; padding: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 56), 6px) clamp(6px, calc(var(--cgpt-nav-width, 210px) / 35), 8px); font-size: clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 14px); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); cursor:pointer; box-shadow:var(--cgpt-nav-item-shadow); line-height:1; color:var(--cgpt-nav-text-strong); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease; -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); }
 .nav-btn:hover { background:var(--cgpt-nav-footer-hover); transform:translateY(-1px); }
 .nav-btn:active { transform: translateY(1px); }
 
@@ -1308,21 +1391,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return ui;
   }
 
-  function createLayoutManager(nav) {
-    const state = {
-      nav,
-      destroyed: false,
-      userAdjusting: false,
-      followLeft: false,
-      followRight: false,
-      leftMargin: DEFAULT_FOLLOW_MARGIN,
-      rightMargin: DEFAULT_FOLLOW_MARGIN,
-      manual: { top: 0, left: null, right: null },
-      leftEl: null,
-      rightEl: null,
-      leftObserver: null,
-      rightObserver: null,
-      resizeHandler: null,
+	  function createLayoutManager(nav) {
+	    const state = {
+	      nav,
+	      destroyed: false,
+	      userAdjusting: false,
+	      followLeft: false,
+	      followRight: false,
+	      leftMargin: DEFAULT_FOLLOW_MARGIN,
+	      rightMargin: DEFAULT_FOLLOW_MARGIN,
+	      manual: { top: DEFAULT_NAV_TOP, left: null, right: DEFAULT_NAV_RIGHT },
+	      leftEl: null,
+	      rightEl: null,
+	      leftObserver: null,
+	      rightObserver: null,
+	      resizeHandler: null,
       pendingEval: false,
       rafId: 0,
       rightRecheckTimer: 0,
@@ -1330,24 +1413,37 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       rightSavedPosition: null,
       rightFollowLoopId: 0,
       pollTimer: 0
-    };
+	    };
 
-    function captureManualPositions() {
-      try {
-        const rect = nav.getBoundingClientRect();
-        const comp = window.getComputedStyle(nav);
-        const topPx = parseFloat(comp.top);
-        const leftPx = comp.left && comp.left !== 'auto' ? parseFloat(comp.left) : null;
-        const rightPx = comp.right && comp.right !== 'auto' ? parseFloat(comp.right) : null;
-        state.manual = {
-          top: Number.isFinite(topPx) ? topPx : rect.top,
-          left: Number.isFinite(leftPx) ? leftPx : null,
-          right: Number.isFinite(rightPx) ? rightPx : null
-        };
-      } catch {
-        state.manual = { top: 60, left: null, right: 10 };
-      }
-    }
+	    function captureManualPositions() {
+	      // Manual position should represent the last user-adjusted anchor.
+	      // Avoid expensive layout reads (getBoundingClientRect/getComputedStyle) on hot paths.
+	      if (state.followLeft || state.followRight) return;
+	      try {
+	        const toNum = (v) => {
+	          const n = parseFloat(String(v || '').trim());
+	          return Number.isFinite(n) ? n : null;
+	        };
+	
+	        const prev = state.manual || {};
+	        const topPx = toNum(nav.style.top);
+	        const leftPx = nav.style.left && nav.style.left !== 'auto' ? toNum(nav.style.left) : null;
+	        const rightPx = nav.style.right && nav.style.right !== 'auto' ? toNum(nav.style.right) : null;
+	
+	        const top = Number.isFinite(topPx) ? topPx : Number.isFinite(prev.top) ? prev.top : DEFAULT_NAV_TOP;
+	        let left = Number.isFinite(leftPx) ? leftPx : null;
+	        let right = Number.isFinite(rightPx) ? rightPx : null;
+	
+	        if (!Number.isFinite(left) && !Number.isFinite(right)) {
+	          if (Number.isFinite(prev.left)) left = prev.left;
+	          else right = Number.isFinite(prev.right) ? prev.right : DEFAULT_NAV_RIGHT;
+	        }
+	
+	        state.manual = { top, left, right };
+	      } catch {
+	        state.manual = { top: DEFAULT_NAV_TOP, left: null, right: DEFAULT_NAV_RIGHT };
+	      }
+	    }
     captureManualPositions();
 
     function cancelPending() {
@@ -3408,42 +3504,57 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return !el || el === window || el === document || el === document.body || el === doc || el === (document.scrollingElement || doc);
   }
 
-  function getChatScrollContainer() {
-    try {
-      // Hot path: reuse the last known scroll container when possible.
-      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
-      if (cached && cached.nodeType === 1 && cached.isConnected) {
-        __cgptChatScrollContainer = cached;
-        return cached;
-      }
-    } catch {}
+	  function getChatScrollContainer() {
+	    try {
+	      // Hot path: reuse the last known scroll container when possible.
+	      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
+	      if (cached && cached.nodeType === 1 && cached.isConnected) {
+	        __cgptChatScrollContainer = cached;
+	        return cached;
+	      }
+	    } catch {}
 
-    try {
-      const anchor =
-        document.querySelector(
-          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-message-id]'
-        ) ||
+	    // ChatGPT's main chat scroller is typically the direct parent of <main id="main">.
+	    // Grab it directly to avoid repeated ancestor scans and layout reads during hydration.
+	    try {
+	      const main = document.getElementById('main') || document.querySelector('main');
+	      const parent = main && main.parentElement;
+	      if (parent && parent.nodeType === 1 && parent.isConnected) {
+	        const oy = getComputedStyle(parent).overflowY;
+	        if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
+	          __cgptChatScrollContainer = parent;
+	          __cgptChatScrollContainerTs = Date.now();
+	          return parent;
+	        }
+	      }
+	    } catch {}
+
+	    try {
+	      const anchor =
+	        document.querySelector(
+	          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-message-id]'
+	        ) ||
         document.querySelector('main') ||
         document.querySelector('[role="main"]') ||
         document.getElementById('main') ||
         document.body;
 
       // Walk up from a known message/root to find the first scrollable container.
-      let el = anchor;
-      for (let i = 0; i < 16 && el && el.nodeType === 1; i++) {
-        try {
-          // Cheap check first (layout read).
-          if (el.scrollHeight > el.clientHeight + 1) {
-            const oy = getComputedStyle(el).overflowY;
-            if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
-              __cgptChatScrollContainer = el;
-              __cgptChatScrollContainerTs = Date.now();
-              return el;
-            }
-          }
-        } catch {}
-        el = el.parentElement;
-      }
+	      let el = anchor;
+	      for (let i = 0; i < 16 && el && el.nodeType === 1; i++) {
+	        try {
+	          // Check computed overflow first, then do layout reads only when needed.
+	          const oy = getComputedStyle(el).overflowY;
+	          if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
+	            if (el.scrollHeight > el.clientHeight + 1) {
+	              __cgptChatScrollContainer = el;
+	              __cgptChatScrollContainerTs = Date.now();
+	              return el;
+	            }
+	          }
+	        } catch {}
+	        el = el.parentElement;
+	      }
 
       const fallback = getScrollRoot(anchor);
       __cgptChatScrollContainer = fallback;

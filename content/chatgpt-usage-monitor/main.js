@@ -281,6 +281,10 @@
   };
   var defaultUsageData = {
     position: { x: null, y: null },
+    minimizedPosition: { x: null, y: null },
+    // v2 position format (aligned with QuickNav): {top,left,right,anchor,ts}
+    positionV2: null,
+    minimizedPositionV2: null,
     size: { width: 400, height: 500 },
     minimized: false,
     silentMode: false,
@@ -746,6 +750,15 @@
       if (!data.position) {
         data.position = { x: null, y: null };
       }
+      if (!data.minimizedPosition) {
+        data.minimizedPosition = { x: null, y: null };
+      }
+      if (data.positionV2 === void 0) {
+        data.positionV2 = null;
+      }
+      if (data.minimizedPositionV2 === void 0) {
+        data.minimizedPositionV2 = null;
+      }
       if (!data.size) {
         data.size = { width: 400, height: 500 };
       }
@@ -1155,11 +1168,11 @@
   display: none !important;
   }
 
-	  #chatUsageMonitor.minimized::before {
-	  content: "用";
-	  color: white;
-	  position: absolute;
-	  top: 0;
+		  #chatUsageMonitor.minimized::before {
+		  content: "次";
+		  color: white;
+		  position: absolute;
+		  top: 0;
 	  left: 0;
 	  right: 0;
   bottom: 0;
@@ -3505,12 +3518,13 @@
     resetPositionBtn.className = "btn";
     resetPositionBtn.textContent = "重置";
     resetPositionBtn.style.padding = "4px 8px";
-    resetPositionBtn.addEventListener("click", () => {
-      cancelPendingMonitorMinimized();
-      const nextData = updateUsageData((data) => {
-        data.position = { x: null, y: null };
-        data.minimized = false;
-      });
+	    resetPositionBtn.addEventListener("click", () => {
+	      cancelPendingMonitorMinimized();
+	      const nextData = updateUsageData((data) => {
+	        data.position = { x: null, y: null };
+	        data.minimizedPosition = { x: null, y: null };
+	        data.minimized = false;
+	      });
       const monitor = document.getElementById("chatUsageMonitor");
       if (monitor) {
         monitor.classList.remove("minimized");
@@ -3612,6 +3626,111 @@
       showToast(`未找到模型 "${modelKey}"。`, "warning");
     }
   }
+
+  // ===== Position helpers (unified with QuickNav) =====
+  function __aichatClampNum(v, min, max) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function __aichatNormalizePosV2(raw) {
+    try {
+      if (!raw || typeof raw !== "object") return null;
+      const toNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const top = toNum(raw.top);
+      if (!Number.isFinite(top)) return null;
+      const left = toNum(raw.left);
+      const right = toNum(raw.right);
+      const anchor = raw.anchor === "right" ? "right" : "left";
+      return {
+        top,
+        left: Number.isFinite(left) ? left : null,
+        right: Number.isFinite(right) ? right : null,
+        anchor,
+        ts: Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now()
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function __aichatViewportSize() {
+    const vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
+    const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
+    return { vw, vh };
+  }
+
+  function __aichatPosV2FromRect(rect) {
+    const { vw, vh } = __aichatViewportSize();
+    const safeVw = Math.max(0, vw);
+    const safeVh = Math.max(0, vh);
+    const centerX = rect.left + (rect.width || 0) / 2;
+    const anchorRight = safeVw && centerX >= safeVw / 2;
+    const maxTop = Math.max(0, safeVh - 40);
+    const top = __aichatClampNum(rect.top, 0, maxTop || rect.top);
+    const left = Math.max(0, rect.left);
+    const right = Math.max(0, safeVw - rect.right);
+    return {
+      top,
+      left: anchorRight ? null : left,
+      right: anchorRight ? right : null,
+      anchor: anchorRight ? "right" : "left",
+      ts: Date.now()
+    };
+  }
+
+  function __aichatPosV2FromLegacyXY(x, y, width, height) {
+    const { vw, vh } = __aichatViewportSize();
+    const w = Math.max(0, Number(width) || 0);
+    const h = Math.max(0, Number(height) || 0);
+    const safeVw = Math.max(0, vw);
+    const safeVh = Math.max(0, vh);
+    const leftPx = __aichatClampNum(x, 0, Math.max(0, safeVw - w));
+    const topPx = __aichatClampNum(y, 0, Math.max(0, safeVh - Math.min(40, h)));
+    const centerX = leftPx + w / 2;
+    const anchorRight = safeVw && centerX >= safeVw / 2;
+    const rightPx = Math.max(0, safeVw - (leftPx + w));
+    return {
+      top: topPx,
+      left: anchorRight ? null : leftPx,
+      right: anchorRight ? rightPx : null,
+      anchor: anchorRight ? "right" : "left",
+      ts: Date.now()
+    };
+  }
+
+  function __aichatApplyPosV2(el, posV2, widthHint, heightHint) {
+    const pos = __aichatNormalizePosV2(posV2);
+    if (!el || !pos) return false;
+    const { vw, vh } = __aichatViewportSize();
+    const w = Math.max(0, Number(widthHint) || el.offsetWidth || 0);
+    const h = Math.max(0, Number(heightHint) || el.offsetHeight || 0);
+    const safeVw = Math.max(0, vw);
+    const safeVh = Math.max(0, vh);
+    const maxLeft = Math.max(0, safeVw - w);
+    const maxRight = Math.max(0, safeVw - w);
+    const maxTop = Math.max(0, safeVh - Math.min(40, h));
+
+    const top = __aichatClampNum(pos.top, 0, maxTop || pos.top);
+    el.style.setProperty("top", `${Math.round(top)}px`, "important");
+    el.style.setProperty("bottom", "auto", "important");
+
+    if (pos.anchor === "right") {
+      const right = __aichatClampNum(pos.right ?? 0, 0, maxRight || (pos.right ?? 0));
+      el.style.setProperty("right", `${Math.round(right)}px`, "important");
+      el.style.setProperty("left", "auto", "important");
+    } else {
+      const left = __aichatClampNum(pos.left ?? 0, 0, maxLeft || (pos.left ?? 0));
+      el.style.setProperty("left", `${Math.round(left)}px`, "important");
+      el.style.setProperty("right", "auto", "important");
+    }
+    return true;
+  }
+
   var __aichatDragSuppressClickKey = "__aichat_chatgpt_usage_monitor_drag_suppress_click_v1__";
   function setupDraggable(element) {
     let isDragging = false;
@@ -3665,11 +3784,21 @@
           element[__aichatDragSuppressClickKey] = Date.now();
         } catch {
         }
-        const newLeft = parseInt(element.style.left, 10);
-        const newTop = parseInt(element.style.top, 10);
-        Storage.update((data) => {
-          data.position = { x: newLeft, y: newTop };
-        });
+        const isMinimized = element.classList.contains("minimized");
+        try {
+          const rect = element.getBoundingClientRect();
+          const posV2 = __aichatPosV2FromRect(rect);
+          const legacy = { x: Math.max(0, Math.round(rect.left)), y: Math.max(0, Math.round(rect.top)) };
+          Storage.update((data) => {
+            if (isMinimized) {
+              data.minimizedPosition = legacy;
+              data.minimizedPositionV2 = posV2;
+            } else {
+              data.position = legacy;
+              data.positionV2 = posV2;
+            }
+          });
+        } catch {}
         setTimeout(() => {
           isDragging = false;
         }, 200);
@@ -3718,29 +3847,78 @@
       _minimizeTimerId = null;
     }
   }
-  function applyMonitorMinimized(nextMinimized) {
-    const monitor = document.getElementById("chatUsageMonitor");
-    if (!monitor) return;
+	  function applyMonitorMinimized(nextMinimized) {
+	    const monitor = document.getElementById("chatUsageMonitor");
+	    if (!monitor) return;
 
-    const next = !!nextMinimized;
-    if (next) {
-      monitor.classList.add("minimized");
-    } else {
-      monitor.classList.remove("minimized");
-      const currentData = Storage.get();
-      if (currentData.size?.width && currentData.size?.height) {
-        monitor.style.width = `${currentData.size.width}px`;
-        monitor.style.height = `${currentData.size.height}px`;
-      }
-      // Ensure content is fresh when the user expands it.
-      try {
-        updateUI();
-      } catch {}
-    }
+	    const next = !!nextMinimized;
+	    const currentData = Storage.get();
 
-    try {
-      Storage.update((data) => {
-        data.minimized = next;
+	    if (next) {
+	      monitor.classList.add("minimized");
+	      // If the user never set a minimized position, derive it from the current panel rect
+	      // so the badge doesn't "jump" to a default corner.
+	      try {
+	        const hasMinV2 = !!__aichatNormalizePosV2(currentData.minimizedPositionV2);
+	        const hasMinLegacy = currentData.minimizedPosition?.x !== null && currentData.minimizedPosition?.y !== null;
+	        if (!hasMinV2 && !hasMinLegacy) {
+	          const rect = monitor.getBoundingClientRect();
+	          const legacy = { x: Math.max(0, Math.round(rect.left)), y: Math.max(0, Math.round(rect.top)) };
+	          const posV2 = __aichatPosV2FromRect(rect);
+	          Storage.update((data) => {
+	            data.minimizedPosition = legacy;
+	            data.minimizedPositionV2 = posV2;
+	          });
+	          // keep local view in sync for immediate apply
+	          try {
+	            currentData.minimizedPosition = legacy;
+	            currentData.minimizedPositionV2 = posV2;
+	          } catch {}
+	        }
+	      } catch {}
+
+	      // Restore minimized position if the user set it (do not override expanded position).
+	      try {
+	        const posV2 =
+	          __aichatNormalizePosV2(currentData.minimizedPositionV2) ||
+	          (currentData.minimizedPosition?.x !== null && currentData.minimizedPosition?.y !== null
+	            ? __aichatPosV2FromLegacyXY(currentData.minimizedPosition.x, currentData.minimizedPosition.y, 30, 30)
+	            : null);
+	        if (posV2) __aichatApplyPosV2(monitor, posV2, 30, 30);
+	      } catch {}
+	    } else {
+	      monitor.classList.remove("minimized");
+	      if (currentData.size?.width && currentData.size?.height) {
+	        monitor.style.width = `${currentData.size.width}px`;
+	        monitor.style.height = `${currentData.size.height}px`;
+	      }
+	      // Restore expanded position when leaving minimized mode.
+	      try {
+	        const width = currentData.size?.width || monitor.offsetWidth || 400;
+	        const height = currentData.size?.height || monitor.offsetHeight || 500;
+	        const posV2 =
+	          __aichatNormalizePosV2(currentData.positionV2) ||
+	          (currentData.position?.x !== null && currentData.position?.y !== null
+	            ? __aichatPosV2FromLegacyXY(currentData.position.x, currentData.position.y, width, height)
+	            : null);
+	        if (posV2) {
+	          __aichatApplyPosV2(monitor, posV2, width, height);
+	        } else {
+	          monitor.style.setProperty("left", STYLE.spacing.lg, "important");
+	          monitor.style.setProperty("bottom", "100px", "important");
+	          monitor.style.setProperty("right", "auto", "important");
+	          monitor.style.setProperty("top", "auto", "important");
+	        }
+	      } catch {}
+	      // Ensure content is fresh when the user expands it.
+	      try {
+	        updateUI();
+	      } catch {}
+	    }
+
+	    try {
+	      Storage.update((data) => {
+	        data.minimized = next;
       });
       refreshUsageData();
     } catch {}
@@ -3780,31 +3958,54 @@
 	    const container = document.createElement("div");
 	    container.id = "chatUsageMonitor";
 	    if (usageData.minimized) container.classList.add("minimized");
-    if (usageData.size?.width && usageData.size?.height && !usageData.minimized) {
-      container.style.width = `${usageData.size.width}px`;
-      container.style.height = `${usageData.size.height}px`;
-    }
-	    if (usageData.position?.x !== null && usageData.position?.y !== null) {
-	      const defaultWidth = usageData.minimized ? 30 : (usageData.size?.width || 400);
-	      const defaultHeight = usageData.minimized ? 30 : (usageData.size?.height || 500);
-	      const maxX = window.innerWidth - defaultWidth;
-	      const maxY = window.innerHeight - defaultHeight;
-	      const x = Math.min(Math.max(0, usageData.position.x), maxX);
-	      const y = Math.min(Math.max(0, usageData.position.y), maxY);
-	      container.style.setProperty("left", `${x}px`, "important");
-	      container.style.setProperty("top", `${y}px`, "important");
-      container.style.setProperty("right", "auto", "important");
-      container.style.setProperty("bottom", "auto", "important");
-    } else {
-      container.style.setProperty("left", STYLE.spacing.lg, "important");
-      container.style.setProperty("bottom", "100px", "important");
-      container.style.setProperty("right", "auto", "important");
-      container.style.setProperty("top", "auto", "important");
-    }
-    const header = document.createElement("header");
-    const minimizeBtn = document.createElement("div");
-    minimizeBtn.className = "minimize-btn";
-    minimizeBtn.innerHTML = "−";
+	    if (usageData.size?.width && usageData.size?.height && !usageData.minimized) {
+	      container.style.width = `${usageData.size.width}px`;
+	      container.style.height = `${usageData.size.height}px`;
+	    }
+	    const defaultWidth = usageData.minimized ? 30 : usageData.size?.width || 400;
+	    const defaultHeight = usageData.minimized ? 30 : usageData.size?.height || 500;
+	    let usedFallbackMinPos = false;
+	    let posV2 = null;
+	    try {
+	      if (usageData.minimized) {
+	        posV2 = __aichatNormalizePosV2(usageData.minimizedPositionV2);
+	        if (!posV2 && usageData.minimizedPosition?.x !== null && usageData.minimizedPosition?.y !== null) {
+	          posV2 = __aichatPosV2FromLegacyXY(usageData.minimizedPosition.x, usageData.minimizedPosition.y, 30, 30);
+	          // migrate legacy -> v2
+	          Storage.update((data) => {
+	            data.minimizedPositionV2 = posV2;
+	          });
+	        }
+	        if (!posV2) {
+	          usedFallbackMinPos = true;
+	          posV2 = __aichatNormalizePosV2(usageData.positionV2);
+	          if (!posV2 && usageData.position?.x !== null && usageData.position?.y !== null) {
+	            posV2 = __aichatPosV2FromLegacyXY(usageData.position.x, usageData.position.y, defaultWidth, defaultHeight);
+	          }
+	        }
+	      } else {
+	        posV2 = __aichatNormalizePosV2(usageData.positionV2);
+	        if (!posV2 && usageData.position?.x !== null && usageData.position?.y !== null) {
+	          posV2 = __aichatPosV2FromLegacyXY(usageData.position.x, usageData.position.y, defaultWidth, defaultHeight);
+	          // migrate legacy -> v2
+	          Storage.update((data) => {
+	            data.positionV2 = posV2;
+	          });
+	        }
+	      }
+	    } catch {}
+	    if (posV2) {
+	      __aichatApplyPosV2(container, posV2, defaultWidth, defaultHeight);
+	    } else {
+	      container.style.setProperty("left", STYLE.spacing.lg, "important");
+	      container.style.setProperty("bottom", "100px", "important");
+	      container.style.setProperty("right", "auto", "important");
+	      container.style.setProperty("top", "auto", "important");
+	    }
+	    const header = document.createElement("header");
+	    const minimizeBtn = document.createElement("div");
+	    minimizeBtn.className = "minimize-btn";
+	    minimizeBtn.innerHTML = "−";
     minimizeBtn.title = "最小化监视器";
     minimizeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -3853,7 +4054,7 @@
 	    document.body.appendChild(container);
 	    // If the minimized badge overlaps ChatGPT sidebar controls, move it to a safer corner.
 	    try {
-	      if (container.classList.contains("minimized")) {
+	      if (usedFallbackMinPos && container.classList.contains("minimized")) {
 	        const sidebar =
 	          document.querySelector('nav[aria-label="Chat history"]') ||
 	          document.querySelector('[data-testid="chat-history"]') ||
@@ -3874,7 +4075,10 @@
 	            container.style.setProperty("right", "auto", "important");
 	            container.style.setProperty("bottom", "auto", "important");
 	            Storage.update((data) => {
-	              data.position = { x, y };
+	              data.minimizedPosition = { x, y };
+	              try {
+	                data.minimizedPositionV2 = __aichatPosV2FromLegacyXY(x, y, r.width, r.height);
+	              } catch {}
 	            });
 	          }
 	        }
@@ -3908,14 +4112,15 @@
 	    injectStyles();
 	    refreshUsageData();
 	    installFetchInterceptor();
-	    onDataChanged(() => {
-	      if (isSilent()) return;
-	      const monitor = document.getElementById("chatUsageMonitor");
+    onDataChanged(() => {
+      if (isSilent()) return;
+      const monitor = document.getElementById("chatUsageMonitor");
       if (monitor?.classList?.contains("minimized")) return;
       updateUI();
     });
     let _pendingInitTimerId = null;
     let _pendingInitDueAt = 0;
+    let _initializedOnce = false;
     function scheduleInitialize(delay = 300) {
       const now = Date.now();
       const safeDelay = Math.max(0, Number(delay) || 0);
@@ -4032,15 +4237,19 @@
       }
       createMonitorUI();
       setupKeyboardShortcuts();
+      _initializedOnce = true;
     }
-    function resetMonitorPosition() {
-      cancelPendingMonitorMinimized();
-      Storage.update((data) => {
-        data.position = { x: null, y: null };
-        data.minimized = false;
-      });
-      const existingMonitor = document.getElementById("chatUsageMonitor");
-      if (existingMonitor) existingMonitor.remove();
+	    function resetMonitorPosition() {
+	      cancelPendingMonitorMinimized();
+	      Storage.update((data) => {
+	        data.position = { x: null, y: null };
+	        data.minimizedPosition = { x: null, y: null };
+	        data.positionV2 = null;
+	        data.minimizedPositionV2 = null;
+	        data.minimized = false;
+	      });
+	      const existingMonitor = document.getElementById("chatUsageMonitor");
+	      if (existingMonitor) existingMonitor.remove();
       scheduleInitialize(100);
       setTimeout(() => {
         const monitor = document.getElementById("chatUsageMonitor");
@@ -4086,7 +4295,14 @@
     try {
       if (!window.__aichatChatGptUsageMonitorRouteWatchInstalled) {
         window.__aichatChatGptUsageMonitorRouteWatchInstalled = true;
-        const onRoute = () => scheduleInitialize(300);
+        // Avoid a "double init" during the initial ChatGPT hydration/router bootstrap, which can look like a page refresh.
+        // We only start reacting to route changes after the monitor has been initialized at least once.
+        const onRoute = () => {
+          try {
+            if (!_initializedOnce) return;
+          } catch {}
+          scheduleInitialize(300);
+        };
         window.addEventListener("popstate", onRoute);
         const originalPushState = history.pushState;
         const originalReplaceState = history.replaceState;
@@ -4118,7 +4334,6 @@
     } catch {
     }
 
-    scheduleInitialize(300);
     console.log("🚀 ChatGPT Usage Monitor loaded");
   }
 

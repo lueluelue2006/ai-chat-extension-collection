@@ -42,6 +42,31 @@ html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown 
   contain-intrinsic-size: none !important;
 }
 
+/* Find-in-page compatibility: temporarily unfreeze virtualization so Ctrl/Cmd+F can match far content. */
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article.cgptperf-offscreen {
+  content-visibility: visible !important;
+  contain-intrinsic-size: none !important;
+}
+
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article pre,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article table,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .katex-display,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article mjx-container,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > p,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > ul,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > ol,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > blockquote,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h1,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h2,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h3,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h4,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h5,
+html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h6 {
+  content-visibility: visible !important;
+  contain-intrinsic-size: none !important;
+}
+
 /* For extremely long single messages, virtualize block-level Markdown nodes within a visible article.
    This reduces layout/paint work when a single assistant response contains tons of paragraphs/math. */
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-blocks='1'] main article .markdown > p,
@@ -80,9 +105,49 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article .katex-display >
   contain: layout;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article * {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] {
+  scroll-behavior: auto !important;
+}
+
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :where(body *) {
   animation-duration: 0s !important;
   transition-duration: 0s !important;
+}
+
+/* Mid: disable blur only (less aggressive than extremeLite). */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noblur='1'] :where(
+    body,
+    body::before,
+    body::after,
+    body *,
+    body *::before,
+    body *::after
+  ) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Extreme lite: make the whole site cheaper to composite/paint.
+   This is intentionally aggressive and may affect appearance. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-extreme='1'] {
+  scroll-behavior: auto !important;
+}
+
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-extreme='1'] :where(
+    body,
+    body::before,
+    body::after,
+    body *,
+    body *::before,
+    body *::after
+  ) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+  transition: none !important;
 }
 
 #cgptperf-ui {

@@ -18,7 +18,10 @@
     virtualizeMarkdownBlocks: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
+    disableBackdropFilters: false,
+    extremeLite: false,
     boostDuringInput: true,
+    unfreezeOnFind: true,
     showOverlay: false,
     rootMarginPx: 1200,
   });
@@ -30,6 +33,9 @@
   const ROOT_BLOCKS_ATTR = 'data-cgptperf-blocks';
   const ROOT_HEAVY_ATTR = 'data-cgptperf-heavy';
   const ROOT_NOANIM_ATTR = 'data-cgptperf-noanim';
+  const ROOT_NOBLUR_ATTR = 'data-cgptperf-noblur';
+  const ROOT_EXTREME_ATTR = 'data-cgptperf-extreme';
+  const ROOT_FIND_ATTR = 'data-cgptperf-find';
 
   const OFFSCREEN_CLASS = 'cgptperf-offscreen';
   const INTRINSIC_VAR = '--cgptperf-intrinsic-size';
@@ -65,7 +71,9 @@
     boostActive: false,
     boostFocusTimer: 0,
     boostActionTimer: 0,
+    findTimer: 0,
     ioRestartTimer: 0,
+    virtualizeNowRaf: 0,
     boostListenersAttached: false,
     rootAttrMo: null,
     disposed: false,
@@ -123,7 +131,11 @@
         typeof s.optimizeHeavyBlocks === 'boolean' ? s.optimizeHeavyBlocks : DEFAULT_SETTINGS.optimizeHeavyBlocks,
       disableAnimations:
         typeof s.disableAnimations === 'boolean' ? s.disableAnimations : DEFAULT_SETTINGS.disableAnimations,
+      disableBackdropFilters:
+        typeof s.disableBackdropFilters === 'boolean' ? s.disableBackdropFilters : DEFAULT_SETTINGS.disableBackdropFilters,
+      extremeLite: typeof s.extremeLite === 'boolean' ? s.extremeLite : DEFAULT_SETTINGS.extremeLite,
       boostDuringInput: typeof s.boostDuringInput === 'boolean' ? s.boostDuringInput : DEFAULT_SETTINGS.boostDuringInput,
+      unfreezeOnFind: typeof s.unfreezeOnFind === 'boolean' ? s.unfreezeOnFind : DEFAULT_SETTINGS.unfreezeOnFind,
       showOverlay: typeof s.showOverlay === 'boolean' ? s.showOverlay : DEFAULT_SETTINGS.showOverlay,
       rootMarginPx: Number.isFinite(Number(s.rootMarginPx))
         ? Math.max(0, Number(s.rootMarginPx))
@@ -154,6 +166,8 @@
     toggleRootAttr(ROOT_BLOCKS_ATTR, s.enabled && s.virtualizeMarkdownBlocks, '1');
     toggleRootAttr(ROOT_HEAVY_ATTR, s.enabled && s.optimizeHeavyBlocks, '1');
     toggleRootAttr(ROOT_NOANIM_ATTR, s.enabled && s.disableAnimations, '1');
+    toggleRootAttr(ROOT_NOBLUR_ATTR, s.enabled && s.disableBackdropFilters, '1');
+    toggleRootAttr(ROOT_EXTREME_ATTR, s.enabled && s.extremeLite, '1');
   }
 
   function ensureRootAttrGuard() {
@@ -183,6 +197,8 @@
           ROOT_BLOCKS_ATTR,
           ROOT_HEAVY_ATTR,
           ROOT_NOANIM_ATTR,
+          ROOT_NOBLUR_ATTR,
+          ROOT_EXTREME_ATTR,
         ],
       });
     } catch {
@@ -584,6 +600,7 @@
     if (container) {
       state.containerEl = container;
       updateDefaultIntrinsic(container);
+      scheduleApplyVirtualizationNow('start');
       attachContainerObserver(container);
       enqueueExistingArticles(container);
       return;
@@ -597,6 +614,7 @@
       if (c) {
         state.containerEl = c;
         updateDefaultIntrinsic(c);
+        scheduleApplyVirtualizationNow('start-hydration');
         attachContainerObserver(c);
         enqueueExistingArticles(c);
         return;
@@ -671,6 +689,8 @@
     const blocksBtn = mkBtn('virtualizeMarkdownBlocks', '分段虚拟化：关', '对超长单条消息按段落虚拟化（实验）');
     const heavyBtn = mkBtn('optimizeHeavyBlocks', '重内容优化：开', '切换重内容优化（pre/table/公式等）');
     const animBtn = mkBtn('disableAnimations', '动画：开', '切换动画/过渡（关闭可减少卡顿）');
+    const blurBtn = mkBtn('disableBackdropFilters', '毛玻璃：开', '禁用 backdrop-filter（通常能明显减轻滚动/弹层卡顿）');
+    const extremeBtn = mkBtn('extremeLite', '极限轻量：关', '全站强制禁用 blur/filter/阴影/过渡/动画（更快但更丑）');
     const boostBtn = mkBtn('boostDuringInput', '交互加速：开', '输入/编辑时临时收紧预加载，减少点击/发送卡顿');
 
     const marginRow = document.createElement('div');
@@ -701,7 +721,7 @@
     benchBtn.textContent = '测量下一次交互卡顿';
     benchBtn.title = '点我后：回到页面点击“编辑/重试/停止/发送”或在输入框按 Enter，会弹出耗时（ms）';
 
-    panel.append(perfBtn, offBtn, blocksBtn, heavyBtn, animBtn, boostBtn, marginRow, benchBtn, optsBtn);
+    panel.append(perfBtn, offBtn, blocksBtn, heavyBtn, animBtn, blurBtn, extremeBtn, boostBtn, marginRow, benchBtn, optsBtn);
     wrap.append(toggle, panel);
     (document.documentElement || document.body).appendChild(wrap);
 
@@ -778,6 +798,8 @@
       if (key === 'virtualizeMarkdownBlocks') b.textContent = on ? '分段虚拟化：开' : '分段虚拟化：关';
       if (key === 'optimizeHeavyBlocks') b.textContent = on ? '重内容优化：开' : '重内容优化：关';
       if (key === 'disableAnimations') b.textContent = on ? '动画：关' : '动画：开';
+      if (key === 'disableBackdropFilters') b.textContent = on ? '毛玻璃：关' : '毛玻璃：开';
+      if (key === 'extremeLite') b.textContent = on ? '极限轻量：开' : '极限轻量：关';
       if (key === 'boostDuringInput') b.textContent = on ? '交互加速：开' : '交互加速：关';
     }
 
@@ -804,6 +826,7 @@
     const nextSettings = sanitizeSettings(next);
     state.settings = nextSettings;
     updateBoostFromFocus();
+    if (!(nextSettings.enabled && nextSettings.unfreezeOnFind)) deactivateFindUnfreeze();
     applyRootAttrs();
     ensureUi();
     renderUi();
@@ -822,6 +845,25 @@
     }
 
     if (state.io && state.ioMarginPx !== effectiveRootMarginPx()) scheduleRestartIo();
+  }
+
+  function activateFindUnfreeze(durationMs = 25000) {
+    if (state.disposed) return;
+    if (!(state.settings.enabled && state.settings.unfreezeOnFind)) return;
+    toggleRootAttr(ROOT_FIND_ATTR, true, '1');
+    if (state.findTimer) window.clearTimeout(state.findTimer);
+    state.findTimer = window.setTimeout(() => {
+      state.findTimer = 0;
+      toggleRootAttr(ROOT_FIND_ATTR, false);
+    }, Math.max(5000, Number(durationMs) || 25000));
+  }
+
+  function deactivateFindUnfreeze() {
+    try {
+      if (state.findTimer) window.clearTimeout(state.findTimer);
+    } catch {}
+    state.findTimer = 0;
+    toggleRootAttr(ROOT_FIND_ATTR, false);
   }
 
   function scheduleRestartIo() {
@@ -952,12 +994,26 @@
     scheduleReconcile(articles, first, last);
   }
 
+  function scheduleApplyVirtualizationNow(reason = 'unknown') {
+    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+    if (state.virtualizeNowRaf) return;
+    state.virtualizeNowRaf = window.requestAnimationFrame(() => {
+      state.virtualizeNowRaf = 0;
+      try {
+        applyVirtualizationNow(effectiveRootMarginPx());
+      } catch (err) {
+        if (state.settings.showOverlay) console.warn('[cgptperf] applyVirtualizationNow failed', reason, err);
+      }
+    });
+  }
+
   function setBoostActive(nextActive) {
     const allowed = state.settings.enabled && state.settings.virtualizeOffscreen && state.settings.boostDuringInput;
     const active = allowed && nextActive;
     if (state.boostActive === active) return;
     state.boostActive = active;
     scheduleRestartIo();
+    if (active) scheduleApplyVirtualizationNow('boost');
   }
 
   function scheduleActionBoost(durationMs = 1400) {
@@ -1044,6 +1100,16 @@
 
     state.onKeydown = (e) => {
       if (state.disposed) return;
+      try {
+        if (state.settings.enabled && state.settings.unfreezeOnFind) {
+          const key = String(e.key || '').toLowerCase();
+          if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && key === 'f') {
+            activateFindUnfreeze(25_000);
+            return;
+          }
+          if (key === 'escape') deactivateFindUnfreeze();
+        }
+      } catch {}
       // Hitting Enter to send can be expensive; boost before submission.
       if (e.key !== 'Enter') return;
       if (!isTextInputElement(document.activeElement)) return;
@@ -1074,6 +1140,10 @@
     try { closeMenu(); } catch {}
     try { stopRouteWatch(); } catch {}
     try { stopVirtualization(); } catch {}
+    try {
+      if (state.virtualizeNowRaf) window.cancelAnimationFrame(state.virtualizeNowRaf);
+    } catch {}
+    state.virtualizeNowRaf = 0;
 
     try { state.rootAttrMo?.disconnect?.(); } catch {}
     state.rootAttrMo = null;
@@ -1098,6 +1168,8 @@
       if (state.boostActionTimer) window.clearTimeout(state.boostActionTimer);
     } catch {}
     state.boostActionTimer = 0;
+
+    try { deactivateFindUnfreeze(); } catch {}
 
     try {
       if (state.ioRestartTimer) window.clearTimeout(state.ioRestartTimer);

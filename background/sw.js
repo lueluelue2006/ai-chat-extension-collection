@@ -895,10 +895,20 @@
     return input.filter((x) => typeof x === 'string' && x);
   }
 
+  function normalizeMatchPatterns(input) {
+    const arr = normalizeStringArray(input);
+    // `matches` order is not semantically meaningful; Chrome may return patterns in a different order.
+    // Sort to keep registration comparison stable and avoid needless unregister/register + reinject cycles.
+    try {
+      arr.sort();
+    } catch {}
+    return arr;
+  }
+
   function contentScriptDefToRegistration(def) {
     return {
       id: def.id,
-      matches: normalizeStringArray(def.matches),
+      matches: normalizeMatchPatterns(def.matches),
       js: normalizeStringArray(def.js),
       css: normalizeStringArray(def.css),
       runAt: normalizeRunAt(def.runAt),
@@ -910,7 +920,7 @@
   function registeredContentScriptToComparable(reg) {
     return {
       id: typeof reg?.id === 'string' ? reg.id : '',
-      matches: normalizeStringArray(reg?.matches),
+      matches: normalizeMatchPatterns(reg?.matches),
       js: normalizeStringArray(reg?.js),
       css: normalizeStringArray(reg?.css),
       runAt: normalizeRunAt(reg?.runAt),

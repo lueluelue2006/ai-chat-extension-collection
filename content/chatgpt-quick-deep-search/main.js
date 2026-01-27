@@ -52,7 +52,6 @@
   const DEFAULT_POSITION = { top: '30%', right: '0px' };
   const DEFAULT_POSITION_TRANSLATE = { top: '40%', right: '0px' };
   const DEFAULT_POSITION_THINK = { top: '50%', right: '0px' };
-  const LONG_CONTENT_THRESHOLD = 5000; // 超过此字符数视为长内容，使用优化处理
   const TIMEOUTS = {
     editorCommit: 2000, // 等待"写入生效"的最大时间
     findSendBtn: 8000, // 等待找到发送按钮的最大时间
@@ -66,7 +65,8 @@
   };
 
   const POLL_INTERVAL = 70; // 轮询间隔
-  const ENABLE_FLOATING_FALLBACK = false; // 性能优先：不启用“找不到输入框位置就悬浮回退”
+  // Performance-first: only inject inline buttons (no floating fallback UI).
+  const ENABLE_FLOATING_FALLBACK = false;
   const PREFIX = `ultra think and deeper websearch
 
 `;
@@ -244,8 +244,15 @@
     return readCached(editorElCache, CACHE_TTL_MS.editor, editorElRaw);
   }
   function editorElRaw() {
-    if (SITE === 'chatgpt')
-      return document.querySelector('#prompt-textarea.ProseMirror, #prompt-textarea[contenteditable="true"][role="textbox"]');
+    if (SITE === 'chatgpt') {
+      // ChatGPT has changed composer DOM multiple times; keep this permissive and prefer the visible editor.
+      return (
+        document.querySelector('#prompt-textarea.ProseMirror') ||
+        document.querySelector('#prompt-textarea[contenteditable="true"]') ||
+        document.querySelector('#prompt-textarea .ProseMirror[contenteditable="true"]') ||
+        document.querySelector('.ProseMirror[contenteditable="true"]')
+      );
+    }
     if (SITE === 'gemini_app') {
       const root = getSiteRoot() || document.documentElement;
       const direct = root.querySelector?.('div.ql-editor[contenteditable="true"][role="textbox"]') || null;
@@ -269,7 +276,10 @@
     return readCached(editorFallbackCache, CACHE_TTL_MS.editor, editorFallbackRaw);
   }
   function editorFallbackRaw() {
-    if (SITE === 'chatgpt') return document.querySelector('textarea[name="prompt-textarea"]');
+    if (SITE === 'chatgpt') {
+      const candidates = Array.from(document.querySelectorAll('textarea#prompt-textarea, textarea[name="prompt-textarea"]'));
+      return pickBottomMostVisible(candidates);
+    }
     if (SITE === 'genspark') {
       return (
         document.querySelector('textarea.search-input.j-search-input') ||
@@ -296,20 +306,15 @@
     }
   }
   function editorText() {
-    const fb = editorFallback();
-    // ChatGPT keeps a textarea mirror of the composer; prefer it for fast, layout-free reads.
-    if (SITE === 'chatgpt' && fb && typeof fb.value === 'string') return fb.value.trim();
     const el = editorEl();
-    if (el) return readContentEditableText(el);
+    if (el) {
+      const t = readContentEditableText(el);
+      if (t) return t;
+      // When the real editor exists, ignore the hidden textarea mirror (it can be stale).
+      return '';
+    }
+    const fb = editorFallback();
     return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
-  }
-  function isLongContent() {
-    const fb = editorFallback();
-    if (SITE === 'chatgpt' && fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
-    const el = editorEl();
-    if (el) return readContentEditableText(el).length > LONG_CONTENT_THRESHOLD;
-    if (fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
-    return false;
   }
   function waitUntil(condFn, timeout = 1000, step = 50) {
     return new Promise((resolve, reject) => {
@@ -352,18 +357,282 @@
     }
   }
 
+  // ===== Draft guard (ChatGPT): best-effort protect user pasted text from composer re-mount wipes =====
+  const DRAFT_GUARD_ENABLED = SITE === 'chatgpt';
+  const DRAFT_GUARD_SESSION_KEY = '__aichat_chatgpt_draft_guard_v1__';
+  const DRAFT_GUARD_TTL_MS = 30_000;
+  const DRAFT_GUARD_RESTORE_WINDOW_MS = 3500;
+  const DRAFT_GUARD_MAX_CHARS = 50_000;
+  const DRAFT_GUARD_MAX_RESTORES = 2;
+  let dgSavedText = '';
+  let dgSavedAt = 0;
+  let dgLastUserInputAt = 0;
+  let dgLastSubmitAt = 0;
+  let dgLastRestoreAt = 0;
+  let dgRestoreCount = 0;
+  let dgCaptureTimer = 0;
+  let dgIgnoreUntil = 0;
+  let dgSuppressUntil = 0;
+
+  function dgNow() {
+    return Date.now();
+  }
+
+  function dgIsComposerTarget(t) {
+    try {
+      if (!t) return false;
+      const el = /** @type {Element} */ (t.nodeType === 1 ? t : t.parentElement);
+      if (!el || typeof el.closest !== 'function') return false;
+      return !!(el.closest('#prompt-textarea') || el.closest('textarea[name="prompt-textarea"]'));
+    } catch {
+      return false;
+    }
+  }
+
+  function dgIsGenerating() {
+    try {
+      return !!document.querySelector('[data-testid="stop-button"]');
+    } catch {
+      return false;
+    }
+  }
+
+  function dgLoad() {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_GUARD_SESSION_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const t = Number(data?.t || 0);
+      const text = typeof data?.text === 'string' ? data.text : '';
+      if (!t || !text) return;
+      if (dgNow() - t > DRAFT_GUARD_TTL_MS) return;
+      dgSavedText = text;
+      dgSavedAt = t;
+      dgLastUserInputAt = t;
+    } catch {
+      // ignore
+    }
+  }
+
+  function dgPersist() {
+    try {
+      if (!dgSavedText) {
+        sessionStorage.removeItem(DRAFT_GUARD_SESSION_KEY);
+        return;
+      }
+      sessionStorage.setItem(
+        DRAFT_GUARD_SESSION_KEY,
+        JSON.stringify({
+          t: dgSavedAt,
+          text: dgSavedText
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function dgSaveText(text) {
+    const t = String(text || '').trimEnd();
+    dgSavedText = t.length > DRAFT_GUARD_MAX_CHARS ? t.slice(0, DRAFT_GUARD_MAX_CHARS) : t;
+    dgSavedAt = dgNow();
+    dgPersist();
+  }
+
+  function dgClearSaved() {
+    dgSavedText = '';
+    dgSavedAt = 0;
+    try {
+      sessionStorage.removeItem(DRAFT_GUARD_SESSION_KEY);
+    } catch {}
+  }
+
+  function dgWriteEditorText(finalText) {
+    const pm = editorEl();
+    const fb = editorFallback();
+    const text = String(finalText || '');
+
+    if (pm) {
+      try {
+        pm.focus();
+        document.execCommand('selectAll', false, null);
+        try {
+          pm.dispatchEvent(
+            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text })
+          );
+        } catch {}
+        const ok = document.execCommand('insertText', false, text);
+        try {
+          pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        } catch {}
+        pm.blur();
+        pm.focus();
+        return !!ok;
+      } catch {
+        return false;
+      }
+    }
+
+    if (fb) {
+      try {
+        fb.focus();
+        fb.value = text;
+        fb.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        fb.blur();
+        fb.focus();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function dgShouldSuppressRestore() {
+    const now = dgNow();
+    if (now < dgSuppressUntil || now < dgIgnoreUntil) return true;
+    try {
+      const until = Number(globalThis.__aichatDraftGuardSuppressUntil || 0);
+      if (until && now < until) return true;
+    } catch {}
+    if (isSending) return true;
+    if (dgIsGenerating()) return true;
+    if (dgLastSubmitAt && now - dgLastSubmitAt < 3500) return true;
+    return false;
+  }
+
+  function dgMaybeRestore() {
+    if (!DRAFT_GUARD_ENABLED) return;
+    const now = dgNow();
+    if (!dgSavedText) return;
+    if (dgShouldSuppressRestore()) return;
+    if (now - dgSavedAt > DRAFT_GUARD_TTL_MS) return;
+    if (dgLastUserInputAt && now - dgLastUserInputAt > DRAFT_GUARD_RESTORE_WINDOW_MS) return;
+    if (dgRestoreCount >= DRAFT_GUARD_MAX_RESTORES && now - dgLastRestoreAt < 15_000) return;
+
+    const cur = editorText();
+    if (cur) return;
+
+    // Only restore when the composer exists; avoids noisy retries on pages without composer.
+    if (!editorEl() && !editorFallback()) return;
+
+    const ok = dgWriteEditorText(dgSavedText);
+    if (!ok) return;
+    dgRestoreCount += 1;
+    dgLastRestoreAt = now;
+    // After restoring, capture the new state to avoid re-restoring due to mirror lag.
+    dgSaveText(dgSavedText);
+  }
+
+  function dgScheduleCapture() {
+    if (!DRAFT_GUARD_ENABLED) return;
+    if (dgCaptureTimer) return;
+    dgCaptureTimer = setTimeout(() => {
+      dgCaptureTimer = 0;
+      if (dgNow() < dgIgnoreUntil) return;
+      const t = editorText();
+      if (!t) return dgClearSaved();
+      dgSaveText(t);
+    }, 120);
+  }
+
+  function dgSuppress(ms = 2500) {
+    const until = dgNow() + Math.max(0, Number(ms) || 0);
+    dgSuppressUntil = Math.max(dgSuppressUntil, until);
+    try {
+      globalThis.__aichatDraftGuardSuppressUntil = Math.max(Number(globalThis.__aichatDraftGuardSuppressUntil || 0), until);
+    } catch {}
+  }
+
+  (function installDraftGuard() {
+    if (!DRAFT_GUARD_ENABLED) return;
+    try {
+      if (globalThis.__aichatDraftGuardInstalledV1) return;
+      Object.defineProperty(globalThis, '__aichatDraftGuardInstalledV1', { value: true, configurable: false });
+    } catch {}
+
+    dgLoad();
+
+    // Track user input/paste to keep a recent draft snapshot.
+    try {
+      document.addEventListener(
+        'beforeinput',
+        (e) => {
+          try {
+            if (!dgIsComposerTarget(e?.target)) return;
+            dgLastUserInputAt = dgNow();
+            dgScheduleCapture();
+          } catch {}
+        },
+        true
+      );
+      document.addEventListener(
+        'input',
+        (e) => {
+          try {
+            if (!dgIsComposerTarget(e?.target)) return;
+            dgLastUserInputAt = dgNow();
+            dgScheduleCapture();
+          } catch {}
+        },
+        true
+      );
+      document.addEventListener(
+        'paste',
+        (e) => {
+          try {
+            if (!dgIsComposerTarget(e?.target)) return;
+            dgLastUserInputAt = dgNow();
+            dgScheduleCapture();
+          } catch {}
+        },
+        true
+      );
+      document.addEventListener(
+        'submit',
+        (e) => {
+          try {
+            const form = e?.target;
+            if (!form || typeof form.querySelector !== 'function') return;
+            if (!(form.querySelector('#prompt-textarea') || form.querySelector('textarea[name=\"prompt-textarea\"]'))) return;
+            dgLastSubmitAt = dgNow();
+            dgSuppress(4000);
+            dgClearSaved();
+          } catch {}
+        },
+        true
+      );
+    } catch {}
+
+    // Periodic presence check: if the composer gets wiped shortly after user paste/typing, restore it.
+    try {
+      setInterval(() => {
+        try {
+          if (document.hidden) return;
+          dgMaybeRestore();
+        } catch {}
+      }, 450);
+    } catch {}
+
+    // Also run a couple of early checks (covers the initial hydration window).
+    try {
+      setTimeout(dgMaybeRestore, 350);
+      setTimeout(dgMaybeRestore, 1200);
+    } catch {}
+  })();
+
   // ===== 主流程：严格分步 + 确认 + 延时 =====
   function editorStartsWith(prefixText) {
     const prefix = String(prefixText || '').trimEnd();
     if (!prefix) return true;
-    const fb = editorFallback();
-    if (fb && typeof fb.value === 'string') {
-      const t = fb.value.trim();
-      if (t.startsWith(prefix)) return true;
-    }
     const el = editorEl();
     if (el) {
       const t = readContentEditableText(el);
+      if (t.startsWith(prefix)) return true;
+    }
+    const fb = editorFallback();
+    if (fb && typeof fb.value === 'string') {
+      const t = fb.value.trim();
       if (t.startsWith(prefix)) return true;
     }
     return false;
@@ -373,14 +642,44 @@
     if (isSending) return;
     isSending = true;
     const myCycle = ++cycle;
+    const draftBefore = editorText();
+    const draftSig = (() => {
+      try {
+        const t = String(draftBefore || '').trim();
+        if (!t) return '';
+        // Use a short signature so we can detect accidental “replace” without doing heavy comparisons.
+        return t.slice(0, Math.min(120, t.length));
+      } catch {
+        return '';
+      }
+    })();
 
     try {
+      // Our automation will intentionally clear the composer; prevent the draft guard from restoring it.
+      dgIgnoreUntil = dgNow() + 10_000;
+      dgSuppress(10_000);
       setDebug({ t: Date.now(), site: SITE, step: 'start', prefix: String(prefixText || '').slice(0, 60) });
       // 第 1 步：写前缀
       insertPrefixAtBeginning(prefixText);
       await sleep(DELAYS.afterInsert);
       await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
       setDebug({ step: 'editorCommitted', editorPreview: editorText().slice(0, 120) });
+      // Safety net: if the prefix insertion accidentally replaced the user's draft (reported by users),
+      // rebuild the full text by explicitly writing "prefix + originalDraft".
+      try {
+        if (draftSig) {
+          const after = editorText();
+          if (after && !String(after).includes(draftSig)) {
+            const merged = String(prefixText || '') + String(draftBefore || '');
+            setDebug({ step: 'draftRepair', reason: 'signature_missing', mergedPreview: merged.slice(0, 120) });
+            dgSuppress(8000);
+            dgIgnoreUntil = dgNow() + 8000;
+            dgWriteEditorText(merged);
+            await sleep(DELAYS.afterInsert);
+            await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
+          }
+        }
+      } catch {}
 
       // 第 2 步：等待发送按钮 → 锁 → 切模型 → 点击
       await waitUntil(findSendButton, TIMEOUTS.findSendBtn, POLL_INTERVAL);
@@ -398,6 +697,7 @@
 
       // 清空编辑器，避免草稿回放再次发送
       await sleep(DELAYS.afterClickClear);
+      dgSuppress(8000);
       clearEditorSafely();
       setDebug({ step: 'cleared' });
 
@@ -413,71 +713,56 @@
   }
 
   function insertPrefixAtBeginning(prefixText) {
+    const prefix = String(prefixText || '');
+    if (!prefix) return;
+    if (editorStartsWith(prefixText)) return;
+
     const pm = editorEl();
     const fallback = editorFallback();
 
-    const isLong = isLongContent();
-    if (isLong) {
-      const currentText = editorText();
-      const finalText = currentText.startsWith(prefixText) ? currentText : prefixText + currentText;
-
-      if (pm) {
-        pm.focus();
-        document.execCommand('selectAll', false, null);
-        try {
-          pm.dispatchEvent(
-            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward', data: '' })
-          );
-        } catch {}
-        const ok1 = document.execCommand('insertText', false, '');
-        try {
-          pm.dispatchEvent(
-            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: finalText })
-          );
-        } catch {}
-        const ok2 = document.execCommand('insertText', false, finalText);
-        pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        pm.blur();
-        pm.focus();
-        setDebug({ step: 'insert', mode: 'contenteditable_long', execOk: !!(ok1 && ok2), editorPreview: readContentEditableText(pm).slice(0, 120) });
-        return;
-      }
-
-      if (fallback) {
-        fallback.focus();
-        fallback.value = finalText;
-        fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        fallback.blur();
-        fallback.focus();
-      }
-      return;
-    }
-
-    const currentText = editorText();
-    const finalText = currentText ? (currentText.startsWith(prefixText) ? currentText : prefixText + currentText) : prefixText;
-
+    // Prefer inserting into the contenteditable without reconstructing the full text.
+    // This avoids edge cases where reading the current draft fails (and would otherwise "replace" user input).
     if (pm) {
-      pm.focus();
-      document.execCommand('selectAll', false, null);
+      let ok = false;
       try {
-        pm.dispatchEvent(
-          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: finalText })
-        );
-      } catch {}
-      const ok = document.execCommand('insertText', false, finalText);
-      pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      pm.blur();
-      pm.focus();
-      setDebug({ step: 'insert', mode: 'contenteditable', execOk: !!ok, editorPreview: readContentEditableText(pm).slice(0, 120) });
+        pm.focus();
+        try {
+          const sel = window.getSelection && window.getSelection();
+          if (sel && typeof document.createRange === 'function') {
+            const range = document.createRange();
+            range.selectNodeContents(pm);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch {}
+        try {
+          pm.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: prefix }));
+        } catch {}
+        ok = !!document.execCommand('insertText', false, prefix);
+        try {
+          pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        } catch {}
+        try {
+          pm.blur();
+          pm.focus();
+        } catch {}
+      } finally {
+        setDebug({ step: 'insert', mode: 'insert_at_start', execOk: !!ok, editorPreview: readContentEditableText(pm).slice(0, 120) });
+      }
       return;
     }
 
     if (fallback) {
-      fallback.focus();
-      fallback.value = finalText;
-      fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      fallback.blur();
-      fallback.focus();
+      try {
+        fallback.focus();
+        const cur = typeof fallback.value === 'string' ? fallback.value : '';
+        const next = cur ? prefix + cur : prefix;
+        fallback.value = next;
+        fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        fallback.blur();
+        fallback.focus();
+      } catch {}
     }
   }
 
@@ -881,12 +1166,23 @@
     let insertBefore = null;
 
     if (SITE === 'chatgpt') {
-      container = document.querySelector('div[data-testid="composer-trailing-actions"]');
-      if (!container) {
-        container = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
+      // Avoid hydration mismatch by anchoring to an actual action button (send/stop) rather than SSR wrappers.
+      const actionBtn =
+        document.querySelector('button[data-testid="send-button"]') ||
+        document.querySelector('[data-testid="stop-button"]') ||
+        null;
+      const actionParent = actionBtn && actionBtn.parentElement ? actionBtn.parentElement : null;
+      if (actionParent) {
+        container = actionParent;
+        insertBefore = actionBtn;
+      } else {
+        container = document.querySelector('div[data-testid="composer-trailing-actions"]');
         if (!container) {
-          const speechContainer = document.querySelector('div[data-testid="composer-speech-button-container"]');
-          if (speechContainer && speechContainer.parentElement) container = speechContainer.parentElement;
+          container = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
+          if (!container) {
+            const speechContainer = document.querySelector('div[data-testid="composer-speech-button-container"]');
+            if (speechContainer && speechContainer.parentElement) container = speechContainer.parentElement;
+          }
         }
       }
     } else if (SITE === 'gemini_app') {
@@ -988,20 +1284,22 @@
   }
 
   function boot() {
+    // Avoid touching React-managed DOM before hydration completes (can cause recoverable hydration errors
+    // and a “flash / remount” that wipes pasted drafts). Keyboard shortcuts remain active immediately.
+    if (document.readyState === 'loading') return;
     if (!document.body) return;
+    // Remove legacy floating UI immediately (some older versions injected fixed right-side buttons).
+    removeFloatingButtonsIfAny();
     try {
       if (document.getElementById('o4-inline-btn-wrap')) {
-        removeFloatingButtonsIfAny();
         return;
       }
     } catch {}
     const inlineOk = addInlineButtons();
     if (inlineOk) {
-      removeFloatingButtonsIfAny();
       return;
     }
     if (!ENABLE_FLOATING_FALLBACK) {
-      removeFloatingButtonsIfAny();
       return;
     }
     addTranslateButton();
@@ -1018,9 +1316,9 @@
   }
 
   // Reduce constant polling: schedule boot on DOM changes with rate limiting.
-  (function setupBootWatcher() {
-    const BOOT_MIN_INTERVAL_MS = SITE === 'chatgpt' ? 4000 : 1500;
-    const BOOT_FALLBACK_INTERVAL_MS = SITE === 'chatgpt' ? 20000 : 15000;
+    (function setupBootWatcher() {
+      const BOOT_MIN_INTERVAL_MS = SITE === 'chatgpt' ? 120 : 1500;
+      const BOOT_FALLBACK_INTERVAL_MS = SITE === 'chatgpt' ? 20000 : 15000;
 
     let lastBootAt = 0;
     let timer = 0;
@@ -1036,13 +1334,16 @@
       const wait = Math.max(delayMs, earliest - now, 0);
       timer = setTimeout(() => {
         timer = 0;
-        lastBootAt = Date.now();
         boot();
+        // Do not "consume" the min-interval before body exists, otherwise we can delay first paint.
+        // This keeps the first visible buttons (floating fallback) near-instant on ChatGPT.
+        if (document.body) lastBootAt = Date.now();
         // Once inline buttons exist, switch to a narrow observer and drop the global subtree watcher.
         try {
           if (hasInlineButtons()) {
             ensureHostObserver();
-            disconnectRootObserver();
+            // ChatGPT frequently re-creates the composer; keep the global watcher so we can re-inject instantly.
+            if (SITE !== 'chatgpt') disconnectRootObserver();
           }
         } catch {}
       }, wait);
@@ -1067,27 +1368,47 @@
       }
     }
 
-    function disconnectRootObserver() {
-      if (!rootMo) return;
-      try { rootMo.disconnect(); } catch {}
-      rootMo = null;
-    }
-
-    function ensureRootObserver() {
-      if (rootMo) return;
-      try {
-        const root = document.documentElement;
-        if (!root || typeof MutationObserver !== 'function') return;
-        rootMo = new MutationObserver(() => {
-          // When injected, do nothing; we drop this observer anyway.
-          if (hasInlineButtons()) return;
-          scheduleBoot(250);
-        });
-        rootMo.observe(root, { childList: true, subtree: true });
-      } catch {
-        disconnectRootObserver();
+      function disconnectRootObserver() {
+        if (!rootMo) return;
+        try { rootMo.disconnect(); } catch {}
+        rootMo = null;
       }
-    }
+
+      function findObserveRoot() {
+        if (SITE !== 'chatgpt') return document.documentElement;
+        try {
+          return (
+            document.getElementById('thread-bottom') ||
+            document.getElementById('thread-bottom-container') ||
+            document.body ||
+            document.documentElement
+          );
+        } catch {
+          return document.documentElement;
+        }
+      }
+
+      function ensureRootObserver() {
+        try {
+          const root = findObserveRoot();
+          if (!root || typeof MutationObserver !== 'function') return;
+          // If the observed root changes (ChatGPT can re-create the composer subtree),
+          // reattach to keep the observer “local” (avoid global subtree watching).
+          // @ts-ignore: attach marker
+          if (rootMo && rootMo.__aichatRoot === root) return;
+          try { rootMo?.disconnect(); } catch {}
+          rootMo = new MutationObserver(() => {
+            // When injected, do nothing; we drop this observer anyway.
+            if (hasInlineButtons()) return;
+            scheduleBoot(0);
+          });
+          // @ts-ignore: attach root marker for cheap reuse checks.
+          rootMo.__aichatRoot = root;
+          rootMo.observe(root, { childList: true, subtree: true });
+        } catch {
+          disconnectRootObserver();
+        }
+      }
 
     function ensureHostObserver() {
       const host = getInlineHost();

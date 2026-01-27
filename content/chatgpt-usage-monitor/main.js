@@ -1155,13 +1155,13 @@
   display: none !important;
   }
 
-  #chatUsageMonitor.minimized::before {
-  content: "次";
-  color: white;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+	  #chatUsageMonitor.minimized::before {
+	  content: "用";
+	  color: white;
+	  position: absolute;
+	  top: 0;
+	  left: 0;
+	  right: 0;
   bottom: 0;
   display: flex;
   align-items: center;
@@ -3774,12 +3774,12 @@
       applyMonitorMinimized(desired);
     }, waitMs);
   }
-  function createMonitorUI() {
-    if (isSilent()) return;
-    if (document.getElementById("chatUsageMonitor")) return;
-    const container = document.createElement("div");
-    container.id = "chatUsageMonitor";
-    if (usageData.minimized) container.classList.add("minimized");
+	  function createMonitorUI() {
+	    if (isSilent()) return;
+	    if (document.getElementById("chatUsageMonitor")) return;
+	    const container = document.createElement("div");
+	    container.id = "chatUsageMonitor";
+	    if (usageData.minimized) container.classList.add("minimized");
     if (usageData.size?.width && usageData.size?.height && !usageData.minimized) {
       container.style.width = `${usageData.size.width}px`;
       container.style.height = `${usageData.size.height}px`;
@@ -3838,8 +3838,8 @@
       settingsContent.style.display = "";
       usageContent.style.display = "none";
     });
-    container.addEventListener("click", (e) => {
-      if (!container.classList.contains("minimized")) return;
+	    container.addEventListener("click", (e) => {
+	      if (!container.classList.contains("minimized")) return;
       const lastDragAt = Number(container[__aichatDragSuppressClickKey] || 0);
       if (lastDragAt && Date.now() - lastDragAt < 250) {
         e.stopPropagation();
@@ -3847,11 +3847,40 @@
       }
       requestMonitorMinimized(false);
       e.stopPropagation();
-    });
-    document.body.appendChild(container);
-    setupDraggable(container);
-    updateUI();
-    if (typeof ResizeObserver !== "undefined") {
+	    });
+	    document.body.appendChild(container);
+	    // If the minimized badge overlaps ChatGPT sidebar controls, move it to a safer corner.
+	    try {
+	      if (container.classList.contains("minimized")) {
+	        const sidebar =
+	          document.querySelector('nav[aria-label="Chat history"]') ||
+	          document.querySelector('[data-testid="chat-history"]') ||
+	          document.getElementById("stage-slideover-sidebar") ||
+	          null;
+	        if (sidebar && typeof sidebar.getBoundingClientRect === "function") {
+	          const sr = sidebar.getBoundingClientRect();
+	          const r = container.getBoundingClientRect();
+	          const pad = 6;
+	          const overlaps =
+	            r.left < sr.right + pad && r.right > sr.left - pad && r.top < sr.bottom + pad && r.bottom > sr.top - pad;
+	          if (overlaps) {
+	            const margin = 12;
+	            const x = Math.max(margin, Math.round(window.innerWidth - r.width - margin));
+	            const y = Math.max(margin, Math.round(window.innerHeight - r.height - margin));
+	            container.style.setProperty("left", `${x}px`, "important");
+	            container.style.setProperty("top", `${y}px`, "important");
+	            container.style.setProperty("right", "auto", "important");
+	            container.style.setProperty("bottom", "auto", "important");
+	            Storage.update((data) => {
+	              data.position = { x, y };
+	            });
+	          }
+	        }
+	      }
+	    } catch {}
+	    setupDraggable(container);
+	    updateUI();
+	    if (typeof ResizeObserver !== "undefined") {
       const resizeObserver = new ResizeObserver(() => {
         if (container.classList.contains("minimized")) return;
         const width = container.offsetWidth;

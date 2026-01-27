@@ -3784,13 +3784,15 @@
       container.style.width = `${usageData.size.width}px`;
       container.style.height = `${usageData.size.height}px`;
     }
-    if (usageData.position?.x !== null && usageData.position?.y !== null) {
-      const maxX = window.innerWidth - 400;
-      const maxY = window.innerHeight - 500;
-      const x = Math.min(Math.max(0, usageData.position.x), maxX);
-      const y = Math.min(Math.max(0, usageData.position.y), maxY);
-      container.style.setProperty("left", `${x}px`, "important");
-      container.style.setProperty("top", `${y}px`, "important");
+	    if (usageData.position?.x !== null && usageData.position?.y !== null) {
+	      const defaultWidth = usageData.minimized ? 30 : (usageData.size?.width || 400);
+	      const defaultHeight = usageData.minimized ? 30 : (usageData.size?.height || 500);
+	      const maxX = window.innerWidth - defaultWidth;
+	      const maxY = window.innerHeight - defaultHeight;
+	      const x = Math.min(Math.max(0, usageData.position.x), maxX);
+	      const y = Math.min(Math.max(0, usageData.position.y), maxY);
+	      container.style.setProperty("left", `${x}px`, "important");
+	      container.style.setProperty("top", `${y}px`, "important");
       container.style.setProperty("right", "auto", "important");
       container.style.setProperty("bottom", "auto", "important");
     } else {

@@ -95,7 +95,7 @@
       siteId: 'chatgpt',
       moduleId: 'quicknav',
       matches: ['https://chatgpt.com/*'],
-      js: ['content/menu-bridge.js', 'content/chatgpt-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/chatgpt-quicknav.js'],
       runAt: 'document_start'
     },
     {
@@ -114,7 +114,7 @@
       siteId: 'ernie',
       moduleId: 'quicknav',
       matches: ['https://ernie.baidu.com/*'],
-      js: ['content/menu-bridge.js', 'content/ernie-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/ernie-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -131,7 +131,7 @@
       siteId: 'deepseek',
       moduleId: 'quicknav',
       matches: ['https://chat.deepseek.com/*'],
-      js: ['content/menu-bridge.js', 'content/deepseek-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/deepseek-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -148,7 +148,7 @@
       siteId: 'qwen',
       moduleId: 'quicknav',
       matches: ['https://chat.qwen.ai/*'],
-      js: ['content/menu-bridge.js', 'content/qwen-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/qwen-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -165,7 +165,7 @@
       siteId: 'zai',
       moduleId: 'quicknav',
       matches: ['https://chat.z.ai/*'],
-      js: ['content/menu-bridge.js', 'content/zai-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/zai-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -182,7 +182,7 @@
       siteId: 'gemini_business',
       moduleId: 'quicknav',
       matches: ['https://business.gemini.google/*'],
-      js: ['content/menu-bridge.js', 'content/gemini-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/gemini-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -199,7 +199,7 @@
       siteId: 'gemini_app',
       moduleId: 'quicknav',
       matches: ['https://gemini.google.com/app*'],
-      js: ['content/menu-bridge.js', 'content/gemini-app-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/gemini-app-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -216,7 +216,7 @@
       siteId: 'grok',
       moduleId: 'quicknav',
       matches: ['https://grok.com/*'],
-      js: ['content/menu-bridge.js', 'content/grok-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/grok-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -233,7 +233,7 @@
       siteId: 'genspark',
       moduleId: 'quicknav',
       matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/menu-bridge.js', 'content/genspark-quicknav.js'],
+      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/genspark-quicknav.js'],
       runAt: 'document_end'
     },
     {
@@ -444,7 +444,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
+      js: ['content/ui-pos-drag.js', 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     },

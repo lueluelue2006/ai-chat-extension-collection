@@ -1346,24 +1346,60 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function enableDrag(nav, opts = {}) {
     const header = nav.querySelector('.compact-header');
+    try {
+      const api = globalThis.__aichat_ui_pos_drag_v1__;
+      if (api && typeof api.enableRightTopDrag === 'function') {
+        api.enableRightTopDrag(nav, header, opts || {});
+        return;
+      }
+    } catch {}
     const onDragStart = typeof opts.onDragStart === 'function' ? opts.onDragStart : null;
     const onDragMove = typeof opts.onDragMove === 'function' ? opts.onDragMove : null;
     const onDragEnd = typeof opts.onDragEnd === 'function' ? opts.onDragEnd : null;
-    let isDragging = false, startX, startY, startRight, startTop;
+    const isInteractive = (target) => {
+      try {
+        if (!target || !target.closest) return false;
+        return !!target.closest('button, a, input, textarea, select, [role="button"]');
+      } catch {
+        return false;
+      }
+    };
+
+    const DRAG_THRESHOLD_PX = 6;
+    let tracking = false;
+    let dragStarted = false;
+    let startX = 0;
+    let startY = 0;
+    let startRight = 0;
+    let startTop = 0;
+
     header.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.compact-toggle, .compact-refresh, .compact-lock, .compact-star')) return;
-      isDragging = true; startX = e.clientX; startY = e.clientY;
+      if (!e || e.button !== 0) return;
+      if (isInteractive(e.target)) return;
+
+      tracking = true;
+      dragStarted = false;
+      startX = e.clientX;
+      startY = e.clientY;
+
       const rect = nav.getBoundingClientRect();
       startTop = rect.top;
       startRight = Math.max(0, window.innerWidth - rect.right);
-      if (onDragStart) {
-        try { onDragStart(e); } catch {}
-      }
-      e.preventDefault();
     });
+
     document.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!tracking) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!dragStarted) {
+        if (Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+        dragStarted = true;
+        if (onDragStart) {
+          try { onDragStart(e); } catch {}
+        }
+      }
+
       const newRight = Math.max(0, startRight - dx);
       nav.style.right = `${newRight}px`;
       nav.style.left = 'auto';
@@ -1371,10 +1407,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (onDragMove) {
         try { onDragMove(e); } catch {}
       }
+      try { e.preventDefault(); } catch {}
     });
+
     document.addEventListener('mouseup', () => {
-      if (!isDragging) return;
-      isDragging = false;
+      if (!tracking) return;
+      tracking = false;
+      if (!dragStarted) return;
+      dragStarted = false;
       if (onDragEnd) {
         try { onDragEnd(); } catch {}
       }

@@ -1806,6 +1806,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function enableDrag(nav, opts = {}) {
     const header = nav.querySelector('.compact-header');
+    try {
+      const api = globalThis.__aichat_ui_pos_drag_v1__;
+      if (api && typeof api.enableRightTopDrag === 'function') {
+        api.enableRightTopDrag(nav, header, opts || {});
+        return;
+      }
+    } catch {}
     const onDragStart = typeof opts.onDragStart === 'function' ? opts.onDragStart : null;
     const onDragMove = typeof opts.onDragMove === 'function' ? opts.onDragMove : null;
     const onDragEnd = typeof opts.onDragEnd === 'function' ? opts.onDragEnd : null;
@@ -2087,6 +2094,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function persistNavPosition(nav) {
     if (!nav || !nav.isConnected) return;
+    try {
+      const api = globalThis.__aichat_ui_pos_drag_v1__;
+      if (api && typeof api.posV2FromRect === 'function') {
+        const rect = nav.getBoundingClientRect();
+        const payload = api.posV2FromRect(rect, { splitAware: true, clampBottomPx: 40 });
+        saveNavPosition(payload);
+        return;
+      }
+    } catch {}
     try {
       const rect = nav.getBoundingClientRect();
       let vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);

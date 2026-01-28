@@ -723,19 +723,23 @@
       if (settings && settings.enabled === false) return;
     } catch {}
 
-    const status = await fetchUrlStatus(GPT53_MONITOR.url);
-    if (!status) return;
-
-    const available = status !== 404;
     const prev = await getGpt53State();
     const prevAvailable = !!prev?.available;
+    const checkedAt = Date.now();
 
-    const next = {
-      available,
-      status,
-      checkedAt: Date.now()
-    };
-    await setGpt53State(next);
+    const status = await fetchUrlStatus(GPT53_MONITOR.url);
+    if (!status) {
+      await setGpt53State({
+        available: prevAvailable,
+        status: 0,
+        checkedAt,
+        error: 'fetch_failed'
+      });
+      return;
+    }
+
+    const available = status !== 404;
+    await setGpt53State({ available, status, checkedAt });
 
     if (!prevAvailable && available) {
       try {

@@ -116,8 +116,9 @@
         : null,
       state: state
         ? {
-            available: !!state.available,
+            available: typeof state.available === 'boolean' ? state.available : null,
             status: state.status,
+            error: typeof state.error === 'string' ? state.error : '',
             checkedAt: state.checkedAt,
             checkedAtText: formatDateTime(state.checkedAt),
             checkedAgo: Number.isFinite(Number(state.checkedAt)) ? formatAgeMs(now - Number(state.checkedAt)) : ''

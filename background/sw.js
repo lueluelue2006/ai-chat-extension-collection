@@ -756,6 +756,20 @@
     } catch {}
   }
 
+  async function getGpt53Alarm() {
+    try {
+      return await new Promise((resolve) => {
+        try {
+          chrome.alarms.get(GPT53_MONITOR.alarmName, (alarm) => resolve(alarm || null));
+        } catch {
+          resolve(null);
+        }
+      });
+    } catch {
+      return null;
+    }
+  }
+
   try {
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm?.name !== GPT53_MONITOR.alarmName) return;
@@ -1041,6 +1055,63 @@
             return settings;
           })
           .then((settings) => sendResponse({ ok: true, settings }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_GPT53_GET_STATUS') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        (async () => {
+          ensureGpt53Alarm();
+          const alarm = await getGpt53Alarm();
+          const state = await getGpt53State();
+          let enabled = true;
+          try {
+            const settings = await getSettings();
+            if (settings && settings.enabled === false) enabled = false;
+          } catch {}
+          return {
+            ok: true,
+            enabled,
+            url: GPT53_MONITOR.url,
+            alarm,
+            state,
+            now: Date.now()
+          };
+        })()
+          .then((resp) => sendResponse(resp))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_GPT53_RUN') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        (async () => {
+          ensureGpt53Alarm();
+          await runGpt53Probe();
+          const alarm = await getGpt53Alarm();
+          const state = await getGpt53State();
+          let enabled = true;
+          try {
+            const settings = await getSettings();
+            if (settings && settings.enabled === false) enabled = false;
+          } catch {}
+          return {
+            ok: true,
+            enabled,
+            url: GPT53_MONITOR.url,
+            alarm,
+            state,
+            now: Date.now()
+          };
+        })()
+          .then((resp) => sendResponse(resp))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
       }

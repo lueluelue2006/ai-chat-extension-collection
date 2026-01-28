@@ -9,6 +9,9 @@
   const btnRestoreDefault = document.getElementById('restoreDefault');
   const btnReinjectNow = document.getElementById('reinjectNow');
   const btnOpenRepo = document.getElementById('openRepo');
+  const btnGpt53Refresh = document.getElementById('gpt53Refresh');
+  const btnGpt53Run = document.getElementById('gpt53Run');
+  const elGpt53Status = document.getElementById('gpt53Status');
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
   const elModuleSettings = document.getElementById('moduleSettings');
@@ -67,6 +70,65 @@
   }
 
   if (!REGISTRY_OK) setStatus('脚本注册表缺失：shared/registry.js 未加载（请刷新扩展或重装）', 'err');
+
+  function formatDateTime(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    try {
+      return new Date(n).toLocaleString();
+    } catch {
+      return String(n);
+    }
+  }
+
+  function formatAgeMs(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    const sec = Math.max(0, Math.floor(n / 1000));
+    const min = Math.floor(sec / 60);
+    const hr = Math.floor(min / 60);
+    if (hr > 0) return `${hr}h ${min % 60}m`;
+    if (min > 0) return `${min}m ${sec % 60}s`;
+    return `${sec}s`;
+  }
+
+  function renderGpt53MonitorStatus(resp) {
+    if (!elGpt53Status) return;
+    if (!resp || resp.ok !== true) {
+      elGpt53Status.textContent = '（无响应）';
+      return;
+    }
+    const alarm = resp.alarm && typeof resp.alarm === 'object' ? resp.alarm : null;
+    const state = resp.state && typeof resp.state === 'object' ? resp.state : null;
+    const now = Number(resp.now) || Date.now();
+
+    const view = {
+      enabled: resp.enabled !== false,
+      url: resp.url || '',
+      alarm: alarm
+        ? {
+            name: alarm.name,
+            periodInMinutes: alarm.periodInMinutes,
+            scheduledTime: alarm.scheduledTime,
+            scheduledAt: formatDateTime(alarm.scheduledTime),
+            nextIn: Number.isFinite(Number(alarm.scheduledTime)) ? formatAgeMs(Number(alarm.scheduledTime) - now) : ''
+          }
+        : null,
+      state: state
+        ? {
+            available: !!state.available,
+            status: state.status,
+            checkedAt: state.checkedAt,
+            checkedAtText: formatDateTime(state.checkedAt),
+            checkedAgo: Number.isFinite(Number(state.checkedAt)) ? formatAgeMs(now - Number(state.checkedAt)) : ''
+          }
+        : null,
+      now,
+      nowText: formatDateTime(now)
+    };
+
+    elGpt53Status.textContent = JSON.stringify(view, null, 2);
+  }
 
   function formatHotkeys(hotkeys) {
     const arr = Array.isArray(hotkeys) ? hotkeys.filter((v) => typeof v === 'string' && v.trim()) : [];
@@ -272,6 +334,7 @@
   }
 
   let saveSeq = 0;
+  let gpt53Seq = 0;
   let renderSeq = 0;
   let currentSettings = null;
   let selectedSiteId = SITES[0]?.id || 'chatgpt';
@@ -2036,6 +2099,38 @@
   });
 
   btnOpenRepo?.addEventListener('click', () => openUrlSafe(REPO_URL));
+
+  const runGpt53Action = (action) => {
+    if (!elGpt53Status) return;
+    const isRun = action === 'run';
+    const btnA = btnGpt53Refresh;
+    const btnB = btnGpt53Run;
+
+    const run = async () => {
+      const seq = ++gpt53Seq;
+      if (btnA) btnA.disabled = true;
+      if (btnB) btnB.disabled = true;
+      elGpt53Status.textContent = isRun ? '正在检测…' : '正在读取…';
+      try {
+        const resp = await sendMessage({ type: isRun ? 'QUICKNAV_GPT53_RUN' : 'QUICKNAV_GPT53_GET_STATUS' });
+        if (seq !== gpt53Seq) return;
+        if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed');
+        renderGpt53MonitorStatus(resp);
+        setStatus(isRun ? '已完成检测' : '已读取监控状态', 'ok');
+      } catch (e) {
+        if (seq !== gpt53Seq) return;
+        elGpt53Status.textContent = `（失败）\n${e instanceof Error ? e.message : String(e)}`;
+        setStatus(`OpenAI 监控操作失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        if (btnA) btnA.disabled = false;
+        if (btnB) btnB.disabled = false;
+      }
+    };
+    void run();
+  };
+
+  btnGpt53Refresh?.addEventListener('click', () => runGpt53Action('status'));
+  btnGpt53Run?.addEventListener('click', () => runGpt53Action('run'));
 
   init();
 })();

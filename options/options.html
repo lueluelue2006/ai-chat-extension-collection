@@ -43,6 +43,18 @@
         <div class="hint">提示：关闭某个模块后，已打开页面一般需要刷新才会完全停用。</div>
       </section>
 
+      <section class="card" aria-label="OpenAI 新模型监控">
+        <div class="cardTitle">OpenAI 新模型监控（gpt-5.3）</div>
+        <div class="hint">
+          每 5 分钟请求一次 gpt-5.3 图标；当返回非 404 时将弹出系统通知（仅首次从 404 → 非 404 时提示）。
+        </div>
+        <div class="actions">
+          <button class="btn secondary" id="gpt53Refresh" type="button">查看状态</button>
+          <button class="btn" id="gpt53Run" type="button">立即检测</button>
+        </div>
+        <pre class="codeBox" id="gpt53Status">（未检测）</pre>
+      </section>
+
       <section class="actions">
         <button class="btn secondary" id="restoreDefault" type="button">恢复默认</button>
         <button class="btn" id="reinjectNow" type="button">重新注入已打开页面</button>

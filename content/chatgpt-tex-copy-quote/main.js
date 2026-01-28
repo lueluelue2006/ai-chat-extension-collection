@@ -23,6 +23,9 @@
   if (window[GUARD_KEY]) return;
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
 
+  const BTQ_STYLE_ID = '__btq_latex_tooltip_style_v1__';
+  const BTQ_TOOLTIP_ID = '__btq_latex_tooltip_v1__';
+
   // Integrated from "ChatGPT TeX Copy & Quote 整合版.user.js"
   // Upstream: https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote
   // License: GPL-3.0-or-later
@@ -131,18 +134,54 @@
         '.btq-latex-copy-success{position:fixed;bottom:10%;left:50%;transform:translateX(-50%);background-color:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:4px;font-size:12px;z-index:1000;opacity:1;transition:opacity 0.2s;pointer-events:none;}';
 
       if (document.head) {
-        const styleEl = document.createElement('style');
-        styleEl.type = 'text/css';
-        styleEl.textContent = css;
-        document.head.appendChild(styleEl);
+        const existing = document.getElementById(BTQ_STYLE_ID);
+        if (existing) {
+          existing.textContent = css;
+        } else {
+          const styleEl = document.createElement('style');
+          styleEl.id = BTQ_STYLE_ID;
+          styleEl.type = 'text/css';
+          styleEl.textContent = css;
+          document.head.appendChild(styleEl);
+        }
       }
 
-      const tooltip = document.createElement('div');
-      tooltip.className = 'btq-latex-tooltip';
-      tooltip.style.display = 'none';
-      document.body.appendChild(tooltip);
+      let tooltip = document.getElementById(BTQ_TOOLTIP_ID);
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = BTQ_TOOLTIP_ID;
+        tooltip.className = 'btq-latex-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+      }
+
+      if (window.__btqDblClickCopyBoundV1) return;
+      window.__btqDblClickCopyBoundV1 = true;
 
       let tooltipTimer = null;
+
+      function ensureTooltip() {
+        try {
+          if (tooltip && tooltip.isConnected) return tooltip;
+        } catch {}
+        try {
+          if (!document.body) return null;
+          const existing = document.getElementById(BTQ_TOOLTIP_ID);
+          if (existing) {
+            tooltip = existing;
+            return tooltip;
+          }
+          const next = document.createElement('div');
+          next.id = BTQ_TOOLTIP_ID;
+          next.className = 'btq-latex-tooltip';
+          next.style.display = 'none';
+          document.body.appendChild(next);
+          tooltip = next;
+          return tooltip;
+        } catch {
+          return null;
+        }
+      }
 
       function btq_copyTexToClipboard(tex, onDone) {
         if (!tex) return;
@@ -199,20 +238,24 @@
 
       function btq_showTooltip(katexEl, tex) {
         if (!katexEl || !tex) return;
+        const tip = ensureTooltip();
+        if (!tip) return;
         try {
           const rect = katexEl.getBoundingClientRect();
-          tooltip.textContent = tex;
-          tooltip.style.left = rect.left + 'px';
+          tip.textContent = tex;
+          tip.style.left = rect.left + 'px';
           const top = rect.top - 24;
-          tooltip.style.top = (top < 0 ? 0 : top) + 'px';
-          tooltip.style.display = 'block';
-          tooltip.style.opacity = '0.8';
+          tip.style.top = (top < 0 ? 0 : top) + 'px';
+          tip.style.display = 'block';
+          tip.style.opacity = '0.8';
         } catch (_) {}
       }
 
       function btq_hideTooltip() {
-        tooltip.style.display = 'none';
-        tooltip.style.opacity = '0';
+        const tip = ensureTooltip();
+        if (!tip) return;
+        tip.style.display = 'none';
+        tip.style.opacity = '0';
       }
 
       document.addEventListener(
@@ -220,6 +263,7 @@
         function (ev) {
           const target = ev && ev.target;
           if (!target || !(target instanceof Element)) return;
+          if (!ensureTooltip()) return;
           const katexEl = target.closest('.katex');
           if (!katexEl) return;
           katexEl.style.cursor = 'pointer';
@@ -278,9 +322,16 @@
 
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', btq_setupDblClickCopy);
+      document.addEventListener('DOMContentLoaded', () => {
+        btq_setupDblClickCopy();
+        // ChatGPT hydration can wipe body children. Re-ensure tooltip a few times.
+        setTimeout(btq_setupDblClickCopy, 1200);
+        setTimeout(btq_setupDblClickCopy, 3200);
+      });
     } else {
       btq_setupDblClickCopy();
+      setTimeout(btq_setupDblClickCopy, 1200);
+      setTimeout(btq_setupDblClickCopy, 3200);
     }
   }
 })();

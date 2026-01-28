@@ -3,7 +3,7 @@
   'use strict';
 
   try {
-    const GUARD_VERSION = 5;
+    const GUARD_VERSION = 6;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -34,6 +34,8 @@
         elemScrollTo: Element.prototype.scrollTo,
         elemScrollBy: Element.prototype.scrollBy,
         elemScroll: Element.prototype.scroll,
+        historyPushState: history.pushState,
+        historyReplaceState: history.replaceState,
         scrollTopOwner: scrollTopDesc
           ? {
               proto:
@@ -47,6 +49,8 @@
       try {
         if (!prevOriginals.windowScroll && typeof window.scroll === 'function') prevOriginals.windowScroll = window.scroll;
         if (!prevOriginals.elemScroll && typeof Element.prototype.scroll === 'function') prevOriginals.elemScroll = Element.prototype.scroll;
+        if (!prevOriginals.historyPushState && typeof history.pushState === 'function') prevOriginals.historyPushState = history.pushState;
+        if (!prevOriginals.historyReplaceState && typeof history.replaceState === 'function') prevOriginals.historyReplaceState = history.replaceState;
       } catch {}
     }
   } catch {
@@ -68,6 +72,55 @@
     allowUntil: 0,
     baselineTop: null
   };
+
+  // === Route-change broadcast (MAIN world) ===
+  // Let isolated-world scripts react to SPA navigation without a tight polling loop.
+  try {
+    const ROUTE_HOOK_VERSION = 1;
+    const prev = Number(window.__quicknavRouteHookVersion || 0);
+    if (prev < ROUTE_HOOK_VERSION) {
+      window.__quicknavRouteHookVersion = ROUTE_HOOK_VERSION;
+
+      let postTimer = 0;
+      let lastHref = '';
+      const schedulePost = (reason) => {
+        try {
+          const href = String(location.href || '');
+          if (!href || href === lastHref) return;
+          lastHref = href;
+          if (postTimer) return;
+          postTimer = window.setTimeout(() => {
+            postTimer = 0;
+            try {
+              window.postMessage({ __quicknav: 1, type: 'QUICKNAV_ROUTE_CHANGE', href, reason: String(reason || '') }, '*');
+            } catch {}
+          }, 0);
+        } catch {}
+      };
+
+      const push = ORIGINALS.historyPushState || history.pushState;
+      const replace = ORIGINALS.historyReplaceState || history.replaceState;
+
+      if (typeof push === 'function') {
+        history.pushState = function () {
+          const ret = push.apply(this, arguments);
+          schedulePost('pushState');
+          return ret;
+        };
+      }
+      if (typeof replace === 'function') {
+        history.replaceState = function () {
+          const ret = replace.apply(this, arguments);
+          schedulePost('replaceState');
+          return ret;
+        };
+      }
+
+      window.addEventListener('popstate', () => schedulePost('popstate'), true);
+      window.addEventListener('hashchange', () => schedulePost('hashchange'), true);
+      schedulePost('init');
+    }
+  } catch {}
 
   // How many pixels of downward drift we tolerate before blocking.
   // Keep this small to avoid visible "micro jumps" when sites try to autoscroll.

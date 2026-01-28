@@ -3,7 +3,7 @@
 
 // Generates docs/scripts-inventory.md from:
 // - shared/registry.js (user-facing module metadata, incl. authors/license)
-// - background/sw.js (MV3 dynamic injection defs: matches/js/css/runAt/world)
+// - shared/injections.js (MV3 injection defs: matches/js/css/runAt/world)
 //
 // This keeps the inventory in sync without relying on legacy userscript headers.
 
@@ -31,27 +31,15 @@ function loadRegistry() {
   return reg;
 }
 
-function extractBetween(src, startNeedle, endNeedle) {
-  const start = src.indexOf(startNeedle);
-  if (start < 0) return null;
-  const end = src.indexOf(endNeedle, start + startNeedle.length);
-  if (end < 0) return null;
-  return src.slice(start + startNeedle.length, end);
-}
-
-function loadBackgroundDefs() {
-  const sw = readText('background/sw.js');
-  const mainGuardMatch = sw.match(/const MAIN_GUARD_FILE = '([^']+)';/);
-  const mainGuardFile = mainGuardMatch ? mainGuardMatch[1] : 'content/scroll-guard-main.js';
-
-  const defsSrc = extractBetween(sw, 'const CONTENT_SCRIPT_DEFS = ', '\n\n  const LEGACY_CONTENT_SCRIPT_IDS');
-  if (!defsSrc) throw new Error('Failed to extract CONTENT_SCRIPT_DEFS from background/sw.js');
-  const sandbox = { MAIN_GUARD_FILE: mainGuardFile };
+function loadInjections() {
+  const code = readText('shared/injections.js');
+  const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(`result = ${defsSrc};`, sandbox, { filename: 'background/sw.js:CONTENT_SCRIPT_DEFS' });
-  const defs = sandbox.result;
-  if (!Array.isArray(defs)) throw new Error('CONTENT_SCRIPT_DEFS did not evaluate to an array');
-  return defs;
+  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
+  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  if (typeof inj.buildContentScriptDefs !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildContentScriptDefs is missing');
+  return inj;
 }
 
 function loadManifest() {
@@ -85,15 +73,17 @@ function fmtModuleMeta(def) {
 function fmtDefLine(d) {
   const runAt = String(d?.runAt || '');
   const world = String(d?.world || 'ISOLATED');
+  const allFrames = d?.allFrames ? ' (allFrames)' : '';
   const files = uniq([...(d?.js || []), ...(d?.css || [])]);
   const fileText = files.length ? files.map((f) => `\`${f}\``).join(', ') : '(none)';
-  return `${runAt} / ${world}: ${fileText}`;
+  return `${runAt} / ${world}${allFrames}: ${fileText}`;
 }
 
 function main() {
   const manifest = loadManifest();
   const reg = loadRegistry();
-  const defs = loadBackgroundDefs();
+  const injections = loadInjections();
+  const defs = injections.buildContentScriptDefs(reg);
 
   const sites = Array.isArray(reg?.sites) ? reg.sites : [];
   const modules = reg?.modules && typeof reg.modules === 'object' ? reg.modules : {};
@@ -118,7 +108,7 @@ function main() {
   out += `- Name: ${fmtOneLine(manifest?.name)}\n`;
   out += `- Version: ${fmtOneLine(manifest?.version)}\n`;
   out += `- Generated: ${stamp}\n`;
-  out += `- Source of truth: \`shared/registry.js\` (metadata) + \`background/sw.js\` (injection)\n\n`;
+  out += `- Source of truth: \`shared/registry.js\` (metadata) + \`shared/injections.js\` (injection defs)\n\n`;
   out += `## Popup “菜单按钮/选项按钮” 来自哪里？\n\n`;
   out += `扩展弹窗里显示的“菜单按钮/选项按钮”，来自页面里调用 \`window.__quicknavRegisterMenuCommand(name, fn)\` 注册的命令。\n\n`;
   out += `当前 registry 标注了菜单预览（menuPreview）的模块：\n\n`;
@@ -177,4 +167,3 @@ function main() {
 }
 
 main();
-

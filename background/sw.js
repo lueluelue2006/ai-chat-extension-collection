@@ -3,560 +3,37 @@
   'use strict';
 
   const SETTINGS_KEY = 'quicknav_settings';
-  const DEFAULT_SETTINGS = {
-    enabled: true,
-    sites: {
-      common: true,
-      chatgpt: true,
-      ernie: true,
-      deepseek: true,
-      qwen: true,
-      zai: true,
-      grok: true,
-      gemini_app: true,
-      gemini_business: true,
-      genspark: true
-    },
-    scrollLockDefaults: {
-      common: true,
-      chatgpt: true,
-      ernie: true,
-      deepseek: true,
-      qwen: true,
-      zai: true,
-      grok: true,
-      gemini_app: true,
-      gemini_business: true,
-      genspark: true
-    },
-    siteModules: {
-      common: { hide_disclaimer: true },
-      chatgpt: {
-        quicknav: true,
-        chatgpt_perf: true,
-        chatgpt_thinking_toggle: true,
-        chatgpt_thinking_toggle_hotkey_effort: true,
-        chatgpt_thinking_toggle_hotkey_model: true,
-        chatgpt_cmdenter_send: true,
-        chatgpt_readaloud_speed_controller: true,
-        chatgpt_reply_timer: true,
-        chatgpt_usage_monitor: true,
-        chatgpt_download_file_fix: true,
-        chatgpt_strong_highlight_lite: true,
-        chatgpt_quick_deep_search: true,
-        chatgpt_hide_feedback_buttons: true,
-        chatgpt_tex_copy_quote: true,
-        chatgpt_export_conversation: true,
-        chatgpt_image_message_edit: true,
-        chatgpt_message_tree: true,
-        chatgpt_sidebar_header_fix: true,
-        chatgpt_split_view: false
-      },
-      ernie: { quicknav: true, chatgpt_cmdenter_send: true },
-      deepseek: { quicknav: true, chatgpt_cmdenter_send: true },
-      qwen: { quicknav: true, chatgpt_cmdenter_send: true },
-      zai: { quicknav: true, chatgpt_cmdenter_send: true },
-      grok: { quicknav: true, chatgpt_cmdenter_send: true, grok_fast_unlock: true, grok_rate_limit_display: true },
-      gemini_app: { quicknav: true, chatgpt_cmdenter_send: true },
-      gemini_business: { quicknav: true, chatgpt_cmdenter_send: true, gemini_math_fix: true, gemini_auto_3_pro: true },
-      genspark: {
-        quicknav: true,
-        genspark_moa_image_autosettings: true,
-        genspark_credit_balance: true,
-        genspark_codeblock_fold: true,
-        genspark_inline_upload_fix: true,
-        chatgpt_cmdenter_send: true
+  let REGISTRY = null;
+  let INJECTIONS = null;
+  try {
+    // Keep injection/registry as the single source of truth.
+    importScripts('../shared/registry.js', '../shared/injections.js');
+  } catch {}
+  try { REGISTRY = globalThis.QUICKNAV_REGISTRY || null; } catch {}
+  try { INJECTIONS = globalThis.QUICKNAV_INJECTIONS || null; } catch {}
+
+  const DEFAULT_SETTINGS = (() => {
+    try {
+      if (INJECTIONS && typeof INJECTIONS.buildDefaultSettings === 'function') {
+        return INJECTIONS.buildDefaultSettings(REGISTRY);
       }
-    }
-  };
+    } catch {}
+    return { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
+  })();
 
-  const MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
-  const CONTENT_SCRIPT_DEFS = [
-    {
-      id: 'quicknav_common_hide_disclaimer',
-      siteId: 'common',
-      moduleId: 'hide_disclaimer',
-      matches: [
-        'https://chatgpt.com/*',
-        'https://ernie.baidu.com/*',
-        'https://chat.deepseek.com/*',
-        'https://chat.qwen.ai/*',
-        'https://chat.z.ai/*',
-        'https://grok.com/*',
-        'https://gemini.google.com/app*',
-        'https://business.gemini.google/*',
-        'https://www.genspark.ai/*'
-      ],
-      js: ['content/common-hide-disclaimer/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt',
-      siteId: 'chatgpt',
-      moduleId: 'quicknav',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/chatgpt-quicknav.js'],
-      runAt: 'document_start'
-    },
-    {
-      // MAIN-world scroll guard is required for scroll-lock to reliably block site-driven autoscroll.
-      // (Isolated-world patches can't intercept page JS calls.)
-      id: 'quicknav_scroll_guard_chatgpt',
-      siteId: 'chatgpt',
-      moduleId: 'quicknav',
-      matches: ['https://chatgpt.com/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_ernie',
-      siteId: 'ernie',
-      moduleId: 'quicknav',
-      matches: ['https://ernie.baidu.com/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/ernie-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_ernie',
-      siteId: 'ernie',
-      moduleId: 'quicknav',
-      matches: ['https://ernie.baidu.com/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_deepseek',
-      siteId: 'deepseek',
-      moduleId: 'quicknav',
-      matches: ['https://chat.deepseek.com/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/deepseek-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_deepseek',
-      siteId: 'deepseek',
-      moduleId: 'quicknav',
-      matches: ['https://chat.deepseek.com/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_qwen',
-      siteId: 'qwen',
-      moduleId: 'quicknav',
-      matches: ['https://chat.qwen.ai/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/qwen-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_qwen',
-      siteId: 'qwen',
-      moduleId: 'quicknav',
-      matches: ['https://chat.qwen.ai/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_zai',
-      siteId: 'zai',
-      moduleId: 'quicknav',
-      matches: ['https://chat.z.ai/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/zai-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_zai',
-      siteId: 'zai',
-      moduleId: 'quicknav',
-      matches: ['https://chat.z.ai/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_gemini_business',
-      siteId: 'gemini_business',
-      moduleId: 'quicknav',
-      matches: ['https://business.gemini.google/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/gemini-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_gemini_business',
-      siteId: 'gemini_business',
-      moduleId: 'quicknav',
-      matches: ['https://business.gemini.google/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_gemini_app',
-      siteId: 'gemini_app',
-      moduleId: 'quicknav',
-      matches: ['https://gemini.google.com/app*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/gemini-app-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_gemini_app',
-      siteId: 'gemini_app',
-      moduleId: 'quicknav',
-      matches: ['https://gemini.google.com/app*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_grok',
-      siteId: 'grok',
-      moduleId: 'quicknav',
-      matches: ['https://grok.com/*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/grok-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_grok',
-      siteId: 'grok',
-      moduleId: 'quicknav',
-      matches: ['https://grok.com/*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_genspark',
-      siteId: 'genspark',
-      moduleId: 'quicknav',
-      matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', 'content/genspark-quicknav.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_scroll_guard_genspark',
-      siteId: 'genspark',
-      moduleId: 'quicknav',
-      matches: ['https://www.genspark.ai/agents*'],
-      js: [MAIN_GUARD_FILE],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_genspark_moa_image_autosettings',
-      siteId: 'genspark',
-      moduleId: 'genspark_moa_image_autosettings',
-      matches: ['https://www.genspark.ai/*'],
-      js: ['content/genspark-moa-image-autosettings/main.js'],
-      runAt: 'document_start',
-      allFrames: true
-    },
-    {
-      id: 'quicknav_genspark_credit_balance',
-      siteId: 'genspark',
-      moduleId: 'genspark_credit_balance',
-      matches: ['https://www.genspark.ai/*'],
-      js: ['content/genspark-credit-balance/main.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_genspark_codeblock_fold',
-      siteId: 'genspark',
-      moduleId: 'genspark_codeblock_fold',
-      matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/genspark-codeblock-fold/main.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_genspark_inline_upload_fix',
-      siteId: 'genspark',
-      moduleId: 'genspark_inline_upload_fix',
-      matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/genspark-inline-upload-fix/main.js'],
-      runAt: 'document_idle',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_perf',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_perf',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-perf/content.js'],
-      css: ['content/chatgpt-perf/content.css'],
-      runAt: 'document_idle'
-    },
-    {
-      // Bridge extension settings into localStorage so MAIN-world hotkeys can be configured.
-      id: 'quicknav_chatgpt_thinking_toggle_config',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_thinking_toggle',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-thinking-toggle/config-bridge.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_thinking_toggle',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_thinking_toggle',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-thinking-toggle/main.js'],
-      // Needs to grab Cmd+O / Cmd+J early, otherwise the browser's Cmd+O may win (Open File...).
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_cmdenter_send',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_sidebar_header_fix',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_sidebar_header_fix',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-sidebar-header-fix/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_ernie_cmdenter_send',
-      siteId: 'ernie',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://ernie.baidu.com/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_deepseek_cmdenter_send',
-      siteId: 'deepseek',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chat.deepseek.com/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_qwen_cmdenter_send',
-      siteId: 'qwen',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chat.qwen.ai/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_zai_cmdenter_send',
-      siteId: 'zai',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://chat.z.ai/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_grok_cmdenter_send',
-      siteId: 'grok',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://grok.com/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_grok_fast_unlock',
-      siteId: 'grok',
-      moduleId: 'grok_fast_unlock',
-      matches: ['https://grok.com/*'],
-      js: ['content/grok-fast-unlock/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_grok_rate_limit_display',
-      siteId: 'grok',
-      moduleId: 'grok_rate_limit_display',
-      matches: ['https://grok.com/*'],
-      js: ['content/grok-rate-limit-display/main.js'],
-      runAt: 'document_end',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_gemini_app_cmdenter_send',
-      siteId: 'gemini_app',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://gemini.google.com/app*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_gemini_business_cmdenter_send',
-      siteId: 'gemini_business',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://business.gemini.google/*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_genspark_cmdenter_send',
-      siteId: 'genspark',
-      moduleId: 'chatgpt_cmdenter_send',
-      matches: ['https://www.genspark.ai/agents*'],
-      js: ['content/chatgpt-cmdenter-send/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_readaloud_speed_controller',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_readaloud_speed_controller',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-readaloud-speed-controller/main.js'],
-      runAt: 'document_start'
-    },
-	    {
-	      id: 'quicknav_chatgpt_reply_timer',
-	      siteId: 'chatgpt',
-	      moduleId: 'chatgpt_reply_timer',
-	      matches: ['https://chatgpt.com/*'],
-	      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
-	      runAt: 'document_start',
-	      world: 'MAIN'
-	    },
-	    {
-	      id: 'quicknav_chatgpt_usage_monitor_bridge',
-	      siteId: 'chatgpt',
-	      moduleId: 'chatgpt_usage_monitor',
-	      matches: ['https://chatgpt.com/*'],
-      js: ['content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
-      runAt: 'document_start'
-    },
-    // Menu bridge (isolated world) for MAIN-world modules that expose menu commands (popup/options execution).
-    {
-      id: 'quicknav_chatgpt_usage_monitor_menu_bridge',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_usage_monitor',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/menu-bridge.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_usage_monitor',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_usage_monitor',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/ui-pos-drag.js', 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_download_file_fix',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_download_file_fix',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-download-file-fix/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_strong_highlight_lite',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_strong_highlight_lite',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-strong-highlight-lite/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_quick_deep_search',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_quick_deep_search',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-quick-deep-search/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_hide_feedback_buttons',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_hide_feedback_buttons',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-hide-feedback-buttons/main.js'],
-      runAt: 'document_start'
-    },
-    {
-      id: 'quicknav_chatgpt_tex_copy_quote',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_tex_copy_quote',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-tex-copy-quote/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_export_conversation',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_export_conversation',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
-      runAt: 'document_end'
-    },
-    {
-      id: 'quicknav_chatgpt_image_message_edit',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_image_message_edit',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-image-message-edit/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_message_tree',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_message_tree',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_chatgpt_split_view',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_split_view',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-split-view/main.js'],
-      runAt: 'document_idle'
-    },
-    {
-      // Only active when split-view is enabled. Runs in all frames but bails unless it is our split iframe.
-      // This avoids injecting the heavier thinking-toggle + fetch-hub stack into the iframe.
-      id: 'quicknav_chatgpt_split_view_iframe_hotkeys',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_split_view',
-      matches: ['https://chatgpt.com/*'],
-      js: ['content/chatgpt-split-view/iframe-hotkeys.js'],
-      runAt: 'document_start',
-      allFrames: true,
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_gemini_math_fix',
-      siteId: 'gemini_business',
-      moduleId: 'gemini_math_fix',
-      matches: ['https://business.gemini.google/*'],
-      js: ['content/gemini-enterprise-math-fix/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    },
-    {
-      id: 'quicknav_gemini_auto_3_pro',
-      siteId: 'gemini_business',
-      moduleId: 'gemini_auto_3_pro',
-      matches: ['https://business.gemini.google/*'],
-      js: ['content/gemini-enterprise-auto-gemini-3-pro/main.js'],
-      runAt: 'document_end'
-    }
-  ];
+  const MAIN_GUARD_FILE = String(INJECTIONS?.MAIN_GUARD_FILE || 'content/scroll-guard-main.js');
+  const CONTENT_SCRIPT_DEFS = (() => {
+    try {
+      if (INJECTIONS && typeof INJECTIONS.buildContentScriptDefs === 'function') {
+        return INJECTIONS.buildContentScriptDefs(REGISTRY);
+      }
+    } catch {}
+    return [];
+  })();
 
-  const LEGACY_CONTENT_SCRIPT_IDS = ['quicknav_grok_model_selector'];
+  const LEGACY_CONTENT_SCRIPT_IDS = Array.isArray(INJECTIONS?.LEGACY_CONTENT_SCRIPT_IDS)
+    ? INJECTIONS.LEGACY_CONTENT_SCRIPT_IDS
+    : ['quicknav_grok_model_selector'];
   const QUICKNAV_CONTENT_SCRIPT_IDS = [...new Set([...CONTENT_SCRIPT_DEFS.map((d) => d.id), ...LEGACY_CONTENT_SCRIPT_IDS])];
 
   let reinjectScheduled = false;
@@ -669,6 +146,96 @@
       }
     });
     return normalized;
+  }
+
+  const KNOWN_SITE_IDS = (() => {
+    try {
+      const out = new Set();
+      const sites = DEFAULT_SETTINGS?.sites && typeof DEFAULT_SETTINGS.sites === 'object' ? DEFAULT_SETTINGS.sites : {};
+      for (const k of Object.keys(sites)) out.add(k);
+      return out;
+    } catch {
+      return new Set();
+    }
+  })();
+
+  const KNOWN_SITE_MODULE_KEYS = (() => {
+    try {
+      const out = new Map();
+      const siteModules =
+        DEFAULT_SETTINGS?.siteModules && typeof DEFAULT_SETTINGS.siteModules === 'object' ? DEFAULT_SETTINGS.siteModules : {};
+      for (const siteId of Object.keys(siteModules)) {
+        const mods = siteModules?.[siteId];
+        if (!mods || typeof mods !== 'object') continue;
+        out.set(siteId, new Set(Object.keys(mods)));
+      }
+      return out;
+    } catch {
+      return new Map();
+    }
+  })();
+
+  function applySettingsPatchOps(current, patch) {
+    const base = current && typeof current === 'object' ? current : normalizeSettings(null);
+    const next = deepCloneJsonSafe(base);
+
+    if (!next || typeof next !== 'object') return base;
+    if (!next.sites || typeof next.sites !== 'object') next.sites = {};
+    if (!next.scrollLockDefaults || typeof next.scrollLockDefaults !== 'object') next.scrollLockDefaults = {};
+    if (!next.siteModules || typeof next.siteModules !== 'object') next.siteModules = {};
+
+    const ops = Array.isArray(patch) ? patch : [];
+    for (const op of ops) {
+      const type = String(op?.op || 'set');
+      if (type !== 'set') continue;
+      const path = Array.isArray(op?.path) ? op.path.map((x) => String(x || '')) : [];
+      if (!path.length) continue;
+
+      if (path.length === 1 && path[0] === 'enabled') {
+        if (typeof op.value === 'boolean') next.enabled = op.value;
+        continue;
+      }
+
+      if (path.length === 2 && path[0] === 'sites') {
+        const siteId = path[1];
+        if (!KNOWN_SITE_IDS.has(siteId)) continue;
+        if (typeof op.value === 'boolean') next.sites[siteId] = op.value;
+        continue;
+      }
+
+      if (path.length === 2 && path[0] === 'scrollLockDefaults') {
+        const siteId = path[1];
+        if (!KNOWN_SITE_IDS.has(siteId)) continue;
+        if (typeof op.value === 'boolean') next.scrollLockDefaults[siteId] = op.value;
+        continue;
+      }
+
+      if (path.length === 3 && path[0] === 'siteModules') {
+        const siteId = path[1];
+        const key = path[2];
+        if (!KNOWN_SITE_IDS.has(siteId)) continue;
+        const allow = KNOWN_SITE_MODULE_KEYS.get(siteId);
+        if (!allow || !allow.has(key)) continue;
+        if (typeof op.value === 'boolean') {
+          if (!next.siteModules[siteId] || typeof next.siteModules[siteId] !== 'object') next.siteModules[siteId] = {};
+          next.siteModules[siteId][key] = op.value;
+        }
+        continue;
+      }
+    }
+
+    return next;
+  }
+
+  function isExtensionPageSender(sender) {
+    try {
+      const url = typeof sender?.url === 'string' ? sender.url : '';
+      if (!url) return false;
+      const base = chrome?.runtime?.getURL?.('') || '';
+      return !!(base && url.startsWith(base));
+    } catch {
+      return false;
+    }
   }
 
   function isModuleEnabled(settings, siteId, moduleId) {
@@ -1028,6 +595,17 @@
   }
 
   let applyChain = Promise.resolve();
+
+  // Serialize settings mutations to avoid lost updates when multiple extension pages
+  // (popup/options) update settings concurrently.
+  let settingsMutationChain = Promise.resolve();
+  function runSettingsMutation(fn) {
+    settingsMutationChain = settingsMutationChain
+      .catch(() => void 0)
+      .then(() => fn());
+    return settingsMutationChain;
+  }
+
   function applySettingsAndRegister(settings) {
     applyChain = applyChain
       .catch(() => void 0)
@@ -1251,6 +829,7 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (!msg || typeof msg !== 'object') return;
+      const fromExtensionPage = isExtensionPageSender(sender);
 
 	      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
 	        const tabId = sender?.tab?.id;
@@ -1298,27 +877,63 @@
       }
 
       if (msg.type === 'QUICKNAV_SET_SETTINGS') {
-        setSettings(msg.settings)
-          .then((settings) => applySettingsAndInjectRegistered(settings).then(() => settings))
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        runSettingsMutation(async () => {
+          const settings = await setSettings(msg.settings);
+          await applySettingsAndInjectRegistered(settings);
+          return settings;
+        })
+          .then((settings) => sendResponse({ ok: true, settings }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_PATCH_SETTINGS') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        runSettingsMutation(async () => {
+          const current = await getSettings();
+          const patched = applySettingsPatchOps(current, msg.patch);
+          const settings = await setSettings(patched);
+          await applySettingsAndInjectRegistered(settings);
+          return settings;
+        })
+          .then((settings) => sendResponse({ ok: true, settings }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_RESET_DEFAULTS') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        runSettingsMutation(async () => {
+          const settings = await setSettings(DEFAULT_SETTINGS);
+          await applySettingsAndInjectRegistered(settings);
+          return settings;
+        })
           .then((settings) => sendResponse({ ok: true, settings }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
       }
 
       if (msg.type === 'QUICKNAV_REINJECT_NOW') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
         getSettings()
           .then((settings) => {
             reinjectContentScripts(settings);
             return settings;
           })
           .then((settings) => sendResponse({ ok: true, settings }))
-          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
-        return true;
-      }
-
-      if (msg.type === 'QUICKNAV_DEV_SMOKE_RUN') {
-        runDevSmokeTests(msg.opts)
-          .then((summary) => sendResponse({ ok: true, summary }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
       }

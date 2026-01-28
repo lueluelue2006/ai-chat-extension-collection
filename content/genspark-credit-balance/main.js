@@ -32,6 +32,17 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  function escapeHtml(input) {
+    return String(input ?? '').replace(/[&<>"']/g, (ch) => {
+      if (ch === '&') return '&amp;';
+      if (ch === '<') return '&lt;';
+      if (ch === '>') return '&gt;';
+      if (ch === '"') return '&quot;';
+      if (ch === "'") return '&#39;';
+      return ch;
+    });
+  }
+
   function storageGet(area, defaults) {
     return new Promise((resolve) => {
       try {
@@ -214,9 +225,11 @@
     if (!keys.length) html += '无模型使用记录';
     else {
       for (const model of keys) {
+        const modelName = escapeHtml(String(model));
+        const modelCount = escapeHtml(String(usage[model]));
         html += `<div class="model-usage-item">
-          <span class="model-name">${String(model)}:</span>
-          <span class="model-count">${String(usage[model])}</span>
+          <span class="model-name">${modelName}:</span>
+          <span class="model-count">${modelCount}</span>
         </div>`;
       }
     }
@@ -230,8 +243,8 @@
     const startTime = new Date(qp.start_time).toLocaleString();
     const endTime = new Date(qp.end_time).toLocaleString();
     return `<div class="query-period-details" style="padding-left: 10px; margin-top: 5px;">
-      <div><span class="label">开始:</span> ${startTime}</div>
-      <div><span class="label">结束:</span> ${endTime}</div>
+      <div><span class="label">开始:</span> ${escapeHtml(startTime)}</div>
+      <div><span class="label">结束:</span> ${escapeHtml(endTime)}</div>
     </div>`;
   }
 
@@ -240,21 +253,21 @@
   }
 
   function setError(elContent, message) {
-    elContent.innerHTML = `<div class="error-message">${String(message || '出错了')}</div>`;
+    elContent.innerHTML = `<div class="error-message">${escapeHtml(String(message || '出错了'))}</div>`;
   }
 
   function updateContent(elContent, data) {
     const d = data && typeof data === 'object' ? data : {};
     const modelUsageHtml = formatModelUsage(d.model_usage || {});
     const queryPeriodHtml = formatQueryPeriod(d.query_period);
-    const planDisplay = d.plan || '未知';
-    const balance = d.current_balance !== undefined ? d.current_balance : 'N/A';
+    const planDisplay = escapeHtml(String(d.plan || '未知'));
+    const balance = escapeHtml(String(d.current_balance !== undefined ? d.current_balance : 'N/A'));
     elContent.innerHTML = `
       <div class="info-section">
-        <strong>当前余额:</strong> <span class="highlight">${String(balance)}</span>
+        <strong>当前余额:</strong> <span class="highlight">${balance}</span>
       </div>
       <div class="info-section">
-        <strong>套餐:</strong> <span class="plan">${String(planDisplay)}</span>
+        <strong>套餐:</strong> <span class="plan">${planDisplay}</span>
       </div>
       <div class="info-section">
         <strong>模型使用情况:</strong>

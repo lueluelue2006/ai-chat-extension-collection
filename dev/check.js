@@ -68,36 +68,16 @@ function loadRegistry() {
   return reg;
 }
 
-function extractBetween(src, startNeedle, endNeedle) {
-  const start = src.indexOf(startNeedle);
-  if (start < 0) return null;
-  const end = src.indexOf(endNeedle, start + startNeedle.length);
-  if (end < 0) return null;
-  return src.slice(start + startNeedle.length, end);
-}
-
-function loadBackgroundDefs() {
-  const sw = readText('background/sw.js');
-
-  const defaultsSrc = extractBetween(sw, 'const DEFAULT_SETTINGS = ', '\n\n  const MAIN_GUARD_FILE');
-  if (!defaultsSrc) throw new Error('Failed to extract DEFAULT_SETTINGS from background/sw.js');
-  const defaultsSandbox = {};
-  vm.createContext(defaultsSandbox);
-  vm.runInContext(`result = ${defaultsSrc};`, defaultsSandbox, { filename: 'background/sw.js:DEFAULT_SETTINGS' });
-  const defaults = defaultsSandbox.result;
-
-  const mainGuardMatch = sw.match(/const MAIN_GUARD_FILE = '([^']+)';/);
-  const mainGuardFile = mainGuardMatch ? mainGuardMatch[1] : 'content/scroll-guard-main.js';
-
-  const defsSrc = extractBetween(sw, 'const CONTENT_SCRIPT_DEFS = ', '\n\n  const LEGACY_CONTENT_SCRIPT_IDS');
-  if (!defsSrc) throw new Error('Failed to extract CONTENT_SCRIPT_DEFS from background/sw.js');
-  const defsSandbox = { MAIN_GUARD_FILE: mainGuardFile };
-  vm.createContext(defsSandbox);
-  vm.runInContext(`result = ${defsSrc};`, defsSandbox, { filename: 'background/sw.js:CONTENT_SCRIPT_DEFS' });
-  const defs = defsSandbox.result;
-
-  if (!Array.isArray(defs)) throw new Error('CONTENT_SCRIPT_DEFS did not evaluate to an array');
-  return { defaults, defs };
+function loadInjections() {
+  const code = readText('shared/injections.js');
+  const sandbox = { globalThis: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
+  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  if (typeof inj.buildDefaultSettings !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildDefaultSettings is missing');
+  if (typeof inj.buildContentScriptDefs !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildContentScriptDefs is missing');
+  return inj;
 }
 
 function coversHostPermission(hostPerm, matchPattern) {
@@ -111,15 +91,54 @@ function coversHostPermission(hostPerm, matchPattern) {
   return m.startsWith(prefix);
 }
 
-function verifyRegistryAgainstBackground(reg, bg, manifest) {
+function normalizePatterns(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((x) => String(x || '').trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function uniq(arr) {
+  const out = [];
+  const seen = new Set();
+  for (const v of arr || []) {
+    const s = String(v || '');
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function registryAllMatchPatterns(reg) {
+  const sites = Array.isArray(reg?.sites) ? reg.sites : [];
+  const out = [];
+  for (const s of sites) {
+    const siteId = typeof s?.id === 'string' ? s.id : '';
+    if (!siteId || siteId === 'common') continue;
+    out.push(...(Array.isArray(s?.matchPatterns) ? s.matchPatterns : []));
+  }
+  return uniq(out);
+}
+
+function findBootstrapMatches(manifest) {
+  const items = Array.isArray(manifest?.content_scripts) ? manifest.content_scripts : [];
+  for (const cs of items) {
+    const js = Array.isArray(cs?.js) ? cs.js : [];
+    if (js.includes('content/bootstrap.js')) return Array.isArray(cs?.matches) ? cs.matches : [];
+  }
+  return [];
+}
+
+function verifyRegistryAgainstInjections(reg, injections, manifest) {
   const errors = [];
   const warnings = [];
 
   const regSites = Array.isArray(reg.sites) ? reg.sites : [];
   const regModules = reg.modules && typeof reg.modules === 'object' ? reg.modules : {};
 
-  const defaults = bg.defaults && typeof bg.defaults === 'object' ? bg.defaults : {};
-  const defs = Array.isArray(bg.defs) ? bg.defs : [];
+  const defaults = injections.buildDefaultSettings(reg);
+  const defs = injections.buildContentScriptDefs(reg);
 
   const defSites = defaults.sites && typeof defaults.sites === 'object' ? defaults.sites : {};
   const defSiteModules = defaults.siteModules && typeof defaults.siteModules === 'object' ? defaults.siteModules : {};
@@ -142,9 +161,20 @@ function verifyRegistryAgainstBackground(reg, bg, manifest) {
   }
 
   const hostPerms = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
+  const expectedHostPerms = normalizePatterns(registryAllMatchPatterns(reg));
+  const actualHostPerms = normalizePatterns(hostPerms);
+  if (expectedHostPerms.join('\n') !== actualHostPerms.join('\n')) {
+    errors.push(`manifest.json host_permissions mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${actualHostPerms.join('\n- ')}`);
+  }
+
+  const bootstrapMatches = normalizePatterns(findBootstrapMatches(manifest));
+  if (expectedHostPerms.join('\n') !== bootstrapMatches.join('\n')) {
+    errors.push(`manifest.json bootstrap matches mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${bootstrapMatches.join('\n- ')}`);
+  }
+
   for (const m of Array.from(matchPatterns.values()).filter(Boolean)) {
     const ok = hostPerms.some((p) => coversHostPermission(p, m));
-    if (!ok) errors.push(`manifest.json host_permissions does not cover match pattern: ${m}`);
+    if (!ok) errors.push(`manifest.json host_permissions does not cover match pattern used by injections: ${m}`);
   }
 
   for (const s of regSites) {
@@ -214,17 +244,17 @@ function main() {
   }
   console.log(`registry load: OK (v${reg.version || 0})`);
 
-  let bg;
+  let injections;
   try {
-    bg = loadBackgroundDefs();
+    injections = loadInjections();
   } catch (e) {
-    console.error(`background defs load: FAIL (${e instanceof Error ? e.message : String(e)})`);
+    console.error(`injections load: FAIL (${e instanceof Error ? e.message : String(e)})`);
     process.exitCode = 1;
     return;
   }
-  console.log('background defs load: OK');
+  console.log(`injections load: OK (v${injections.version || 0})`);
 
-  const res = verifyRegistryAgainstBackground(reg, bg, manifest);
+  const res = verifyRegistryAgainstInjections(reg, injections, manifest);
   for (const w of res.warnings) console.warn(`WARN: ${w}`);
   if (res.errors.length) {
     console.error('Registry consistency: FAIL');
@@ -236,4 +266,3 @@ function main() {
 }
 
 main();
-

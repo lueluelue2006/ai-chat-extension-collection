@@ -6,11 +6,12 @@
   const REGISTRY_VERSION = 1;
 
   const SITES = [
-    { id: 'common', name: '通用', sub: '全部站点', modules: ['hide_disclaimer'] },
+    { id: 'common', name: '通用', sub: '全部站点', matchPatterns: [], modules: ['hide_disclaimer'] },
     {
       id: 'chatgpt',
       name: 'ChatGPT',
       sub: 'chatgpt.com',
+      matchPatterns: ['https://chatgpt.com/*'],
       modules: [
         'quicknav',
         'chatgpt_perf',
@@ -35,13 +36,22 @@
       id: 'gemini_business',
       name: 'Gemini Business',
       sub: 'business.gemini.google',
+      matchPatterns: ['https://business.gemini.google/*'],
       modules: ['quicknav', 'chatgpt_cmdenter_send', 'gemini_math_fix', 'gemini_auto_3_pro']
     },
-    { id: 'gemini_app', name: 'Gemini App', sub: 'gemini.google.com/app', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    {
+      id: 'gemini_app',
+      name: 'Gemini App',
+      sub: 'gemini.google.com/app',
+      matchPatterns: ['https://gemini.google.com/app*'],
+      modules: ['quicknav', 'chatgpt_cmdenter_send']
+    },
     {
       id: 'genspark',
       name: 'Genspark',
       sub: 'genspark.ai/agents',
+      matchPatterns: ['https://www.genspark.ai/*'],
+      quicknavPatterns: ['https://www.genspark.ai/agents*'],
       modules: [
         'quicknav',
         'chatgpt_cmdenter_send',
@@ -51,11 +61,17 @@
         'genspark_inline_upload_fix'
       ]
     },
-    { id: 'grok', name: 'Grok', sub: 'grok.com', modules: ['quicknav', 'chatgpt_cmdenter_send', 'grok_fast_unlock', 'grok_rate_limit_display'] },
-    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
-    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
-    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', modules: ['quicknav', 'chatgpt_cmdenter_send'] },
-    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', modules: ['quicknav', 'chatgpt_cmdenter_send'] }
+    {
+      id: 'grok',
+      name: 'Grok',
+      sub: 'grok.com',
+      matchPatterns: ['https://grok.com/*'],
+      modules: ['quicknav', 'chatgpt_cmdenter_send', 'grok_fast_unlock', 'grok_rate_limit_display']
+    },
+    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', matchPatterns: ['https://chat.deepseek.com/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', matchPatterns: ['https://chat.z.ai/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', matchPatterns: ['https://ernie.baidu.com/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
+    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', matchPatterns: ['https://chat.qwen.ai/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] }
   ];
 
   const MODULES = {
@@ -71,6 +87,7 @@
 	      id: 'quicknav',
 	      name: 'QuickNav',
 	      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
+	      defaultEnabled: true,
 	      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
 	      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
 	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式+回弹补丁）'],
@@ -221,6 +238,7 @@
       id: 'chatgpt_split_view',
       name: 'ChatGPT 拆分视图（实验）',
       sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
+      defaultEnabled: false,
       hotkeys: ['Esc×3'],
       menuPreview: ['重置右侧状态 / 清理 Split View 存储', '在新标签页打开右侧（并关闭 Split View）'],
       authors: ['lueluelue2006'],
@@ -281,6 +299,12 @@
     for (const v of arr) {
       try {
         if (v && typeof v === 'object' && Array.isArray(v.modules)) Object.freeze(v.modules);
+      } catch {}
+      try {
+        if (v && typeof v === 'object' && Array.isArray(v.matchPatterns)) Object.freeze(v.matchPatterns);
+      } catch {}
+      try {
+        if (v && typeof v === 'object' && Array.isArray(v.quicknavPatterns)) Object.freeze(v.quicknavPatterns);
       } catch {}
       try { Object.freeze(v); } catch {}
     }

@@ -1875,6 +1875,9 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const mo = new MutationObserver(schedule);
       mo.observe(target, { childList: true });
     } catch {}
+
+    // Run once immediately (in case hydration already removed our nodes).
+    schedule();
   }
 
   function tryInit() {
@@ -1892,6 +1895,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       ensureUI();
       applyRightWidthPx(loadRightWidthPx());
       bindGlobalEvents();
+      ensureUiResilience();
       registerMenuCommands();
 
       const persistedOpen = readBool(OPEN_KEY, false);

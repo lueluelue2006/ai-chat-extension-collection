@@ -367,9 +367,21 @@ button.${HINT_CLASS}::after {
     }
   }
 
+  const DS_EFFORT_KEY = 'aichatHotkeyEffortEnabled';
+  const DS_MODEL_KEY = 'aichatHotkeyModelEnabled';
+
+  function readBoolDataset(key, fallback) {
+    try {
+      const v = document.documentElement?.dataset?.[String(key || '')];
+      if (v === '1' || v === 'true') return true;
+      if (v === '0' || v === 'false') return false;
+    } catch {}
+    return fallback;
+  }
+
   function isHotkeyEnabled(action) {
-    if (action === 'toggle_effort') return readBoolLS(HOTKEY_EFFORT_ENABLED_KEY, true);
-    if (action === 'toggle_model') return readBoolLS(HOTKEY_MODEL_ENABLED_KEY, true);
+    if (action === 'toggle_effort') return readBoolDataset(DS_EFFORT_KEY, readBoolLS(HOTKEY_EFFORT_ENABLED_KEY, true));
+    if (action === 'toggle_model') return readBoolDataset(DS_MODEL_KEY, readBoolLS(HOTKEY_MODEL_ENABLED_KEY, true));
     return true;
   }
 

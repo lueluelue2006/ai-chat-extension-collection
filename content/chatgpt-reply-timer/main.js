@@ -47,7 +47,7 @@
   const state = {
     __installed: true,
     hubUnsub: null,
-    ui: { el: null, tickId: 0, hideTimer: 0 },
+    ui: { el: null, tickId: 0, hideTimer: 0, resilienceMo: null, resilienceTimer: 0 },
     run: {
       active: null,
       last: null
@@ -121,6 +121,48 @@
     } catch {
       return null;
     }
+  }
+
+  function ensureUiResilience() {
+    try {
+      if (state.ui.resilienceMo) return;
+      const html = document.documentElement;
+      if (!html || typeof MutationObserver !== 'function') return;
+
+      let repairing = false;
+      const repair = () => {
+        if (repairing) return;
+        repairing = true;
+        try {
+          if (!document.getElementById(EL_ID)) {
+            ensureEl();
+            render();
+          }
+        } catch {}
+        repairing = false;
+      };
+
+      // Run a few times during early hydration (ChatGPT sometimes wipes appended nodes).
+      let tries = 0;
+      const MAX_TRIES = 12;
+      const tick = () => {
+        tries += 1;
+        repair();
+        if (tries >= MAX_TRIES) {
+          if (state.ui.resilienceTimer) {
+            clearTimeout(state.ui.resilienceTimer);
+            state.ui.resilienceTimer = 0;
+          }
+          return;
+        }
+        state.ui.resilienceTimer = setTimeout(tick, 800);
+      };
+      state.ui.resilienceTimer = setTimeout(tick, 800);
+
+      const mo = new MutationObserver(() => repair());
+      mo.observe(html, { childList: true });
+      state.ui.resilienceMo = mo;
+    } catch {}
   }
 
   function setUiVisible(visible) {
@@ -260,6 +302,14 @@
       state.hubUnsub = null;
     } catch {}
     try {
+      if (state.ui.resilienceTimer) clearTimeout(state.ui.resilienceTimer);
+      state.ui.resilienceTimer = 0;
+    } catch {}
+    try {
+      state.ui.resilienceMo && state.ui.resilienceMo.disconnect();
+      state.ui.resilienceMo = null;
+    } catch {}
+    try {
       stopUiLoop();
     } catch {}
     try {
@@ -292,5 +342,6 @@
 
   ensureEl();
   render();
+  ensureUiResilience();
   installHubHooks();
 })();

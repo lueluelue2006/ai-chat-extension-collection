@@ -109,10 +109,13 @@
     });
   }
 
-  function tabsSendMessage(tabId, msg) {
+  function tabsSendMessage(tabId, msg, options = { frameId: 0 }) {
     return new Promise((resolve, reject) => {
       try {
-        chrome.tabs.sendMessage(tabId, msg, (resp) => {
+        // IMPORTANT: some modules (e.g. Split View helpers) are injected with `allFrames: true`.
+        // Without forcing `frameId: 0`, `sendMessage` may respond from an iframe (often `about:blank`)
+        // which breaks menu discovery/execution.
+        chrome.tabs.sendMessage(tabId, msg, options, (resp) => {
           const err = chrome.runtime.lastError;
           if (err) return reject(new Error(err.message || String(err)));
           resolve(resp);
@@ -132,6 +135,18 @@
   async function setSettings(settings) {
     const resp = await sendMessage({ type: 'QUICKNAV_SET_SETTINGS', settings });
     if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to save settings');
+    return resp.settings;
+  }
+
+  async function patchSettings(patch) {
+    const resp = await sendMessage({ type: 'QUICKNAV_PATCH_SETTINGS', patch });
+    if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to patch settings');
+    return resp.settings;
+  }
+
+  async function resetDefaults() {
+    const resp = await sendMessage({ type: 'QUICKNAV_RESET_DEFAULTS' });
+    if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to reset defaults');
     return resp.settings;
   }
 
@@ -235,11 +250,24 @@
     return sanitized;
   }
 
-  function openUrl(url) {
+  function openUrlSafe(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return;
+    let parsed = null;
     try {
-      chrome.tabs.create({ url });
+      parsed = new URL(raw);
     } catch {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      parsed = null;
+    }
+    const proto = String(parsed?.protocol || '').toLowerCase();
+    if (proto !== 'https:' && proto !== 'chrome-extension:') {
+      setStatus(`已拦截不安全链接：${raw}`, 'warn');
+      return;
+    }
+    try {
+      chrome.tabs.create({ url: raw });
+    } catch {
+      window.open(raw, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -274,18 +302,24 @@
     return SITES.find((s) => s.id === id) || null;
   }
 
-  function getSiteUrlPatterns(siteId) {
-    const s = String(siteId || '');
-    if (s === 'chatgpt') return ['https://chatgpt.com/*'];
-    if (s === 'ernie') return ['https://ernie.baidu.com/*'];
-    if (s === 'deepseek') return ['https://chat.deepseek.com/*'];
-    if (s === 'qwen') return ['https://chat.qwen.ai/*'];
-    if (s === 'zai') return ['https://chat.z.ai/*'];
-    if (s === 'grok') return ['https://grok.com/*'];
-    if (s === 'gemini_app') return ['https://gemini.google.com/app*'];
-    if (s === 'gemini_business') return ['https://business.gemini.google/*'];
-    if (s === 'genspark') return ['https://www.genspark.ai/*'];
-    return [];
+  function normalizePatterns(input) {
+    if (!Array.isArray(input)) return [];
+    return input.map((x) => String(x || '').trim()).filter(Boolean);
+  }
+
+  function getSiteUrlPatterns(siteId, { preferQuickNav = false } = {}) {
+    const sid = String(siteId || '');
+    if (!sid) return [];
+    if (sid === 'common') {
+      return Array.from(new Set(SITES.filter((s) => s.id !== 'common').flatMap((s) => normalizePatterns(s.matchPatterns))));
+    }
+    const site = getSite(sid);
+    if (!site) return [];
+    if (preferQuickNav) {
+      const q = normalizePatterns(site.quicknavPatterns);
+      if (q.length) return q;
+    }
+    return normalizePatterns(site.matchPatterns);
   }
 
   function getFilteredSites() {
@@ -327,6 +361,43 @@
     return allMods[0] || 'quicknav';
   }
 
+  function buildPatchFromSettingsDiff(prev, next) {
+    const out = [];
+    const a = prev && typeof prev === 'object' ? prev : {};
+    const b = next && typeof next === 'object' ? next : {};
+
+    if (typeof b.enabled === 'boolean' && b.enabled !== !!a.enabled) {
+      out.push({ op: 'set', path: ['enabled'], value: b.enabled });
+    }
+
+    const siteIds = SITES.map((s) => s.id).filter((id) => typeof id === 'string' && id);
+    for (const siteId of siteIds) {
+      const aSites = a?.sites && typeof a.sites === 'object' ? a.sites : {};
+      const bSites = b?.sites && typeof b.sites === 'object' ? b.sites : {};
+      if (typeof bSites?.[siteId] === 'boolean' && bSites[siteId] !== aSites?.[siteId]) {
+        out.push({ op: 'set', path: ['sites', siteId], value: bSites[siteId] });
+      }
+
+      const aLock = a?.scrollLockDefaults && typeof a.scrollLockDefaults === 'object' ? a.scrollLockDefaults : {};
+      const bLock = b?.scrollLockDefaults && typeof b.scrollLockDefaults === 'object' ? b.scrollLockDefaults : {};
+      if (typeof bLock?.[siteId] === 'boolean' && bLock[siteId] !== aLock?.[siteId]) {
+        out.push({ op: 'set', path: ['scrollLockDefaults', siteId], value: bLock[siteId] });
+      }
+
+      const aMods = a?.siteModules?.[siteId] && typeof a.siteModules[siteId] === 'object' ? a.siteModules[siteId] : {};
+      const bMods = b?.siteModules?.[siteId] && typeof b.siteModules[siteId] === 'object' ? b.siteModules[siteId] : {};
+      const keys = new Set([...Object.keys(aMods), ...Object.keys(bMods)]);
+      for (const key of keys) {
+        const av = aMods?.[key];
+        const bv = bMods?.[key];
+        if (typeof bv !== 'boolean') continue;
+        if (bv !== av) out.push({ op: 'set', path: ['siteModules', siteId, key], value: bv });
+      }
+    }
+
+    return out;
+  }
+
   async function saveQuickNavSettings(next) {
     const seq = ++saveSeq;
     setStatus('正在保存…');
@@ -343,13 +414,34 @@
     }
   }
 
+  async function patchQuickNavSettingsOps(patch, { statusText = '正在保存…' } = {}) {
+    const ops = Array.isArray(patch) ? patch : [];
+    if (!ops.length) return;
+
+    const seq = ++saveSeq;
+    setStatus(statusText);
+    try {
+      const saved = await patchSettings(ops);
+      if (seq !== saveSeq) return;
+      currentSettings = saved;
+      renderAll();
+      setStatus('已保存', 'ok');
+    } catch (e) {
+      if (seq !== saveSeq) return;
+      renderAll();
+      setStatus(`保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+    }
+  }
+
   function patchQuickNavSettings(mutator) {
     if (!currentSettings) return;
-    const next = cloneJsonSafe(currentSettings) || {};
+    const prev = currentSettings;
+    const next = cloneJsonSafe(prev) || {};
     try {
       mutator(next);
     } catch {}
-    void saveQuickNavSettings(next);
+    const patch = buildPatchFromSettingsDiff(prev, next);
+    void patchQuickNavSettingsOps(patch);
   }
 
   function isSiteEnabled(siteId) {
@@ -520,7 +612,7 @@
       a.rel = 'noopener noreferrer';
       a.addEventListener('click', (e) => {
         e.preventDefault();
-        openUrl(upstream);
+        openUrlSafe(upstream);
       });
       addLine('上游', a);
     }
@@ -592,7 +684,7 @@
     };
 
     const pickBestTab = async (siteId) => {
-      const patterns = getSiteUrlPatterns(siteId);
+      const patterns = getSiteUrlPatterns(siteId, { preferQuickNav: true });
       if (!patterns.length) return null;
       const tabs = await tabsQuery({ url: patterns });
       if (!tabs.length) return null;
@@ -1785,19 +1877,25 @@
   });
 
   btnRestoreDefault?.addEventListener('click', () => {
-    const next = {
-      enabled: true,
-      sites: {},
-      scrollLockDefaults: {},
-      siteModules: {}
+    const run = async () => {
+      const seq = ++saveSeq;
+      setStatus('正在恢复默认…');
+      if (btnRestoreDefault) btnRestoreDefault.disabled = true;
+      try {
+        const settings = await resetDefaults();
+        if (seq !== saveSeq) return;
+        currentSettings = settings;
+        renderAll();
+        setStatus('已恢复默认', 'ok');
+      } catch (e) {
+        if (seq !== saveSeq) return;
+        renderAll();
+        setStatus(`恢复默认失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        if (btnRestoreDefault) btnRestoreDefault.disabled = false;
+      }
     };
-    for (const s of SITES) {
-      next.sites[s.id] = true;
-      next.scrollLockDefaults[s.id] = true;
-      next.siteModules[s.id] = {};
-      for (const modId of s.modules) next.siteModules[s.id][modId] = true;
-    }
-    void saveQuickNavSettings(next);
+    void run();
   });
 
   btnReinjectNow?.addEventListener('click', async () => {
@@ -1829,7 +1927,7 @@
     }
   });
 
-  btnOpenRepo?.addEventListener('click', () => openUrl(REPO_URL));
+  btnOpenRepo?.addEventListener('click', () => openUrlSafe(REPO_URL));
 
   init();
 })();

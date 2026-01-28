@@ -14,6 +14,11 @@
   const MAIN_MENU_REGISTER_EVENT = '__quicknav_menu_bridge_register_main_command_v1__';
   const MAIN_MENU_RUN_EVENT = '__quicknav_menu_bridge_run_main_command_v1__';
   const MAIN_MENU_SOURCE = 'main-world';
+  const MAIN_WORLD_ALLOWLIST = Object.freeze([
+    // Only a few scripts run in MAIN world and need this bridge. Keep it tight to reduce page spoofing.
+    Object.freeze({ group: 'ChatGPT 用量统计', handlerKeyPrefix: 'chatgpt_usage_monitor:' })
+  ]);
+  const MAX_COMMANDS = 100;
   /** @type {{commands: Array<{id: string, name: string, fn: Function, group?: string, source?: string}>, nextId: number, listenerInstalled: boolean, __deduped?: boolean}} */
   const state = (() => {
     try {
@@ -107,6 +112,7 @@
           return existingCmd.id;
         }
         state.commands.push({ id, name: n, fn, group, source });
+        if (state.commands.length > MAX_COMMANDS) state.commands = state.commands.slice(-MAX_COMMANDS);
         return id;
       };
       register.__quicknav_menu_bridge = true;
@@ -128,6 +134,10 @@
             const handlerKey = String(d.handlerKey || '').trim();
             const group = String(d.group || 'Main').trim() || 'Main';
             if (!name || !handlerKey) return;
+            if (name.length > 120 || handlerKey.length > 240 || group.length > 120) return;
+
+            const allow = MAIN_WORLD_ALLOWLIST.some((r) => r && r.group === group && handlerKey.startsWith(String(r.handlerKeyPrefix || '')));
+            if (!allow) return;
 
             const runProxy = () => {
               try {
@@ -146,6 +156,7 @@
 
             const id = String(state.nextId++);
             state.commands.push({ id, name, fn: runProxy, group, source: MAIN_MENU_SOURCE, handlerKey });
+            if (state.commands.length > MAX_COMMANDS) state.commands = state.commands.slice(-MAX_COMMANDS);
           } catch {}
         },
         true
@@ -171,6 +182,7 @@
     if (!msg || typeof msg !== 'object') return;
 
     if (msg.type === 'QUICKNAV_GET_MENU') {
+      const list = (state.commands || []).filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string').slice(-MAX_COMMANDS);
       sendResponse({
         ok: true,
         href: (() => {
@@ -180,7 +192,7 @@
             return '';
           }
         })(),
-        commands: state.commands.map((c) => ({ id: c.id, name: c.name, group: c.group || 'unknown' }))
+        commands: list.map((c) => ({ id: c.id, name: c.name, group: c.group || 'unknown' }))
       });
       return true;
     }

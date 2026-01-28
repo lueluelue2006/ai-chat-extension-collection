@@ -61,10 +61,23 @@
   }
 
   function openUrl(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return;
+    let parsed = null;
     try {
-      chrome.tabs.create({ url });
+      parsed = new URL(raw);
     } catch {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      parsed = null;
+    }
+    const proto = String(parsed?.protocol || '').toLowerCase();
+    if (proto !== 'https:' && proto !== 'chrome-extension:') {
+      setStatus(`已拦截不安全链接：${raw}`, 'warn');
+      return;
+    }
+    try {
+      chrome.tabs.create({ url: raw });
+    } catch {
+      window.open(raw, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -107,6 +120,12 @@
     return resp.settings;
   }
 
+  async function patchSettings(patch) {
+    const resp = await sendRuntimeMessage({ type: 'QUICKNAV_PATCH_SETTINGS', patch });
+    if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to patch settings');
+    return resp.settings;
+  }
+
   function cloneJsonSafe(obj) {
     try {
       return JSON.parse(JSON.stringify(obj));
@@ -115,9 +134,120 @@
     }
   }
 
+  function buildPatchFromSettingsDiff(prev, next) {
+    const out = [];
+    const a = prev && typeof prev === 'object' ? prev : {};
+    const b = next && typeof next === 'object' ? next : {};
+
+    if (typeof b.enabled === 'boolean' && b.enabled !== !!a.enabled) out.push({ op: 'set', path: ['enabled'], value: b.enabled });
+
+    const siteIds = SITE_DEFS.map((s) => s.id).filter((id) => typeof id === 'string' && id);
+    for (const siteId of siteIds) {
+      const aSites = a?.sites && typeof a.sites === 'object' ? a.sites : {};
+      const bSites = b?.sites && typeof b.sites === 'object' ? b.sites : {};
+      if (typeof bSites?.[siteId] === 'boolean' && bSites[siteId] !== aSites?.[siteId]) {
+        out.push({ op: 'set', path: ['sites', siteId], value: bSites[siteId] });
+      }
+
+      const aMods = a?.siteModules?.[siteId] && typeof a.siteModules[siteId] === 'object' ? a.siteModules[siteId] : {};
+      const bMods = b?.siteModules?.[siteId] && typeof b.siteModules[siteId] === 'object' ? b.siteModules[siteId] : {};
+      const keys = new Set([...Object.keys(aMods), ...Object.keys(bMods)]);
+      for (const key of keys) {
+        const av = aMods?.[key];
+        const bv = bMods?.[key];
+        if (typeof bv !== 'boolean') continue;
+        if (bv !== av) out.push({ op: 'set', path: ['siteModules', siteId, key], value: bv });
+      }
+    }
+    return out;
+  }
+
+  function escapeRegExp(s) {
+    return String(s || '').replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+
+  function wildcardToRegExp(pattern) {
+    return new RegExp(`^${escapeRegExp(pattern).replace(/\*/g, '.*')}$`);
+  }
+
+  function parseMatchPattern(pattern) {
+    const s = String(pattern || '').trim();
+    const m = s.match(/^(\*|http|https|file|ftp|chrome-extension):\/\/([^/]+)(\/.*)$/i);
+    if (!m) return null;
+    return { scheme: String(m[1]).toLowerCase(), host: String(m[2]).toLowerCase(), path: String(m[3]) };
+  }
+
+  function matchHost(host, patternHost) {
+    const h = String(host || '').toLowerCase();
+    const ph = String(patternHost || '').toLowerCase();
+    if (!h || !ph) return false;
+    if (ph === '*') return true;
+    if (ph.startsWith('*.')) {
+      const base = ph.slice(2);
+      if (!base) return false;
+      return h === base || h.endsWith(`.${base}`);
+    }
+    if (ph.includes('*')) return wildcardToRegExp(ph).test(h);
+    return h === ph;
+  }
+
+  function matchPath(pathAndSearch, patternPath) {
+    const p = String(pathAndSearch || '');
+    const pp = String(patternPath || '');
+    if (!p || !pp) return false;
+    if (pp === '/*') return true;
+    return wildcardToRegExp(pp).test(p);
+  }
+
+  function matchesUrlPattern(urlObj, pattern) {
+    const pat = parseMatchPattern(pattern);
+    if (!pat || !urlObj) return false;
+
+    const proto = String(urlObj.protocol || '').replace(/:$/, '').toLowerCase();
+    if (pat.scheme === '*') {
+      if (proto !== 'http' && proto !== 'https') return false;
+    } else if (proto !== pat.scheme) return false;
+
+    const host = String(urlObj.hostname || '').toLowerCase();
+    if (!matchHost(host, pat.host)) return false;
+
+    const pathAndSearch = `${urlObj.pathname || ''}${urlObj.search || ''}`;
+    return matchPath(pathAndSearch, pat.path);
+  }
+
   function getSiteIdFromUrl(url) {
+    let u = null;
     try {
-      const u = new URL(String(url || ''));
+      u = new URL(String(url || ''));
+    } catch {
+      u = null;
+    }
+    if (!u) return null;
+
+    // Registry-driven matching (preferred).
+    if (REGISTRY_OK) {
+      let bestSiteId = null;
+      let bestScore = -1;
+      for (const s of SITE_DEFS) {
+        const siteId = String(s?.id || '');
+        if (!siteId || siteId === 'common') continue;
+        const patterns = [...(Array.isArray(s?.matchPatterns) ? s.matchPatterns : []), ...(Array.isArray(s?.quicknavPatterns) ? s.quicknavPatterns : [])]
+          .map((x) => String(x || '').trim())
+          .filter(Boolean);
+        for (const p of patterns) {
+          if (!matchesUrlPattern(u, p)) continue;
+          const score = p.replace(/\*/g, '').length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestSiteId = siteId;
+          }
+        }
+      }
+      if (bestSiteId) return bestSiteId;
+    }
+
+    // Fallback for safety if registry is missing.
+    try {
       const host = String(u.hostname || '').toLowerCase();
       const path = String(u.pathname || '');
       if (host === 'chatgpt.com') return 'chatgpt';
@@ -129,10 +259,8 @@
       if (host === 'gemini.google.com' && path.startsWith('/app')) return 'gemini_app';
       if (host === 'business.gemini.google') return 'gemini_business';
       if (host === 'www.genspark.ai') return 'genspark';
-      return null;
-    } catch {
-      return null;
-    }
+    } catch {}
+    return null;
   }
 
   function getSiteDef(siteId) {
@@ -157,10 +285,13 @@
     });
   }
 
-  function tabsSendMessage(tabId, msg) {
+  function tabsSendMessage(tabId, msg, options = { frameId: 0 }) {
     return new Promise((resolve, reject) => {
       try {
-        chrome.tabs.sendMessage(tabId, msg, (resp) => {
+        // IMPORTANT: some modules (e.g. Split View helpers) are injected with `allFrames: true`.
+        // Without forcing `frameId: 0`, `sendMessage` may respond from an iframe (often `about:blank`)
+        // which breaks menu discovery/execution.
+        chrome.tabs.sendMessage(tabId, msg, options, (resp) => {
           const err = chrome.runtime.lastError;
           if (err) return reject(new Error(err.message || String(err)));
           resolve(resp);
@@ -210,9 +341,9 @@
     row.appendChild(label);
 
     input.addEventListener('change', () => {
-      try {
-        onChange?.(input.checked);
-      } catch {}
+      Promise.resolve()
+        .then(() => onChange?.(input.checked))
+        .catch(() => void 0);
     });
 
     return row;
@@ -236,7 +367,11 @@
       btn.type = 'button';
       btn.className = 'menuBtn';
       btn.textContent = c.name;
-      btn.addEventListener('click', () => onRun(c));
+      btn.addEventListener('click', () => {
+        Promise.resolve()
+          .then(() => onRun(c))
+          .catch(() => void 0);
+      });
       wrap.appendChild(btn);
     }
     return wrap;
@@ -369,7 +504,10 @@
 
   async function fetchRemoteManifestVersion() {
     const url = `${RAW_MANIFEST_URL}?t=${Date.now()}`;
-    const resp = await fetch(url, { cache: 'no-store' });
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : 0;
+    const resp = await fetch(url, { cache: 'no-store', ...(ctrl ? { signal: ctrl.signal } : {}) });
+    if (timer) clearTimeout(timer);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
     return String(json?.version || '').trim();
@@ -460,30 +598,54 @@
         }
       }
 
-      async function mutateSettings(mutator) {
-        const draft = cloneJsonSafe(settings);
-        if (!draft) throw new Error('Failed to clone settings');
-        try {
-          mutator(draft);
-        } catch {}
-        setStatus('正在保存…');
-        settings = await setSettings(draft);
-        setStatus('已保存', 'ok');
-        renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
+      let saveChain = Promise.resolve();
+      function enqueueSave(fn) {
+        saveChain = saveChain
+          .catch(() => void 0)
+          .then(() => fn());
+        return saveChain;
+      }
 
-        setTimeout(async () => {
-          const next = await refreshMenu();
-          menuByModule = next.byModule;
-          unmappedMenu = next.unmapped;
+      async function mutateSettings(mutator) {
+        return enqueueSave(async () => {
+          const draft = cloneJsonSafe(settings);
+          if (!draft) throw new Error('Failed to clone settings');
+          try {
+            mutator(draft);
+          } catch {}
+
+          const patch = buildPatchFromSettingsDiff(settings, draft);
+          if (!patch.length) return;
+
+          setStatus('正在保存…');
+          try {
+            settings = await patchSettings(patch);
+          } catch (e) {
+            setStatus(`保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+            return;
+          }
+
+          setStatus('已保存', 'ok');
           renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
-        }, 300);
+
+          setTimeout(async () => {
+            const next = await refreshMenu();
+            menuByModule = next.byModule;
+            unmappedMenu = next.unmapped;
+            renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
+          }, 300);
+        });
       }
 
       async function onRunMenu(cmd) {
-        setStatus(`正在执行：${cmd.name}…`);
-        const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
-        if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
-        else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
+        try {
+          setStatus(`正在执行：${cmd.name}…`);
+          const resp = await tabsSendMessage(tabId, { type: 'QUICKNAV_RUN_MENU', id: cmd.id });
+          if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
+          else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
+        } catch (e) {
+          setStatus(`执行失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        }
       }
 
       renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });

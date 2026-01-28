@@ -374,21 +374,37 @@
   function startActive() {
     scan(document);
 
+    let fullScanTimer = 0;
+    const armFullScan = (delay = 900) => {
+      try {
+        if (fullScanTimer) clearTimeout(fullScanTimer);
+        fullScanTimer = setTimeout(() => {
+          fullScanTimer = 0;
+          scan(document);
+        }, Math.max(0, Number(delay) || 0));
+      } catch {}
+    };
+
     const observer = new MutationObserver((mutations) => {
       if (!isAiChatPage()) return;
+      let shouldFullScan = false;
       for (const m of mutations) {
+        if (m.type === 'characterData') shouldFullScan = true;
         for (const n of m.addedNodes || []) {
-          if (n instanceof Element) scan(n);
+          if (n instanceof Element) {
+            scan(n);
+            shouldFullScan = true;
+          }
         }
       }
+      // Streaming updates sometimes mutate text nodes without adding elements; do one debounced full scan
+      // after the burst settles instead of a permanent interval.
+      if (shouldFullScan) armFullScan(900);
     });
 
     try {
-      observer.observe(document.documentElement, { childList: true, subtree: true });
+      observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     } catch {}
-
-    // Fallback: streaming updates may not add nodes; rescan periodically.
-    setInterval(() => scan(document), 1200);
   }
 
   async function boot() {

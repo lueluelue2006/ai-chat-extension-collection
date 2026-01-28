@@ -1245,7 +1245,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
 
     state.mutationObserver = new MutationObserver(() => scheduleEvaluation('mutation'));
-    try { state.mutationObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
+    try {
+      // Layout follow only needs to react to major layout DOM changes; avoid a hot `subtree:true` observer on the full page.
+      state.mutationObserver.observe(document.body, { childList: true, subtree: false });
+    } catch {}
 
     state.resizeHandler = () => scheduleEvaluation('resize');
     window.addEventListener('resize', state.resizeHandler, { passive: true });

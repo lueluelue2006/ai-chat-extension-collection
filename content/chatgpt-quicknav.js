@@ -275,6 +275,11 @@
         if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
         const type = String(data.type || '');
 
+        if (type === 'QUICKNAV_ROUTE_CHANGE') {
+          try { detectUrlChange(); } catch {}
+          return;
+        }
+
         if (type === TREE_BRIDGE_RES_SUMMARY) {
           if (typeof data.reqId !== 'string' || !data.reqId) return;
           if (treeSummaryPendingReqId && data.reqId !== treeSummaryPendingReqId) return;
@@ -594,7 +599,7 @@
   window.addEventListener('hashchange', detectUrlChange);
 
   // Fallback: some SPA navigations don't trigger events we can reliably observe from an isolated world.
-  // Polling `location.href` keeps the panel state in sync without relying on MAIN-world hooks.
+  // Polling `location.href` keeps the panel state in sync if MAIN-world hooks fail for any reason.
   try {
     if (!window.__cgptUrlPollInstalled) {
       window.__cgptUrlPollInstalled = true;
@@ -603,7 +608,7 @@
           if (document.hidden) return;
           detectUrlChange();
         } catch {}
-      }, 500);
+      }, 8000);
     }
   } catch {}
 
@@ -653,16 +658,29 @@
       if (document.body) mo.observe(document.body, { childList: true });
     } catch {}
 
-    // Slow path: periodic sanity check (covers SPA navigations that don't touch body root children).
+    // Slow path: adaptive sanity check (covers SPA navigations that don't touch body root children).
+    // Use setTimeout (not setInterval) so we can back off when everything is stable.
     try {
-      setInterval(() => {
-        try {
-          if (document.hidden) return;
-          if (!isChatRoute()) return;
-          if (document.getElementById('cgpt-compact-nav')) return;
-          scheduleEnsure(0);
-        } catch {}
-      }, 2000);
+      if (!window.__cgptNavSelfHealTimerInstalled) {
+        window.__cgptNavSelfHealTimerInstalled = true;
+        let t = 0;
+        const schedule = (ms) => {
+          try { if (t) clearTimeout(t); } catch {}
+          t = setTimeout(tick, Math.max(0, Number(ms) || 0));
+        };
+        const tick = () => {
+          try {
+            if (document.hidden) return schedule(15000);
+            if (!isChatRoute()) return schedule(15000);
+            if (document.getElementById('cgpt-compact-nav')) return schedule(15000);
+            scheduleEnsure(0);
+            schedule(4000);
+          } catch {
+            schedule(15000);
+          }
+        };
+        schedule(4000);
+      }
     } catch {}
   }
 

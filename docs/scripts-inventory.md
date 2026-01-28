@@ -1,9 +1,9 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.1.94
-- Generated: 2026-01-25
-- Source of truth: `shared/registry.js` (metadata) + `background/sw.js` (injection)
+- Version: 1.2.4
+- Generated: 2026-01-28 02:34
+- Source of truth: `shared/registry.js` (metadata) + `shared/injections.js` (injection defs)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
 
@@ -11,7 +11,7 @@
 
 当前 registry 标注了菜单预览（menuPreview）的模块：
 
-- `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天/31天）” / “清理无效收藏”）
+- `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天）” / “清理无效收藏”）
 - `chatgpt_usage_monitor`: ChatGPT 用量统计（“重置监视器位置” / “切换静默模式（隐藏/显示面板）” / “导出用量统计数据” / “导入用量统计数据”）
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
 - `chatgpt_split_view`: ChatGPT 拆分视图（实验）（“重置右侧状态 / 清理 Split View 存储” / “在新标签页打开右侧（并关闭 Split View）”）
@@ -31,7 +31,7 @@
   - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / ISOLATED: `content/menu-bridge.js`, `content/chatgpt-quicknav.js`
+  - 注入: document_start / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/chatgpt-quicknav.js`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
 - `chatgpt_perf`: ChatGPT 性能优化 — 离屏虚拟化 + CSS contain
   - 作者: lueluelue2006
@@ -40,6 +40,7 @@
 - `chatgpt_thinking_toggle`: ChatGPT 推理强度/模型 快捷切换 — ⌘O 推理强度 / ⌘J 模型切换
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/chatgpt-thinking-toggle/config-bridge.js`
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-thinking-toggle/main.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
@@ -50,10 +51,12 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-readaloud-speed-controller/main.js`
 - `chatgpt_usage_monitor`: ChatGPT 用量统计 — 实时统计各模型调用量，支持导入/导出与分析报告
-  - 作者: tizee（原始脚本） / lueluelue2006（MV3 集成/改造）
+  - 作者: lueluelue2006（抄了 tizee@Github 的 GUI）
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`
-  - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-usage-monitor/main.js`
+  - 注入: document_start / ISOLATED: `content/menu-bridge.js`, `content/chatgpt-usage-monitor/bridge.js`
+  - 注入: document_start / ISOLATED: `content/menu-bridge.js`
+  - 注入: document_start / MAIN: `content/ui-pos-drag.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-usage-monitor/main.js`
 - `chatgpt_reply_timer`: ChatGPT 回复计时器 — 统计从发送到回复完成的耗时（右下角极简数字）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -91,11 +94,15 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
+- `chatgpt_sidebar_header_fix`: ChatGPT 侧边栏顶部按钮修复 — 左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/chatgpt-sidebar-header-fix/main.js`
 - `chatgpt_split_view`: ChatGPT 拆分视图（实验） — 右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
+  - 注入: document_start / MAIN (allFrames): `content/chatgpt-split-view/iframe-hotkeys.js`
   - 注入: document_idle / ISOLATED: `content/chatgpt-split-view/main.js`
-  - 注入: document_start / MAIN（allFrames）: `content/chatgpt-split-view/iframe-hotkeys.js`
 
 ### Gemini Business (business.gemini.google)
 
@@ -104,7 +111,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/gemini-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/gemini-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -125,7 +132,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/gemini-app-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/gemini-app-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -138,7 +145,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/genspark-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/genspark-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -146,7 +153,7 @@
 - `genspark_moa_image_autosettings`: Genspark 绘图默认设置 — 进入绘图页自动打开 Setting，并选择 2K 画质
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/genspark-moa-image-autosettings/main.js`
+  - 注入: document_start / ISOLATED (allFrames): `content/genspark-moa-image-autosettings/main.js`
 - `genspark_credit_balance`: Genspark 积分余量 — 悬停小蓝点显示积分信息（可刷新/折叠/拖动）
   - 作者: LinuxDo 悟空（原始脚本） / lueluelue2006（MV3 集成）
   - 许可证: 未标注（内部脚本）
@@ -167,7 +174,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/grok-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/grok-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -188,7 +195,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/deepseek-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/deepseek-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -201,7 +208,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/zai-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/zai-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -214,7 +221,7 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/ernie-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/ernie-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -227,8 +234,9 @@
   - 许可证: MIT（上游脚本声明）
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / MAIN: `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/menu-bridge.js`, `content/qwen-quicknav.js`
+  - 注入: document_end / ISOLATED: `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/qwen-quicknav.js`
 - `chatgpt_cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-cmdenter-send/main.js`
+

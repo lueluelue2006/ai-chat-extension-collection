@@ -5,18 +5,17 @@
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
   "permissions": [
     "scripting",
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://ernie.baidu.com/*",
+    "https://business.gemini.google/*",
     "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",
     "https://chat.z.ai/*",
-    "https://grok.com/*",
+    "https://chatgpt.com/*",
+    "https://ernie.baidu.com/*",
     "https://gemini.google.com/app*",
-    "https://business.gemini.google/*",
+    "https://grok.com/*",
     "https://www.genspark.ai/*"
   ],
   "background": {
@@ -25,14 +24,14 @@
   "content_scripts": [
     {
       "matches": [
-        "https://chatgpt.com/*",
-        "https://ernie.baidu.com/*",
+        "https://business.gemini.google/*",
         "https://chat.deepseek.com/*",
         "https://chat.qwen.ai/*",
         "https://chat.z.ai/*",
-        "https://grok.com/*",
+        "https://chatgpt.com/*",
+        "https://ernie.baidu.com/*",
         "https://gemini.google.com/app*",
-        "https://business.gemini.google/*",
+        "https://grok.com/*",
         "https://www.genspark.ai/*"
       ],
       "js": [

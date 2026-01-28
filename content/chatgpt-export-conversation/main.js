@@ -16,6 +16,52 @@
       .replace(/'/g, '&#39;');
   }
 
+  function sanitizeExportHtmlFromElement(el) {
+    try {
+      if (!el || !(el instanceof Element)) return '';
+      const clone = el.cloneNode(true);
+
+      const banned = new Set(['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META']);
+      const sanitizeEl = (node) => {
+        if (!node || !(node instanceof Element)) return;
+        if (banned.has(node.tagName)) {
+          try { node.remove(); } catch {}
+          return;
+        }
+
+        const attrs = Array.from(node.attributes || []);
+        for (const a of attrs) {
+          const name = String(a?.name || '');
+          const value = String(a?.value || '');
+          if (!name) continue;
+          if (/^on/i.test(name)) {
+            try { node.removeAttribute(name); } catch {}
+            continue;
+          }
+          if (name === 'srcdoc') {
+            try { node.removeAttribute(name); } catch {}
+            continue;
+          }
+          if (name === 'href' || name === 'src' || name === 'xlink:href') {
+            if (/^\s*javascript:/i.test(value)) {
+              try { node.removeAttribute(name); } catch {}
+            }
+          }
+        }
+      };
+
+      sanitizeEl(clone);
+      for (const node of Array.from(clone.querySelectorAll('*'))) sanitizeEl(node);
+      return clone.innerHTML || '';
+    } catch {
+      try {
+        return escapeHtml(el?.textContent || '');
+      } catch {
+        return '';
+      }
+    }
+  }
+
   function pad2(n) {
     const x = Math.max(0, Number(n) || 0);
     return x < 10 ? `0${x}` : String(x);
@@ -271,11 +317,11 @@
 
     for (const msg of res.messages) {
       if (msg.role === 'user') {
-        body += `<section class="msg user"><h2>User ${userIndex}</h2><div class="content">${msg.el.innerHTML}</div></section>`;
+        body += `<section class="msg user"><h2>User ${userIndex}</h2><div class="content">${sanitizeExportHtmlFromElement(msg.el)}</div></section>`;
         userIndex += 1;
         continue;
       }
-      body += `<section class="msg assistant"><h2>Assistant ${assistantIndex}</h2><div class="content">${msg.el.innerHTML}</div></section>`;
+      body += `<section class="msg assistant"><h2>Assistant ${assistantIndex}</h2><div class="content">${sanitizeExportHtmlFromElement(msg.el)}</div></section>`;
       assistantIndex += 1;
     }
 

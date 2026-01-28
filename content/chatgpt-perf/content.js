@@ -44,6 +44,7 @@
   const UI_PANEL_CLASS = 'cgptperf-panel';
   const TOAST_ID = 'cgptperf-toast';
   const COPY_UNFREEZE_ATTR = 'data-cgptperf-copy-unfreeze';
+  const MSG_GET_STATE = 'CGPT_PERF_GET_STATE';
 
   const state = {
     settings: { ...DEFAULT_SETTINGS },
@@ -84,6 +85,7 @@
     onFocusOut: null,
     onScroll: null,
     onStorageChanged: null,
+    onMessage: null,
     cleanup: null,
   };
 
@@ -216,6 +218,74 @@
     el.dataset.show = '0';
     (document.documentElement || document.body).appendChild(el);
     return el;
+  }
+
+  function debugSnapshot() {
+    const html = document.documentElement;
+    const attrs = {};
+    for (const name of [
+      ROOT_ATTR,
+      ROOT_VER_ATTR,
+      ROOT_ENABLED_ATTR,
+      ROOT_OFFSCREEN_ATTR,
+      ROOT_BLOCKS_ATTR,
+      ROOT_HEAVY_ATTR,
+      ROOT_NOANIM_ATTR,
+      ROOT_NOBLUR_ATTR,
+      ROOT_EXTREME_ATTR,
+      ROOT_FIND_ATTR,
+    ]) {
+      try {
+        attrs[name] = html?.getAttribute?.(name) ?? null;
+      } catch {
+        attrs[name] = null;
+      }
+    }
+
+    let articleCount = 0;
+    let offscreenCount = 0;
+    try {
+      articleCount = document.querySelectorAll('main article').length;
+      offscreenCount = document.querySelectorAll(`main article.${OFFSCREEN_CLASS}`).length;
+    } catch {
+      articleCount = 0;
+      offscreenCount = 0;
+    }
+
+    return {
+      ok: true,
+      version: EXT_VERSION,
+      url: String(location.href || ''),
+      storageArea: state.storageAreaName,
+      settings: state.settings,
+      attrs,
+      articleCount,
+      offscreenCount,
+      boostActive: !!state.boostActive,
+      ioMarginPx: state.ioMarginPx,
+      ts: Date.now(),
+    };
+  }
+
+  function ensureMessageListener() {
+    if (state.onMessage) return;
+    state.onMessage = (msg, sender, sendResponse) => {
+      if (!msg || msg.type !== MSG_GET_STATE) return;
+      try {
+        sendResponse(debugSnapshot());
+      } catch (e) {
+        try {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+        } catch {
+          // ignore
+        }
+      }
+    };
+    try {
+      chrome?.runtime?.onMessage?.addListener?.(state.onMessage);
+    } catch {
+      state.onMessage = null;
+    }
   }
 
   function toast(text, durationMs = 1800) {
@@ -1211,6 +1281,11 @@
     } catch {}
     state.onStorageChanged = null;
 
+    try {
+      if (state.onMessage) chrome?.runtime?.onMessage?.removeListener?.(state.onMessage);
+    } catch {}
+    state.onMessage = null;
+
     try { document.getElementById(UI_ID)?.remove?.(); } catch {}
     try { document.getElementById(TOAST_ID)?.remove?.(); } catch {}
 
@@ -1234,6 +1309,7 @@
 
     ensureBoostListeners();
     ensureRootAttrGuard();
+    ensureMessageListener();
 
     const storage = chrome?.storage;
     const canUse = (area) => !!(area && typeof area.get === 'function' && typeof area.set === 'function');

@@ -858,25 +858,69 @@
     addPanelDivider();
 
     const fields = [
-      ['enabled', '模块内部总开关（enabled）'],
-      ['virtualizeOffscreen', '离屏虚拟化（virtualizeOffscreen）'],
-      ['virtualizeMarkdownBlocks', '虚拟化 Markdown 块（virtualizeMarkdownBlocks）'],
-      ['optimizeHeavyBlocks', '重块优化（optimizeHeavyBlocks）'],
-      ['disableAnimations', '禁用动画（disableAnimations）'],
-      ['disableBackdropFilters', '禁用毛玻璃（disableBackdropFilters）'],
-      ['extremeLite', '极限轻量（extremeLite）'],
-      ['boostDuringInput', '输入时加强优化（boostDuringInput）'],
-      ['unfreezeOnFind', 'Ctrl/Cmd+F 临时解冻（unfreezeOnFind）'],
-      ['showOverlay', '显示调试覆盖层（showOverlay）']
+      {
+        key: 'enabled',
+        label: '模块内部总开关（默认开）',
+        title: '只控制该模块内部逻辑；若关闭“启用该模块注入”，这里不会生效。'
+      },
+      {
+        key: 'virtualizeOffscreen',
+        label: '离屏虚拟化（默认开）',
+        title: '核心优化：将离屏消息变为 content-visibility:auto，减少长对话滚动/渲染压力。'
+      },
+      {
+        key: 'virtualizeMarkdownBlocks',
+        label: 'Markdown 分段虚拟化（实验｜默认开）',
+        title: '针对“单条超长回复”，对 .markdown 的块级节点做 content-visibility，降低 layout/paint。'
+      },
+      {
+        key: 'optimizeHeavyBlocks',
+        label: '重内容优化（默认开）',
+        title: '对 pre/table/公式等高开销块使用 contain/content-visibility，减少卡顿。'
+      },
+      {
+        key: 'disableAnimations',
+        label: '禁用动画/过渡（默认开）',
+        title: '将动画/过渡 duration 置 0，减少合成与重绘开销；外观变化较小。'
+      },
+      {
+        key: 'disableBackdropFilters',
+        label: '禁用毛玻璃（默认关）',
+        title: '全站禁用 backdrop-filter（毛玻璃），通常可明显减轻弹层/侧边栏/滚动卡顿，但观感会变化。'
+      },
+      {
+        key: 'extremeLite',
+        label: '极限轻量（默认关）',
+        title: '更激进：强制禁用 blur/filter/阴影/动画/过渡等，性能更好但会明显变丑，可能影响部分 UI。'
+      },
+      {
+        key: 'boostDuringInput',
+        label: '输入/交互加速（默认开）',
+        title: '在输入/编辑/发送等交互期间临时收紧预加载边距，优先保证点击/发送流畅。'
+      },
+      {
+        key: 'unfreezeOnFind',
+        label: 'Ctrl/Cmd+F 临时解冻（默认开）',
+        title: '使用查找时临时关闭虚拟化，确保能搜到远处内容（之后自动恢复）。'
+      },
+      {
+        key: 'showOverlay',
+        label: '显示页面内性能菜单（默认关）',
+        title: '开启后在页面左下角显示“性能”按钮，可随时切换开关并测量一次交互卡顿。'
+      }
     ];
 
-    for (const [key, label] of fields) {
+    for (const field of fields) {
+      const key = field.key;
+      const label = field.label;
       const row = document.createElement('label');
       row.className = 'formRow';
       const left = document.createElement('span');
       left.textContent = label;
+      if (field.title) left.title = field.title;
       const input = document.createElement('input');
       input.type = 'checkbox';
+      if (field.title) input.title = field.title;
       input.checked = !!settings[key];
       input.addEventListener('change', async () => {
         const next = { ...settings, [key]: !!input.checked };
@@ -965,6 +1009,70 @@
     rowMargin.appendChild(leftMargin);
     rowMargin.appendChild(marginControls);
     elModuleSettings.appendChild(rowMargin);
+
+    addPanelDivider();
+    addPanelTitle('状态检测', '从已打开的 ChatGPT 页面读取 <html data-cgptperf*> 属性，确认设置是否已应用。');
+
+    const btnProbe = document.createElement('button');
+    btnProbe.type = 'button';
+    btnProbe.className = 'btn secondary';
+    btnProbe.textContent = '读取当前页面状态';
+
+    const probeOut = document.createElement('pre');
+    probeOut.className = 'codeBox';
+    probeOut.textContent = '（未检测）';
+
+    const pickBestChatgptTab = async () => {
+      const patterns = getSiteUrlPatterns(siteId, { preferQuickNav: true });
+      if (!patterns.length) return null;
+      const tabs = await tabsQuery({ url: patterns });
+      if (!tabs.length) return null;
+      return tabs
+        .slice()
+        .sort((a, b) => {
+          if (!!b?.active !== !!a?.active) return b.active ? 1 : -1;
+          return Number(b?.lastAccessed || 0) - Number(a?.lastAccessed || 0);
+        })[0];
+    };
+
+    const withTimeout = (promise, ms, label) => {
+      let timer = 0;
+      return new Promise((resolve, reject) => {
+        timer = window.setTimeout(() => reject(new Error(`${label} 超时`)), Math.max(50, Number(ms) || 2000));
+        promise.then(
+          (v) => {
+            window.clearTimeout(timer);
+            resolve(v);
+          },
+          (e) => {
+            window.clearTimeout(timer);
+            reject(e);
+          }
+        );
+      });
+    };
+
+    btnProbe.addEventListener('click', async () => {
+      btnProbe.disabled = true;
+      probeOut.textContent = '正在读取…';
+      try {
+        const tab = await withTimeout(pickBestChatgptTab(), 2000, '查找标签页');
+        const tabId = tab?.id;
+        if (!tabId) throw new Error('未找到已打开的 ChatGPT 标签页（请先打开 chatgpt.com）');
+        const resp = await withTimeout(tabsSendMessage(tabId, { type: 'CGPT_PERF_GET_STATE' }), 2500, '读取页面状态');
+        if (!resp || resp.ok !== true) throw new Error(resp?.error || '无响应（可能未注入或页面未刷新）');
+        probeOut.textContent = JSON.stringify(resp, null, 2);
+        setStatus('已读取当前页面状态', 'ok');
+      } catch (e) {
+        probeOut.textContent = '（读取失败）';
+        setStatus(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        btnProbe.disabled = false;
+      }
+    });
+
+    elModuleSettings.appendChild(btnProbe);
+    elModuleSettings.appendChild(probeOut);
 
     const resetBtn = document.createElement('button');
     resetBtn.type = 'button';

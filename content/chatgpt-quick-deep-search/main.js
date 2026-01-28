@@ -1149,42 +1149,87 @@
   }
 
   // ===== 注入与保活 =====
+  // ChatGPT uses React + hydration; mutating the composer subtree during hydration can cause
+  // recoverable errors and visible remount “flashing”. To avoid this, render the inline
+  // buttons as a BODY-level overlay positioned next to the send/stop button.
+  const CHATGPT_OVERLAY_GAP_PX = 6;
+  const CHATGPT_OVERLAY_BTN_SIZE_PX = 32;
+  let chatgptOverlayRaf = 0;
+  let chatgptOverlayHasPosition = false;
+
+  function findChatgptOverlayAnchor() {
+    return (
+      findSendButton() ||
+      document.querySelector('[data-testid="stop-button"]') ||
+      document.querySelector('div[data-testid="composer-trailing-actions"]') ||
+      document.querySelector('#thread-bottom button[type="submit"]') ||
+      null
+    );
+  }
+
+  function scheduleChatgptOverlayUpdate() {
+    if (SITE !== 'chatgpt') return;
+    if (chatgptOverlayRaf) return;
+    chatgptOverlayRaf = requestAnimationFrame(() => {
+      chatgptOverlayRaf = 0;
+      try {
+        const wrap = document.getElementById('o4-inline-btn-wrap');
+        if (!wrap || !wrap.isConnected) return;
+
+        const anchor = findChatgptOverlayAnchor();
+        if (!anchor || !anchor.isConnected || typeof anchor.getBoundingClientRect !== 'function') {
+          if (!chatgptOverlayHasPosition) wrap.style.display = 'none';
+          return;
+        }
+
+        const r = anchor.getBoundingClientRect();
+        if (!Number.isFinite(r.left) || !Number.isFinite(r.top)) return;
+
+        const top = Math.max(
+          0,
+          Math.min(
+            window.innerHeight - CHATGPT_OVERLAY_BTN_SIZE_PX,
+            r.top + (r.height - CHATGPT_OVERLAY_BTN_SIZE_PX) / 2
+          )
+        );
+        const left = Math.max(0, Math.min(window.innerWidth, r.left));
+
+        wrap.style.display = 'flex';
+        wrap.style.left = `${Math.round(left)}px`;
+        wrap.style.top = `${Math.round(top)}px`;
+        wrap.style.transform = `translateX(calc(-100% - ${CHATGPT_OVERLAY_GAP_PX}px))`;
+
+        chatgptOverlayHasPosition = true;
+      } catch {}
+    });
+  }
   function addInlineButtons() {
-    // Fast path: already injected. Avoid repeated document-wide selector work.
     try {
-      if (
-        document.getElementById('o4-inline-btn-wrap') ||
-        document.getElementById('o4-translate-inline-btn') ||
-        document.getElementById('o4-mini-inline-btn') ||
-        document.getElementById('o4-think-inline-btn')
-      ) {
-        return true;
+      const existing = document.getElementById('o4-inline-btn-wrap');
+      if (existing && existing.isConnected) {
+        if (SITE === 'chatgpt') {
+          if (existing.parentElement !== document.body && document.body) {
+            existing.remove();
+          } else {
+            scheduleChatgptOverlayUpdate();
+            return true;
+          }
+        } else {
+          return true;
+        }
       }
     } catch {}
+
+    if (SITE === 'chatgpt') {
+      const anchor = findChatgptOverlayAnchor();
+      if (!anchor) return false;
+    }
 
     let container = null;
     let insertBefore = null;
 
     if (SITE === 'chatgpt') {
-      // Avoid hydration mismatch by anchoring to an actual action button (send/stop) rather than SSR wrappers.
-      const actionBtn =
-        document.querySelector('button[data-testid="send-button"]') ||
-        document.querySelector('[data-testid="stop-button"]') ||
-        null;
-      const actionParent = actionBtn && actionBtn.parentElement ? actionBtn.parentElement : null;
-      if (actionParent) {
-        container = actionParent;
-        insertBefore = actionBtn;
-      } else {
-        container = document.querySelector('div[data-testid="composer-trailing-actions"]');
-        if (!container) {
-          container = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
-          if (!container) {
-            const speechContainer = document.querySelector('div[data-testid="composer-speech-button-container"]');
-            if (speechContainer && speechContainer.parentElement) container = speechContainer.parentElement;
-          }
-        }
-      }
+      container = document.body;
     } else if (SITE === 'gemini_app') {
       const sendBtn = findSendButton();
       container = sendBtn?.parentElement || null;
@@ -1217,7 +1262,10 @@
 
     const wrap = document.createElement('div');
     wrap.id = 'o4-inline-btn-wrap';
-    wrap.style.cssText = 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
+    wrap.style.cssText =
+      SITE === 'chatgpt'
+        ? 'position:fixed; z-index:2147483647; display:none; align-items:center; gap:6px; flex-shrink:0; pointer-events:auto;'
+        : 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
 
     const commonBtnCss = `
       display:flex; align-items:center; justify-content:center;
@@ -1269,8 +1317,12 @@
     wrap.appendChild(searchBtn);
     wrap.appendChild(thinkBtn);
     try {
-      if (insertBefore && insertBefore.parentNode === container && typeof container.insertBefore === 'function') container.insertBefore(wrap, insertBefore);
-      else container.appendChild(wrap);
+      if (insertBefore && insertBefore.parentNode === container && typeof container.insertBefore === 'function') {
+        container.insertBefore(wrap, insertBefore);
+      } else {
+        container.appendChild(wrap);
+      }
+      if (SITE === 'chatgpt') scheduleChatgptOverlayUpdate();
     } catch {
       return false;
     }
@@ -1290,11 +1342,11 @@
     if (!document.body) return;
     // Remove legacy floating UI immediately (some older versions injected fixed right-side buttons).
     removeFloatingButtonsIfAny();
-    try {
-      if (document.getElementById('o4-inline-btn-wrap')) {
-        return;
-      }
-    } catch {}
+    if (SITE !== 'chatgpt') {
+      try {
+        if (document.getElementById('o4-inline-btn-wrap')) return;
+      } catch {}
+    }
     const inlineOk = addInlineButtons();
     if (inlineOk) {
       return;
@@ -1398,8 +1450,10 @@
           if (rootMo && rootMo.__aichatRoot === root) return;
           try { rootMo?.disconnect(); } catch {}
           rootMo = new MutationObserver(() => {
-            // When injected, do nothing; we drop this observer anyway.
-            if (hasInlineButtons()) return;
+            if (hasInlineButtons()) {
+              scheduleChatgptOverlayUpdate();
+              return;
+            }
             scheduleBoot(0);
           });
           // @ts-ignore: attach root marker for cheap reuse checks.
@@ -1411,6 +1465,7 @@
       }
 
     function ensureHostObserver() {
+      if (SITE === 'chatgpt') return;
       const host = getInlineHost();
       if (!host || typeof MutationObserver !== 'function') return;
       try {
@@ -1448,11 +1503,20 @@
         if (hasInlineButtons()) {
           // keep host observer attached (in case the host changes)
           ensureHostObserver();
+          scheduleChatgptOverlayUpdate();
           return;
         }
       } catch {}
       ensureRootObserver();
       scheduleBoot(0);
     }, BOOT_FALLBACK_INTERVAL_MS);
+
+    // Keep ChatGPT overlay aligned on scroll/resize.
+    if (SITE === 'chatgpt') {
+      try {
+        window.addEventListener('resize', () => scheduleChatgptOverlayUpdate(), { passive: true });
+        window.addEventListener('scroll', () => scheduleChatgptOverlayUpdate(), { passive: true, capture: true });
+      } catch {}
+    }
   })();
 })();

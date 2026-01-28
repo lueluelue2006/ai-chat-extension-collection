@@ -763,6 +763,15 @@
     });
   } catch {}
 
+  try {
+    // For service-worker DevTools console: `__quicknavGpt53Probe.run()`
+    globalThis.__quicknavGpt53Probe = {
+      url: GPT53_MONITOR.url,
+      run: () => runGpt53Probe(),
+      state: () => getGpt53State()
+    };
+  } catch {}
+
   // === Dev-only smoke tests (not exposed in UI) ===
   const DEV_SMOKE_TARGETS = [
     { id: 'chatgpt', url: 'https://chatgpt.com/' },

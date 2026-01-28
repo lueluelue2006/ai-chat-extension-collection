@@ -754,12 +754,6 @@
     }
   }
 
-  function ensureGpt53Alarm() {
-    try {
-      chrome.alarms.create(GPT53_MONITOR.alarmName, { periodInMinutes: GPT53_MONITOR.intervalMin });
-    } catch {}
-  }
-
   async function getGpt53Alarm() {
     try {
       return await new Promise((resolve) => {
@@ -772,6 +766,19 @@
     } catch {
       return null;
     }
+  }
+
+  async function ensureGpt53Alarm() {
+    try {
+      const existing = await getGpt53Alarm();
+      if (existing && Number(existing.periodInMinutes) === GPT53_MONITOR.intervalMin) return existing;
+    } catch {}
+
+    try {
+      chrome.alarms.create(GPT53_MONITOR.alarmName, { periodInMinutes: GPT53_MONITOR.intervalMin });
+    } catch {}
+
+    return await getGpt53Alarm();
   }
 
   try {
@@ -1069,8 +1076,7 @@
           return true;
         }
         (async () => {
-          ensureGpt53Alarm();
-          const alarm = await getGpt53Alarm();
+          const alarm = await ensureGpt53Alarm();
           const state = await getGpt53State();
           let enabled = true;
           try {
@@ -1097,9 +1103,8 @@
           return true;
         }
         (async () => {
-          ensureGpt53Alarm();
+          const alarm = await ensureGpt53Alarm();
           await runGpt53Probe();
-          const alarm = await getGpt53Alarm();
           const state = await getGpt53State();
           let enabled = true;
           try {
@@ -1133,20 +1138,20 @@
 
   // 扩展重新加载/更新时，把内容脚本注入到已打开的匹配标签页里（便于开发时只点“重新加载”即可生效）
       try {
-        chrome.runtime.onInstalled.addListener(() => {
-          getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
-          ensureGpt53Alarm();
-          void runGpt53Probe();
-        });
-        chrome.runtime.onStartup?.addListener(() => {
-          // On browser startup, restored tabs will load normally and trigger registered content scripts.
-          // Avoid reinject here to prevent double-inject on session restore.
-          getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
-          ensureGpt53Alarm();
-        });
-        // Service worker may wake up frequently (e.g. from page pings).
-        // Keep registrations up-to-date but avoid reinjecting on every wake.
-        getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
-        ensureGpt53Alarm();
+	        chrome.runtime.onInstalled.addListener(() => {
+	          getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
+          void ensureGpt53Alarm();
+	          void runGpt53Probe();
+	        });
+	        chrome.runtime.onStartup?.addListener(() => {
+	          // On browser startup, restored tabs will load normally and trigger registered content scripts.
+	          // Avoid reinject here to prevent double-inject on session restore.
+	          getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+          void ensureGpt53Alarm();
+	        });
+	        // Service worker may wake up frequently (e.g. from page pings).
+	        // Keep registrations up-to-date but avoid reinjecting on every wake.
+	        getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+        void ensureGpt53Alarm();
       } catch {}
 	})();

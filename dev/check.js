@@ -161,15 +161,21 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
   }
 
   const hostPerms = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
-  const expectedHostPerms = normalizePatterns(registryAllMatchPatterns(reg));
+  const extraHostPerms = normalizePatterns(injections?.EXTRA_HOST_PERMISSIONS || []);
+  const expectedHostPerms = normalizePatterns([...registryAllMatchPatterns(reg), ...extraHostPerms]);
   const actualHostPerms = normalizePatterns(hostPerms);
   if (expectedHostPerms.join('\n') !== actualHostPerms.join('\n')) {
-    errors.push(`manifest.json host_permissions mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${actualHostPerms.join('\n- ')}`);
+    errors.push(
+      `manifest.json host_permissions mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${actualHostPerms.join('\n- ')}`
+    );
   }
 
   const bootstrapMatches = normalizePatterns(findBootstrapMatches(manifest));
-  if (expectedHostPerms.join('\n') !== bootstrapMatches.join('\n')) {
-    errors.push(`manifest.json bootstrap matches mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${bootstrapMatches.join('\n- ')}`);
+  const expectedBootstrapMatches = normalizePatterns(registryAllMatchPatterns(reg));
+  if (expectedBootstrapMatches.join('\n') !== bootstrapMatches.join('\n')) {
+    errors.push(
+      `manifest.json bootstrap matches mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedBootstrapMatches.join('\n- ')}\nactual:\n- ${bootstrapMatches.join('\n- ')}`
+    );
   }
 
   for (const m of Array.from(matchPatterns.values()).filter(Boolean)) {

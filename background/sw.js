@@ -665,6 +665,104 @@
     }
   }
 
+  // === OpenAI model icon monitor (gpt-5.3) ===
+  const GPT53_MONITOR = Object.freeze({
+    url: 'https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-5.3.png',
+    alarmName: 'quicknav_gpt53_probe',
+    intervalMin: 5,
+    storageKey: 'quicknav_gpt53_probe_state_v1',
+    notifyId: 'quicknav_gpt53_available'
+  });
+
+  async function getGpt53State() {
+    try {
+      const raw = await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get({ [GPT53_MONITOR.storageKey]: null }, (items) => resolve(items[GPT53_MONITOR.storageKey]));
+        } catch {
+          resolve(null);
+        }
+      });
+      return raw && typeof raw === 'object' ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function setGpt53State(next) {
+    try {
+      await new Promise((resolve) => {
+        try {
+          chrome.storage.local.set({ [GPT53_MONITOR.storageKey]: next || null }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    } catch {}
+  }
+
+  async function fetchUrlStatus(url) {
+    try {
+      const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+      return res?.status || 0;
+    } catch {}
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Range: 'bytes=0-0' }
+      });
+      return res?.status || 0;
+    } catch {}
+    return 0;
+  }
+
+  async function runGpt53Probe() {
+    try {
+      const settings = await getSettings();
+      if (settings && settings.enabled === false) return;
+    } catch {}
+
+    const status = await fetchUrlStatus(GPT53_MONITOR.url);
+    if (!status) return;
+
+    const available = status !== 404;
+    const prev = await getGpt53State();
+    const prevAvailable = !!prev?.available;
+
+    const next = {
+      available,
+      status,
+      checkedAt: Date.now()
+    };
+    await setGpt53State(next);
+
+    if (!prevAvailable && available) {
+      try {
+        chrome.notifications.create(GPT53_MONITOR.notifyId, {
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+          title: 'OpenAI 新模型提示',
+          message: `检测到 gpt-5.3 图标已可访问（状态 ${status}）。可能有新模型发布。`,
+          priority: 2
+        });
+      } catch {}
+    }
+  }
+
+  function ensureGpt53Alarm() {
+    try {
+      chrome.alarms.create(GPT53_MONITOR.alarmName, { periodInMinutes: GPT53_MONITOR.intervalMin });
+    } catch {}
+  }
+
+  try {
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm?.name !== GPT53_MONITOR.alarmName) return;
+      void runGpt53Probe();
+    });
+  } catch {}
+
   // === Dev-only smoke tests (not exposed in UI) ===
   const DEV_SMOKE_TARGETS = [
     { id: 'chatgpt', url: 'https://chatgpt.com/' },
@@ -950,17 +1048,21 @@
   });
 
   // 扩展重新加载/更新时，把内容脚本注入到已打开的匹配标签页里（便于开发时只点“重新加载”即可生效）
-	      try {
-	        chrome.runtime.onInstalled.addListener(() => {
-	          getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
-	        });
-	        chrome.runtime.onStartup?.addListener(() => {
-	          // On browser startup, restored tabs will load normally and trigger registered content scripts.
-	          // Avoid reinject here to prevent double-inject on session restore.
-	          getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
-	        });
-	        // Service worker may wake up frequently (e.g. from page pings).
-	        // Keep registrations up-to-date but avoid reinjecting on every wake.
-	        getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
-	      } catch {}
+      try {
+        chrome.runtime.onInstalled.addListener(() => {
+          getSettings().then((settings) => applySettingsAndReinject(settings)).catch(() => scheduleReinject());
+          ensureGpt53Alarm();
+          void runGpt53Probe();
+        });
+        chrome.runtime.onStartup?.addListener(() => {
+          // On browser startup, restored tabs will load normally and trigger registered content scripts.
+          // Avoid reinject here to prevent double-inject on session restore.
+          getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+          ensureGpt53Alarm();
+        });
+        // Service worker may wake up frequently (e.g. from page pings).
+        // Keep registrations up-to-date but avoid reinjecting on every wake.
+        getSettings().then((settings) => applySettingsAndRegister(settings)).catch(() => void 0);
+        ensureGpt53Alarm();
+      } catch {}
 	})();

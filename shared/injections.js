@@ -10,6 +10,8 @@
   const INJECTIONS_VERSION = 1;
   const MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
   const LEGACY_CONTENT_SCRIPT_IDS = ['quicknav_grok_model_selector'];
+  // Extra host permissions needed by background tasks (not tied to content scripts).
+  const EXTRA_HOST_PERMISSIONS = Object.freeze(['https://cdn.openai.com/*']);
 
   // Extra boolean flags stored under `settings.siteModules[siteId]` that are NOT "modules"
   // (i.e. no separate content script injection), but need defaults and should be patchable.
@@ -475,6 +477,7 @@
     version: INJECTIONS_VERSION,
     MAIN_GUARD_FILE,
     LEGACY_CONTENT_SCRIPT_IDS: Object.freeze([...LEGACY_CONTENT_SCRIPT_IDS]),
+    EXTRA_HOST_PERMISSIONS,
     EXTRA_SITE_MODULE_FLAGS,
     buildDefaultSettings,
     buildContentScriptDefs
@@ -498,4 +501,3 @@
     } catch {}
   }
 })();
-

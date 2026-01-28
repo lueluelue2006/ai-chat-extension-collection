@@ -41,6 +41,16 @@ function loadRegistry() {
   return reg;
 }
 
+function loadInjections() {
+  const code = readText('shared/injections.js');
+  const sandbox = { globalThis: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
+  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  return inj;
+}
+
 function registryAllMatchPatterns(reg) {
   const sites = Array.isArray(reg?.sites) ? reg.sites : [];
   const out = [];
@@ -54,11 +64,13 @@ function registryAllMatchPatterns(reg) {
 
 function main() {
   const reg = loadRegistry();
+  const inj = loadInjections();
   const patterns = registryAllMatchPatterns(reg);
+  const extraHostPerms = uniq(inj?.EXTRA_HOST_PERMISSIONS || []);
   if (!patterns.length) throw new Error('No matchPatterns found in registry sites');
 
   const manifest = readJson('manifest.json');
-  manifest.host_permissions = patterns;
+  manifest.host_permissions = uniq([...patterns, ...extraHostPerms]).sort();
 
   const contentScripts = Array.isArray(manifest.content_scripts) ? manifest.content_scripts : [];
   let bootstrap = contentScripts.find((cs) => Array.isArray(cs?.js) && cs.js.includes('content/bootstrap.js')) || null;
@@ -81,4 +93,3 @@ try {
   console.error(e instanceof Error ? e.message : String(e));
   process.exitCode = 1;
 }
-

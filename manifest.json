@@ -5,10 +5,13 @@
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
   "permissions": [
     "scripting",
-    "storage"
+    "storage",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://business.gemini.google/*",
+    "https://cdn.openai.com/*",
     "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",
     "https://chat.z.ai/*",

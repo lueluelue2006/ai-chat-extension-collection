@@ -1211,6 +1211,33 @@
   let chatgptOverlayRaf = 0;
   let chatgptOverlayHasPosition = false;
 
+  function pickRightMostVisibleButton(root) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : null;
+    if (!scope) return null;
+    /** @type {HTMLElement|null} */
+    let best = null;
+    let bestRight = -Infinity;
+    try {
+      const list = Array.from(scope.querySelectorAll('button')).slice(0, 120);
+      for (const el of list) {
+        try {
+          if (!(el instanceof HTMLElement)) continue;
+          if (el.closest?.('#o4-inline-btn-wrap')) continue;
+          const r = el.getBoundingClientRect();
+          if (!r || r.width < 12 || r.height < 12) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+          const right = Number(r.right) || 0;
+          if (right >= bestRight) {
+            bestRight = right;
+            best = el;
+          }
+        } catch {}
+      }
+    } catch {}
+    return best;
+  }
+
   function findChatgptOverlayAnchor() {
     const send = findSendButton();
     if (send && send.isConnected) return send;
@@ -1221,11 +1248,18 @@
       const core = window.__aichat_chatgpt_core_main_v1__;
       const editor = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : editorEl();
       const form = editor?.closest?.('form') || null;
+
+      // When the prompt is empty, ChatGPT replaces the send button with voice/dictation controls.
+      // Anchoring to the whole form (usually full width) can push our overlay to the far left.
+      // Prefer the right-most visible button in the composer (voice/dictation/send) as an anchor.
+      const rightMost = pickRightMostVisibleButton(form);
+      if (rightMost) return rightMost;
+
       const actions =
         form?.querySelector?.('div[data-testid="composer-trailing-actions"]') ||
         document.querySelector('div[data-testid="composer-trailing-actions"]') ||
         null;
-      if (actions) return actions;
+      if (actions) return pickRightMostVisibleButton(actions) || actions;
       if (form) return form;
       if (editor) return editor;
     } catch {}

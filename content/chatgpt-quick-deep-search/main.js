@@ -1480,6 +1480,9 @@
     let timer = 0;
     /** @type {MutationObserver|null} */
     let rootMo = null;
+    let rootMoDisabledUntil = 0;
+    let rootMoStormCount = 0;
+    let rootMoStormAt = 0;
     /** @type {MutationObserver|null} */
     let hostMo = null;
 
@@ -1543,6 +1546,8 @@
 
       function ensureRootObserver() {
         try {
+          const ts = Date.now();
+          if (rootMoDisabledUntil && ts < rootMoDisabledUntil) return;
           const root = findObserveRoot();
           if (!root) {
             disconnectRootObserver();
@@ -1554,7 +1559,24 @@
           // @ts-ignore: attach marker
           if (rootMo && rootMo.__aichatRoot === root) return;
           try { rootMo?.disconnect(); } catch {}
-          rootMo = new MutationObserver(() => {
+          rootMo = new MutationObserver((muts) => {
+            try {
+              if (SITE === 'chatgpt') {
+                const now = Date.now();
+                if (!rootMoStormAt || now - rootMoStormAt > 1000) {
+                  rootMoStormAt = now;
+                  rootMoStormCount = 0;
+                }
+                rootMoStormCount += Array.isArray(muts) ? muts.length : 1;
+                // Safety: if something accidentally observes a large/streaming subtree, bail out.
+                if (rootMoStormCount > 200) {
+                  rootMoDisabledUntil = now + 30000;
+                  disconnectRootObserver();
+                  scheduleBoot(800);
+                  return;
+                }
+              }
+            } catch {}
             if (hasInlineButtons()) {
               scheduleChatgptOverlayUpdate();
               return;
@@ -1563,7 +1585,9 @@
           });
           // @ts-ignore: attach root marker for cheap reuse checks.
           rootMo.__aichatRoot = root;
-          rootMo.observe(root, { childList: true, subtree: true });
+          // ChatGPT can stream huge DOM diffs; keep this observer as shallow as possible.
+          // We rely on input/scroll/resize hooks + fallback timer for fine-grained updates.
+          rootMo.observe(root, { childList: true, subtree: SITE !== 'chatgpt' });
         } catch {
           disconnectRootObserver();
         }
@@ -1619,6 +1643,28 @@
     // Keep ChatGPT overlay aligned on scroll/resize.
     if (SITE === 'chatgpt') {
       try {
+        const isComposerEventTarget = (t) => {
+          try {
+            if (!(t instanceof Element)) return false;
+            if (t.id === 'prompt-textarea') return true;
+            if (t.closest?.('#prompt-textarea')) return true;
+            const form = t.closest?.('form');
+            if (form && form.querySelector?.('#prompt-textarea')) return true;
+          } catch {}
+          return false;
+        };
+        const onComposerEvent = (e) => {
+          try {
+            if (!hasInlineButtons()) return;
+            const t = e?.target;
+            if (!t) return;
+            if (!isComposerEventTarget(t)) return;
+            scheduleChatgptOverlayUpdate();
+          } catch {}
+        };
+        document.addEventListener('input', onComposerEvent, true);
+        document.addEventListener('focusin', onComposerEvent, true);
+        document.addEventListener('click', onComposerEvent, true);
         window.addEventListener('resize', () => scheduleChatgptOverlayUpdate(), { passive: true });
         window.addEventListener('scroll', () => scheduleChatgptOverlayUpdate(), { passive: true, capture: true });
       } catch {}

@@ -1533,21 +1533,22 @@
       function findObserveRoot() {
         if (SITE !== 'chatgpt') return document.documentElement;
         try {
-          return (
-            document.getElementById('thread-bottom') ||
-            document.getElementById('thread-bottom-container') ||
-            document.body ||
-            document.documentElement
-          );
+          // IMPORTANT: never fall back to observing `document.body` / `documentElement` for ChatGPT.
+          // ChatGPT hydration + streaming produces huge mutation volumes, which can spike CPU/memory.
+          return document.getElementById('thread-bottom') || document.getElementById('thread-bottom-container') || null;
         } catch {
-          return document.documentElement;
+          return null;
         }
       }
 
       function ensureRootObserver() {
         try {
           const root = findObserveRoot();
-          if (!root || typeof MutationObserver !== 'function') return;
+          if (!root) {
+            disconnectRootObserver();
+            return;
+          }
+          if (typeof MutationObserver !== 'function') return;
           // If the observed root changes (ChatGPT can re-create the composer subtree),
           // reattach to keep the observer “local” (avoid global subtree watching).
           // @ts-ignore: attach marker

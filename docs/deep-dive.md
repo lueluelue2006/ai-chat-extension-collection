@@ -1,6 +1,6 @@
 # QuickNav MV3 深读（仓库：QuickNav-MV3_副本）
 
-本文基于 `manifest.json` 显示的扩展版本 `1.2.7`，并以 **Chrome Extension MV3** 的运行模型为前提整理（生成时间：2026-01-29）。
+本文基于 `manifest.json` 显示的扩展版本 `1.2.8`，并以 **Chrome Extension MV3** 的运行模型为前提整理（生成时间：2026-01-29）。
 
 > 重点文件入口（建议从这里开始读）：  
 > - `manifest.json`（MV3 入口）  

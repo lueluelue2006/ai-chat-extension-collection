@@ -1627,33 +1627,74 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       const win = iframe.contentWindow;
       if (!doc || !win) return false;
 
-      const prompt = doc.querySelector('#prompt-textarea');
-      if (!prompt) return false;
-
       const msg = `${String(text || '').trim()}\n\n`;
 
-      prompt.focus();
+      const prompt = (() => {
+        try {
+          // ChatGPT composer (2025/2026): ProseMirror is the real editor.
+          return (
+            doc.querySelector('.ProseMirror[contenteditable="true"]') ||
+            doc.querySelector('#prompt-textarea.ProseMirror[contenteditable="true"]') ||
+            doc.querySelector('#prompt-textarea[contenteditable="true"]') ||
+            doc.querySelector('#prompt-textarea .ProseMirror[contenteditable="true"]') ||
+            doc.querySelector('textarea#prompt-textarea') ||
+            doc.querySelector('textarea[name="prompt-textarea"]') ||
+            null
+          );
+        } catch {
+          return null;
+        }
+      })();
+      if (!prompt) return false;
+
+      try {
+        prompt.focus();
+      } catch {}
+
+      if (prompt instanceof HTMLTextAreaElement) {
+        try {
+          prompt.value = msg;
+        } catch {}
+        try {
+          prompt.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        } catch {
+          try {
+            prompt.dispatchEvent(new Event('input', { bubbles: true }));
+          } catch {}
+        }
+        return true;
+      }
 
       // Prefer execCommand to preserve newlines for contenteditable prompts.
       let ok = false;
       try {
         if (typeof doc.execCommand === 'function') {
           try {
-            doc.execCommand('selectAll', false);
+            const sel = win.getSelection?.();
+            if (sel && typeof sel.removeAllRanges === 'function' && typeof doc.createRange === 'function') {
+              const range = doc.createRange();
+              range.selectNodeContents(prompt);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            } else {
+              doc.execCommand('selectAll', false);
+            }
           } catch {}
           ok = !!doc.execCommand('insertText', false, msg);
         }
       } catch {}
 
-      try {
-        if (!ok) prompt.textContent = msg;
-      } catch {}
+      if (!ok) {
+        try {
+          prompt.textContent = msg;
+        } catch {}
+      }
 
       try {
-        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+        prompt.dispatchEvent(new InputEvent('input', { bubbles: true }));
       } catch {
         try {
-          // ignore
+          prompt.dispatchEvent(new Event('input', { bubbles: true }));
         } catch {}
       }
 

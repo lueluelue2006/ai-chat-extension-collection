@@ -9,8 +9,10 @@
   const btnRestoreDefault = document.getElementById('restoreDefault');
   const btnReinjectNow = document.getElementById('reinjectNow');
   const btnOpenRepo = document.getElementById('openRepo');
+  const btnGpt53Save = document.getElementById('gpt53Save');
   const btnGpt53Refresh = document.getElementById('gpt53Refresh');
   const btnGpt53Run = document.getElementById('gpt53Run');
+  const elGpt53Urls = document.getElementById('gpt53Urls');
   const elGpt53Status = document.getElementById('gpt53Status');
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
@@ -101,10 +103,34 @@
     const alarm = resp.alarm && typeof resp.alarm === 'object' ? resp.alarm : null;
     const state = resp.state && typeof resp.state === 'object' ? resp.state : null;
     const now = Number(resp.now) || Date.now();
+    const urls = Array.isArray(resp.urls) ? resp.urls.filter((u) => typeof u === 'string' && u.trim()) : [];
+
+    // Sync URL list into textarea when the user isn't actively editing.
+    try {
+      if (elGpt53Urls && document.activeElement !== elGpt53Urls) {
+        const next = urls.join('\n');
+        if (next && elGpt53Urls.value.trim() !== next.trim()) elGpt53Urls.value = next;
+      }
+    } catch {}
+
+    const items = state && state.items && typeof state.items === 'object' ? state.items : {};
+    const results = urls.map((url) => {
+      const it = items?.[url] && typeof items[url] === 'object' ? items[url] : null;
+      const checkedAt = Number(it?.checkedAt) || 0;
+      return {
+        url,
+        available: typeof it?.available === 'boolean' ? it.available : null,
+        status: typeof it?.status === 'number' ? it.status : null,
+        error: typeof it?.error === 'string' ? it.error : '',
+        checkedAt,
+        checkedAtText: formatDateTime(checkedAt),
+        checkedAgo: checkedAt ? formatAgeMs(now - checkedAt) : ''
+      };
+    });
 
     const view = {
       enabled: resp.enabled !== false,
-      url: resp.url || '',
+      urls,
       alarm: alarm
         ? {
             name: alarm.name,
@@ -116,14 +142,12 @@
         : null,
       state: state
         ? {
-            available: typeof state.available === 'boolean' ? state.available : null,
-            status: state.status,
-            error: typeof state.error === 'string' ? state.error : '',
             checkedAt: state.checkedAt,
             checkedAtText: formatDateTime(state.checkedAt),
-            checkedAgo: Number.isFinite(Number(state.checkedAt)) ? formatAgeMs(now - Number(state.checkedAt)) : ''
+            checkedAgo: Number.isFinite(Number(state.checkedAt)) ? formatAgeMs(now - Number(state.checkedAt)) : '',
+            results
           }
-        : null,
+        : { results },
       now,
       nowText: formatDateTime(now)
     };
@@ -2104,20 +2128,26 @@
   const runGpt53Action = (action) => {
     if (!elGpt53Status) return;
     const isRun = action === 'run';
+    const isSave = action === 'save';
     const btnA = btnGpt53Refresh;
     const btnB = btnGpt53Run;
+    const btnC = btnGpt53Save;
 
     const run = async () => {
       const seq = ++gpt53Seq;
       if (btnA) btnA.disabled = true;
       if (btnB) btnB.disabled = true;
-      elGpt53Status.textContent = isRun ? '正在检测…' : '正在读取…';
+      if (btnC) btnC.disabled = true;
+      elGpt53Status.textContent = isRun ? '正在检测…' : isSave ? '正在保存…' : '正在读取…';
       try {
-        const resp = await sendMessage({ type: isRun ? 'QUICKNAV_GPT53_RUN' : 'QUICKNAV_GPT53_GET_STATUS' });
+        const resp = await sendMessage({
+          type: isRun ? 'QUICKNAV_GPT53_RUN' : isSave ? 'QUICKNAV_GPT53_SET_URLS' : 'QUICKNAV_GPT53_GET_STATUS',
+          urlsText: isSave ? elGpt53Urls?.value || '' : undefined
+        });
         if (seq !== gpt53Seq) return;
         if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed');
         renderGpt53MonitorStatus(resp);
-        setStatus(isRun ? '已完成检测' : '已读取监控状态', 'ok');
+        setStatus(isRun ? '已完成检测' : isSave ? '已保存监控列表' : '已读取监控状态', 'ok');
       } catch (e) {
         if (seq !== gpt53Seq) return;
         elGpt53Status.textContent = `（失败）\n${e instanceof Error ? e.message : String(e)}`;
@@ -2125,13 +2155,20 @@
       } finally {
         if (btnA) btnA.disabled = false;
         if (btnB) btnB.disabled = false;
+        if (btnC) btnC.disabled = false;
       }
     };
     void run();
   };
 
+  btnGpt53Save?.addEventListener('click', () => runGpt53Action('save'));
   btnGpt53Refresh?.addEventListener('click', () => runGpt53Action('status'));
   btnGpt53Run?.addEventListener('click', () => runGpt53Action('run'));
+
+  // Load the current monitor config/status once on open so users can edit immediately.
+  try {
+    if (elGpt53Status) runGpt53Action('status');
+  } catch {}
 
   init();
 })();

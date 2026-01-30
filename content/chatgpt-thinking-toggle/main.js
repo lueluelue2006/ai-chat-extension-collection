@@ -496,6 +496,14 @@ button.${HINT_CLASS}::after {
   }
 
   function getComposerRoot() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getEditorEl === 'function' && typeof core.getComposerForm === 'function') {
+        const editor = core.getEditorEl();
+        const form = core.getComposerForm(editor);
+        if (form) return form;
+      }
+    } catch {}
     return document.querySelector('#thread-bottom-container') || document.body;
   }
 

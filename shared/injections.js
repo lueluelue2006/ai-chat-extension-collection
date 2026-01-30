@@ -8,6 +8,10 @@
   // No chrome APIs here.
 
   const INJECTIONS_VERSION = 1;
+  const ISOLATED_BRIDGE_FILE = 'content/quicknav-bridge.js';
+  const MAIN_BRIDGE_FILE = 'content/quicknav-bridge-main.js';
+  const CHATGPT_CORE_FILE = 'content/chatgpt-core.js';
+  const CHATGPT_CORE_MAIN_FILE = 'content/chatgpt-core-main.js';
   const MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
   const LEGACY_CONTENT_SCRIPT_IDS = ['quicknav_grok_model_selector'];
   // Extra host permissions needed by background tasks (not tied to content scripts).
@@ -130,7 +134,7 @@
       siteId: 'common',
       moduleId: 'hide_disclaimer',
       matches: allPatterns,
-      js: ['content/common-hide-disclaimer/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, 'content/common-hide-disclaimer/main.js'],
       runAt: 'document_start'
     });
 
@@ -139,6 +143,7 @@
       { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_start', matches: (r) => siteMatchPatterns(r, 'chatgpt') },
       { siteId: 'ernie', js: 'content/ernie-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'ernie') },
       { siteId: 'deepseek', js: 'content/deepseek-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'deepseek') },
+      { siteId: 'kimi', js: 'content/kimi-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'kimi') },
       { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'qwen') },
       { siteId: 'zai', js: 'content/zai-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'zai') },
       { siteId: 'grok', js: 'content/grok-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'grok') },
@@ -156,7 +161,10 @@
         siteId,
         moduleId: 'quicknav',
         matches,
-        js: ['content/ui-pos-drag.js', 'content/menu-bridge.js', s.js],
+        js:
+          siteId === 'chatgpt'
+            ? [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/ui-pos-drag.js', 'content/menu-bridge.js', s.js]
+            : [ISOLATED_BRIDGE_FILE, 'content/ui-pos-drag.js', 'content/menu-bridge.js', s.js],
         runAt: s.runAt
       });
 
@@ -165,7 +173,7 @@
         siteId,
         moduleId: 'quicknav',
         matches,
-        js: [MAIN_GUARD_FILE],
+        js: [MAIN_BRIDGE_FILE, MAIN_GUARD_FILE],
         runAt: 'document_start',
         world: 'MAIN'
       });
@@ -180,7 +188,7 @@
       siteId: 'genspark',
       moduleId: 'genspark_moa_image_autosettings',
       matches: gensparkAll,
-      js: ['content/genspark-moa-image-autosettings/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-moa-image-autosettings/main.js'],
       runAt: 'document_start',
       allFrames: true
     });
@@ -189,7 +197,7 @@
       siteId: 'genspark',
       moduleId: 'genspark_credit_balance',
       matches: gensparkAll,
-      js: ['content/genspark-credit-balance/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-credit-balance/main.js'],
       runAt: 'document_end'
     });
     defs.push({
@@ -197,7 +205,7 @@
       siteId: 'genspark',
       moduleId: 'genspark_codeblock_fold',
       matches: gensparkChat,
-      js: ['content/genspark-codeblock-fold/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-codeblock-fold/main.js'],
       runAt: 'document_end'
     });
     defs.push({
@@ -205,7 +213,7 @@
       siteId: 'genspark',
       moduleId: 'genspark_inline_upload_fix',
       matches: gensparkChat,
-      js: ['content/genspark-inline-upload-fix/main.js'],
+      js: [MAIN_BRIDGE_FILE, 'content/genspark-inline-upload-fix/main.js'],
       runAt: 'document_idle',
       world: 'MAIN'
     });
@@ -218,7 +226,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_perf',
       matches: chatgpt,
-      js: ['content/chatgpt-perf/content.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-perf/content.js'],
       css: ['content/chatgpt-perf/content.css'],
       runAt: 'document_idle'
     });
@@ -228,7 +236,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',
       matches: chatgpt,
-      js: ['content/chatgpt-thinking-toggle/config-bridge.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-thinking-toggle/config-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -237,7 +245,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-thinking-toggle/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-thinking-toggle/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -247,7 +255,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_cmdenter_send',
       matches: chatgpt,
-      js: ['content/chatgpt-cmdenter-send/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-cmdenter-send/main.js'],
       runAt: 'document_start'
     });
 
@@ -256,7 +264,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_sidebar_header_fix',
       matches: chatgpt,
-      js: ['content/chatgpt-sidebar-header-fix/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-sidebar-header-fix/main.js'],
       runAt: 'document_start'
     });
 
@@ -265,6 +273,7 @@
       { siteId: 'ernie', id: 'quicknav_ernie_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'ernie') },
       { siteId: 'deepseek', id: 'quicknav_deepseek_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'deepseek') },
       { siteId: 'qwen', id: 'quicknav_qwen_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'qwen') },
+      { siteId: 'kimi', id: 'quicknav_kimi_cmdenter_send', matches: (r) => siteQuickNavPatterns(r, 'kimi') },
       { siteId: 'zai', id: 'quicknav_zai_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'zai') },
       { siteId: 'grok', id: 'quicknav_grok_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'grok') },
       { siteId: 'gemini_app', id: 'quicknav_gemini_app_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'gemini_app') },
@@ -278,7 +287,7 @@
         siteId: s.siteId,
         moduleId: 'chatgpt_cmdenter_send',
         matches: uniq(s.matches(registry)),
-        js: ['content/chatgpt-cmdenter-send/main.js'],
+        js: [ISOLATED_BRIDGE_FILE, 'content/chatgpt-cmdenter-send/main.js'],
         runAt: 'document_start'
       });
     }
@@ -290,7 +299,7 @@
       siteId: 'grok',
       moduleId: 'grok_fast_unlock',
       matches: grok,
-      js: ['content/grok-fast-unlock/main.js'],
+      js: [MAIN_BRIDGE_FILE, 'content/grok-fast-unlock/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -299,7 +308,7 @@
       siteId: 'grok',
       moduleId: 'grok_rate_limit_display',
       matches: grok,
-      js: ['content/grok-rate-limit-display/main.js'],
+      js: [MAIN_BRIDGE_FILE, 'content/grok-rate-limit-display/main.js'],
       runAt: 'document_end',
       world: 'MAIN'
     });
@@ -310,7 +319,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_readaloud_speed_controller',
       matches: chatgpt,
-      js: ['content/chatgpt-readaloud-speed-controller/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-readaloud-speed-controller/main.js'],
       runAt: 'document_start'
     });
 
@@ -320,7 +329,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_reply_timer',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-reply-timer/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -331,7 +340,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: chatgpt,
-      js: ['content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
       runAt: 'document_start'
     });
     defs.push({
@@ -339,7 +348,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: chatgpt,
-      js: ['content/menu-bridge.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/menu-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -348,7 +357,13 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: chatgpt,
-      js: ['content/ui-pos-drag.js', 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-usage-monitor/main.js'],
+      js: [
+        MAIN_BRIDGE_FILE,
+        CHATGPT_CORE_MAIN_FILE,
+        'content/ui-pos-drag.js',
+        'content/chatgpt-fetch-hub/main.js',
+        'content/chatgpt-usage-monitor/main.js'
+      ],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -358,7 +373,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_download_file_fix',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-download-file-fix/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-download-file-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -368,7 +383,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_strong_highlight_lite',
       matches: chatgpt,
-      js: ['content/chatgpt-strong-highlight-lite/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-strong-highlight-lite/main.js'],
       runAt: 'document_start'
     });
 
@@ -377,7 +392,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_quick_deep_search',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-quick-deep-search/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-quick-deep-search/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -387,7 +402,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_hide_feedback_buttons',
       matches: chatgpt,
-      js: ['content/chatgpt-hide-feedback-buttons/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-hide-feedback-buttons/main.js'],
       runAt: 'document_start'
     });
 
@@ -396,7 +411,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_tex_copy_quote',
       matches: chatgpt,
-      js: ['content/chatgpt-tex-copy-quote/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-tex-copy-quote/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -406,7 +421,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_export_conversation',
       matches: chatgpt,
-      js: ['content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
       runAt: 'document_end'
     });
 
@@ -415,7 +430,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_image_message_edit',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-image-message-edit/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-image-message-edit/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -425,7 +440,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_message_tree',
       matches: chatgpt,
-      js: ['content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -435,7 +450,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_split_view',
       matches: chatgpt,
-      js: ['content/chatgpt-split-view/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-split-view/main.js'],
       runAt: 'document_idle'
     });
 
@@ -444,7 +459,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_split_view',
       matches: chatgpt,
-      js: ['content/chatgpt-split-view/iframe-hotkeys.js'],
+      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-split-view/iframe-hotkeys.js'],
       runAt: 'document_start',
       allFrames: true,
       world: 'MAIN'
@@ -457,7 +472,7 @@
       siteId: 'gemini_business',
       moduleId: 'gemini_math_fix',
       matches: geminiBusiness,
-      js: ['content/gemini-enterprise-math-fix/main.js'],
+      js: [MAIN_BRIDGE_FILE, 'content/gemini-enterprise-math-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -466,7 +481,7 @@
       siteId: 'gemini_business',
       moduleId: 'gemini_auto_3_pro',
       matches: geminiBusiness,
-      js: ['content/gemini-enterprise-auto-gemini-3-pro/main.js'],
+      js: [ISOLATED_BRIDGE_FILE, 'content/gemini-enterprise-auto-gemini-3-pro/main.js'],
       runAt: 'document_end'
     });
 

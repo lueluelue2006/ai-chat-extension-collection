@@ -18,6 +18,21 @@
   try {
     if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
     let attempt = 0;
+    let ensureAttempt = 0;
+
+    const ensureInjected = () => {
+      try {
+        // If the shared bridge exists, at least one dynamic script is already running in this tab.
+        if (globalThis.__aichat_quicknav_bridge_v1__) return;
+      } catch {}
+
+      ensureAttempt += 1;
+      if (ensureAttempt > 2) return;
+      try {
+        chrome.runtime.sendMessage({ type: 'QUICKNAV_BOOTSTRAP_ENSURE', href: location.href }, () => void chrome.runtime.lastError);
+      } catch {}
+    };
+
     const ping = () => {
       attempt++;
       chrome.runtime.sendMessage({ type: 'QUICKNAV_BOOTSTRAP_PING', href: location.href }, (res) => {
@@ -28,5 +43,10 @@
       });
     };
     ping();
+
+    // Safety net: on some Chrome/MV3 edge cases the registered scripts may not run on first load.
+    // Re-check shortly after start and ask SW to inject missing modules into *this* tab.
+    setTimeout(ensureInjected, 1200);
+    setTimeout(ensureInjected, 3200);
   } catch {}
 })();

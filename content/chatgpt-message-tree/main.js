@@ -107,6 +107,10 @@
     lastSummaryAt: 0,
     prefs: null,
     hubUnsub: null,
+    generatingWatchTimer: 0,
+    lastGenerating: false,
+    turnsUnsub: null,
+    hrefUnsub: null,
     escCloseInstalled: false,
     authCache: {
       fetchedAt: 0,
@@ -244,7 +248,52 @@
       const text = await resp.text().catch(() => '');
       throw new Error(`HTTP ${resp.status} ${text ? `(${text.slice(0, 120)})` : ''}`.trim());
     }
-    return await resp.json();
+    // Guard: extremely long conversations can return very large JSON payloads.
+    // Parsing them can cause huge memory spikes (multiple GB) on some machines.
+    // Keep a conservative byte limit and ask users to rely on QuickNav list when exceeded.
+    const MAX_JSON_BYTES = 6 * 1024 * 1024; // 6MB (decompressed). Tuned for stability over completeness.
+
+    try {
+      const lenHeader = resp.headers?.get?.('content-length') || '';
+      const len = Number(lenHeader);
+      if (Number.isFinite(len) && len > MAX_JSON_BYTES) {
+        throw new Error(`对话树数据过大（>${Math.round(MAX_JSON_BYTES / 1024 / 1024)}MB），为稳定性已跳过加载`);
+      }
+    } catch {}
+
+    try {
+      const body = resp.body;
+      if (!body || typeof body.getReader !== 'function') return await resp.json();
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let received = 0;
+      const parts = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        received += value.byteLength || 0;
+        if (received > MAX_JSON_BYTES) {
+          try { await reader.cancel(); } catch {}
+          throw new Error(`对话树数据过大（>${Math.round(MAX_JSON_BYTES / 1024 / 1024)}MB），为稳定性已跳过加载`);
+        }
+        parts.push(decoder.decode(value, { stream: true }));
+      }
+      parts.push(decoder.decode());
+      const text = parts.join('');
+      return JSON.parse(text);
+    } catch (e) {
+      // If streaming parse fails for any reason, fall back to native json() (best-effort).
+      // But keep the byte limit guard above to avoid the worst-case.
+      if (e instanceof Error && /对话树数据过大/.test(e.message)) throw e;
+      try {
+        return await resp.json();
+      } catch {
+        throw e;
+      }
+    }
   }
 
   function ensureStyles(_maxGuideDepthHint) {
@@ -983,12 +1032,13 @@
       state.panelEl?.setAttribute('data-open', state.open ? '1' : '0');
     } catch {}
     if (state.open) {
-      installHubHooks();
+      ensureGeneratingWatcher();
       startHrefWatcher();
       scheduleRefresh(60, 'open');
     } else {
       stopHrefWatcher();
-      uninstallHubHooks();
+      stopGeneratingWatcher();
+      dropLastDataIfClosed('close');
     }
   }
 
@@ -1080,6 +1130,32 @@
       }
     } catch {}
     return set;
+  }
+
+  function getReusableSummary(conversationId) {
+    try {
+      const cid = String(conversationId || '');
+      if (!cid) return null;
+      if (state.dirty) return null;
+      const summary = state.lastSummary;
+      if (!summary || typeof summary !== 'object') return null;
+      if (String(summary.conversationId || '') !== cid) return null;
+      const age = now() - (Number(state.lastSummaryAt) || 0);
+      if (!Number.isFinite(age) || age < 0 || age >= 15000) return null;
+      return summary;
+    } catch {
+      return null;
+    }
+  }
+
+  function dropLastDataIfClosed(reason = '') {
+    try {
+      if (state.open) return;
+      if (!state.lastData) return;
+      state.lastData = null;
+      // Keep `lastSummary` (small) for QuickNav tooltips; drop mapping to reduce memory.
+      if (reason) state.lastLoadedAt = now();
+    } catch {}
   }
 
   function getBridgeSummary() {
@@ -1205,6 +1281,13 @@
             return;
           }
 
+          const reusableSummary = getReusableSummary(currentConvId);
+          if (reusableSummary) {
+            reply(reusableSummary);
+            dropLastDataIfClosed('bridge-summary');
+            return;
+          }
+
           const cached = state.lastData;
           const age = now() - (Number(state.lastLoadedAt) || 0);
           const canUseCache = !!(
@@ -1216,6 +1299,7 @@
           );
           if (canUseCache) {
             reply(getBridgeSummary());
+            dropLastDataIfClosed('bridge-cache');
             return;
           }
 
@@ -1232,6 +1316,7 @@
                 await state.refreshPromise;
               }
               reply(getBridgeSummary());
+              dropLastDataIfClosed('bridge-fetch');
             } catch {
               reply(null);
             }
@@ -1313,6 +1398,8 @@
               reply(false);
             } catch {
               reply(false);
+            } finally {
+              dropLastDataIfClosed('bridge-navigate');
             }
           };
 
@@ -1869,35 +1956,130 @@
     } catch {}
   }
 
-  function installHubHooks() {
+  function isGeneratingNow() {
     try {
-      if (state.hubUnsub) return true;
-      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
-      if (!hub || typeof hub.register !== 'function') return false;
-      state.hubUnsub = hub.register({
-        priority: 20,
-        onConversationDone: () => {
-          state.dirty = true;
-          scheduleRefresh(900, 'send');
-        }
-      });
-      return true;
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.isGenerating === 'function') return !!core.isGenerating();
+    } catch {}
+    try {
+      return !!document.querySelector('button[data-testid="stop-button"]');
     } catch {
       return false;
     }
   }
 
-  function uninstallHubHooks() {
+  function ensureGeneratingWatcher() {
     try {
-      if (typeof state.hubUnsub === 'function') state.hubUnsub();
+      if (state.generatingWatchTimer) return;
+      state.lastGenerating = isGeneratingNow();
+      // If the user opens the tree while a response is already streaming, make sure we refresh once it finishes.
+      if (state.lastGenerating) state.dirty = true;
+      state.generatingWatchTimer = setInterval(() => {
+        try {
+          if (!state.open) return;
+          if (document.hidden) return;
+          const generating = isGeneratingNow();
+          const prev = !!state.lastGenerating;
+          state.lastGenerating = generating;
+          if (generating && !prev) state.dirty = true;
+          if (prev && !generating) scheduleRefresh(700, 'done');
+        } catch {}
+      }, 400);
+    } catch {
+      state.generatingWatchTimer = 0;
+    }
+  }
+
+  function stopGeneratingWatcher() {
+    try {
+      if (state.generatingWatchTimer) clearInterval(state.generatingWatchTimer);
     } catch {}
-    state.hubUnsub = null;
+    state.generatingWatchTimer = 0;
+    state.lastGenerating = false;
+  }
+
+  function installTurnsWatcher() {
+    try {
+      if (state.turnsUnsub) return true;
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (!core || typeof core.onTurnsChange !== 'function') return false;
+      state.turnsUnsub = core.onTurnsChange(() => {
+        try {
+          state.dirty = true;
+          // Avoid fetching large conversation JSON while streaming; wait for `onConversationDone`.
+          const generating = typeof core.isGenerating === 'function' ? core.isGenerating() : !!document.querySelector('[data-testid="stop-button"]');
+          if (generating) return;
+          scheduleRefresh(700, 'turns');
+        } catch {}
+      });
+      return true;
+    } catch {
+      state.turnsUnsub = null;
+      return false;
+    }
+  }
+
+  function uninstallTurnsWatcher() {
+    try {
+      if (typeof state.turnsUnsub === 'function') state.turnsUnsub();
+    } catch {}
+    state.turnsUnsub = null;
   }
 
   function startHrefWatcher() {
     try {
-      if (state.hrefWatchTimer) return;
+      if (state.hrefWatchTimer || state.hrefUnsub) return;
       state.lastHref = location.href;
+
+      // Prefer shared ChatGPT core (which itself prefers the shared bridge).
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.onRouteChange === 'function') {
+        try {
+          updateToggleVisibility();
+        } catch {}
+        state.hrefUnsub = core.onRouteChange((ev) => {
+          try {
+            updateToggleVisibility();
+          } catch {}
+          const href = typeof ev?.href === 'string' ? ev.href : location.href;
+          if (!href || href === state.lastHref) return;
+          state.lastHref = href;
+          state.dirty = true;
+          state.lastData = null;
+          state.lastSummary = null;
+          state.lastSummaryKey = '';
+          state.lastSummaryAt = 0;
+          scheduleRefresh(500, 'route');
+        });
+        return;
+      }
+
+      // Prefer shared MAIN-world bridge (reduces duplicated polling across modules).
+      const bridge = window.__aichat_quicknav_bridge_main_v1__;
+      if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
+        try {
+          bridge.ensureRouteListener();
+        } catch {}
+        try {
+          updateToggleVisibility();
+        } catch {}
+        state.hrefUnsub = bridge.on('routeChange', (ev) => {
+          try {
+            updateToggleVisibility();
+          } catch {}
+          const href = typeof ev?.href === 'string' ? ev.href : location.href;
+          if (!href || href === state.lastHref) return;
+          state.lastHref = href;
+          state.dirty = true;
+          state.lastData = null;
+          state.lastSummary = null;
+          state.lastSummaryKey = '';
+          state.lastSummaryAt = 0;
+          scheduleRefresh(500, 'route');
+        });
+        return;
+      }
+
       state.hrefWatchTimer = setInterval(() => {
         updateToggleVisibility();
         if (location.href !== state.lastHref) {
@@ -1915,6 +2097,12 @@
 
   function stopHrefWatcher() {
     try {
+      if (state.hrefUnsub) {
+        try {
+          state.hrefUnsub();
+        } catch {}
+        state.hrefUnsub = null;
+      }
       if (!state.hrefWatchTimer) return;
       clearInterval(state.hrefWatchTimer);
       state.hrefWatchTimer = 0;
@@ -1934,7 +2122,8 @@
     state.refreshTimer = 0;
 
     stopHrefWatcher();
-    uninstallHubHooks();
+    stopGeneratingWatcher();
+    uninstallTurnsWatcher();
     uninstallQuickNavBridge();
 
     try {
@@ -1966,5 +2155,6 @@
   ensureUi();
   installEscClose();
   installQuickNavBridge();
+  installTurnsWatcher();
   // Lazy load: only fetch/watch when panel is opened or requested via bridge.
 })();

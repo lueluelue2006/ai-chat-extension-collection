@@ -6,6 +6,14 @@
     globalThis.__aichat_cmdenter_send_installed__ = true;
   } catch {}
 
+  function getChatgptCore() {
+    try {
+      return globalThis.__aichat_chatgpt_core_v1__ || null;
+    } catch {
+      return null;
+    }
+  }
+
   const SITE = (() => {
     const host = String(location.hostname || '').toLowerCase();
     if (host === 'chatgpt.com') return 'chatgpt';
@@ -17,22 +25,44 @@
     if (host === 'chat.qwen.ai') return 'qwen';
     if (host === 'chat.z.ai') return 'zai';
     if (host === 'grok.com') return 'grok';
+    if (host === 'www.kimi.com' || host === 'kimi.com') return 'kimi';
     return 'unknown';
   })();
 
   function getChatGPTPromptElementFrom(target) {
     if (!(target instanceof Element)) return null;
 
-    const byId = target.closest('#prompt-textarea');
-    if (byId) return byId;
+    // Prefer the real editor (ProseMirror).
+    try {
+      const byProseMirror = target.closest('.ProseMirror[contenteditable="true"]');
+      if (byProseMirror) return byProseMirror;
+    } catch {}
 
-    const byProseMirror = target.closest('.ProseMirror[contenteditable="true"]');
-    if (byProseMirror && byProseMirror.closest('form')?.querySelector('textarea[name="prompt-textarea"]')) {
-      return byProseMirror;
-    }
+    // Textarea fallback (often hidden mirror).
+    try {
+      const byName = target.closest('textarea[name="prompt-textarea"]');
+      if (byName) return byName;
+    } catch {}
 
-    const byName = target.closest('textarea[name="prompt-textarea"]');
-    if (byName) return byName;
+    // #prompt-textarea might be a textarea or a wrapper; accept only when it looks editable.
+    try {
+      const byId = target.closest('#prompt-textarea');
+      if (byId) {
+        if (byId instanceof HTMLTextAreaElement) return byId;
+        if (byId.isContentEditable) return byId;
+        if (String(byId.className || '').includes('ProseMirror')) return byId;
+      }
+    } catch {}
+
+    // Fallback via shared core: only accept when the event target is within the composer form.
+    try {
+      const core = getChatgptCore();
+      if (core && typeof core.getEditorEl === 'function' && typeof core.getComposerForm === 'function') {
+        const editor = core.getEditorEl();
+        const form = core.getComposerForm(editor);
+        if (form && form.contains(target)) return editor;
+      }
+    } catch {}
 
     return null;
   }
@@ -108,6 +138,15 @@
     return null;
   }
 
+  function getKimiPromptElementFrom(target) {
+    if (!(target instanceof Element)) return null;
+    const byEditor = target.closest('.chat-input-editor[contenteditable="true"][role="textbox"]');
+    if (byEditor) return byEditor;
+    const byRole = target.closest('[contenteditable="true"][role="textbox"]');
+    if (byRole && String(byRole.className || '').includes('chat-input-editor')) return byRole;
+    return null;
+  }
+
   function getPromptElementFrom(target) {
     if (SITE === 'chatgpt') return getChatGPTPromptElementFrom(target);
     if (SITE === 'gemini_app') return getGeminiAppPromptElementFrom(target);
@@ -118,6 +157,7 @@
     if (SITE === 'deepseek') return getDeepseekPromptElementFrom(target);
     if (SITE === 'ernie') return getErniePromptElementFrom(target);
     if (SITE === 'grok') return getGrokPromptElementFrom(target);
+    if (SITE === 'kimi') return getKimiPromptElementFrom(target);
     return null;
   }
 
@@ -176,6 +216,25 @@
       insertNewlineIntoTextarea(promptEl);
       return;
     }
+    if (SITE === 'kimi') {
+      // Kimi uses a custom contenteditable editor; it may ignore untrusted key events.
+      // Prefer editing commands to ensure a newline is inserted.
+      try {
+        promptEl.focus?.();
+      } catch {}
+      try {
+        if (typeof document.execCommand === 'function') {
+          try {
+            if (typeof document.queryCommandSupported === 'function' && document.queryCommandSupported('insertLineBreak')) {
+              if (document.execCommand('insertLineBreak')) return;
+            }
+          } catch {}
+          try {
+            if (document.execCommand('insertText', false, '\n')) return;
+          } catch {}
+        }
+      } catch {}
+    }
     dispatchEnter(promptEl, { shiftKey: true });
   }
 
@@ -192,13 +251,78 @@
     const testId = button.getAttribute('data-testid');
     if (testId && testId.toLowerCase().includes('stop')) return true;
     const aria = button.getAttribute('aria-label') || '';
-    if (/stop/i.test(aria)) return true;
+    if (/(stop|cancel)/i.test(aria)) return true;
+    if (/(停止|取消|中止|终止)/.test(aria)) return true;
     if (button.querySelector('svg[aria-label*="Stop"]')) return true;
+    if (button.querySelector('svg[aria-label*="Cancel"]')) return true;
+    if (button.querySelector('svg[aria-label*="停止"]')) return true;
+    if (button.querySelector('svg[aria-label*="取消"]')) return true;
+    return false;
+  }
+
+  function isStopLikeControl(el) {
+    if (!(el instanceof Element)) return false;
+    try {
+      if (el instanceof HTMLButtonElement && isStopButton(el)) return true;
+    } catch {}
+    try {
+      const testId = String(el.getAttribute?.('data-testid') || '');
+      const aria = String(el.getAttribute?.('aria-label') || '');
+      const title = String(el.getAttribute?.('title') || '');
+      const name = String(el.getAttribute?.('name') || '');
+      const dataIcon = String(el.getAttribute?.('data-icon') || '');
+      const icon = String(el.getAttribute?.('icon') || '');
+      const className = String(el.className || '');
+      const combined = `${testId} ${aria} ${title} ${name} ${dataIcon} ${icon} ${className}`;
+      if (/(stop|cancel)/i.test(combined)) return true;
+      if (/(停止|取消|中止|终止)/.test(combined)) return true;
+    } catch {}
+    try {
+      // Some sites wrap the stop button as a div containing a labeled inner element (svg/button).
+      const inner = el.querySelector?.(
+        '[data-testid*="stop" i],[aria-label*="Stop" i],[aria-label*="Cancel" i],[title*="Stop" i],[title*="Cancel" i],[name*="stop" i],[name*="cancel" i],[data-icon*="stop" i],[data-icon*="cancel" i],[icon*="stop" i],[icon*="cancel" i],[aria-label*="停止" i],[title*="停止" i],[aria-label*="取消" i],[title*="取消" i],[aria-label*="中止" i],[title*="中止" i],[aria-label*="终止" i],[title*="终止" i]'
+      );
+      if (inner) return true;
+    } catch {}
+    return false;
+  }
+
+  function isGeneratingForSite(promptEl) {
+    try {
+      if (SITE === 'chatgpt') {
+        const form = promptEl?.closest?.('form') || null;
+        try {
+          const core = getChatgptCore();
+          if (core && typeof core.isGenerating === 'function') return !!core.isGenerating(promptEl);
+        } catch {}
+        return isGenerating(form);
+      }
+
+      if (SITE === 'kimi') {
+        const root = promptEl?.closest?.('.chat-action') || promptEl?.closest?.('.chat-editor') || document;
+        const control = root.querySelector?.('.send-button-container') || document.querySelector('.send-button-container');
+        if (control && isStopLikeControl(control)) return true;
+        return false;
+      }
+
+      if (SITE === 'gemini_app') {
+        const root = promptEl?.getRootNode?.() || document;
+        const button = root.querySelector?.('button.send-button') || root.querySelector?.('button[aria-label="Send message"]') || null;
+        if (button && isStopLikeControl(button)) return true;
+        return false;
+      }
+    } catch {}
     return false;
   }
 
   function isGenerating(form) {
     if (!form) return false;
+    if (SITE === 'chatgpt') {
+      try {
+        const core = getChatgptCore();
+        if (core && typeof core.isGenerating === 'function') return !!core.isGenerating(form);
+      } catch {}
+    }
     const stopButton = form.querySelector('button[data-testid="stop-button"]');
     if (stopButton) return true;
     const submitButton = form.querySelector('#composer-submit-button');
@@ -216,12 +340,21 @@
 
   function clickSendButtonForSite(promptEl) {
     try {
-      if (SITE === 'chatgpt') return clickSendButtonNear(promptEl);
+      if (SITE === 'chatgpt') {
+        try {
+          const core = getChatgptCore();
+          if (core && typeof core.clickSendButton === 'function') {
+            if (core.clickSendButton(promptEl)) return true;
+          }
+        } catch {}
+        return clickSendButtonNear(promptEl);
+      }
 
       if (SITE === 'gemini_app') {
         const button =
           document.querySelector('button.send-button') || document.querySelector('button[aria-label="Send message"]') || null;
         if (!button || !(button instanceof HTMLButtonElement) || isElementDisabled(button)) return false;
+        if (isStopButton(button)) return false;
         button.click();
         return true;
       }
@@ -240,6 +373,22 @@
         const button = document.querySelector('.enter-icon-wrapper') || null;
         if (!button || !(button instanceof Element)) return false;
         if (isElementDisabled(button)) return false;
+        button.click();
+        return true;
+      }
+
+      if (SITE === 'kimi') {
+        const root = promptEl.closest('.chat-action') || promptEl.closest('.chat-editor') || document;
+        const button = root.querySelector('.send-button-container') || document.querySelector('.send-button-container') || null;
+        if (!button || !(button instanceof Element)) return false;
+        if (isStopLikeControl(button)) return false;
+        try {
+          const ariaDisabled = button.getAttribute?.('aria-disabled');
+          if (ariaDisabled && ariaDisabled !== 'false') return false;
+        } catch {}
+        try {
+          if (getComputedStyle(button).pointerEvents === 'none') return false;
+        } catch {}
         button.click();
         return true;
       }
@@ -293,9 +442,23 @@
   }
 
   function sendMessage(promptEl) {
+    // Do not turn Cmd/Ctrl+Enter into a "stop generation" hotkey on sites where the send button
+    // morphs into a stop/cancel control while streaming.
+    if (isGeneratingForSite(promptEl)) return;
+
     if (SITE === 'chatgpt') {
       const form = promptEl.closest('form');
-      if (isGenerating(form)) return;
+      // Avoid sending while generating.
+      try {
+        const core = getChatgptCore();
+        if (core && typeof core.isGenerating === 'function') {
+          if (core.isGenerating(promptEl)) return;
+        } else {
+          if (isGenerating(form)) return;
+        }
+      } catch {
+        if (isGenerating(form)) return;
+      }
     }
     if (clickSendButtonForSite(promptEl)) return;
     dispatchEnter(promptEl, { shiftKey: false });
@@ -319,14 +482,19 @@
       return;
     }
 
+    // Kimi uses Lexical (controlled editor). Direct DOM editing (execCommand / synthetic key events)
+    // is often overwritten on the next render. The most reliable way to get a newline is to allow
+    // the browser default behavior, while blocking app-level "send on Enter" handlers.
+    if (SITE === 'kimi' && !wantsSend) {
+      event.stopImmediatePropagation();
+      return;
+    }
+
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    if (wantsSend) {
-      sendMessage(promptEl);
-    } else {
-      insertNewline(promptEl);
-    }
+    if (wantsSend) sendMessage(promptEl);
+    else insertNewline(promptEl);
   }
 
   window.addEventListener('keydown', handleKeyDown, true);

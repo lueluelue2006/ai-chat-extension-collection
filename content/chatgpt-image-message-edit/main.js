@@ -22,6 +22,7 @@
     bannerEl: null,
     lastHref: location.href,
     seenTurns: null,
+    retryTurns: null,
     scanTimer: null,
     retryTimer: null,
     retryDelayMs: 0,
@@ -32,6 +33,7 @@
     bannerResizeTarget: null,
     mo: null,
     moRoot: null,
+    turnsUnsub: null,
     hubUnsub: null,
     unwatchHref: null,
     cleanup: null
@@ -55,6 +57,12 @@
 
   function getConversationIdFromUrl() {
     try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getConversationIdFromUrl === 'function') {
+        return core.getConversationIdFromUrl(location.href);
+      }
+    } catch {}
+    try {
       const parts = String(location.pathname || '')
         .split('/')
         .filter(Boolean);
@@ -67,7 +75,17 @@
   }
 
   function getComposerEl() {
-    return document.querySelector('#prompt-textarea[contenteditable="true"]');
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      const el = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : null;
+      if (el) return el;
+    } catch {}
+    return (
+      document.querySelector('.ProseMirror[contenteditable="true"]') ||
+      document.querySelector('#prompt-textarea[contenteditable="true"]') ||
+      document.querySelector('#prompt-textarea') ||
+      document.querySelector('textarea[name="prompt-textarea"]')
+    );
   }
 
   function getUploadPhotosInput() {
@@ -346,6 +364,11 @@
     state.moRoot = null;
 
     try {
+      if (typeof state.turnsUnsub === 'function') state.turnsUnsub();
+    } catch {}
+    state.turnsUnsub = null;
+
+    try {
       state.hubUnsub?.();
     } catch {}
     state.hubUnsub = null;
@@ -364,6 +387,7 @@
     state.hoverHandler = null;
 
     state.seenTurns = null;
+    state.retryTurns = null;
     state.retryDelayMs = 0;
     cancelEditMode();
   }
@@ -549,6 +573,7 @@
   function onRouteChange() {
     state.lastHref = location.href;
     state.seenTurns = new WeakSet();
+    state.retryTurns = null;
     state.retryDelayMs = 0;
     try {
       if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
@@ -563,54 +588,97 @@
     scheduleScan(150);
   }
 
+  function getRetryTurns() {
+    return state.retryTurns || (state.retryTurns = new Set());
+  }
+
+  function installTurnsWatcher() {
+    if (state.turnsUnsub) return true;
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (!core || typeof core.onTurnsChange !== 'function') return false;
+
+      state.turnsUnsub = core.onTurnsChange((ev) => {
+        try {
+          if (location.href !== state.lastHref) onRouteChange();
+          const reason = typeof ev?.reason === 'string' ? ev.reason : '';
+
+          // When the turns root appears (or is reattached after a SPA nav), do a full scan once.
+          if (reason === 'attach') return scheduleScan(120);
+
+          const addedTurns = Array.isArray(ev?.addedTurns) ? ev.addedTurns : [];
+          if (!addedTurns.length) return;
+
+          const seen = state.seenTurns || (state.seenTurns = new WeakSet());
+          const retry = getRetryTurns();
+          let needRetry = false;
+
+          for (const t of addedTurns) {
+            if (!t || t.nodeType !== 1) continue;
+            if (!t.matches?.(USER_TURN_SELECTOR)) continue;
+            if (seen.has(t)) continue;
+            if (ensureEditButtonForTurn(t)) {
+              seen.add(t);
+            } else {
+              retry.add(t);
+              needRetry = true;
+            }
+          }
+
+          if (needRetry) scheduleRetryScan();
+        } catch {}
+      });
+      return true;
+    } catch {
+      state.turnsUnsub = null;
+      return false;
+    }
+  }
+
   function installHrefWatcher() {
-    let last = location.href;
-    const check = () => {
-      const href = location.href;
-      if (href === last) return;
-      last = href;
-      onRouteChange();
-    };
-    const onPop = () => check();
+    // Prefer shared core/bridge (avoids patching history in every module).
     try {
-      window.addEventListener('popstate', onPop, true);
-      window.addEventListener('hashchange', onPop, true);
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.onRouteChange === 'function') {
+        return core.onRouteChange(() => onRouteChange());
+      }
     } catch {}
 
-    const origPush = history.pushState;
-    const origReplace = history.replaceState;
-    const patchedPush = function (...args) {
-      const ret = origPush.apply(this, args);
-      setTimeout(check, 0);
-      return ret;
-    };
-    const patchedReplace = function (...args) {
-      const ret = origReplace.apply(this, args);
-      setTimeout(check, 0);
-      return ret;
-    };
+    // Fallback: route-change events from MAIN-world bridge (scroll-guard or polling).
     try {
-      patchedPush.__aichatImgEditPatched = true;
-      patchedReplace.__aichatImgEditPatched = true;
-    } catch {}
-    try {
-      history.pushState = patchedPush;
-      history.replaceState = patchedReplace;
+      const bridge = window.__aichat_quicknav_bridge_main_v1__;
+      if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
+        try {
+          bridge.ensureRouteListener();
+        } catch {}
+        return bridge.on('routeChange', () => onRouteChange());
+      }
     } catch {}
 
+    // Last resort: slow polling (no history patch).
+    let last = '';
+    try {
+      last = String(location.href || '');
+    } catch {
+      last = '';
+    }
+    const timer = setInterval(() => {
+      try {
+        const href = String(location.href || '');
+        if (!href || href === last) return;
+        last = href;
+        onRouteChange();
+      } catch {}
+    }, 1200);
     return () => {
       try {
-        window.removeEventListener('popstate', onPop, true);
-        window.removeEventListener('hashchange', onPop, true);
-      } catch {}
-      try {
-        if (history.pushState === patchedPush) history.pushState = origPush;
-        if (history.replaceState === patchedReplace) history.replaceState = origReplace;
+        clearInterval(timer);
       } catch {}
     };
   }
 
   function ensureTurnsObserver() {
+    if (state.turnsUnsub) return true;
     const first = document.querySelector(ANY_TURN_SELECTOR);
     const root = first?.parentElement || null;
     if (!root) return false;
@@ -670,6 +738,7 @@
   }
 
   function ensureBootstrapObserver() {
+    if (state.turnsUnsub) return true;
     try {
       if (state.mo) return true;
       // Only needed when loading an existing conversation: React often renders turns after DOMContentLoaded.
@@ -718,12 +787,14 @@
     if (location.href !== state.lastHref) onRouteChange();
 
     if (!state.seenTurns) state.seenTurns = new WeakSet();
-    ensureTurnsObserver();
+    const hasTurnsWatcher = installTurnsWatcher();
+    if (!hasTurnsWatcher) ensureTurnsObserver();
 
     const seen = state.seenTurns;
+    const retry = getRetryTurns();
     const turns = document.querySelectorAll(USER_TURN_SELECTOR);
     if (!turns.length) {
-      ensureBootstrapObserver();
+      if (!hasTurnsWatcher) ensureBootstrapObserver();
       return;
     }
     let needRetry = false;
@@ -732,11 +803,45 @@
       if (ensureEditButtonForTurn(t)) {
         seen.add(t);
       } else {
+        retry.add(t);
         needRetry = true;
       }
     }
     if (needRetry) scheduleRetryScan();
     else state.retryDelayMs = 0;
+  }
+
+  function retryPendingTurns() {
+    try {
+      if (location.href !== state.lastHref) onRouteChange();
+      const retry = state.retryTurns;
+      if (!retry || !retry.size) {
+        state.retryDelayMs = 0;
+        return;
+      }
+      const seen = state.seenTurns || (state.seenTurns = new WeakSet());
+      let stillPending = false;
+      for (const t of Array.from(retry)) {
+        try {
+          if (!t || !t.isConnected) {
+            retry.delete(t);
+            continue;
+          }
+          if (seen.has(t)) {
+            retry.delete(t);
+            continue;
+          }
+          if (ensureEditButtonForTurn(t)) {
+            seen.add(t);
+            retry.delete(t);
+            continue;
+          }
+          stillPending = true;
+        } catch {}
+      }
+      if (stillPending) scheduleRetryScan();
+      else state.retryDelayMs = 0;
+    } catch {}
   }
 
   function scheduleRetryScan() {
@@ -746,7 +851,7 @@
     state.retryTimer = setTimeout(() => {
       state.retryTimer = null;
       try {
-        scanAllTurns();
+        retryPendingTurns();
       } catch {}
     }, delay);
   }
@@ -778,6 +883,7 @@
           seen.add(turn);
           state.retryDelayMs = 0;
         } else {
+          getRetryTurns().add(turn);
           scheduleRetryScan();
         }
       } catch {}

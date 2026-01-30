@@ -1,4 +1,5 @@
 .DS_Store
+.codex/
 icons/*.png
 genspark-page.png
 .tmp-screens/

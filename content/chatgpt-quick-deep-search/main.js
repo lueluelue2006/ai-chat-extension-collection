@@ -74,10 +74,10 @@
 
 `;
   const CHATGPT_SEND_BTN_SELECTORS = [
+    '#composer-submit-button',
     'button[data-testid="send-button"]',
-    'button#composer-submit-button[data-testid="send-button"]',
-    'form button[type="submit"][data-testid="send-button"]',
-    'form button[type="submit"]'
+    'button[aria-label="Send prompt"]',
+    'button[aria-label*="Send" i]'
   ];
   const TRANSLATE_PREFIX = `翻译成中文`;
 
@@ -245,6 +245,11 @@
   }
   function editorElRaw() {
     if (SITE === 'chatgpt') {
+      try {
+        const core = window.__aichat_chatgpt_core_main_v1__;
+        const el = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : null;
+        if (el) return el;
+      } catch {}
       // ChatGPT has changed composer DOM multiple times; keep this permissive and prefer the visible editor.
       return (
         document.querySelector('#prompt-textarea.ProseMirror') ||
@@ -373,6 +378,8 @@
   let dgCaptureTimer = 0;
   let dgIgnoreUntil = 0;
   let dgSuppressUntil = 0;
+  let dgRestoreLoopId = 0;
+  let dgRestoreLoopActiveUntil = 0;
 
   function dgNow() {
     return Date.now();
@@ -383,7 +390,11 @@
       if (!t) return false;
       const el = /** @type {Element} */ (t.nodeType === 1 ? t : t.parentElement);
       if (!el || typeof el.closest !== 'function') return false;
-      return !!(el.closest('#prompt-textarea') || el.closest('textarea[name="prompt-textarea"]'));
+      if (el.closest('#prompt-textarea') || el.closest('textarea[name="prompt-textarea"]')) return true;
+      const pm = el.closest('.ProseMirror[contenteditable="true"]');
+      if (!pm) return false;
+      // Reduce false positives: ensure this ProseMirror is inside the composer form.
+      return !!pm.closest('form')?.querySelector('textarea[name="prompt-textarea"]');
     } catch {
       return false;
     }
@@ -544,6 +555,32 @@
     } catch {}
   }
 
+  function dgBumpRestoreLoop(ms = DRAFT_GUARD_RESTORE_WINDOW_MS + 800) {
+    if (!DRAFT_GUARD_ENABLED) return;
+    const until = dgNow() + Math.max(0, Number(ms) || 0);
+    dgRestoreLoopActiveUntil = Math.max(dgRestoreLoopActiveUntil, until);
+    if (dgRestoreLoopId) return;
+    dgRestoreLoopId = setInterval(() => {
+      try {
+        const now = dgNow();
+        if (document.hidden) return;
+        if (dgRestoreLoopActiveUntil && now > dgRestoreLoopActiveUntil) {
+          clearInterval(dgRestoreLoopId);
+          dgRestoreLoopId = 0;
+          return;
+        }
+        // Stop early when there's no recent input window to protect.
+        // Note: don't require `dgSavedText` here; the capture is async and may populate it shortly.
+        if (!dgLastUserInputAt || now - dgLastUserInputAt > DRAFT_GUARD_RESTORE_WINDOW_MS) {
+          clearInterval(dgRestoreLoopId);
+          dgRestoreLoopId = 0;
+          return;
+        }
+        dgMaybeRestore();
+      } catch {}
+    }, 450);
+  }
+
   (function installDraftGuard() {
     if (!DRAFT_GUARD_ENABLED) return;
     try {
@@ -562,6 +599,7 @@
             if (!dgIsComposerTarget(e?.target)) return;
             dgLastUserInputAt = dgNow();
             dgScheduleCapture();
+            dgBumpRestoreLoop();
           } catch {}
         },
         true
@@ -573,6 +611,7 @@
             if (!dgIsComposerTarget(e?.target)) return;
             dgLastUserInputAt = dgNow();
             dgScheduleCapture();
+            dgBumpRestoreLoop();
           } catch {}
         },
         true
@@ -584,6 +623,7 @@
             if (!dgIsComposerTarget(e?.target)) return;
             dgLastUserInputAt = dgNow();
             dgScheduleCapture();
+            dgBumpRestoreLoop();
           } catch {}
         },
         true
@@ -602,16 +642,6 @@
         },
         true
       );
-    } catch {}
-
-    // Periodic presence check: if the composer gets wiped shortly after user paste/typing, restore it.
-    try {
-      setInterval(() => {
-        try {
-          if (document.hidden) return;
-          dgMaybeRestore();
-        } catch {}
-      }, 450);
     } catch {}
 
     // Also run a couple of early checks (covers the initial hydration window).
@@ -771,11 +801,34 @@
   }
   function findSendButtonRaw() {
     if (SITE === 'chatgpt') {
-      for (const sel of CHATGPT_SEND_BTN_SELECTORS) {
-        const btn = document.querySelector(sel);
-        if (btn) return btn;
-      }
-      return null;
+      try {
+        const core = window.__aichat_chatgpt_core_main_v1__;
+        if (core && typeof core.findSendButton === 'function') {
+          const btn = core.findSendButton(editorEl());
+          if (btn) {
+            const testId = String(btn.getAttribute?.('data-testid') || '');
+            if (!/stop/i.test(testId)) return btn;
+          }
+        }
+      } catch {}
+      const uniq = new Set();
+      /** @type {HTMLElement[]} */
+      const candidates = [];
+      try {
+        for (const sel of CHATGPT_SEND_BTN_SELECTORS) {
+          for (const el of Array.from(document.querySelectorAll(sel))) {
+            if (!(el instanceof HTMLElement)) continue;
+            if (uniq.has(el)) continue;
+            uniq.add(el);
+            candidates.push(el);
+          }
+        }
+      } catch {}
+
+      // Prefer the bottom-most visible candidate (composer is at the bottom).
+      const picked = pickBottomMostVisible(candidates);
+      if (picked) return picked;
+      return candidates.length ? candidates[candidates.length - 1] : null;
     }
 
     if (SITE === 'gemini_app') {
@@ -1154,17 +1207,29 @@
   // buttons as a BODY-level overlay positioned next to the send/stop button.
   const CHATGPT_OVERLAY_GAP_PX = 6;
   const CHATGPT_OVERLAY_BTN_SIZE_PX = 32;
+  const CHATGPT_OVERLAY_WIDTH_PX = CHATGPT_OVERLAY_BTN_SIZE_PX * 3 + CHATGPT_OVERLAY_GAP_PX * 2;
   let chatgptOverlayRaf = 0;
   let chatgptOverlayHasPosition = false;
 
   function findChatgptOverlayAnchor() {
-    return (
-      findSendButton() ||
-      document.querySelector('[data-testid="stop-button"]') ||
-      document.querySelector('div[data-testid="composer-trailing-actions"]') ||
-      document.querySelector('#thread-bottom button[type="submit"]') ||
-      null
-    );
+    const send = findSendButton();
+    if (send && send.isConnected) return send;
+    const stop = document.querySelector('[data-testid="stop-button"]');
+    if (stop) return stop;
+    // Fallbacks: keep this strictly in the composer area to avoid anchoring to unrelated forms/buttons.
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      const editor = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : editorEl();
+      const form = editor?.closest?.('form') || null;
+      const actions =
+        form?.querySelector?.('div[data-testid="composer-trailing-actions"]') ||
+        document.querySelector('div[data-testid="composer-trailing-actions"]') ||
+        null;
+      if (actions) return actions;
+      if (form) return form;
+      if (editor) return editor;
+    } catch {}
+    return document.querySelector('#thread-bottom') || null;
   }
 
   function scheduleChatgptOverlayUpdate() {
@@ -1178,7 +1243,9 @@
 
         const anchor = findChatgptOverlayAnchor();
         if (!anchor || !anchor.isConnected || typeof anchor.getBoundingClientRect !== 'function') {
-          if (!chatgptOverlayHasPosition) wrap.style.display = 'none';
+          // Hide when we can't anchor (prevents stale "floating in the middle" positions).
+          wrap.style.display = 'none';
+          chatgptOverlayHasPosition = false;
           return;
         }
 
@@ -1192,12 +1259,15 @@
             r.top + (r.height - CHATGPT_OVERLAY_BTN_SIZE_PX) / 2
           )
         );
-        const left = Math.max(0, Math.min(window.innerWidth, r.left));
+        const spaceRight = Math.max(0, window.innerWidth - r.right);
+        const preferRight = spaceRight >= CHATGPT_OVERLAY_WIDTH_PX + CHATGPT_OVERLAY_GAP_PX;
 
         wrap.style.display = 'flex';
-        wrap.style.left = `${Math.round(left)}px`;
+        const left = preferRight ? r.right + CHATGPT_OVERLAY_GAP_PX : r.left;
+        const clampedLeft = Math.max(0, Math.min(window.innerWidth - CHATGPT_OVERLAY_WIDTH_PX, left));
+        wrap.style.left = `${Math.round(clampedLeft)}px`;
         wrap.style.top = `${Math.round(top)}px`;
-        wrap.style.transform = `translateX(calc(-100% - ${CHATGPT_OVERLAY_GAP_PX}px))`;
+        wrap.style.transform = preferRight ? 'none' : `translateX(calc(-100% - ${CHATGPT_OVERLAY_GAP_PX}px))`;
 
         chatgptOverlayHasPosition = true;
       } catch {}

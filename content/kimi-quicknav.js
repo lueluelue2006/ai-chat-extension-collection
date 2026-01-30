@@ -2,16 +2,15 @@
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const STOP_BTN_SELECTOR =
+    '[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
-  const DEFAULT_NAV_TOP = 60;
-  const DEFAULT_NAV_RIGHT = 10;
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'cgpt-quicknav';
-  const QUICKNAV_SITE_ID = 'chatgpt';
+  const STORE_NS = 'kimi-quicknav';
+  const QUICKNAV_SITE_ID = 'kimi';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -32,8 +31,6 @@
   const SCROLL_LOCK_INTENT_MS = 1200;
   let scrollLockEnabled = false;
   let scrollLockScrollEl = null;
-  let __cgptChatScrollContainer = null;
-  let __cgptChatScrollContainerTs = 0;
   let scrollLockBoundTarget = null;
   let scrollLockLastUserTs = 0;
   let scrollLockLastUserIntentTs = 0;
@@ -46,30 +43,11 @@
   let scrollLockPointerActive = false;
   let scrollLockUserTouched = false;
   let navAllowScrollDepth = 0;
-  let navJumpSeq = 0;
-  let navJumpStabilizerCtrl = null;
   let ORIGINAL_SCROLL_INTO_VIEW = null;
   let ORIGINAL_SCROLL_TO = null;
   let ORIGINAL_SCROLL_BY = null;
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
-
-  // Conversation Tree (bridge to MAIN-world chatgpt-message-tree)
-  const TREE_BRIDGE_REQ_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_REQUEST';
-  const TREE_BRIDGE_RES_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_RESPONSE';
-  const TREE_BRIDGE_TOGGLE_PANEL = 'QUICKNAV_CHATGPT_TREE_TOGGLE';
-  const TREE_BRIDGE_OPEN_PANEL = 'QUICKNAV_CHATGPT_TREE_OPEN';
-  const TREE_BRIDGE_CLOSE_PANEL = 'QUICKNAV_CHATGPT_TREE_CLOSE';
-  const TREE_BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
-  const TREE_BRIDGE_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO';
-  const TREE_BRIDGE_RES_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
-  const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
-
-  let treeSummary = null;
-  let treePathSet = new Set();
-  let treeSummaryReqTimer = 0;
-  let treeSummaryPendingReqId = '';
-  const treeNavigatePending = new Map(); // reqId -> { resolve, timer }
 
   // 全局调试函数，用户可在控制台调用
   window.chatGptNavDebug = {
@@ -113,7 +91,6 @@
       }
       return { panels: panels.length, styles: styles.length, keysBound: !!window.__cgptKeysBound, booting: __cgptBooting };
     },
-    getTreeSummary: () => treeSummary,
     testObserver: () => {
       const nav = document.getElementById('cgpt-compact-nav');
       if (!nav || !nav._ui || !nav._ui._mo) {
@@ -157,8 +134,8 @@
   function resetPanelPosition() {
     const nav = document.getElementById('cgpt-compact-nav');
     if (nav) {
-      nav.style.top = `${DEFAULT_NAV_TOP}px`;
-      nav.style.right = `${DEFAULT_NAV_RIGHT}px`;
+      nav.style.top = '60px';
+      nav.style.right = '10px';
       nav.style.left = 'auto';
       nav.style.bottom = 'auto';
       persistNavPosition(nav);
@@ -229,163 +206,6 @@
   let refreshTimer = 0; // 新的尾随去抖定时器
   let lastStopCheckTs = 0;
   let lastHasStop = null;
-  let __cgptKeydownHandler = null;
-  let __cgptSendEventsBound = false;
-  let __cgptActiveTrackingBound = false;
-
-  function isChatRoute() {
-    try {
-      const p = location && location.pathname ? location.pathname : '/';
-      return p === '/' || p.startsWith('/c/') || p.startsWith('/g/') || p.startsWith('/share/');
-    } catch {
-      return true;
-    }
-  }
-
-  function getConversationIdFromUrl() {
-    try {
-      const core = globalThis.__aichat_chatgpt_core_v1__;
-      if (core && typeof core.getConversationIdFromUrl === 'function') {
-        const id = core.getConversationIdFromUrl(location.href);
-        if (id) return id;
-      }
-    } catch {}
-    try {
-      const parts = String(location.pathname || '')
-        .split('/')
-        .filter(Boolean);
-      const idx = parts.indexOf('c');
-      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
-      return '';
-    } catch {
-      return '';
-    }
-  }
-
-  function getRouteKey() {
-    try {
-      // For our UI lifecycle, `pathname` is what matters (ChatGPT may change query/hash during hydration).
-      return String(location.pathname || '/');
-    } catch {
-      return '/';
-    }
-  }
-
-  function installTreeBridgeListener() {
-    if (window.__cgptTreeBridgeBound) return;
-    window.__cgptTreeBridgeBound = true;
-
-    window.addEventListener('message', (event) => {
-      try {
-        if (!event || event.source !== window) return;
-        const data = event.data;
-        if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
-        const type = String(data.type || '');
-
-        if (type === TREE_BRIDGE_RES_SUMMARY) {
-          if (typeof data.reqId !== 'string' || !data.reqId) return;
-          if (treeSummaryPendingReqId && data.reqId !== treeSummaryPendingReqId) return;
-
-          const ok = !!data.ok;
-          const summary = ok && data.summary && typeof data.summary === 'object' ? data.summary : null;
-          treeSummaryPendingReqId = '';
-
-          const currentConv = getConversationIdFromUrl();
-          if (summary && summary.conversationId && currentConv && summary.conversationId !== currentConv) return;
-
-          treeSummary = summary;
-          treePathSet = new Set(Array.isArray(summary?.pathIds) ? summary.pathIds.filter((x) => typeof x === 'string' && x) : []);
-
-          const ui = document.getElementById('cgpt-compact-nav')?._ui;
-          if (ui) {
-            try { updateTreeBtnState(ui); } catch {}
-            try { renderList(ui); } catch {}
-          }
-          return;
-        }
-
-        if (type === TREE_BRIDGE_RES_NAVIGATE_TO) {
-          const reqId = typeof data.reqId === 'string' ? data.reqId : '';
-          if (!reqId) return;
-          const pending = treeNavigatePending.get(reqId);
-          if (!pending) return;
-          treeNavigatePending.delete(reqId);
-          try { clearTimeout(pending.timer); } catch {}
-          pending.resolve(!!data.ok);
-          if (data.ok) scheduleTreeSummaryRequest(240);
-          return;
-        }
-      } catch {}
-    });
-  }
-
-  function requestTreeSummary() {
-    try {
-      if (!getConversationIdFromUrl()) return;
-      const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      treeSummaryPendingReqId = reqId;
-      window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REQ_SUMMARY, reqId }, '*');
-      try {
-        const ui = document.getElementById('cgpt-compact-nav')?._ui;
-        if (ui) updateTreeBtnState(ui);
-      } catch {}
-    } catch {}
-  }
-
-  function scheduleTreeSummaryRequest(delay = 650) {
-    try {
-      if (treeSummaryReqTimer) clearTimeout(treeSummaryReqTimer);
-      treeSummaryReqTimer = setTimeout(() => {
-        treeSummaryReqTimer = 0;
-        requestTreeSummary();
-      }, Math.max(0, Number(delay) || 0));
-    } catch {}
-  }
-
-  function requestTreeNavigateToMessageId(msgId, { timeoutMs = 2600 } = {}) {
-    const id = String(msgId || '').trim();
-    if (!id || !getConversationIdFromUrl()) return Promise.resolve(false);
-
-    return new Promise((resolve) => {
-      const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      const timeout = Math.max(400, Number(timeoutMs) || 0);
-      const timer = setTimeout(() => {
-        treeNavigatePending.delete(reqId);
-        resolve(false);
-      }, timeout);
-      treeNavigatePending.set(reqId, { resolve, timer });
-
-      try {
-        window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_NAVIGATE_TO, reqId, msgId: id }, '*');
-      } catch {
-        try { clearTimeout(timer); } catch {}
-        treeNavigatePending.delete(reqId);
-        resolve(false);
-      }
-    });
-  }
-
-  function whenBodyReady(cb) {
-    try {
-      if (document.body) return cb();
-      const mo = new MutationObserver(() => {
-        if (!document.body) return;
-        try { mo.disconnect(); } catch {}
-        cb();
-      });
-      mo.observe(document.documentElement, { childList: true });
-    } catch {
-      try {
-        window.addEventListener(
-          'DOMContentLoaded',
-          () => {
-            try { cb(); } catch {}
-          },
-          { once: true }
-        );
-      } catch {}
-    }
-  }
 
   // 性能缓存：避免长对话频繁扫描/强制重排
   const previewCache = new Map(); // msgKey -> preview
@@ -393,7 +213,7 @@
   const turnIdToPos = new Map(); // turnId -> position in cachedTurns
   let cachedTurns = [];
 
-  function scheduleRefresh(ui, { delay = 80, force = false, soft = null } = {}) {
+  function scheduleRefresh(ui, { delay = 80, force = false, soft = false } = {}) {
     if (force) {
       if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = 0; }
       run();
@@ -406,9 +226,8 @@
       refreshTimer = 0;
       pending = false; // 旧标志直接归零，防止误伤
       try {
-        const useSoft = soft === null ? (lastDomTurnCount || 0) > 120 : !!soft;
         const oldCount = cacheIndex.length;
-        refreshIndex(ui, { force, soft: useSoft });
+        refreshIndex(ui, { force, soft });
         const newCount = cacheIndex.length;
 
         // 如果刷新期间 turn 数变化，再来一次"收尾"（防抖窗口内很常见）
@@ -441,14 +260,6 @@
   }
 
   function init() {
-    if (!isChatRoute()) {
-      // 非聊天路由：避免在 Library/GPTs 等页面显示面板
-      try {
-        const nav = document.getElementById('cgpt-compact-nav');
-        if (nav) nav.remove();
-      } catch {}
-      return;
-    }
     const existing = document.getElementById('cgpt-compact-nav');
     if (existing) {
       // 扩展“重新加载”后旧内容脚本上下文会消失，但 DOM 还在；此时需要清理并重新初始化
@@ -463,6 +274,9 @@
         return;
       }
     }
+    const checkContentLoaded = () => {
+      try { return qsTurns().length > 0; } catch { return false; }
+    };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
       if (document.getElementById('cgpt-compact-nav')) {
@@ -479,7 +293,6 @@
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 开始创建面板');
         const ui = createPanel();
         wirePanel(ui);
-        installTreeBridgeListener();
         initScrollLock(ui);
         observeChat(ui);
         bindActiveTracking();
@@ -491,335 +304,120 @@
         __cgptBooting = false;
       }
     };
-    boot();
-  }
-
-  let currentRouteKey = getRouteKey();
-  function detectUrlChange() {
-    const nextKey = getRouteKey();
-    if (nextKey === currentRouteKey) return;
-
-    if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: route changed', currentRouteKey, '->', nextKey);
-    currentRouteKey = nextKey;
-
-    // Leaving chat route: remove panel to avoid showing in Library/GPTs/etc.
-    if (!isChatRoute()) {
+    if (checkContentLoaded()) boot();
+    else {
+      // Kimi is an SPA: users may start at `/` and navigate to `/chat/<id>` without reload.
+      // Avoid keeping a noisy global MutationObserver on non-chat pages; the route watcher will
+      // re-run `init()` after navigation.
       try {
-        const nav = document.getElementById('cgpt-compact-nav');
-        if (nav && nav._ui) {
-          try {
-            if (nav._ui._forceRefreshTimer) clearInterval(nav._ui._forceRefreshTimer);
-          } catch {}
-          try {
-            if (nav._ui._moBootstrapTimer) clearInterval(nav._ui._moBootstrapTimer);
-          } catch {}
-          try {
-            nav._ui._mo?.disconnect?.();
-          } catch {}
-        }
-        if (nav) nav.remove();
+        const path = String(location.pathname || '');
+        if (!/^\/chat\b/.test(path)) return;
       } catch {}
-      return;
-    }
-
-    // Reset per-route caches and restart observers, but keep the panel DOM to avoid flicker.
-    const nav = document.getElementById('cgpt-compact-nav');
-    const ui = nav && nav._ui ? nav._ui : null;
-    if (!ui) {
-      // If DOM exists but context is gone (e.g. extension reload), rebuild cleanly.
-      try {
-        if (nav) nav.remove();
-      } catch {}
-      setTimeout(init, 0);
-      return;
-    }
-
-    try {
-      if (ui._forceRefreshTimer) clearInterval(ui._forceRefreshTimer);
-    } catch {}
-    try {
-      if (ui._moBootstrapTimer) clearInterval(ui._moBootstrapTimer);
-    } catch {}
-    try {
-      ui._mo?.disconnect?.();
-    } catch {}
-    ui._mo = null;
-    ui._moTarget = null;
-    ui._moBootstrapTimer = 0;
-    ui._moBootstrapAttempts = 0;
-    ui._forceRefreshTimer = null;
-
-    try {
-      if (refreshTimer) clearTimeout(refreshTimer);
-    } catch {}
-    refreshTimer = 0;
-    try {
-      if (activeUpdateTimer) clearTimeout(activeUpdateTimer);
-    } catch {}
-    activeUpdateTimer = 0;
-    try {
-      if (forceRefreshTimer) clearInterval(forceRefreshTimer);
-    } catch {}
-    forceRefreshTimer = null;
-    try {
-      if (scrollLockRestoreTimer) clearTimeout(scrollLockRestoreTimer);
-    } catch {}
-    scrollLockRestoreTimer = 0;
-
-    // Re-load per-conversation state (pins/favorites/filter) because keys are derived from `location.pathname`.
-    try { loadCPSet(); } catch {}
-    try { loadFavSet(); } catch {}
-    try { loadFavFilterState(); } catch {}
-
-    lastTurnCount = 0;
-    TURN_SELECTOR = null;
-    __cgptChatScrollContainer = null;
-    __cgptChatScrollContainerTs = 0;
-    scrollLockScrollEl = null;
-    previewCache.clear();
-    roleCache.clear();
-    turnIdToPos.clear();
-    cachedTurns = [];
-    lastDomTurnCount = 0;
-    currentActiveTurnPos = 0;
-    currentActiveId = null;
-    treeSummary = null;
-    treePathSet = new Set();
-    treeSummaryPendingReqId = '';
-    if (treeSummaryReqTimer) {
-      try { clearTimeout(treeSummaryReqTimer); } catch {}
-      treeSummaryReqTimer = 0;
-    }
-
-    try { updateStarBtnState(ui); } catch {}
-    try { updateTreeBtnState(ui); } catch {}
-    try { observeChat(ui); } catch {}
-    try { scheduleRefresh(ui, { force: true, delay: 120 }); } catch {}
-    try { scheduleActiveUpdateNow(); } catch {}
-    // Tree summary fetches the full conversation mapping (`/backend-api/conversation/:id`),
-    // which can be very large on long chats and cause huge memory spikes.
-    // Keep it lazy: only request after the user clicks the Tree button.
-  }
-
-  function installRouteWatcher() {
-    try {
-      if (window.__cgptRouteWatcherInstalledV2) return;
-      window.__cgptRouteWatcherInstalledV2 = true;
-    } catch {}
-
-    // Prefer shared core/bridge (MAIN-world route hook + slow polling fallback).
-    try {
-      const core = globalThis.__aichat_chatgpt_core_v1__;
-      if (core && typeof core.onRouteChange === 'function') {
-        window.__cgptRouteWatcherUnsubV2 = core.onRouteChange(() => {
-          try { detectUrlChange(); } catch {}
-        });
-        return;
-      }
-    } catch {}
-
-    // Fallback: shared isolated bridge.
-    try {
-      const bridge = globalThis.__aichat_quicknav_bridge_v1__;
-      if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
-        try {
-          bridge.ensureRouteListener();
-        } catch {}
-        window.__cgptRouteWatcherUnsubV2 = bridge.on('routeChange', () => {
-          try { detectUrlChange(); } catch {}
-        });
-        return;
-      }
-    } catch {}
-
-    // Last resort: popstate/hashchange + slow polling.
-    try {
-      window.addEventListener('popstate', detectUrlChange);
-      window.addEventListener('hashchange', detectUrlChange);
-    } catch {}
-    try {
-      setInterval(() => {
-        try {
-          if (document.hidden) return;
-          detectUrlChange();
-        } catch {}
-      }, 8000);
-    } catch {}
-  }
-
-  installRouteWatcher();
-
-  function installNavSelfHeal() {
-    try {
-      if (window.__cgptNavSelfHealInstalled) return;
-      window.__cgptNavSelfHealInstalled = true;
-    } catch {
-      // ignore
-    }
-
-    let ensureTimer = 0;
-    let ensureAttempts = 0;
-
-    const ensure = () => {
-      try {
-        if (!isChatRoute()) return;
-        if (document.getElementById('cgpt-compact-nav')) return;
-        init();
-      } catch {}
-    };
-
-    const scheduleEnsure = (delay = 200) => {
-      if (ensureTimer) return;
-      ensureTimer = setTimeout(() => {
-        ensureTimer = 0;
-        ensure();
-        ensureAttempts++;
-        // Some ChatGPT renders can wipe body children during hydration; retry briefly.
-        if (ensureAttempts < 12 && isChatRoute() && !document.getElementById('cgpt-compact-nav')) {
-          scheduleEnsure(600);
-        } else {
-          ensureAttempts = 0;
-        }
-      }, Math.max(0, Number(delay) || 0));
-    };
-
-    // Fast path: if body child list changes and panel is missing, restore it.
-    try {
-      const mo = new MutationObserver(() => {
-        try {
-          if (!isChatRoute()) return;
-          if (document.getElementById('cgpt-compact-nav')) return;
-          scheduleEnsure(120);
-        } catch {}
+      const observer = new MutationObserver(() => {
+        if (checkContentLoaded()) { observer.disconnect(); boot(); }
       });
-      if (document.body) mo.observe(document.body, { childList: true });
-    } catch {}
-
-    // Slow path: adaptive sanity check (covers SPA navigations that don't touch body root children).
-    // Use setTimeout (not setInterval) so we can back off when everything is stable.
-    try {
-      if (!window.__cgptNavSelfHealTimerInstalled) {
-        window.__cgptNavSelfHealTimerInstalled = true;
-        let t = 0;
-        const schedule = (ms) => {
-          try { if (t) clearTimeout(t); } catch {}
-          t = setTimeout(tick, Math.max(0, Number(ms) || 0));
-        };
-        const tick = () => {
-          try {
-            if (document.hidden) return schedule(15000);
-            if (!isChatRoute()) return schedule(15000);
-            if (document.getElementById('cgpt-compact-nav')) return schedule(15000);
-            scheduleEnsure(0);
-            schedule(4000);
-          } catch {
-            schedule(15000);
-          }
-        };
-        schedule(4000);
-      }
-    } catch {}
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
-  whenBodyReady(() => {
-    const start = () => {
-      try {
-        init();
-        installNavSelfHeal();
-      } catch {}
-    };
+  let currentUrl = location.href;
+  function detectUrlChange() {
+    if (location.href !== currentUrl) {
+      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: URL变化，清理旧实例', currentUrl, '->', location.href);
+      currentUrl = location.href;
+      const oldNav = document.getElementById('cgpt-compact-nav');
+      if (oldNav) {
+        if (oldNav._ui) {
+          // 清理定时器
+          if (oldNav._ui._forceRefreshTimer) {
+            clearInterval(oldNav._ui._forceRefreshTimer);
+            if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已清理定时器');
+          }
+          // 断开MutationObserver
+          if (oldNav._ui._mo) {
+            try {
+              oldNav._ui._mo.disconnect();
+              if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已断开MutationObserver');
+            } catch (e) {
+              if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 断开MutationObserver失败', e);
+            }
+          }
+          if (oldNav._ui.layout && typeof oldNav._ui.layout.destroy === 'function') {
+            try { oldNav._ui.layout.destroy(); } catch {}
+          }
+        }
+        oldNav.remove();
+        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已移除旧面板');
+      }
+      // 重置"正在启动"标志，避免新页面被卡住
+      __cgptBooting = false;
+      // 重置键盘事件绑定标志，允许新页面重新绑定
+      window.__cgptKeysBound = false;
+      lastTurnCount = 0;
+      TURN_SELECTOR = null; // 同时重置选择器缓存
+      previewCache.clear();
+      roleCache.clear();
+      turnIdToPos.clear();
+      cachedTurns = [];
+      lastDomTurnCount = 0;
+      currentActiveTurnPos = 0;
+      setTimeout(init, 100);
+    }
+  }
 
-    // ChatGPT sometimes does a fast "hydrate / router bootstrap" pass right after first paint,
-    // which can wipe early-injected DOM nodes and make UIs flicker (looks like a refresh).
-    // Delay the initial mount slightly so our UI appears once and stays.
-    const INITIAL_MOUNT_DELAY_MS = 350;
-
+  // Prefer shared bridge route-change events (from MAIN-world scroll-guard) to avoid per-script history patching.
+  (function installRouteWatcher() {
     try {
-      if (document.readyState === 'loading') {
-        document.addEventListener(
-          'DOMContentLoaded',
-          () => {
-            setTimeout(start, INITIAL_MOUNT_DELAY_MS);
-          },
-          { once: true }
-        );
+      if (window.__quicknavKimiRouteUnsubV1 && typeof window.__quicknavKimiRouteUnsubV1 === 'function') return;
+      const bridge = window.__aichat_quicknav_bridge_v1__;
+      if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
+        try { bridge.ensureRouteListener(); } catch {}
+        window.__quicknavKimiRouteUnsubV1 = bridge.on('routeChange', () => detectUrlChange());
         return;
       }
     } catch {}
 
-    setTimeout(start, INITIAL_MOUNT_DELAY_MS);
-  });
+    // Fallback: slow polling.
+    try {
+      if (window.__quicknavKimiRoutePollV1) return;
+      window.__quicknavKimiRoutePollV1 = window.setInterval(() => detectUrlChange(), 1200);
+    } catch {}
+  })();
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 
   function qsTurns(root = document) {
-    // Narrow the scan root when possible: ChatGPT exposes a stable turns container.
-    // This avoids scanning the full page DOM on long chats.
-    try {
-      if (root === document) {
-        const stable = document.querySelector('[data-testid="conversation-turns"]');
-        if (
-          stable &&
-          stable.querySelector?.(
-            'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id], [data-message-author-role]'
-          )
-        ) {
-          root = stable;
-        }
+    const baseRoot = (() => {
+      try {
+        if (root && root !== document) return root;
+        // Narrow the query scope on Kimi to avoid accidental matches in sidebars/tool pages.
+        return (
+          document.querySelector('.chat-detail-content') ||
+          document.querySelector('.chat-detail-main') ||
+          document.querySelector('.chat-page.chat') ||
+          document
+        );
+      } catch {
+        return root || document;
       }
-    } catch {}
-
-    // Prefer shared core selector for the modern ChatGPT turn DOM.
-    try {
-      const core = globalThis.__aichat_chatgpt_core_v1__;
-      if (core && typeof core.getTurnArticles === 'function') {
-        const turns = core.getTurnArticles(root);
-        if (Array.isArray(turns) && turns.length) {
-          TURN_SELECTOR = 'article[data-testid^="conversation-turn-"]';
-          return turns;
-        }
-      }
-    } catch {}
-
+    })();
     if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
+      const els = baseRoot.querySelectorAll(TURN_SELECTOR);
       if (els.length) return Array.from(els);
       // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
       TURN_SELECTOR = null;
     }
-
-    // 快速返回：没有任何消息时，避免触发大量 fallback 选择器扫描（新会话/加载中常见）
-    try {
-      const hasAnyTurn = !!root.querySelector(
-        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]'
-      );
-      if (!hasAnyTurn) {
-        const hasRoleMarker = !!root.querySelector('[data-message-author-role]');
-        if (!hasRoleMarker) return [];
-      }
-    } catch {}
-
     const selectors = [
-      // 原有选择器
-      'article[data-testid^="conversation-turn-"]',
-      '[data-testid^="conversation-turn-"]',
-      'div[data-message-id]',
-      'div[class*="group"][data-testid]',
-      // 新增备用选择器
-      '[data-testid*="conversation-turn"]',
-      '[data-testid*="message-"]',
-      'div[class*="turn"]',
-      'div[class*="message"]',
-      'div[class*="group"] div[data-message-author-role]',
-      'div[class*="conversation"] > div',
-      '[class*="chat"] > div',
-      '[role="presentation"] > div',
-      'main div[class*="group"]',
-      'main div[data-testid]'
+      // Kimi message segments (stable)
+      '.segment.segment-user, .segment.segment-assistant',
+      '.segment'
     ];
 
     if (DEBUG || window.DEBUG_TEMP) {
       console.log('ChatGPT Navigation Debug: 检测对话选择器');
       for (const selector of selectors) {
-        const els = root.querySelectorAll(selector);
+        const els = baseRoot.querySelectorAll(selector);
         console.log(`- ${selector}: ${els.length} 个元素`);
         if (els.length > 0) {
           console.log('  样本元素:', els[0]);
@@ -828,267 +426,59 @@
     }
 
     for (const selector of selectors) {
-      // Probe with `querySelector` first (cheaper than `querySelectorAll`).
-      let hit = null;
-      try { hit = root.querySelector(selector); } catch {}
-      if (!hit) continue;
-      const els = root.querySelectorAll(selector);
-      if (!els.length) continue;
-      TURN_SELECTOR = selector;
-      if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-      return Array.from(els);
-    }
-
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 所有预设选择器都失效，尝试智能检测');
-      console.log('页面中的所有可能对话元素:');
-      const potentialElements = [
-        ...root.querySelectorAll('div[class*="group"]'),
-        ...root.querySelectorAll('div[data-message-id]'),
-        ...root.querySelectorAll('article'),
-        ...root.querySelectorAll('[data-testid]'),
-        ...root.querySelectorAll('div[role="presentation"]')
-      ];
-      console.log('潜在元素数量:', potentialElements.length);
-    }
-
-    // 增强的fallback检测
-    const fallbackSelectors = [
-      'div[class*="group"], div[data-message-id]',
-      'div[class*="turn"], div[class*="message"]',
-      'main > div > div',
-      '[role="presentation"] > div'
-    ];
-
-    for (const fallbackSelector of fallbackSelectors) {
-      let raw = null;
-      try { raw = root.querySelectorAll(fallbackSelector); } catch { raw = null; }
-      if (!raw || !raw.length) continue;
-
-      // Avoid creating huge arrays on weird pages; a bounded sample is enough for heuristics.
-      const HARD_CAP = 2500;
-      const list = [];
-      if (raw.length > HARD_CAP) {
-        for (let i = 0; i < raw.length && i < HARD_CAP; i++) list.push(raw[i]);
-      } else {
-        for (const el of raw) list.push(el);
-      }
-
-      const candidates = list.filter(el => {
-        // 检查是否包含消息相关的内容
-        return (
-          el.querySelector('div[data-message-author-role]') ||
-          el.querySelector('[data-testid*="user"]') ||
-          el.querySelector('[data-testid*="assistant"]') ||
-          el.querySelector('[data-author]') ||
-          el.querySelector('.markdown') ||
-          el.querySelector('.prose') ||
-          el.querySelector('.whitespace-pre-wrap') ||
-          // Avoid `textContent` here: it allocates a full string and can spike memory on huge pages.
-          el.querySelector('p,li,pre,code,blockquote')
-        );
-      });
-
-      if (candidates.length > 0) {
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: Fallback选择器 ${fallbackSelector} 找到 ${candidates.length} 个候选对话`);
-        return candidates;
+      const els = baseRoot.querySelectorAll(selector);
+      if (els.length) {
+        TURN_SELECTOR = selector;
+        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
+        return Array.from(els);
       }
     }
 
-    if (DEBUG) console.log('ChatGPT Navigation: 所有检测方法均失效');
+    if (DEBUG) console.log('Kimi Navigation: 未找到任何对话 segment');
     return [];
   }
 
   function getTextPreview(el) {
-    // Some turns (e.g. streaming assistant placeholder / image-only messages) may not have
-    // a markdown/prose block yet. Keep a placeholder preview so the last turn won't disappear.
-    if (!el) return '...';
-
-    // NOTE:
-    // - `innerText` forces layout (very slow on long chats).
-    // - `textContent` allocates the full string for the entire subtree (can spike memory on huge turns).
-    // So we collect a bounded snippet from text nodes.
+    if (!el) return '';
+    // 注意：innerText 会触发同步样式/布局计算（长对话非常慢），尽量只用 textContent
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '...';
+    // 让 CSS 负责根据宽度省略，JS 只做上限裁剪以防极端超长文本
     const HARD_CAP = 600;
-    const NODE_CAP = 240; // safety cap to avoid deep traversal on weird DOM
+    return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
+  }
 
-    let out = '';
-    let lastWasSpace = false;
-    let scanned = 0;
-
-    /** @type {TreeWalker|null} */
-    let tw = null;
+  function pickKimiUserContent(el) {
+    if (!el) return null;
     try {
-      tw = document.createTreeWalker(
-        el,
-        NodeFilter.SHOW_TEXT,
-        {
-          acceptNode: (node) => {
-            try {
-              if (!node || !node.nodeValue) return NodeFilter.FILTER_REJECT;
-              if (!node.nodeValue.trim()) return NodeFilter.FILTER_SKIP;
-              return NodeFilter.FILTER_ACCEPT;
-            } catch {
-              return NodeFilter.FILTER_REJECT;
-            }
-          }
-        },
-        false
-      );
-    } catch {
-      tw = null;
-    }
+      // Kimi user segment often renders text under `.user-content`.
+      const direct = el.querySelector('.user-content');
+      if (direct && (direct.textContent || '').trim()) return direct;
+    } catch {}
+    try {
+      const box = el.querySelector('.segment-content,.segment-content-box');
+      if (box && (box.textContent || '').trim()) return box;
+    } catch {}
+    return el;
+  }
 
-    if (tw) {
-      while (tw.nextNode()) {
-        scanned += 1;
-        if (scanned > NODE_CAP) break;
-        const s = tw.currentNode?.nodeValue || '';
-        if (!s) continue;
-
-        for (let i = 0; i < s.length && out.length < HARD_CAP; i++) {
-          const ch = s[i];
-          // Cheap whitespace check (ASCII + common unicode spaces handled by regex fallback).
-          const isSpace = ch <= ' ' || /\s/.test(ch);
-          if (isSpace) {
-            if (!lastWasSpace && out.length) {
-              out += ' ';
-              lastWasSpace = true;
-            }
-            continue;
-          }
-          out += ch;
-          lastWasSpace = false;
+  function pickKimiAssistantContent(el) {
+    try {
+      // Kimi assistant segment usually contains one or more `.markdown` blocks.
+      const blocks = el ? el.querySelectorAll?.('.markdown') : null;
+      if (blocks && blocks.length) {
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const t = (blocks[i].textContent || '').trim();
+          if (t) return blocks[i];
         }
-        if (out.length >= HARD_CAP) break;
       }
-    } else {
-      // Fallback: may allocate large strings, but only when TreeWalker is unavailable.
-      try {
-        const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!text) return '...';
-        return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
-      } catch {
-        return '...';
-      }
-    }
-
-    out = out.trim();
-    return out || '...';
+    } catch {}
+    return null;
   }
 
   function getTurnKey(el) {
     if (!el) return '';
-    return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
-  }
-
-  function getTurnMessageId(turnEl, previewEl) {
-    try {
-      if (!turnEl) return '';
-      const direct = turnEl.getAttribute('data-message-id');
-      if (direct) return direct;
-      const fromPreview = previewEl && previewEl.closest ? previewEl.closest('[data-message-id]')?.getAttribute?.('data-message-id') : '';
-      if (fromPreview) return fromPreview;
-      const found = turnEl.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id');
-      if (found) return found;
-      const turnId = turnEl.getAttribute('data-turn-id');
-      if (turnId) return turnId;
-    } catch {}
-    return '';
-  }
-
-  function analyzeTurnToIndexItem(el, i, fullLen, userSeq, assistantSeq) {
-    if (!el) return { item: null, userSeq, assistantSeq };
-    try {
-      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-    } catch {}
-
-    const attrTestId = (() => {
-      try {
-        return el.getAttribute('data-testid') || '';
-      } catch {
-        return '';
-      }
-    })();
-
-    try {
-      if (!el.id) el.id = `cgpt-turn-${i + 1}`;
-    } catch {}
-    try {
-      turnIdToPos.set(el.id, i);
-    } catch {}
-
-    const msgKey = getTurnKey(el);
-    let role = roleCache.get(msgKey) || '';
-
-    let isUser = role === 'user';
-    let isAssistant = role === 'assistant';
-    if (!isUser && !isAssistant) {
-      try {
-        isUser = !!(
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-      } catch {}
-      try {
-        isAssistant = !!(
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
-      } catch {}
-      role = isUser ? 'user' : isAssistant ? 'assistant' : '';
-      if (role) roleCache.set(msgKey, role);
-    }
-
-    if (DEBUG && i < 3) {
-      try {
-        console.log(`ChatGPT Navigation Debug - 元素 ${i}:`, {
-          element: el,
-          testId: attrTestId,
-          isUser,
-          isAssistant
-        });
-      } catch {}
-    }
-
-    if (!isUser && !isAssistant) {
-      if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 角色识别失败`);
-      return { item: null, userSeq, assistantSeq };
-    }
-
-    const shouldRecalcPreview = i >= fullLen - TAIL_RECALC_TURNS;
-    let preview = previewCache.get(msgKey) || '';
-    let block = null;
-    if (!preview || shouldRecalcPreview) {
-      try {
-        if (isUser) {
-          block = el.querySelector(
-            '[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]'
-          );
-        } else {
-          block = el.querySelector(
-            '.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]'
-          );
-        }
-      } catch {
-        block = null;
-      }
-      preview = getTextPreview(block);
-      if (preview) previewCache.set(msgKey, preview);
-    }
-    if (!preview) {
-      if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 无法提取预览文本`);
-      return { item: null, userSeq, assistantSeq };
-    }
-
-    const seq = isUser ? ++userSeq : ++assistantSeq;
-    const msgId = getTurnMessageId(el, block) || '';
-    return {
-      item: { id: el.id, key: msgKey, msgId, idx: i, role: isUser ? 'user' : 'assistant', preview, seq },
-      userSeq,
-      assistantSeq
-    };
+    return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.getAttribute('data-msg-id') || el.id || '';
   }
 
   function buildIndex(turnsOverride) {
@@ -1105,65 +495,91 @@
 
     if (DEBUG) console.log(`ChatGPT Navigation: 开始分析 ${turns.length} 个对话元素`);
 
-    let u = 0,
-      a = 0;
+    let u = 0, a = 0;
     const list = [];
     for (let i = 0; i < turns.length; i++) {
-      const res = analyzeTurnToIndexItem(turns[i], i, turns.length, u, a);
-      u = res.userSeq;
-      a = res.assistantSeq;
-      if (res.item) list.push(res.item);
+      const el = turns[i];
+      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
+      const attrTestId = el.getAttribute('data-testid') || '';
+      if (!el.id) el.id = `cgpt-turn-${i + 1}`;
+      turnIdToPos.set(el.id, i);
+
+      const msgKey = getTurnKey(el);
+      let role = roleCache.get(msgKey) || '';
+
+      let isUser = role === 'user';
+      let isAssistant = role === 'assistant';
+      if (!isUser && !isAssistant) {
+        // Kimi: segments are tagged by class.
+        try {
+          isUser = !!el.classList?.contains('segment-user');
+          isAssistant = !!el.classList?.contains('segment-assistant');
+        } catch {}
+
+        // Fallback heuristics.
+        if (!isUser && !isAssistant) {
+          try {
+            isUser = !!el.querySelector('.user-content');
+          } catch {}
+        }
+        if (!isUser && !isAssistant) {
+          try {
+            isAssistant = !!el.querySelector('.markdown');
+          } catch {}
+        }
+        role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
+        if (role) roleCache.set(msgKey, role);
+      }
+
+      if (DEBUG && i < 3) {
+        console.log(`ChatGPT Navigation Debug - 元素 ${i}:`, {
+          element: el,
+          testId: attrTestId,
+          isUser,
+          isAssistant,
+          userSelectors: {
+            authorRole: !!el.querySelector('[data-message-author-role="user"]'),
+            textMessage: !!el.querySelector('.text-message[data-author="user"]'),
+            testIdMatch: attrTestId.includes('user')
+          },
+          assistantSelectors: {
+            authorRole: !!el.querySelector('[data-message-author-role="assistant"]'),
+            textMessage: !!el.querySelector('.text-message[data-author="assistant"]'),
+            testIdMatch: attrTestId.includes('assistant')
+          }
+        });
+      }
+
+      if (!isUser && !isAssistant) {
+        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 角色识别失败`);
+        continue;
+      }
+
+      const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS;
+      let preview = previewCache.get(msgKey) || '';
+      if (!preview || shouldRecalcPreview) {
+        let block = null;
+        if (isUser) {
+          block = pickKimiUserContent(el);
+        } else {
+          // Kimi: choose the last non-empty markdown block as the preview source.
+          block = pickKimiAssistantContent(el) || el.querySelector('.segment-content,.segment-content-box') || el;
+        }
+        if (!block) block = el;
+        preview = getTextPreview(block);
+        if (preview) previewCache.set(msgKey, preview);
+      }
+      if (!preview) {
+        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 无法提取预览文本`);
+        continue;
+      }
+
+      const seq = isUser ? ++u : ++a;
+      list.push({ id: el.id, key: msgKey, idx: i, role: isUser ? 'user' : 'assistant', preview, seq });
     }
 
     if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
-    lastUserSeq = u;
-    lastAssistantSeq = a;
     return list;
-  }
-
-  function canAppendTurns(turns, prevCount) {
-    const turnsArr = Array.isArray(turns) ? turns : [];
-    const oldCount = Number(prevCount) || 0;
-    if (!oldCount || turnsArr.length <= oldCount) return false;
-    if (!Array.isArray(cachedTurns) || cachedTurns.length !== oldCount) return false;
-
-    // Cheap structural checks: same DOM nodes at key positions => safe to treat as append-only.
-    try {
-      if (turnsArr[0] !== cachedTurns[0]) return false;
-      if (turnsArr[oldCount - 1] !== cachedTurns[oldCount - 1]) return false;
-      const mid = Math.floor(oldCount / 2);
-      if (mid > 0 && turnsArr[mid] !== cachedTurns[mid]) return false;
-    } catch {
-      return false;
-    }
-
-    return true;
-  }
-
-  function appendTurnsToBaseIndex(turns, startIdx) {
-    const t = Array.isArray(turns) ? turns : [];
-    const start = Math.max(0, Number(startIdx) || 0);
-    cachedTurns = t;
-    lastDomTurnCount = t.length;
-    lastDomFirstKey = t.length ? getTurnKey(t[0]) : '';
-    lastDomLastKey = t.length ? getTurnKey(t[t.length - 1]) : '';
-
-    let u = Number(lastUserSeq) || 0;
-    let a = Number(lastAssistantSeq) || 0;
-    const base = Array.isArray(cacheBaseIndex) ? cacheBaseIndex : [];
-
-    for (let i = start; i < t.length; i++) {
-      const res = analyzeTurnToIndexItem(t[i], i, t.length, u, a);
-      u = res.userSeq;
-      a = res.assistantSeq;
-      if (res.item) base.push(res.item);
-    }
-
-    // Update seq baselines for the next append.
-    lastUserSeq = u;
-    lastAssistantSeq = a;
-    cacheBaseIndex = base;
-    return base;
   }
 
   function createPanel() {
@@ -1203,12 +619,10 @@
   --cgpt-nav-fav-bg: var(--cgpt-nav-accent-subtle);
   --cgpt-nav-fav-border: var(--cgpt-nav-accent-subtle);
   --cgpt-nav-positive: var(--token-text-positive, #00c896);
-	  --cgpt-nav-info: var(--token-text-info, #2ea5ff);
-	  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(255,255,255,0.92));
-	  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(15,23,42,0.08));
-	  /* Performance: blur/backdrop-filter is expensive; default off. */
-	  --cgpt-nav-backdrop: none;
-	}
+  --cgpt-nav-info: var(--token-text-info, #2ea5ff);
+  --cgpt-nav-footer-bg: var(--token-interactive-surface, rgba(255,255,255,0.92));
+  --cgpt-nav-footer-hover: var(--token-interactive-surface-hover, rgba(15,23,42,0.08));
+}
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -1320,26 +734,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 }
 
 #cgpt-compact-nav { position: fixed; top: 60px; right: 10px; width: var(--cgpt-nav-width, auto); min-width: 80px; max-width: var(--cgpt-nav-width, 210px); z-index: 2147483647 !important; font-family: var(--cgpt-nav-font); font-size: 13px; pointer-events: auto; background: transparent; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color: transparent; color: var(--cgpt-nav-text-strong); color-scheme: light dark; display:flex; flex-direction:column; align-items:stretch; box-sizing:border-box; --cgpt-nav-gutter: 0px; }
-/* Tree 已集成到 QuickNav 顶部按钮：隐藏独立悬浮入口，避免打扰 */
-#__aichat_chatgpt_message_tree_toggle_v1__ { display:none !important; }
 #cgpt-compact-nav.cgpt-has-scrollbar { --cgpt-nav-gutter: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 32), 8px); }
 #cgpt-compact-nav * { -webkit-user-select:none; user-select:none; box-sizing:border-box; }
 #cgpt-compact-nav > .compact-header,
 #cgpt-compact-nav > .compact-list,
 #cgpt-compact-nav > .compact-footer { width:100%; }
-.compact-header { display:flex; align-items:center; justify-content:space-between; padding:4px 8px; margin-bottom:4px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-panel-border); pointer-events:auto; cursor:move; box-shadow:var(--cgpt-nav-panel-shadow); min-width:100px; -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); width:100%; padding-inline-end: calc(8px + var(--cgpt-nav-gutter)); }
+.compact-header { display:flex; align-items:center; justify-content:space-between; padding:4px 8px; margin-bottom:4px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-panel-border); pointer-events:auto; cursor:move; box-shadow:var(--cgpt-nav-panel-shadow); min-width:100px; backdrop-filter:saturate(180%) blur(18px); width:100%; padding-inline-end: calc(8px + var(--cgpt-nav-gutter)); }
 .compact-actions { display:flex; align-items:center; gap:4px; width:100%; }
 .compact-title { font-size:11px; font-weight:600; color:var(--cgpt-nav-text-muted); display:flex; align-items:center; gap:3px; text-transform:uppercase; letter-spacing:.04em; }
 .compact-title span { color:var(--cgpt-nav-text-strong); }
 .compact-title svg { width:12px; height:12px; opacity:.55; }
-.compact-toggle, .compact-refresh, .compact-lock, .compact-tree { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); }
+.compact-toggle, .compact-refresh, .compact-lock { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); }
 .compact-toggle { font-size:clamp(14px, calc(var(--cgpt-nav-width, 210px) / 14), 18px); }
 .compact-refresh { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 18), 14px); margin-left:4px; }
 .compact-lock { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
-.compact-tree { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; position:relative; }
-.compact-toggle:hover, .compact-refresh:hover, .compact-lock:hover, .compact-tree:hover { border-color:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
-.compact-tree:hover { border-color:color-mix(in srgb, var(--cgpt-nav-positive) 55%, transparent); color:var(--cgpt-nav-positive); box-shadow:0 4px 14px color-mix(in srgb, var(--cgpt-nav-positive) 22%, transparent); }
-.compact-toggle:active, .compact-refresh:active, .compact-lock:active, .compact-tree:active { transform:scale(.94); }
+.compact-toggle:hover, .compact-refresh:hover, .compact-lock:hover { border-color:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
+.compact-toggle:active, .compact-refresh:active, .compact-lock:active { transform:scale(.94); }
 .toggle-text { display:block; font-family:monospace; font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); }
   .compact-list { max-height:400px; overflow-y:auto; overflow-x:hidden; padding:0; pointer-events:auto; display:flex; flex-direction:column; gap:8px; scrollbar-width:thin; scrollbar-color:var(--cgpt-nav-scrollbar-thumb) transparent; width:100%; padding-right: var(--cgpt-nav-gutter); scrollbar-gutter: stable both-edges; }
 .compact-list::-webkit-scrollbar { width:3px; }
@@ -1357,82 +767,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 .compact-empty { padding:10px; text-align:center; color:var(--cgpt-nav-text-muted); font-size:11px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); pointer-events:auto; min-height:20px; line-height:1.4; border:1px dashed var(--cgpt-nav-border-muted); }
 
 /* 收藏与锚点 */
-  .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
+  .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:all .2s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); backdrop-filter:saturate(180%) blur(18px); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
   .compact-star:hover { border-color:var(--cgpt-nav-fav-border); color:var(--cgpt-nav-fav-color); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
   .compact-star.active { background:var(--cgpt-nav-fav-bg); color:var(--cgpt-nav-fav-color); border-color:var(--cgpt-nav-fav-border); }
   .compact-lock.active { background:var(--cgpt-nav-arrow-bg); color:var(--cgpt-nav-arrow-color); border-color:var(--cgpt-nav-arrow-border); box-shadow:0 4px 14px color-mix(in srgb, var(--cgpt-nav-arrow-color) 26%, transparent); }
   .fav-toggle { position:absolute; right:calc(6px + var(--cgpt-nav-gutter)); top:2px; border:none; background:transparent; color:var(--cgpt-nav-text-muted); cursor:pointer; font-size:12px; line-height:1; padding:2px; opacity:.7; }
   .fav-toggle:hover { color:var(--cgpt-nav-fav-color); opacity:1; }
   .fav-toggle.active { color:var(--cgpt-nav-fav-color); opacity:1; }
-
-  .compact-tree .tree-count {
-    position:absolute;
-    right:-6px;
-    top:-6px;
-    min-width:16px;
-    height:16px;
-    padding:0 4px;
-    border-radius:999px;
-    background:var(--cgpt-nav-accent);
-    color:var(--token-text-on-accent, #fff);
-    font-size:10px;
-    line-height:16px;
-    display:none;
-    align-items:center;
-    justify-content:center;
-    box-shadow:0 6px 18px rgba(15,23,42,0.18);
-  }
-  .compact-tree[data-count]:not([data-count="0"]) .tree-count { display:inline-flex; }
-
-  .compact-item.has-branches { padding-right: calc(58px + var(--cgpt-nav-gutter)); }
-  .branch-badge {
-    position:absolute;
-    right:calc(22px + var(--cgpt-nav-gutter));
-    top:2px;
-    height:18px;
-    padding:0 6px;
-    border-radius:999px;
-    border:1px solid color-mix(in srgb, var(--cgpt-nav-accent) 28%, transparent);
-    background:color-mix(in srgb, var(--cgpt-nav-accent) 10%, transparent);
-    color:var(--cgpt-nav-accent);
-    font-size:10px;
-    line-height:18px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    pointer-events:auto;
-    opacity:.95;
-  }
-  .branch-badge:hover { background:color-mix(in srgb, var(--cgpt-nav-accent) 14%, transparent); }
-
-	  #${TREE_TOOLTIP_ID}{
-    position:fixed;
-    z-index:2147483647;
-    display:none;
-    min-width:240px;
-    max-width:min(360px, calc(100vw - 24px));
-    background:var(--cgpt-nav-panel-bg);
-    border:1px solid var(--cgpt-nav-panel-border);
-    border-radius:var(--cgpt-nav-radius-lg);
-	    box-shadow:var(--cgpt-nav-panel-shadow);
-	    color:var(--cgpt-nav-text-strong);
-	    padding:8px 10px;
-	    -webkit-backdrop-filter:var(--cgpt-nav-backdrop);
-	    backdrop-filter:var(--cgpt-nav-backdrop);
-	  }
-  #${TREE_TOOLTIP_ID}[data-open="1"]{ display:block; }
-  #${TREE_TOOLTIP_ID} .hdr{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:700; color:var(--cgpt-nav-text-muted); margin-bottom:8px; }
-  #${TREE_TOOLTIP_ID} .rows{ display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; padding-right:2px; }
-  #${TREE_TOOLTIP_ID} .rows::-webkit-scrollbar{ width:3px; }
-  #${TREE_TOOLTIP_ID} .rows::-webkit-scrollbar-thumb{ background:var(--cgpt-nav-scrollbar-thumb); border-radius:2px; }
-  #${TREE_TOOLTIP_ID} .row{ display:flex; align-items:center; gap:8px; width:100%; border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-item-bg); border-radius:var(--cgpt-nav-radius); padding:6px 8px; cursor:pointer; color:var(--cgpt-nav-text-strong); text-align:left; }
-  #${TREE_TOOLTIP_ID} .row:hover{ background:var(--cgpt-nav-item-hover-bg); border-color:var(--cgpt-nav-accent-subtle); }
-  #${TREE_TOOLTIP_ID} .role{ width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:11px; background:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); flex:0 0 auto; }
-  #${TREE_TOOLTIP_ID} .role.user{ background:color-mix(in srgb, var(--cgpt-nav-positive) 16%, transparent); color:var(--cgpt-nav-positive); }
-  #${TREE_TOOLTIP_ID} .role.assistant{ background:color-mix(in srgb, var(--cgpt-nav-info) 16%, transparent); color:var(--cgpt-nav-info); }
-  #${TREE_TOOLTIP_ID} .snippet{ flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
-	  #${TREE_TOOLTIP_ID} .tag{ flex:0 0 auto; font-size:10px; padding:2px 6px; border-radius:999px; border:1px solid color-mix(in srgb, var(--cgpt-nav-positive) 40%, transparent); background:color-mix(in srgb, var(--cgpt-nav-positive) 14%, transparent); color:var(--cgpt-nav-positive); }
-  #${TREE_TOOLTIP_ID} .foot{ margin-top:8px; display:flex; gap:6px; justify-content:flex-end; }
-  #${TREE_TOOLTIP_ID} .btn{ border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); border-radius:var(--cgpt-nav-radius); padding:5px 8px; font-size:11px; cursor:pointer; color:var(--cgpt-nav-text-strong); box-shadow:var(--cgpt-nav-item-shadow); }
-  #${TREE_TOOLTIP_ID} .btn:hover{ background:var(--cgpt-nav-footer-hover); }
 /* 锚点占位（绝对定位，不再插入文本流） */
   .cgpt-pin-anchor { position:absolute; width:48px; height:48px; display:flex; align-items:center; justify-content:center; transform:translate(-50%,-50%); pointer-events:auto; user-select:none; -webkit-user-select:none; caret-color:transparent; cursor:default; z-index:2; }
   .cgpt-pin-anchor::after { content:'📌'; font-size:40px; line-height:1; opacity:.95; color:var(--cgpt-nav-pin-color); transition:opacity .18s ease, transform .18s ease; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.5)); }
@@ -1447,7 +788,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
 /* 底部导航条 */
 .compact-footer { margin-top:6px; display:flex; gap:clamp(3px, calc(var(--cgpt-nav-width, 210px) / 70), 6px); width:100%; padding-right: var(--cgpt-nav-gutter); }
-.nav-btn { flex:1 1 25%; min-width:0; padding: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 56), 6px) clamp(6px, calc(var(--cgpt-nav-width, 210px) / 35), 8px); font-size: clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 14px); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); cursor:pointer; box-shadow:var(--cgpt-nav-item-shadow); line-height:1; color:var(--cgpt-nav-text-strong); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease; -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); }
+.nav-btn { flex:1 1 25%; min-width:0; padding: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 56), 6px) clamp(6px, calc(var(--cgpt-nav-width, 210px) / 35), 8px); font-size: clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 14px); border-radius:var(--cgpt-nav-radius-lg); border:1px solid var(--cgpt-nav-border-muted); background:var(--cgpt-nav-footer-bg); cursor:pointer; box-shadow:var(--cgpt-nav-item-shadow); line-height:1; color:var(--cgpt-nav-text-strong); transition:all .18s ease; backdrop-filter:saturate(180%) blur(18px); }
 .nav-btn:hover { background:var(--cgpt-nav-footer-hover); transform:translateY(-1px); }
 .nav-btn:active { transform: translateY(1px); }
 
@@ -1485,22 +826,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   .nav-btn { padding:5px 6px; font-size:13px; }
 }
 
-.highlight-pulse{
-  outline: 3px solid rgba(56,189,248,0.92);
-  outline-offset: 4px;
-  border-radius: 14px;
-  animation: cgpt-turn-pulse 1600ms ease-in-out;
-}
-@keyframes cgpt-turn-pulse{
-  0%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
-  20%{ box-shadow: 0 0 0 10px rgba(56,189,248,0.20), 0 0 22px 6px rgba(56,189,248,0.18); }
-  45%{ box-shadow: 0 0 0 2px rgba(56,189,248,0.08), 0 0 10px 3px rgba(56,189,248,0.08); }
-  70%{ box-shadow: 0 0 0 12px rgba(56,189,248,0.22), 0 0 26px 8px rgba(56,189,248,0.20); }
-  100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
-}
-@media (prefers-reduced-motion: reduce){
-  .highlight-pulse{ animation: none; }
-}
+.highlight-pulse { animation: pulse 1.5s ease-out; }
+@keyframes pulse { 0% { background-color: rgba(255,243,205,0); } 20% { background-color: rgba(168,218,255,0.3); } 100% { background-color: rgba(255,243,205,0); } }
 `;
       document.head.appendChild(style);
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已创建样式');
@@ -1537,7 +864,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           <button class="compact-refresh" type="button" title="刷新对话列表">⟳</button>
           <button class="compact-lock" type="button" title="阻止新回复自动滚动">🔐</button>
           <button class="compact-star" type="button" title="仅显示收藏">☆</button>
-          <button class="compact-tree" type="button" title="分支 / 对话树">树<span class="tree-count" aria-hidden="true"></span></button>
         </div>
       </div>
       <div class="compact-list" role="listbox" aria-label="对话项"></div>
@@ -1548,18 +874,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         <button class="nav-btn" type="button" id="cgpt-nav-bottom" title="回到底部">⤓</button>
       </div>
     `;
-    // Apply saved position before attaching to DOM to avoid sync layout work during startup.
-    applySavedPosition(nav);
     document.body.appendChild(nav);
-    // 分支悬浮提示（固定定位，不受列表 overflow 影响）
-    try {
-      const oldTip = document.getElementById(TREE_TOOLTIP_ID);
-      if (oldTip) oldTip.remove();
-    } catch {}
-    const branchTip = document.createElement('div');
-    branchTip.id = TREE_TOOLTIP_ID;
-    branchTip.setAttribute('data-open', '0');
-    nav.appendChild(branchTip);
+    applySavedPosition(nav);
     let layout = {
       beginUserInteraction: () => {},
       endUserInteraction: () => {},
@@ -1596,64 +912,51 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (e.detail > 1) e.preventDefault();
     }, { capture: true });
 
-    const ui = { nav, layout, branchTip };
+    const ui = { nav, layout };
     nav._ui = ui;
     return ui;
   }
 
-	  function createLayoutManager(nav) {
-	    const state = {
-	      nav,
-	      destroyed: false,
-	      userAdjusting: false,
-	      followLeft: false,
-	      followRight: false,
-	      leftMargin: DEFAULT_FOLLOW_MARGIN,
-	      rightMargin: DEFAULT_FOLLOW_MARGIN,
-	      manual: { top: DEFAULT_NAV_TOP, left: null, right: DEFAULT_NAV_RIGHT },
-	      leftEl: null,
-	      rightEl: null,
-	      leftObserver: null,
-	      rightObserver: null,
-	      resizeHandler: null,
+  function createLayoutManager(nav) {
+    const state = {
+      nav,
+      destroyed: false,
+      userAdjusting: false,
+      followLeft: false,
+      followRight: false,
+      leftMargin: DEFAULT_FOLLOW_MARGIN,
+      rightMargin: DEFAULT_FOLLOW_MARGIN,
+      manual: { top: 0, left: null, right: null },
+      leftEl: null,
+      rightEl: null,
+      leftObserver: null,
+      rightObserver: null,
+      mutationObserver: null,
+      resizeHandler: null,
       pendingEval: false,
       rafId: 0,
       rightRecheckTimer: 0,
       rightRecheckAttempts: 0,
       rightSavedPosition: null,
-      rightFollowLoopId: 0,
-      pollTimer: 0
-	    };
+      rightFollowLoopId: 0
+    };
 
-	    function captureManualPositions() {
-	      // Manual position should represent the last user-adjusted anchor.
-	      // Avoid expensive layout reads (getBoundingClientRect/getComputedStyle) on hot paths.
-	      if (state.followLeft || state.followRight) return;
-	      try {
-	        const toNum = (v) => {
-	          const n = parseFloat(String(v || '').trim());
-	          return Number.isFinite(n) ? n : null;
-	        };
-	
-	        const prev = state.manual || {};
-	        const topPx = toNum(nav.style.top);
-	        const leftPx = nav.style.left && nav.style.left !== 'auto' ? toNum(nav.style.left) : null;
-	        const rightPx = nav.style.right && nav.style.right !== 'auto' ? toNum(nav.style.right) : null;
-	
-	        const top = Number.isFinite(topPx) ? topPx : Number.isFinite(prev.top) ? prev.top : DEFAULT_NAV_TOP;
-	        let left = Number.isFinite(leftPx) ? leftPx : null;
-	        let right = Number.isFinite(rightPx) ? rightPx : null;
-	
-	        if (!Number.isFinite(left) && !Number.isFinite(right)) {
-	          if (Number.isFinite(prev.left)) left = prev.left;
-	          else right = Number.isFinite(prev.right) ? prev.right : DEFAULT_NAV_RIGHT;
-	        }
-	
-	        state.manual = { top, left, right };
-	      } catch {
-	        state.manual = { top: DEFAULT_NAV_TOP, left: null, right: DEFAULT_NAV_RIGHT };
-	      }
-	    }
+    function captureManualPositions() {
+      try {
+        const rect = nav.getBoundingClientRect();
+        const comp = window.getComputedStyle(nav);
+        const topPx = parseFloat(comp.top);
+        const leftPx = comp.left && comp.left !== 'auto' ? parseFloat(comp.left) : null;
+        const rightPx = comp.right && comp.right !== 'auto' ? parseFloat(comp.right) : null;
+        state.manual = {
+          top: Number.isFinite(topPx) ? topPx : rect.top,
+          left: Number.isFinite(leftPx) ? leftPx : null,
+          right: Number.isFinite(rightPx) ? rightPx : null
+        };
+      } catch {
+        state.manual = { top: 60, left: null, right: 10 };
+      }
+    }
     captureManualPositions();
 
     function cancelPending() {
@@ -1914,6 +1217,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       cancelPending();
       if (state.leftObserver) { try { state.leftObserver.disconnect(); } catch {} }
       if (state.rightObserver) { try { state.rightObserver.disconnect(); } catch {} }
+      if (state.mutationObserver) { try { state.mutationObserver.disconnect(); } catch {} }
       if (state.resizeHandler) { window.removeEventListener('resize', state.resizeHandler); }
       if (state.rightRecheckTimer) {
         clearTimeout(state.rightRecheckTimer);
@@ -1925,30 +1229,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         cancelAnimationFrame(state.rightFollowLoopId);
         state.rightFollowLoopId = 0;
       }
-      if (state.pollTimer) {
-        clearInterval(state.pollTimer);
-        state.pollTimer = 0;
-      }
       state.leftObserver = null;
       state.rightObserver = null;
+      state.mutationObserver = null;
     }
 
-    // Layout changes are largely driven by:
-    // - window resize
-    // - sidebar/panel width changes (ResizeObserver on those elements)
-    // We avoid a global `MutationObserver({subtree:true})` here because ChatGPT hydration can produce
-    // extremely high mutation rates during first load, causing forced reflow spikes.
-    // Instead, a low-frequency poll keeps element presence in sync (when they are mounted/unmounted).
+    state.mutationObserver = new MutationObserver(() => scheduleEvaluation('mutation'));
     try {
-      state.pollTimer = setInterval(() => {
-        try {
-          if (document.hidden) return;
-          if (state.destroyed || state.userAdjusting) return;
-          const leftNow = findLeftSidebarElement();
-          const rightNow = findRightPanelElement();
-          if (leftNow !== state.leftEl || rightNow !== state.rightEl) scheduleEvaluation('layout-poll');
-        } catch {}
-      }, 1200);
+      // Layout follow only needs to react to major layout DOM changes; avoid a hot `subtree:true` observer on the full page.
+      state.mutationObserver.observe(document.body, { childList: true, subtree: false });
     } catch {}
 
     state.resizeHandler = () => scheduleEvaluation('resize');
@@ -2029,7 +1318,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const isInteractive = (target) => {
       try {
         if (!target || !target.closest) return false;
-        return !!target.closest('button, a, input, textarea, select, [role=\"button\"]');
+        return !!target.closest('button, a, input, textarea, select, [role="button"]');
       } catch {
         return false;
       }
@@ -2077,7 +1366,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (onDragMove) {
         try { onDragMove(e); } catch {}
       }
-      // Avoid text selection while dragging.
       try { e.preventDefault(); } catch {}
     });
 
@@ -2279,10 +1567,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function applySavedPosition(nav) {
     const saved = loadSavedPosition();
     if (!nav || !saved) return;
-    // Avoid forced reflow on startup:
-    // - `document.documentElement.clientHeight` can trigger a synchronous layout right after we append the panel.
-    // - `window.innerHeight` / `visualViewport.height` are enough for clamping.
-    const vh = Math.max(window.visualViewport?.height || 0, window.innerHeight || 0);
+    const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
     const maxTop = Math.max(0, vh - 40);
     const top = Number.isFinite(saved.top) ? Math.min(Math.max(0, saved.top), maxTop || saved.top) : null;
     if (Number.isFinite(top)) nav.style.top = `${Math.round(top)}px`;
@@ -2305,30 +1590,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function persistNavPosition(nav) {
     if (!nav || !nav.isConnected) return;
     try {
-      const api = globalThis.__aichat_ui_pos_drag_v1__;
-      if (api && typeof api.posV2FromRect === 'function') {
-        const rect = nav.getBoundingClientRect();
-        const payload = api.posV2FromRect(rect, { splitAware: true, clampBottomPx: 40 });
-        saveNavPosition(payload);
-        return;
-      }
-    } catch {}
-    try {
       const rect = nav.getBoundingClientRect();
-      let vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
+      const vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
       const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
-      // If split view is open, QuickNav is visually shifted left via CSS.
-      // Persist the position in the "main pane" coordinate system so it doesn't get saved as "pushed away".
-      try {
-        if (document.documentElement.classList.contains('qn-split-open')) {
-          const raw = getComputedStyle(document.documentElement).getPropertyValue('--qn-split-right-width');
-          const splitW = parseFloat(String(raw || '').trim());
-          if (Number.isFinite(splitW) && splitW > 0) {
-            const clamped = Math.min(Math.max(0, splitW), vw);
-            vw = Math.max(0, vw - clamped);
-          }
-        }
-      } catch {}
       const centerX = rect.left + (rect.width || 0) / 2;
       const anchorRight = vw && centerX >= vw / 2;
       const top = Number.isFinite(rect.top) ? rect.top : 0;
@@ -2415,271 +1679,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   let cacheIndex = [];
-  // Base list without pins (used for incremental updates to avoid rebuilding the whole list on append).
-  let cacheBaseIndex = [];
-  let lastUserSeq = 0;
-  let lastAssistantSeq = 0;
-
-  function getBranchInfo(msgId) {
-    try {
-      const id = String(msgId || '');
-      if (!id) return null;
-      const nodes = treeSummary && typeof treeSummary === 'object' ? treeSummary.nodes : null;
-      if (!nodes || typeof nodes !== 'object') return null;
-      const node = nodes[id];
-      if (!node || typeof node !== 'object') return null;
-      const children = Array.isArray(node.children) ? node.children.filter((x) => typeof x === 'string' && x) : [];
-      const count = Math.max(0, Number(node.childrenCount) || children.length);
-      return { count, children, role: String(node.role || ''), snippet: String(node.snippet || '') };
-    } catch {
-      return null;
-    }
-  }
-
-  function cssEscape(value) {
-    const s = String(value || '');
-    try {
-      if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') return CSS.escape(s);
-    } catch {}
-    return s.replace(/["\\]/g, '\\$&');
-  }
-
-  function findTurnByMessageId(msgId) {
-    const id = String(msgId || '');
-    if (!id) return null;
-    try {
-      const msgEl = document.querySelector(`[data-message-id="${cssEscape(id)}"]`);
-      const art = msgEl ? msgEl.closest('article') : null;
-      if (art) return art;
-    } catch {}
-    try {
-      const art = document.querySelector(`article[data-turn-id="${cssEscape(id)}"]`);
-      if (art) return art;
-    } catch {}
-    return null;
-  }
-
-  function jumpToMessageId(msgId) {
-    try {
-      const el = findTurnByMessageId(msgId);
-      if (!el) return false;
-      if (!el.id) el.id = `cgpt-turn-msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      setActiveTurn(el.id);
-      scrollToTurn(el);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function hideBranchTooltip(ui) {
-    try {
-      const tip = ui?.branchTip || document.getElementById(TREE_TOOLTIP_ID);
-      if (!tip) return;
-      tip.setAttribute('data-open', '0');
-      tip.textContent = '';
-    } catch {}
-  }
-
-	  function renderBranchTooltip(ui, anchorEl) {
-	    try {
-	      if (!ui) return false;
-	      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
-	      if (!tip) return false;
-      if (!treeSummary || !treeSummary.nodes) return false;
-
-	      const msgId = anchorEl?.dataset?.msgId ? String(anchorEl.dataset.msgId) : '';
-	      const info = getBranchInfo(msgId);
-	      if (!info || info.count <= 1) {
-	        hideBranchTooltip(ui);
-	        return false;
-	      }
-
-	      const currentChildMsgId = (() => {
-	        try {
-	          let found = '';
-	          let foundCount = 0;
-	          for (const cid of info.children) {
-	            if (!cid || typeof cid !== 'string') continue;
-	            if (findTurnByMessageId(cid)) {
-	              found = cid;
-	              foundCount++;
-	              if (foundCount > 1) break;
-	            }
-	          }
-	          if (foundCount === 1) return found;
-	        } catch {}
-	        try {
-	          for (const cid of info.children) {
-	            if (treePathSet && treePathSet.has(cid)) return cid;
-	          }
-	        } catch {}
-	        return '';
-	      })();
-
-	      tip.textContent = '';
-	      const hdr = document.createElement('div');
-	      hdr.className = 'hdr';
-	      const title = document.createElement('span');
-      title.textContent = `分支 ${info.count}`;
-      const hint = document.createElement('span');
-      hint.textContent = '悬停预览';
-      hdr.appendChild(title);
-      hdr.appendChild(hint);
-      tip.appendChild(hdr);
-
-      const rows = document.createElement('div');
-	      rows.className = 'rows';
-	      const children = info.children.slice(0, 10);
-	      for (const cid of children) {
-	        const child = treeSummary.nodes?.[cid];
-	        const role = child && typeof child === 'object' ? String(child.role || '') : '';
-	        const snippet = child && typeof child === 'object' ? String(child.snippet || '') : '';
-
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.setAttribute('data-branch-msg-id', cid);
-
-        const roleEl = document.createElement('span');
-        roleEl.className = `role ${role}`.trim();
-        roleEl.textContent = role ? role[0].toUpperCase() : '·';
-
-        const textEl = document.createElement('span');
-        textEl.className = 'snippet';
-        textEl.textContent = snippet || '(empty)';
-
-	        row.appendChild(roleEl);
-	        row.appendChild(textEl);
-
-	        const isCurrentChild = currentChildMsgId ? cid === currentChildMsgId : treePathSet && treePathSet.has(cid);
-	        if (isCurrentChild) {
-	          const tag = document.createElement('span');
-	          tag.className = 'tag';
-	          tag.textContent = '当前';
-	          row.appendChild(tag);
-	        }
-
-        rows.appendChild(row);
-      }
-
-      if (info.children.length > children.length) {
-        const more = document.createElement('div');
-        more.className = 'row';
-        more.setAttribute('data-branch-msg-id', '__open_tree__');
-        const roleEl = document.createElement('span');
-        roleEl.className = 'role';
-        roleEl.textContent = '…';
-        const textEl = document.createElement('span');
-        textEl.className = 'snippet';
-        textEl.textContent = `还有 ${info.children.length - children.length} 条分支，打开树查看`;
-        more.appendChild(roleEl);
-        more.appendChild(textEl);
-        rows.appendChild(more);
-      }
-
-      tip.appendChild(rows);
-
-      const foot = document.createElement('div');
-      foot.className = 'foot';
-      const openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = 'btn';
-      openBtn.setAttribute('data-action', 'open-tree');
-      openBtn.textContent = '打开树';
-      foot.appendChild(openBtn);
-      tip.appendChild(foot);
-
-      tip.setAttribute('data-open', '1');
-
-      const a = anchorEl.getBoundingClientRect();
-      tip.style.left = '0px';
-      tip.style.top = '0px';
-
-      const tRect = tip.getBoundingClientRect();
-      const gap = 10;
-      let left = a.left - tRect.width - gap;
-      if (left < 8) left = a.right + gap;
-      let top = a.top - 6;
-      if (top + tRect.height > window.innerHeight - 8) top = window.innerHeight - tRect.height - 8;
-      if (top < 8) top = 8;
-
-      tip.style.left = `${Math.round(left)}px`;
-      tip.style.top = `${Math.round(top)}px`;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function bindBranchHover(ui) {
-    try {
-      const list = ui.nav.querySelector('.compact-list');
-      if (!list || list._branchHoverBound) return;
-      const tip = ui.branchTip || document.getElementById(TREE_TOOLTIP_ID);
-      let activeRow = null;
-      let hideTimer = 0;
-
-      const scheduleHide = () => {
-        if (hideTimer) clearTimeout(hideTimer);
-        hideTimer = setTimeout(() => {
-          hideTimer = 0;
-          activeRow = null;
-          hideBranchTooltip(ui);
-        }, 160);
-      };
-
-      list.addEventListener('mouseover', (e) => {
-        const row = e.target.closest('.compact-item.has-branches');
-        if (!row || !list.contains(row)) return;
-        if (row === activeRow) return;
-        activeRow = row;
-        if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
-        renderBranchTooltip(ui, row);
-      });
-      list.addEventListener('mouseout', (e) => {
-        const row = e.target.closest('.compact-item.has-branches');
-        if (!row || !list.contains(row)) return;
-        const to = e.relatedTarget;
-        if (to && row.contains(to)) return;
-        scheduleHide();
-      });
-      list.addEventListener('scroll', () => scheduleHide(), { passive: true });
-
-      if (tip) {
-        tip.addEventListener('mouseenter', () => {
-          if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
-        });
-        tip.addEventListener('mouseleave', () => scheduleHide());
-        tip.addEventListener('click', (e) => {
-          const action = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
-          if (action && action.getAttribute('data-action') === 'open-tree') {
-            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
-            scheduleHide();
-            return;
-          }
-          const row = e.target && e.target.closest ? e.target.closest('[data-branch-msg-id]') : null;
-          if (!row) return;
-          const targetId = String(row.getAttribute('data-branch-msg-id') || '');
-          if (!targetId) return;
-          if (targetId === '__open_tree__') {
-            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
-            scheduleHide();
-            return;
-          }
-          scheduleHide();
-          if (jumpToMessageId(targetId)) return;
-          void (async () => {
-            const ok = await requestTreeNavigateToMessageId(targetId);
-            if (!ok) {
-              try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
-            }
-          })();
-        });
-      }
-
-      list._branchHoverBound = true;
-    } catch {}
-  }
 
   function renderList(ui) {
     const list = ui.nav.querySelector('.compact-list');
@@ -2703,129 +1702,28 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {
       list.innerHTML = `<div class="compact-empty">${filterFav ? '暂无收藏' : '暂无对话'}</div>`;
-      try {
-        list._qnRenderState = { len: 0, lastKey: '', filterFav: !!filterFav };
-      } catch {}
       queueScrollbarState();
       return;
     }
-
-    const createRow = (item) => {
+    list.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const item of next) {
       const node = document.createElement('div');
       const fav = favSet.has(item.key);
-      const msgId = typeof item.msgId === 'string' ? item.msgId : '';
-      const branchInfo = item.role === 'pin' ? null : getBranchInfo(msgId);
-      const branchCount = branchInfo && branchInfo.count > 1 ? branchInfo.count : 0;
-      node.className = `compact-item ${item.role} ${fav ? 'has-fav' : ''} ${branchCount ? 'has-branches' : ''}`;
+      node.className = `compact-item ${item.role} ${fav ? 'has-fav' : ''}`;
       node.dataset.id = item.id;
       node.dataset.key = item.key;
-      if (msgId) node.dataset.msgId = msgId;
       if (item.role === 'pin') {
         node.classList.add('pin');
         node.title = 'Option+单击删除📌';
         node.innerHTML = `<span class="pin-label">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       } else {
-        const branchBadge = branchCount ? `<span class="branch-badge" title="分支：${branchCount}">[${branchCount}]</span>` : '';
-        node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span>${branchBadge}<button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
+        node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       }
       node.setAttribute('draggable', 'false');
-      return node;
-    };
-
-    // Incremental render: when new turns append, avoid rebuilding the whole list (very expensive on long chats).
-    try {
-      const prev = list._qnRenderState && typeof list._qnRenderState === 'object' ? list._qnRenderState : null;
-      const prevLen = prev && Number.isFinite(prev.len) ? prev.len : 0;
-      const prevLastKey = prev ? String(prev.lastKey || '') : '';
-      const prevFilterFav = prev ? !!prev.filterFav : false;
-
-      const canAppend =
-        !filterFav &&
-        !prevFilterFav &&
-        prevLen > 0 &&
-        next.length > prevLen &&
-        list.children.length === prevLen &&
-        prevLastKey &&
-        next[prevLen - 1] &&
-        String(next[prevLen - 1].key || '') === prevLastKey &&
-        list.lastElementChild &&
-        String(list.lastElementChild.dataset?.key || '') === prevLastKey;
-
-      if (canAppend) {
-        const frag = document.createDocumentFragment();
-        for (let i = prevLen; i < next.length; i++) frag.appendChild(createRow(next[i]));
-        list.appendChild(frag);
-        list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false };
-        queueScrollbarState();
-        scheduleActiveUpdateNow();
-        return;
-      }
-
-      // Tail patch: on long chats, avoid full rebuild when only the last few previews change (e.g. after streaming).
-      const canPatchTail =
-        !filterFav &&
-        !prevFilterFav &&
-        prevLen > 0 &&
-        next.length === prevLen &&
-        list.children.length === prevLen &&
-        prevLastKey &&
-        list.lastElementChild &&
-        String(list.lastElementChild.dataset?.key || '') === prevLastKey;
-
-      if (canPatchTail) {
-        const tail = Math.min(6, next.length);
-        let ok = true;
-        for (let i = next.length - tail; i < next.length; i++) {
-          const row = list.children[i];
-          if (!row || String(row.dataset?.key || '') !== String(next[i].key || '')) {
-            ok = false;
-            break;
-          }
-        }
-        if (ok) {
-          for (let i = next.length - tail; i < next.length; i++) {
-            const item = next[i];
-            const row = list.children[i];
-            if (!row) continue;
-            // Favorite state can change.
-            const favBtn = row.querySelector('.fav-toggle');
-            if (favBtn) favBtn.classList.toggle('active', favSet.has(item.key));
-
-            if (item.role === 'pin') {
-              const label = row.querySelector('.pin-label');
-              if (label) label.textContent = item.preview || '📌';
-              continue;
-            }
-
-            // Update preview + index label.
-            const num = row.querySelector('.compact-number');
-            if (num) num.textContent = `${item.idx + 1}.`;
-            const txt = row.querySelector('.compact-text');
-            if (txt) {
-              const preview = String(item.preview || '');
-              txt.textContent = preview;
-              try {
-                txt.setAttribute('title', preview);
-              } catch {}
-            }
-          }
-          list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false };
-          queueScrollbarState();
-          scheduleActiveUpdateNow();
-          return;
-        }
-      }
-    } catch {}
-
-    // Full rebuild.
-    list.innerHTML = '';
-    const frag = document.createDocumentFragment();
-    for (const item of next) frag.appendChild(createRow(item));
+      frag.appendChild(node);
+    }
     list.appendChild(frag);
-    try {
-      list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: !!filterFav };
-    } catch {}
-
     queueScrollbarState();
     // 重新渲染会丢失 active class：根据 currentActiveId 立即恢复一次，避免闪烁/丢失高亮
     if (currentActiveId) {
@@ -2844,12 +1742,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             updateStarBtnState(ui);
             renderList(ui);
           }
-          return;
-        }
-        const branchBadge = e.target.closest('.branch-badge');
-        if (branchBadge) {
-          e.stopPropagation();
-          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
           return;
         }
         const item = e.target.closest('.compact-item');
@@ -2884,20 +1776,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const turnCount = turns.length;
     const firstKey = turnCount ? getTurnKey(turns[0]) : '';
     const lastKey = turnCount ? getTurnKey(turns[turnCount - 1]) : '';
-    const prevDomCount = lastDomTurnCount;
     const unchanged = turnCount === lastDomTurnCount && firstKey === lastDomFirstKey && lastKey === lastDomLastKey;
     if (soft && !force && unchanged && cacheIndex.length && turnCount > 0) return false;
 
-    const base = (() => {
-      try {
-        if (!force && canAppendTurns(turns, prevDomCount) && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length) {
-          return appendTurnsToBaseIndex(turns, prevDomCount);
-        }
-      } catch {}
-      const full = buildIndex(turns);
-      cacheBaseIndex = full;
-      return full;
-    })();
+    const base = buildIndex(turns);
     const next = composeWithPins(base);
     if (DEBUG) console.log('ChatGPT Navigation: turns', next.length, '(含📌)');
     lastTurnCount = next.length;
@@ -2936,17 +1818,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     // 构建合成列表
     const combined = [];
-    // Sort pins inside a message by DOM order (avoids layout reads).
-    const compareDomOrder = (aId, bId) => {
-      try {
-        const aEl = document.getElementById(aId);
-        const bEl = document.getElementById(bId);
-        if (!aEl || !bEl || aEl === bEl) return 0;
-        const pos = aEl.compareDocumentPosition(bEl);
-        if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-        if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-      } catch {}
-      return 0;
+    // 先预计算锚点y用于排序
+    const getY = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return Infinity;
+      const r = el.getBoundingClientRect();
+      return r ? r.top : Infinity;
     };
 
     // 全局📌编号
@@ -2955,9 +1832,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       combined.push(item);
       const arr = byMsg.get(item.key);
       if (!arr || !arr.length) continue;
-      arr.sort((a, b) => {
-        const d = compareDomOrder(a.anchorId, b.anchorId);
-        if (d) return d;
+      arr.sort((a,b) => {
+        const ya = getY(a.anchorId), yb = getY(b.anchorId);
+        if (ya !== yb) return ya - yb;
         return a.created - b.created;
       });
       for (const p of arr) {
@@ -3102,7 +1979,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       '.text-message',
       'article .markdown',
       '.prose p',
-      'p','li','pre','blockquote'
+      'p','li','pre','code','blockquote'
     ];
     for (const s of selectors) {
       const n = root.querySelector(s);
@@ -3111,203 +1988,59 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return root;
   }
 
-  function scrollToTopOfElement(targetEl, topMarginPx = 12, behavior = 'auto') {
-    const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
-    if (!el) return false;
-
-    const margin = Math.max(0, Math.round(Number(topMarginPx) || 0));
-    // Always use the chat scroller (avoid inner overflow elements like code blocks).
-    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
-    const isWin = isWindowScroller(scroller);
-    const scrollBehavior = behavior === 'smooth' ? 'smooth' : 'auto';
-
-    const setTop = (top) => {
-      const value = Math.max(0, Math.round(Number(top) || 0));
-      if (isWin) {
-        try { window.scroll({ top: value, behavior: scrollBehavior }); return; } catch {}
-        try { window.scrollTo({ top: value, behavior: scrollBehavior }); return; } catch {}
-        try { window.scrollTo(0, value); } catch {}
-        return;
-      }
-
-      try { scroller.scroll({ top: value, behavior: scrollBehavior }); return; } catch {}
-      try { scroller.scrollTo({ top: value, behavior: scrollBehavior }); return; } catch {}
-      try { scroller.scrollTop = value; } catch {}
-    };
-
-    try {
-      const r = el.getBoundingClientRect();
-      if (isWin) {
-        const base = window.scrollY || getScrollPos(scroller);
-        setTop(base + r.top - margin);
-      } else {
-        const sr = scroller.getBoundingClientRect();
-        const base = getScrollPos(scroller);
-        setTop(base + (r.top - sr.top) - margin);
-      }
-    } catch {
-      try { el.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch {}
-      return true;
-    }
-
-    return true;
-  }
-
-  function cancelNavJumpStabilizer() {
-    try { navJumpStabilizerCtrl?.abort?.(); } catch {}
-    navJumpStabilizerCtrl = null;
-  }
-
-  function computeDeltaToAlignTop(el, marginPx, scroller) {
-    try {
-      const margin = Math.max(0, Math.round(Number(marginPx) || 0));
-      const win = isWindowScroller(scroller);
-      const targetTop = win ? margin : ((scroller?.getBoundingClientRect?.().top || 0) + margin);
-      const r = el.getBoundingClientRect();
-      const top = Number(r?.top || 0);
-      if (!Number.isFinite(top)) return 0;
-      return top - targetTop;
-    } catch {
-      return 0;
-    }
-  }
-
-  function startNavJumpStabilizer(targetEl, marginPx, opts = {}) {
-    const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
-    if (!el) return;
-
-    cancelNavJumpStabilizer();
-
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : { signal: { aborted: false }, abort: () => void 0 };
-    navJumpStabilizerCtrl = ctrl;
-    const signal = ctrl.signal;
-
-    const startedAt = Date.now();
-    const maxMsRaw = Number(opts.maxMs);
-    const maxMs = Number.isFinite(maxMsRaw) ? Math.max(150, Math.min(2000, Math.round(maxMsRaw))) : 1200;
-    const settleFrames = 8;
-    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
-    const win = isWindowScroller(scroller);
-
-    const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
-    const cleanupFns = [];
-    const cleanup = () => {
-      cleanupFns.splice(0).forEach((fn) => { try { fn(); } catch {} });
-      if (navJumpStabilizerCtrl === ctrl) navJumpStabilizerCtrl = null;
-    };
-
-    const abortFromUser = (e) => {
-      try {
-        if (ignoreIfInNav(e?.target)) return;
-        ctrl.abort();
-      } catch {
-        // ignore
-      }
-    };
-
-    const onKeyDown = (e) => {
-      try {
-        if (!e) return;
-        if (ignoreIfInNav(e?.target)) return;
-        const t = e.target;
-        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-        const k = e.key;
-        if (k === 'PageDown' || k === 'PageUp' || k === 'End' || k === 'Home' || k === 'ArrowDown' || k === 'ArrowUp' || k === ' ') abortFromUser(e);
-      } catch {}
-    };
-
-    const onPointerDown = (e) => {
-      try {
-        if (!e) return;
-        if (ignoreIfInNav(e?.target)) return;
-        if (e.button !== 0) return;
-        const sc = scrollLockScrollEl || getChatScrollContainer();
-        if (isProbablyScrollbarGrab(e, sc)) abortFromUser(e);
-      } catch {}
-    };
-
-    try {
-      document.addEventListener('wheel', abortFromUser, { passive: true, capture: true });
-      cleanupFns.push(() => document.removeEventListener('wheel', abortFromUser, true));
-    } catch {}
-    try {
-      document.addEventListener('touchstart', abortFromUser, { passive: true, capture: true });
-      document.addEventListener('touchmove', abortFromUser, { passive: true, capture: true });
-      cleanupFns.push(() => document.removeEventListener('touchstart', abortFromUser, true));
-      cleanupFns.push(() => document.removeEventListener('touchmove', abortFromUser, true));
-    } catch {}
-    try {
-      document.addEventListener('keydown', onKeyDown, true);
-      cleanupFns.push(() => document.removeEventListener('keydown', onKeyDown, true));
-    } catch {}
-    try {
-      document.addEventListener('pointerdown', onPointerDown, true);
-      cleanupFns.push(() => document.removeEventListener('pointerdown', onPointerDown, true));
-    } catch {}
-
-    try {
-      signal?.addEventListener?.('abort', cleanup, { once: true });
-      cleanupFns.push(() => { try { signal?.removeEventListener?.('abort', cleanup); } catch {} });
-    } catch {}
-
-    let stable = 0;
-    const tick = () => {
-      if (signal?.aborted) return;
-      if ((Date.now() - startedAt) > maxMs) { cleanup(); return; }
-      // If another jump starts, stop stabilizing this one.
-      if (navJumpStabilizerCtrl !== ctrl) return;
-
-      const delta = computeDeltaToAlignTop(el, marginPx, scroller);
-      if (Math.abs(delta) > 3) {
-        stable = 0;
-        // Keep the allow window small: enough for this correction + the ensuing scroll event.
-        allowNavScrollFor(260);
-        if (win) {
-          try { window.scrollBy({ top: delta, behavior: 'auto' }); }
-          catch { try { window.scrollBy(0, delta); } catch {} }
-        } else {
-          try { scroller.scrollBy({ top: delta, behavior: 'auto' }); }
-          catch { try { scroller.scrollBy(0, delta); } catch {} }
-        }
-      } else {
-        stable++;
-        if (stable >= settleFrames) { cleanup(); return; }
-      }
-
-      requestAnimationFrame(tick);
-    };
-
-    requestAnimationFrame(tick);
-  }
-
   function scrollToTurn(el) {
-    const article = el?.closest?.('article') || el;
+    const anchor = findTurnAnchor(el) || el;
     const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
-    const allowMs = scrollLockEnabled ? 1800 : 1200;
-    markNavScrollIntent(allowMs);
-    const isPin = !!(el && el.classList && el.classList.contains('cgpt-pin-anchor'));
-    const target = isPin ? el : article;
-    // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
-    // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
-    scrollToTopOfElement(target, margin, behavior);
-    cancelNavJumpStabilizer();
-    // ChatGPT can shift layout shortly after a jump (images, code blocks, virtualization).
-    // Stabilize the alignment, but immediately stop if the user starts scrolling.
-    if (behavior === 'auto') startNavJumpStabilizer(target, margin, { maxMs: 1200, seq: ++navJumpSeq });
+    try {
+      anchor.style.scrollMarginTop = margin + 'px';
+      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
+      requestAnimationFrame(() => {
+        markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
+        anchor.scrollIntoView({ block: 'start', inline: 'nearest', behavior });
+        postScrollNudge(el);
+      });
+    } catch {
+      const scroller = getScrollRoot(anchor);
+      const scRect = scroller.getBoundingClientRect ? scroller.getBoundingClientRect() : { top: 0 };
+      const isWindow = (scroller === document.documentElement || scroller === document.body);
+      const base = isWindow ? window.scrollY : scroller.scrollTop;
+      const top = base + anchor.getBoundingClientRect().top - scRect.top - margin;
+      markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
+      if (isWindow) window.scrollTo({ top, behavior });
+      else scroller.scrollTo({ top, behavior });
+      postScrollNudge(el);
+    }
+    el.classList.add('highlight-pulse');
+    anchor.classList.add('highlight-pulse');
+    setTimeout(() => { el.classList.remove('highlight-pulse'); anchor.classList.remove('highlight-pulse'); }, 1600);
+  }
 
-    // Highlight the whole turn, not just the first paragraph (more obvious).
-    try { document.querySelectorAll('article.highlight-pulse').forEach((n) => n.classList.remove('highlight-pulse')); } catch {}
-    try { article.classList.add('highlight-pulse'); } catch {}
-    setTimeout(() => { try { article.classList.remove('highlight-pulse'); } catch {} }, 2200);
-    scheduleActiveUpdateNow();
+  function postScrollNudge(targetEl) {
+    markNavScrollIntent(scrollLockEnabled ? 1200 : 600);
+    let tries = 0;
+    const step = () => {
+      tries++;
+      const y = getAnchorY();
+      const r = targetEl.getBoundingClientRect();
+      const diff = r.top - y;
+      if (diff > 1 && tries <= 6) {
+        const scroller = getScrollRoot(targetEl);
+        const isWindow = (scroller === document.documentElement || scroller === document.body);
+        if (isWindow) window.scrollBy(0, diff + 1);
+        else scroller.scrollBy({ top: diff + 1 });
+        requestAnimationFrame(step);
+      } else {
+        scheduleActiveUpdateNow();
+      }
+    };
+    requestAnimationFrame(step);
   }
 
   function wirePanel(ui) {
     const toggleBtn = ui.nav.querySelector('.compact-toggle');
     const refreshBtn = ui.nav.querySelector('.compact-refresh');
     const starBtn = ui.nav.querySelector('.compact-star');
-    const treeBtn = ui.nav.querySelector('.compact-tree');
 
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
@@ -3373,22 +2106,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       updateStarBtnState(ui);
     }
 
-    if (treeBtn) {
-      treeBtn.addEventListener('click', (e) => {
-        if (e && e.altKey) {
-          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
-          scheduleTreeSummaryRequest(240);
-          return;
-        }
-        try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_TOGGLE_PANEL }, '*'); } catch {}
-        // Lazy load: only request tree summary after user interacts with the tree button.
-        scheduleTreeSummaryRequest(420);
-      });
-      updateTreeBtnState(ui);
-    }
-
-    bindBranchHover(ui);
-
 
     // 底部按钮
     const prevBtn = ui.nav.querySelector('#cgpt-nav-prev');
@@ -3401,13 +2118,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (topBtn) topBtn.addEventListener('click', () => jumpToEdge('top'));
     if (bottomBtn) bottomBtn.addEventListener('click', () => jumpToEdge('bottom'));
 
-    // 键盘事件只绑定一次：避免重复绑定（ChatGPT SPA 路由切换不会刷新页面）
-    if (!__cgptKeydownHandler) {
-      __cgptKeydownHandler = (e) => {
-        const navEl = document.getElementById('cgpt-compact-nav');
-        const currentUi = navEl && navEl._ui ? navEl._ui : null;
-        if (!currentUi || !currentUi.nav) return;
-
+    // 键盘事件只绑定一次：避免重复绑定
+    if (!window.__cgptKeysBound) {
+      const onKeydown = (e) => {
         const t = e.target;
         const tag = t && t.tagName;
         const isEditable = t && ((tag === 'INPUT') || (tag === 'TEXTAREA') || (tag === 'SELECT') || (t.isContentEditable));
@@ -3425,33 +2138,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           e.preventDefault();
           return;
         }
-
         // Alt+/ 面板显隐
         if (e.altKey && e.key === '/') {
-          const list = currentUi.nav.querySelector('.compact-list');
-          if (!list) return;
-          const toggleText = currentUi.nav.querySelector('.compact-toggle .toggle-text');
+          const list = ui.nav.querySelector('.compact-list');
+          const toggleText = ui.nav.querySelector('.compact-toggle .toggle-text');
           const isHidden = list.getAttribute('data-hidden') === '1';
-          if (isHidden) {
-            list.style.visibility = 'visible';
-            list.style.height = '';
-            list.style.overflow = '';
-            list.setAttribute('data-hidden', '0');
-            if (toggleText) toggleText.textContent = '−';
-          } else {
-            list.style.visibility = 'hidden';
-            list.style.height = '0';
-            list.style.overflow = 'hidden';
-            list.setAttribute('data-hidden', '1');
-            if (toggleText) toggleText.textContent = '+';
-          }
+          if (isHidden) { list.style.visibility = 'visible'; list.style.height = ''; list.style.overflow = ''; list.setAttribute('data-hidden', '0'); if (toggleText) toggleText.textContent = '−'; }
+          else { list.style.visibility = 'hidden'; list.style.height = '0'; list.style.overflow = 'hidden'; list.setAttribute('data-hidden', '1'); if (toggleText) toggleText.textContent = '+'; }
           e.preventDefault();
         }
       };
 
-      document.addEventListener('keydown', __cgptKeydownHandler, { passive: false });
+      document.addEventListener('keydown', onKeydown, { passive: false });
       window.__cgptKeysBound = true;
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已绑定键盘事件');
+    } else {
+      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 键盘事件已存在，跳过绑定');
     }
   }
 
@@ -3463,31 +2165,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       starBtn.classList.toggle('active', !!filterFav);
       starBtn.textContent = filterFav ? '★' : '☆';
       starBtn.title = (filterFav ? '显示全部（当前仅收藏）' : '仅显示收藏') + (count ? `（${count}）` : '');
-    } catch {}
-  }
-
-  function updateTreeBtnState(ui) {
-    try {
-      const btn = ui.nav.querySelector('.compact-tree');
-      if (!btn) return;
-      const badge = btn.querySelector('.tree-count');
-      const refreshHint = 'Option+点击=强制刷新';
-      const hasSummary = !!(treeSummary && typeof treeSummary === 'object' && treeSummary.stats && typeof treeSummary.stats === 'object');
-      if (!hasSummary) {
-        try { btn.removeAttribute('data-count'); } catch {}
-        if (badge) badge.textContent = '';
-        if (!getConversationIdFromUrl()) {
-          btn.title = '分支 / 对话树（仅对话页可用）';
-        } else {
-          btn.title = treeSummaryPendingReqId ? `分支 / 对话树（加载中…，${refreshHint}）` : `分支 / 对话树（点击加载，${refreshHint}）`;
-        }
-        return;
-      }
-
-      const count = Math.max(0, Number(treeSummary?.stats?.branchCount) || 0);
-      btn.setAttribute('data-count', String(count));
-      if (badge) badge.textContent = count ? String(count) : '';
-      btn.title = count ? `分支 / 对话树（分支点：${count}，${refreshHint}）` : `分支 / 对话树（当前对话无分支，${refreshHint}）`;
     } catch {}
   }
 
@@ -3538,26 +2215,24 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function getTurnsContainer() {
-    // Prefer shared ChatGPT core's turns root (usually narrow and stable).
-    try {
-      const core = globalThis.__aichat_chatgpt_core_v1__;
-      if (core && typeof core.getTurnsRoot === 'function') {
-        const root = core.getTurnsRoot();
-        if (root && root !== document) return root;
-      }
-    } catch {}
-
-    // Prefer the stable ChatGPT turns root.
-    try {
-      const root = document.querySelector('[data-testid="conversation-turns"]');
-      if (root) return root;
-    } catch {}
-
     const nodes = qsTurns();
     if (!nodes.length) {
-      // No turns yet: don't attach a wide observer (it would cover the whole app and be very noisy).
-      // `observeChat()` will bootstrap a narrow observer later when turns appear.
-      return null;
+      // 如果没有找到对话节点，尝试找到可能的对话容器
+      const potentialContainers = [
+        document.querySelector('[data-testid="conversation-turns"]'),
+        document.querySelector('main[role="main"]'),
+        document.querySelector('main'),
+        document.querySelector('[role="main"]'),
+        document.querySelector('div[class*="conversation"]'),
+        document.querySelector('div[class*="chat"]'),
+        document.body
+      ].filter(Boolean);
+
+      if (DEBUG && potentialContainers.length > 1) {
+        console.log('ChatGPT Navigation: 没有找到对话，使用备用容器:', potentialContainers[0]);
+      }
+
+      return potentialContainers[0] || document.body;
     }
 
     // 找到包含所有对话节点的最小公共父元素
@@ -3573,149 +2248,52 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return document.body;
   }
 
-  function shouldObserveTurnsSubtree(target) {
-    // If all turn articles are direct children of the target, avoid subtree observation
-    // to ignore streaming text mutations (which can be extremely noisy).
-    try {
-      if (!target || typeof target.querySelectorAll !== 'function') return true;
-      const deep = target.querySelectorAll('article[data-testid^="conversation-turn-"]').length;
-      if (!deep) return true;
-      const direct = target.querySelectorAll(':scope > article[data-testid^="conversation-turn-"]').length;
-      if (direct && direct === deep) return false;
-      // Common wrapper case (:scope > div > article). Still safe to observe `subtree:false`.
-      const wrapped = target.querySelectorAll(':scope > * article[data-testid^="conversation-turn-"]').length;
-      if (wrapped && wrapped === deep) return false;
-    } catch {}
-    return true;
-  }
-
   function observeChat(ui) {
-    const target = getTurnsContainer();
+    const target = getTurnsContainer() || document.body;
     if (ui._mo) {
       try { ui._mo.disconnect(); } catch {}
     }
+    const mo = new MutationObserver((muts) => {
+      const isLongChat = (lastDomTurnCount || 0) > 120;
+      const hasStop = checkStreamingState(ui);
+      const useSoft = isLongChat && !!hasStop;
+      // 只要涉及消息区域的变更，就触发去抖刷新
+      for (const mut of muts) {
+        const t = mut.target && mut.target.nodeType === 1 ? mut.target : null;
+        if (!t) continue;
 
-    // Clear any bootstrap poller.
-    try {
-      if (ui._moBootstrapTimer) {
-        clearInterval(ui._moBootstrapTimer);
-        ui._moBootstrapTimer = 0;
-      }
-      ui._moBootstrapAttempts = 0;
-    } catch {}
-
-    // No turns yet (home/library/etc.): keep a short-lived poller to mount the observer later.
-    if (!target) {
-      ui._mo = null;
-      ui._moTarget = null;
-
-      try {
-        if (!ui._moBootstrapTimer) {
-          ui._moBootstrapTimer = setInterval(() => {
-            try {
-              if (document.hidden) return;
-              const nav = document.getElementById('cgpt-compact-nav');
-              if (!nav || !nav._ui) {
-                clearInterval(ui._moBootstrapTimer);
-                ui._moBootstrapTimer = 0;
-                return;
-              }
-              ui._moBootstrapAttempts = (ui._moBootstrapAttempts || 0) + 1;
-              // Stop after ~18s to avoid keeping a watcher on pages without turns.
-              if (ui._moBootstrapAttempts > 30) {
-                clearInterval(ui._moBootstrapTimer);
-                ui._moBootstrapTimer = 0;
-                return;
-              }
-              const next = getTurnsContainer();
-              if (!next) return;
-              clearInterval(ui._moBootstrapTimer);
-              ui._moBootstrapTimer = 0;
-              ui._moBootstrapAttempts = 0;
-              observeChat(nav._ui);
-              scheduleRefresh(nav._ui, { force: true });
-            } catch {}
-          }, 600);
+        // 尽量廉价地判断：在主区域/turn/markdown/消息块内的任何变更都算
+        if (
+          t.closest('[data-testid="conversation-turns"]') ||
+          t.closest('[data-message-author-role]') ||
+          t.closest('[data-testid*="conversation-turn"]') ||
+          t.closest('[data-message-id]') ||
+          t.closest('.markdown') || t.closest('.prose')
+        ) {
+          handleScrollLockMutations(muts);
+          scheduleRefresh(ui, { delay: isLongChat ? 200 : 80, soft: useSoft });
+          return;
         }
-      } catch {}
-    } else {
-      const observeSubtree = shouldObserveTurnsSubtree(target);
-      const mo = new MutationObserver((muts) => {
-        const isLongChat = (lastDomTurnCount || 0) > 120;
-        const hasStop = checkStreamingState(ui);
-        const useSoft = isLongChat && !!hasStop;
-        handleScrollLockMutations(muts, !!hasStop);
+      }
+      handleScrollLockMutations(muts);
+    });
 
-        // Avoid refreshing on every subtree mutation. We only need to rebuild the index
-        // when turns/messages are structurally added/removed. Streaming text changes are
-        // covered by `checkStreamingState()` (force refresh on stop-button transition).
-        let turnsChanged = false;
-        try {
-          for (const mut of muts || []) {
-            if (!mut || mut.type !== 'childList') continue;
-            const added = mut.addedNodes;
-            if (added && added.length) {
-              for (const n of added) {
-                if (isConversationTurnishNode(n)) {
-                  turnsChanged = true;
-                  break;
-                }
-              }
-            }
-            if (!turnsChanged) {
-              const removed = mut.removedNodes;
-              if (removed && removed.length) {
-                for (const n of removed) {
-                  if (isConversationTurnishNode(n)) {
-                    turnsChanged = true;
-                    break;
-                  }
-                }
-              }
-            }
-            if (turnsChanged) break;
-          }
-        } catch {}
+    mo.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['data-message-author-role', 'data-testid', 'data-message-id', 'class']
+    });
 
-        if (!turnsChanged) return;
-
-        const delay = isLongChat ? (hasStop ? 420 : 140) : 80;
-        scheduleRefresh(ui, { delay, soft: useSoft });
-      });
-
-      mo.observe(target, {
-        childList: true,
-        subtree: observeSubtree
-      });
-
-      ui._mo = mo;
-      ui._moTarget = target;
-    }
+    ui._mo = mo;
+    ui._moTarget = target;
 
     // 定期兜底（10s 一次，别等 30s）
     if (forceRefreshTimer) clearInterval(forceRefreshTimer);
     forceRefreshTimer = setInterval(() => {
-      if (document.hidden) return;
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
-      const bootstrapRunning = !!ui._moBootstrapTimer;
-      const targetGone = !!(ui._moTarget && !ui._moTarget.isConnected);
-      if (targetGone) {
-        observeChat(ui);
-        scheduleRefresh(ui, { force: true });
-        return;
-      }
-      // If we don't have a target yet (no turns rendered), let the bootstrap poller do its job.
-      if (!ui._moTarget) {
-        if (!bootstrapRunning) observeChat(ui);
-        return;
-      }
-      // 某些切换会话场景：turn selector 暂时抓不到元素（一直 0），这里强制重绑+刷新，避免长期“暂无对话”
-      if (!hasStop && count === 0 && lastDomTurnCount === 0) {
-        observeChat(ui);
-        scheduleRefresh(ui, { force: true });
-        return;
-      }
       if (!hasStop && count === lastDomTurnCount) return;
       scheduleRefresh(ui, { force: hasStop, soft: !hasStop && (lastDomTurnCount || 0) > 120 });
     }, 10000);
@@ -3725,8 +2303,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // 防自动滚动（不改全局原型，避免与其他脚本冲突）
   function postScrollLockStateToMainWorld() {
     try {
-      // Cross-world sync: MAIN-world guard reads this synchronously from DOM dataset.
-      try { document.documentElement.dataset.quicknavScrollLockEnabled = scrollLockEnabled ? '1' : '0'; } catch {}
       window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_STATE', enabled: !!scrollLockEnabled }, '*');
     } catch {}
   }
@@ -3737,9 +2313,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function postScrollLockBaselineToMainWorld(top, force = false) {
     try {
       const px = Math.max(0, Math.round(Number(top) || 0));
-      // Cross-world baseline sync: MAIN-world guard reads this synchronously from DOM dataset.
-      // This avoids a race where scroll-lock is toggled on and the guard still has an old baseline
-      // for a brief moment (which can allow a "jump back" to the previous position).
       try { document.documentElement.dataset.quicknavScrollLockBaseline = String(px); } catch {}
       const now = Date.now();
       if (!force) {
@@ -3758,11 +2331,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch {}
   }
 
-  // In MV3, many sites (ChatGPT/Gemini/etc.) drive autoscroll from the page JS (MAIN world).
+  // In MV3, many sites drive autoscroll from page JS (MAIN world).
   // Ask the extension service worker to inject the MAIN-world scroll guard, best-effort and throttled.
   let __quicknavMainGuardRequestedAt = 0;
-  let __quicknavMainGuardReady = false;
-  let __quicknavMainGuardRetryTimer = 0;
   function ensureMainWorldScrollGuard() {
     try {
       if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
@@ -3770,24 +2341,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (now - (__quicknavMainGuardRequestedAt || 0) < 2000) return;
       __quicknavMainGuardRequestedAt = now;
       chrome.runtime.sendMessage({ type: 'QUICKNAV_ENSURE_SCROLL_GUARD' }, () => void chrome.runtime?.lastError);
-    } catch {}
-  }
-
-  function scheduleMainWorldScrollGuardRetry() {
-    try {
-      if (__quicknavMainGuardReady) return;
-      if (!scrollLockEnabled) return;
-      if (__quicknavMainGuardRetryTimer) return;
-      __quicknavMainGuardRetryTimer = window.setTimeout(() => {
-        __quicknavMainGuardRetryTimer = 0;
-        if (__quicknavMainGuardReady) return;
-        if (!scrollLockEnabled) return;
-        ensureMainWorldScrollGuard();
-        // If the guard gets (re)installed after we posted state, re-sync once more.
-        postScrollLockStateToMainWorld();
-        postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
-        scheduleMainWorldScrollGuardRetry();
-      }, 2200);
     } catch {}
   }
 
@@ -3800,11 +2353,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const msg = e.data;
         if (!msg || typeof msg !== 'object' || msg.__quicknav !== 1) return;
         if (msg.type === 'QUICKNAV_SCROLL_GUARD_READY') {
-          __quicknavMainGuardReady = true;
-          if (__quicknavMainGuardRetryTimer) {
-            clearTimeout(__quicknavMainGuardRetryTimer);
-            __quicknavMainGuardRetryTimer = 0;
-          }
           postScrollLockStateToMainWorld();
           if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
         }
@@ -3866,70 +2414,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return !el || el === window || el === document || el === document.body || el === doc || el === (document.scrollingElement || doc);
   }
 
-	  function getChatScrollContainer() {
-	    try {
-	      // Hot path: reuse the last known scroll container when possible.
-	      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
-	      if (cached && cached.nodeType === 1 && cached.isConnected) {
-	        __cgptChatScrollContainer = cached;
-	        return cached;
-	      }
-	    } catch {}
-
-	    // ChatGPT's main chat scroller is typically the direct parent of <main id="main">.
-	    // Grab it directly to avoid repeated ancestor scans and layout reads during hydration.
-	    try {
-	      const main = document.getElementById('main') || document.querySelector('main');
-	      const parent = main && main.parentElement;
-	      if (parent && parent.nodeType === 1 && parent.isConnected) {
-	        const oy = getComputedStyle(parent).overflowY;
-	        if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
-	          __cgptChatScrollContainer = parent;
-	          __cgptChatScrollContainerTs = Date.now();
-	          return parent;
-	        }
-	      }
-	    } catch {}
-
-	    try {
-	      const anchor =
-	        document.querySelector(
-	          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-message-id]'
-	        ) ||
-        document.querySelector('main') ||
-        document.querySelector('[role="main"]') ||
-        document.getElementById('main') ||
-        document.body;
-
-      // Walk up from a known message/root to find the first scrollable container.
-	      let el = anchor;
-	      for (let i = 0; i < 16 && el && el.nodeType === 1; i++) {
-	        try {
-	          // Check computed overflow first, then do layout reads only when needed.
-	          const oy = getComputedStyle(el).overflowY;
-	          if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
-	            if (el.scrollHeight > el.clientHeight + 1) {
-	              __cgptChatScrollContainer = el;
-	              __cgptChatScrollContainerTs = Date.now();
-	              return el;
-	            }
-	          }
-	        } catch {}
-	        el = el.parentElement;
-	      }
-
-      const fallback = getScrollRoot(anchor);
-      __cgptChatScrollContainer = fallback;
-      __cgptChatScrollContainerTs = Date.now();
-      return fallback;
-    } catch {
-      const fallback = getScrollRoot(document.body);
-      __cgptChatScrollContainer = fallback;
-      __cgptChatScrollContainerTs = Date.now();
-      return fallback;
-    }
+  function getChatScrollContainer() {
+    try {
+      const dsScroll = document.querySelector('.ds-scroll-area');
+      if (dsScroll) return dsScroll;
+      const turns = document.querySelector('[data-testid="conversation-turns"]');
+      const msg = document.querySelector('[data-message-id]');
+      const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
+      const target = turns || msg || main || document.body;
+      const closest = findClosestScrollContainer(target);
+      if (closest) return closest;
+      return getScrollRoot(target);
+    } catch { return getScrollRoot(document.body); }
   }
-
 
   function getScrollPos(el) {
     if (!el) return window.scrollY || 0;
@@ -4125,62 +2622,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     window.__cgptScrollLockUserIntentsBound = true;
 
     const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
-    const isSendAction = (t) => {
-      try {
-        if (!t || !t.closest) return false;
-        return !!t.closest(
-          'button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="send"], button[aria-label*="发送"], form button[type="submit"]'
-        );
-      } catch {
-        return false;
-      }
-    };
-    const isSidebarToggle = (t) => {
-      try {
-        if (!t || !t.closest) return false;
-        return !!t.closest('button[aria-label*="sidebar"], button[aria-label*="Sidebar"], button[aria-label*="侧边栏"], button[data-testid*="sidebar"]');
-      } catch {
-        return false;
-      }
-    };
-    const isCopyCode = (t) => {
-      try {
-        if (!t || !t.closest) return false;
-        const btn = t.closest('button');
-        if (!btn) return false;
-        // Best-effort: copy buttons inside message/code areas.
-        if (!btn.closest('pre, code, .markdown, .prose, [data-message-id]')) return false;
-        const al = String(btn.getAttribute('aria-label') || '');
-        const ti = String(btn.getAttribute('title') || '');
-        const text = String(btn.textContent || '');
-        const hay = `${al} ${ti} ${text}`.toLowerCase();
-        return hay.includes('copy') || hay.includes('复制');
-      } catch {
-        return false;
-      }
-    };
     const mark = (e) => {
       if (!scrollLockEnabled) return;
       if (ignoreIfInNav(e?.target)) return;
       scrollLockLastUserIntentTs = Date.now();
     };
-
-    // Non-scroll UI interactions that can trigger layout-driven scrollTop adjustments.
-    // Treat them as "user intent" so the baseline follows naturally (no visible bounce).
-    document.addEventListener(
-      'pointerdown',
-      (e) => {
-        try {
-          if (!scrollLockEnabled) return;
-          if (ignoreIfInNav(e?.target)) return;
-          if (isSendAction(e?.target)) return; // never allow send-triggered autoscroll to redefine baseline
-          if (isSidebarToggle(e?.target) || isCopyCode(e?.target)) {
-            scrollLockLastUserIntentTs = Date.now();
-          }
-        } catch {}
-      },
-      true
-    );
 
     document.addEventListener('wheel', mark, { passive: true, capture: true });
     document.addEventListener('touchstart', mark, { passive: true, capture: true });
@@ -4338,7 +2784,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     postScrollLockStateToMainWorld();
     if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
     ensureMainWorldScrollGuard();
-    if (scrollLockEnabled) scheduleMainWorldScrollGuardRetry();
     return scrollLockEnabled;
   }
 
@@ -4347,7 +2792,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scrollLockEnabled = loadScrollLockState();
     bindMainWorldScrollGuardHandshake();
     ensureMainWorldScrollGuard();
-    scheduleMainWorldScrollGuardRetry();
     ensureScrollLockBindings();
     updateLockBtnState(ui.nav);
     bindScrollLockUserIntents();
@@ -4384,50 +2828,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return false;
   }
 
-  function isConversationTurnishNode(node) {
-    if (!node || node.nodeType !== 1) return false;
-    try {
-      if (node.matches('[data-message-id], [data-message-author-role], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
-      if (node.querySelector?.('[data-message-id], [data-message-author-role], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
-    } catch {}
-    return false;
-  }
-
-  function isWithinConversation(node) {
-    if (!node || node.nodeType !== 1) return false;
-    try {
-      if (node.closest?.('[data-testid="conversation-turns"], [data-message-author-role], [data-message-id], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')) return true;
-    } catch {}
-    return false;
-  }
-
-  function handleScrollLockMutations(muts, streaming = false) {
+  function handleScrollLockMutations(muts) {
     if (!scrollLockEnabled || !muts || !muts.length) return;
-    const isStreaming = !!streaming;
     let relevant = false;
     for (const mut of muts) {
-      if (!mut) continue;
-      // Ignore pure attribute flips (theme/layout toggles, copy button states, etc.) when not streaming.
-      if (mut.type === 'attributes') continue;
-      if (mut.type === 'characterData') {
-        if (!isStreaming) continue;
-        const t = mut.target && mut.target.nodeType === 3 ? mut.target.parentElement : mut.target;
-        if (isWithinConversation(t)) { relevant = true; break; }
-        continue;
-      }
-      if (mut.type !== 'childList') continue;
-
-      // ChildList: only treat as relevant when actual turns/messages are added/removed.
-      const added = mut.addedNodes;
-      const removed = mut.removedNodes;
-      if (added && added.length) {
-        for (const n of added) {
-          if (isConversationTurnishNode(n)) { relevant = true; break; }
-        }
-      }
-      if (!relevant && removed && removed.length) {
-        for (const n of removed) {
-          if (isConversationTurnishNode(n)) { relevant = true; break; }
+      if (mutationTouchesConversation(mut.target)) { relevant = true; break; }
+      if (mut.addedNodes && mut.addedNodes.length) {
+        for (const n of mut.addedNodes) {
+          if (mutationTouchesConversation(n)) { relevant = true; break; }
         }
       }
       if (relevant) break;
@@ -4459,8 +2867,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function bindActiveTracking() {
-    if (__cgptActiveTrackingBound) return;
-    __cgptActiveTrackingBound = true;
     document.addEventListener('scroll', onAnyScroll, { passive: true, capture: true });
     window.addEventListener('resize', onAnyScroll, { passive: true });
     scheduleActiveUpdateNow();
@@ -4469,14 +2875,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // 绑定 Option+单击 添加📌
   function bindAltPin(ui) {
     if (window.__cgptPinBound) return;
-    const getUi = () => {
-      try {
-        const nav = document.getElementById('cgpt-compact-nav');
-        return nav && nav._ui ? nav._ui : null;
-      } catch {
-        return null;
-      }
-    };
     // 非 Alt 点击锚点：阻止默认，避免文本选中/抖动
     document.addEventListener('mousedown', (e) => {
       const anc = e.target && e.target.closest && e.target.closest('.cgpt-pin-anchor');
@@ -4502,22 +2900,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
               if (v && v.anchorId === anc.id) { pid = k; break; }
             }
           }
-	          if (pid && cpMap.has(pid)) {
-	            cpMap.delete(pid);
-	            try { anc.remove(); } catch {}
-	            const currentUi = getUi();
-	            if (favSet.has(pid)) {
-	              favSet.delete(pid);
-	              favMeta.delete(pid);
-	              saveFavSet();
-	              if (currentUi) updateStarBtnState(currentUi);
-	            }
-	            saveCPSet();
-	            if (currentUi) scheduleRefresh(currentUi);
-	            e.preventDefault();
-	            e.stopPropagation();
-	            return;
-	          }
+          if (pid && cpMap.has(pid)) {
+            cpMap.delete(pid);
+            try { anc.remove(); } catch {}
+            if (favSet.has(pid)) { favSet.delete(pid); favMeta.delete(pid); saveFavSet(); updateStarBtnState(ui); }
+            saveCPSet();
+            scheduleRefresh(ui);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
         }
         e.preventDefault();
         e.stopPropagation();
@@ -4540,22 +2932,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         // 新增：图钉默认自动加入收藏夹
         try {
           if (!favSet || !(favSet instanceof Set)) loadFavSet();
-	          favSet.add(pinId);
-	          favMeta.set(pinId, { created: Date.now() });
-	          saveFavSet();
-	          const currentUi = getUi();
-	          if (currentUi) updateStarBtnState(currentUi);
-	        } catch {}
-	        saveCPSet();
-	        runCheckpointGC(true);
-	        {
-	          const currentUi = getUi();
-	          if (currentUi) scheduleRefresh(currentUi);
-	        }
-	      } catch (err) {
-	        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
-	      }
-	    };
+          favSet.add(pinId);
+          favMeta.set(pinId, { created: Date.now() });
+          saveFavSet();
+          updateStarBtnState(ui);
+        } catch {}
+        saveCPSet();
+        runCheckpointGC(true);
+        scheduleRefresh(ui);
+      } catch (err) {
+        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
+      }
+    };
     document.addEventListener('click', onClick, true);
     window.__cgptPinBound = true;
   }
@@ -4798,18 +3186,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function watchSendEvents(ui) {
-    if (__cgptSendEventsBound) return;
-    __cgptSendEventsBound = true;
-
-    const getUi = () => {
-      try {
-        const nav = document.getElementById('cgpt-compact-nav');
-        return nav && nav._ui ? nav._ui : null;
-      } catch {
-        return null;
-      }
-    };
-
     const isComposerForm = (form) => {
       try {
         if (!form || typeof form.querySelector !== 'function') return false;
@@ -4822,11 +3198,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 点击发送按钮
     document.addEventListener('click', (e) => {
       if (e.target && e.target.closest && e.target.closest('[data-testid="send-button"]')) {
-        const currentUi = getUi();
-        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(currentUi);
+        startBurstRefresh(ui);
       }
     }, true);
 
@@ -4834,11 +3208,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     document.addEventListener('submit', (e) => {
       const form = e?.target;
       if (!isComposerForm(form)) return;
-      const currentUi = getUi();
-      if (!currentUi) return;
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到表单提交，启动突发刷新');
       armScrollLockGuard(2200);
-      startBurstRefresh(currentUi);
+      startBurstRefresh(ui);
     }, true);
 
     // ⌘/Ctrl + Enter 发送
@@ -4847,22 +3219,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (!t) return;
       const isTextarea = t.tagName === 'TEXTAREA' || t.isContentEditable;
       if (isTextarea && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        const currentUi = getUi();
-        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(currentUi);
+        startBurstRefresh(ui);
       }
     }, true);
 
     // 回到前台时强制跑一次
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
-        try { detectUrlChange(); } catch {}
-        const currentUi = getUi();
-        if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
-        scheduleRefresh(currentUi, { force: true });
+        scheduleRefresh(ui, { force: true });
       }
     });
   }

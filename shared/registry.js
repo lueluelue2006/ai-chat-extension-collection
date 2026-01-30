@@ -33,6 +33,16 @@
       ]
     },
     {
+      id: 'kimi',
+      name: 'Kimi',
+      sub: 'kimi.com',
+      matchPatterns: ['https://www.kimi.com/*', 'https://kimi.com/*'],
+      // Kimi is an SPA: users often start at `/` then pushState to `/chat/<id>` without reloading.
+      // Include `/` so content scripts are present before the first navigation happens.
+      quicknavPatterns: ['https://www.kimi.com/', 'https://www.kimi.com/chat*', 'https://kimi.com/', 'https://kimi.com/chat*'],
+      modules: ['quicknav', 'chatgpt_cmdenter_send']
+    },
+    {
       id: 'gemini_business',
       name: 'Gemini Business',
       sub: 'business.gemini.google',

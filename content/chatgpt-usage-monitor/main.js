@@ -4425,7 +4425,7 @@
     } else {
       scheduleInitialize(0);
     }
-    // SPA navigation: re-init when route changes (pushState/replaceState/popstate).
+    // SPA navigation: re-init when route changes.
     try {
       if (!window.__aichatChatGptUsageMonitorRouteWatchInstalled) {
         window.__aichatChatGptUsageMonitorRouteWatchInstalled = true;
@@ -4437,36 +4437,87 @@
           } catch {}
           scheduleInitialize(300);
         };
-        window.addEventListener("popstate", onRoute);
-        const originalPushState = history.pushState;
-        const originalReplaceState = history.replaceState;
-        history.pushState = function(...args) {
-          const ret = originalPushState.apply(this, args);
-          try { onRoute(); } catch {}
-          return ret;
-        };
-        history.replaceState = function(...args) {
-          const ret = originalReplaceState.apply(this, args);
-          try { onRoute(); } catch {}
-          return ret;
-        };
+        const core = window.__aichat_chatgpt_core_main_v1__;
+        if (core && typeof core.onRouteChange === "function") {
+          window.__aichatChatGptUsageMonitorRouteUnsub = core.onRouteChange(onRoute);
+        } else {
+          // Fallback: use the shared MAIN-world bridge; avoid patching history (can conflict with other modules).
+          const bridge = window.__aichat_quicknav_bridge_main_v1__;
+          if (bridge && typeof bridge.ensureRouteListener === "function" && typeof bridge.on === "function") {
+            try { bridge.ensureRouteListener(); } catch {}
+            window.__aichatChatGptUsageMonitorRouteUnsub = bridge.on("routeChange", onRoute);
+          } else {
+            let last = "";
+            try { last = String(location.href || ""); } catch { last = ""; }
+            setInterval(() => {
+              try {
+                const href = String(location.href || "");
+                if (!href || href === last) return;
+                last = href;
+                onRoute();
+              } catch {}
+            }, 1200);
+          }
+        }
       }
     } catch {
     }
 
-    // Cheap self-heal: periodic presence check (avoid global subtree MutationObserver on ChatGPT).
-    try {
-      if (!window.__aichatChatGptUsageMonitorEnsureInstalled) {
-        window.__aichatChatGptUsageMonitorEnsureInstalled = true;
-        setInterval(() => {
-          try {
-            if (isSilent()) return;
-            if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(0);
-          } catch {}
-        }, 4000);
-      }
-    } catch {
-    }
+	    // Cheap self-heal: body child observer + slow timer (avoid global subtree MutationObserver on ChatGPT).
+	    try {
+	      if (!window.__aichatChatGptUsageMonitorEnsureInstalled) {
+	        window.__aichatChatGptUsageMonitorEnsureInstalled = true;
+
+	        let __aichatEnsureMo = null;
+	        let __aichatEnsureTimer = 0;
+	        let __aichatEnsureTries = 0;
+
+	        const __aichatInstallEnsureMo = () => {
+	          try {
+	            if (__aichatEnsureMo) return true;
+	            const body = document.body;
+	            if (!body || typeof MutationObserver !== "function") return false;
+	            __aichatEnsureMo = new MutationObserver(() => {
+	              try {
+	                if (isSilent()) return;
+	                if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(0);
+	              } catch {}
+	            });
+	            __aichatEnsureMo.observe(body, { childList: true, subtree: false });
+	            return true;
+	          } catch {
+	            try { __aichatEnsureMo?.disconnect(); } catch {}
+	            __aichatEnsureMo = null;
+	            return false;
+	          }
+	        };
+
+	        const __aichatScheduleEnsure = (ms) => {
+	          if (__aichatEnsureTimer) return;
+	          __aichatEnsureTimer = setTimeout(() => {
+	            __aichatEnsureTimer = 0;
+	            try {
+	              if (document.hidden) return __aichatScheduleEnsure(15000);
+	              if (isSilent()) return __aichatScheduleEnsure(15000);
+	              if (!document.getElementById("chatUsageMonitor")) scheduleInitialize(0);
+	            } catch {}
+	            __aichatScheduleEnsure(15000);
+	          }, Math.max(0, Number(ms) || 0));
+	        };
+
+	        const __aichatBootstrapEnsure = () => {
+	          try {
+	            if (__aichatInstallEnsureMo()) return;
+	            __aichatEnsureTries += 1;
+	            if (__aichatEnsureTries < 20) setTimeout(__aichatBootstrapEnsure, 500);
+	          } catch {}
+	        };
+
+	        __aichatBootstrapEnsure();
+	        __aichatScheduleEnsure(4000);
+	      }
+	    } catch {
+	    }
 
     console.log("🚀 ChatGPT Usage Monitor loaded");
   }

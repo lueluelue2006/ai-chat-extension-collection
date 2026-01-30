@@ -2,7 +2,8 @@
   'use strict';
 
   // ChatGPT reply timer (send -> done), minimal UI (a small number at bottom-right).
-  // Uses the shared fetch/SSE hub (content/chatgpt-fetch-hub/main.js) to avoid stacked fetch patches.
+  // Stability-first: detects "generating" via DOM (stop-button presence) instead of draining SSE streams.
+  // This avoids extra buffering/decoding work on long responses and reduces the chance of memory blow-ups.
 
   // Avoid running inside internal ChatGPT iframes when split-view enables `allFrames` injection.
   const ALLOWED_FRAME = (() => {
@@ -47,6 +48,14 @@
   const state = {
     __installed: true,
     hubUnsub: null,
+    gen: {
+      mo: null,
+      root: null,
+      bootstrapTimer: 0,
+      bootstrapAttempts: 0,
+      routeUnsub: null,
+      lastGenerating: false
+    },
     ui: { el: null, tickId: 0, hideTimer: 0, resilienceMo: null, resilienceTimer: 0 },
     run: {
       active: null,
@@ -54,6 +63,21 @@
     },
     runsByRequestId: new Map()
   };
+
+  const MAX_TRACKED_RUNS = 40;
+
+  function pruneRuns() {
+    try {
+      if (state.runsByRequestId.size <= MAX_TRACKED_RUNS) return;
+      // Drop oldest entries first (Map preserves insertion order).
+      const activeId = String(state.run.active?.id || '');
+      for (const k of Array.from(state.runsByRequestId.keys())) {
+        if (state.runsByRequestId.size <= MAX_TRACKED_RUNS) break;
+        if (activeId && k === activeId) continue;
+        state.runsByRequestId.delete(k);
+      }
+    } catch {}
+  }
 
   function log(...args) {
     if (!CONFIG.debug) return;
@@ -240,6 +264,7 @@
       outcome: null
     };
     state.runsByRequestId.set(id, run);
+    pruneRuns();
     state.run.active = run;
     startUiLoop();
     render();
@@ -266,34 +291,181 @@
     scheduleHideAfterDone();
   }
 
-  function installHubHooks() {
+  function startRunLocal(reason = '') {
     try {
-      if (state.hubUnsub) return true;
-      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
-      if (!hub || typeof hub.register !== 'function') return false;
+      const existing = state.run.active;
+      if (existing && !existing.doneAt) return existing;
+      const run = {
+        id: `dom:${now().toString(16)}:${Math.random().toString(16).slice(2)}`,
+        startedAt: now(),
+        firstByteAt: null,
+        doneAt: null,
+        outcome: null,
+        reason: String(reason || '')
+      };
+      state.runsByRequestId.set(run.id, run);
+      pruneRuns();
+      state.run.active = run;
+      startUiLoop();
+      render();
+      return run;
+    } catch {
+      return null;
+    }
+  }
 
-      state.hubUnsub = hub.register({
-        priority: 10,
-        onConversationStart: (ctx) => {
-          try {
-            startRunFromCtx(ctx);
-          } catch (e) {
-            log('onConversationStart error', e);
-          }
-        },
-        onConversationDone: (ctx) => {
-          try {
-            finalizeRunFromCtx(ctx);
-          } catch (e) {
-            log('onConversationDone error', e);
-          }
-        }
-      });
-      return true;
-    } catch (e) {
-      log('installHubHooks error', e);
+  function finalizeActiveRunLocal(outcome = 'complete') {
+    try {
+      const run = state.run.active;
+      if (!run || run.doneAt) return;
+      run.doneAt = now();
+      run.outcome = String(outcome || 'complete');
+      state.run.last = run;
+      state.run.active = null;
+      render();
+      scheduleHideAfterDone();
+    } catch {}
+  }
+
+  function isGeneratingNow() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.isGenerating === 'function') return !!core.isGenerating();
+    } catch {}
+    try {
+      return !!document.querySelector('button[data-testid="stop-button"]');
+    } catch {
       return false;
     }
+  }
+
+  function checkGeneratingTransition() {
+    try {
+      const generating = isGeneratingNow();
+      const prev = !!state.gen.lastGenerating;
+      state.gen.lastGenerating = generating;
+
+      if (generating && !prev) startRunLocal('generating');
+      else if (!generating && prev) finalizeActiveRunLocal('complete');
+    } catch {}
+  }
+
+  function getComposerFormForWatch() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      const editor = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : null;
+      const form = core && typeof core.getComposerForm === 'function' ? core.getComposerForm(editor) : null;
+      if (form) return form;
+      return editor?.closest?.('form') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function detachGeneratingObserver() {
+    try {
+      state.gen.mo?.disconnect?.();
+    } catch {}
+    state.gen.mo = null;
+    state.gen.root = null;
+    try {
+      if (state.gen.bootstrapTimer) clearInterval(state.gen.bootstrapTimer);
+    } catch {}
+    state.gen.bootstrapTimer = 0;
+    state.gen.bootstrapAttempts = 0;
+  }
+
+  function ensureGeneratingObserver() {
+    try {
+      const form = getComposerFormForWatch();
+      if (!form) return false;
+      if (state.gen.mo && state.gen.root === form) return true;
+
+      detachGeneratingObserver();
+      state.gen.root = form;
+
+      if (typeof MutationObserver === 'function') {
+        const mo = new MutationObserver(() => checkGeneratingTransition());
+        // Watch the composer subtree only (small), so overhead stays low.
+        mo.observe(form, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['data-testid', 'aria-label', 'class', 'disabled', 'aria-disabled']
+        });
+        state.gen.mo = mo;
+      }
+
+      checkGeneratingTransition();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function ensureGeneratingBootstrap() {
+    if (state.gen.bootstrapTimer) return;
+    const MAX_ATTEMPTS = 40; // ~24s
+    const STEP_MS = 600;
+    state.gen.bootstrapAttempts = 0;
+    state.gen.bootstrapTimer = setInterval(() => {
+      try {
+        if (document.hidden) return;
+        state.gen.bootstrapAttempts += 1;
+        if (state.gen.bootstrapAttempts > MAX_ATTEMPTS) {
+          clearInterval(state.gen.bootstrapTimer);
+          state.gen.bootstrapTimer = 0;
+          state.gen.bootstrapAttempts = 0;
+          return;
+        }
+        if (ensureGeneratingObserver()) {
+          clearInterval(state.gen.bootstrapTimer);
+          state.gen.bootstrapTimer = 0;
+          state.gen.bootstrapAttempts = 0;
+        }
+      } catch {
+        clearInterval(state.gen.bootstrapTimer);
+        state.gen.bootstrapTimer = 0;
+        state.gen.bootstrapAttempts = 0;
+      }
+    }, STEP_MS);
+  }
+
+  function installRouteWatcher() {
+    try {
+      if (state.gen.routeUnsub) return;
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.onRouteChange === 'function') {
+        state.gen.routeUnsub = core.onRouteChange(() => {
+          try {
+            detachGeneratingObserver();
+            ensureGeneratingBootstrap();
+          } catch {}
+        });
+        return;
+      }
+    } catch {}
+
+    // Fallback: slow poll (should rarely be used).
+    try {
+      let last = String(location.href || '');
+      state.gen.routeUnsub = (() => {
+        const t = setInterval(() => {
+          try {
+            const href = String(location.href || '');
+            if (!href || href === last) return;
+            last = href;
+            detachGeneratingObserver();
+            ensureGeneratingBootstrap();
+          } catch {}
+        }, 1500);
+        return () => {
+          try {
+            clearInterval(t);
+          } catch {}
+        };
+      })();
+    } catch {}
   }
 
   function uninstall() {
@@ -301,6 +473,11 @@
       if (state.hubUnsub) state.hubUnsub();
       state.hubUnsub = null;
     } catch {}
+    try {
+      if (typeof state.gen.routeUnsub === 'function') state.gen.routeUnsub();
+    } catch {}
+    state.gen.routeUnsub = null;
+    detachGeneratingObserver();
     try {
       if (state.ui.resilienceTimer) clearTimeout(state.ui.resilienceTimer);
       state.ui.resilienceTimer = 0;
@@ -343,5 +520,7 @@
   ensureEl();
   render();
   ensureUiResilience();
-  installHubHooks();
+  installRouteWatcher();
+  // Prefer watcher on composer form; fall back to a short-lived bootstrap until the form exists.
+  if (!ensureGeneratingObserver()) ensureGeneratingBootstrap();
 })();

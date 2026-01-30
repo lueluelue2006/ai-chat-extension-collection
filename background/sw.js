@@ -665,14 +665,79 @@
     }
   }
 
-  // === OpenAI model icon monitor (gpt-5.3) ===
+  // === OpenAI model icon monitor (configurable) ===
   const GPT53_MONITOR = Object.freeze({
-    url: 'https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-5.3.png',
+    defaultUrls: Object.freeze(['https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-5.3.png']),
     alarmName: 'quicknav_gpt53_probe',
     intervalMin: 5,
+    urlsKey: 'quicknav_gpt53_probe_urls_v1',
     storageKey: 'quicknav_gpt53_probe_state_v1',
     notifyId: 'quicknav_gpt53_available'
   });
+
+  function normalizeGpt53ProbeUrls(input) {
+    const rawLines = (() => {
+      if (Array.isArray(input)) return input;
+      if (typeof input === 'string') return input.split(/\r?\n/);
+      return [];
+    })();
+
+    const out = [];
+    const seen = new Set();
+    for (const line of rawLines) {
+      const raw = String(line || '').trim();
+      if (!raw) continue;
+      if (raw.startsWith('#')) continue;
+      let url = '';
+      try {
+        const u = new URL(raw);
+        if (u.protocol !== 'https:') continue;
+        // Keep this scoped to existing host_permissions to avoid broad permission prompts.
+        // Users can still edit the path/query to probe different model icon URLs.
+        if (String(u.hostname || '').toLowerCase() !== 'cdn.openai.com') continue;
+        u.hash = '';
+        url = u.href;
+      } catch {
+        url = '';
+      }
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      out.push(url);
+      if (out.length >= 20) break;
+    }
+    return out.length ? out : [...GPT53_MONITOR.defaultUrls];
+  }
+
+  async function getGpt53Urls() {
+    try {
+      const raw = await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get({ [GPT53_MONITOR.urlsKey]: null }, (items) => resolve(items[GPT53_MONITOR.urlsKey]));
+        } catch {
+          resolve(null);
+        }
+      });
+      return normalizeGpt53ProbeUrls(raw);
+    } catch {
+      return [...GPT53_MONITOR.defaultUrls];
+    }
+  }
+
+  async function setGpt53Urls(next) {
+    try {
+      const urls = normalizeGpt53ProbeUrls(next);
+      await new Promise((resolve) => {
+        try {
+          chrome.storage.local.set({ [GPT53_MONITOR.urlsKey]: urls }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+      return urls;
+    } catch {
+      return [...GPT53_MONITOR.defaultUrls];
+    }
+  }
 
   async function getGpt53State() {
     try {
@@ -683,7 +748,26 @@
           resolve(null);
         }
       });
-      return raw && typeof raw === 'object' ? raw : null;
+      // Backward compatibility: old versions stored `{ available, status, checkedAt, error? }`.
+      if (raw && typeof raw === 'object') {
+        const isLegacy = Object.prototype.hasOwnProperty.call(raw, 'available') && Object.prototype.hasOwnProperty.call(raw, 'status');
+        if (isLegacy) {
+          const url = GPT53_MONITOR.defaultUrls[0];
+          return {
+            checkedAt: Number(raw.checkedAt) || 0,
+            items: {
+              [url]: {
+                available: !!raw.available,
+                status: Number(raw.status) || 0,
+                checkedAt: Number(raw.checkedAt) || 0,
+                error: typeof raw.error === 'string' ? raw.error : ''
+              }
+            }
+          };
+        }
+        return raw;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -723,31 +807,52 @@
       if (settings && settings.enabled === false) return;
     } catch {}
 
-    const prev = await getGpt53State();
-    const prevAvailable = !!prev?.available;
+    const urls = await getGpt53Urls();
     const checkedAt = Date.now();
 
-    const status = await fetchUrlStatus(GPT53_MONITOR.url);
-    if (!status) {
-      await setGpt53State({
-        available: prevAvailable,
-        status: 0,
-        checkedAt,
-        error: 'fetch_failed'
-      });
-      return;
+    const prev = await getGpt53State();
+    const prevItems = prev && typeof prev === 'object' && prev.items && typeof prev.items === 'object' ? prev.items : {};
+
+    const nextItems = {};
+    const newlyAvailable = [];
+
+    for (const url of urls) {
+      const prevAvailable = !!prevItems?.[url]?.available;
+      const status = await fetchUrlStatus(url);
+      if (!status) {
+        nextItems[url] = { available: prevAvailable, status: 0, checkedAt, error: 'fetch_failed' };
+        continue;
+      }
+      const available = status !== 404;
+      nextItems[url] = { available, status, checkedAt, error: '' };
+      if (!prevAvailable && available) newlyAvailable.push({ url, status });
     }
 
-    const available = status !== 404;
-    await setGpt53State({ available, status, checkedAt });
+    await setGpt53State({ checkedAt, items: nextItems });
 
-    if (!prevAvailable && available) {
+    if (newlyAvailable.length) {
       try {
+        const parts = newlyAvailable
+          .slice(0, 3)
+          .map((x) => {
+            try {
+              const u = new URL(x.url);
+              const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
+              return `${name}（${x.status}）`;
+            } catch {
+              return `（${x.status}）`;
+            }
+          })
+          .filter(Boolean);
+        const more = newlyAvailable.length > 3 ? `…+${newlyAvailable.length - 3}` : '';
         chrome.notifications.create(GPT53_MONITOR.notifyId, {
           type: 'basic',
           iconUrl: chrome.runtime.getURL('icons/icon128.png'),
           title: 'OpenAI 新模型提示',
-          message: `检测到 gpt-5.3 图标已可访问（状态 ${status}）。可能有新模型发布。`,
+          message:
+            newlyAvailable.length === 1
+              ? `检测到资源已可访问：${parts[0] || ''}`
+              : `检测到 ${newlyAvailable.length} 个资源已可访问：${parts.join('，')}${more}`,
           priority: 2
         });
       } catch {}
@@ -791,7 +896,9 @@
   try {
     // For service-worker DevTools console: `__quicknavGpt53Probe.run()`
     globalThis.__quicknavGpt53Probe = {
-      url: GPT53_MONITOR.url,
+      defaultUrls: GPT53_MONITOR.defaultUrls,
+      urls: () => getGpt53Urls(),
+      setUrls: (urls) => setGpt53Urls(urls),
       run: () => runGpt53Probe(),
       state: () => getGpt53State()
     };
@@ -800,6 +907,7 @@
   // === Dev-only smoke tests (not exposed in UI) ===
   const DEV_SMOKE_TARGETS = [
     { id: 'chatgpt', url: 'https://chatgpt.com/' },
+    { id: 'kimi', url: 'https://kimi.com/' },
     { id: 'gemini_app', url: 'https://gemini.google.com/app' },
     { id: 'gemini_business', url: 'https://business.gemini.google/' },
     { id: 'grok', url: 'https://grok.com/' },
@@ -883,6 +991,13 @@
                     return '';
                   }
                 })(),
+                hasBridge: (() => {
+                  try {
+                    return typeof window.__aichat_quicknav_bridge_v1__ === 'object';
+                  } catch {
+                    return false;
+                  }
+                })(),
                 hasMenuBridge: typeof window.__quicknavRegisterMenuCommand === 'function',
                 navCount: 0,
                 hasNav: false,
@@ -963,7 +1078,7 @@
       if (!msg || typeof msg !== 'object') return;
       const fromExtensionPage = isExtensionPageSender(sender);
 
-	      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
+      if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
 	        const tabId = sender?.tab?.id;
 	        const href = typeof msg.href === 'string' ? msg.href : '';
 	        getSettings()
@@ -998,6 +1113,32 @@
               }
             } catch {}
             sendResponse({ ok: true, settings });
+          })
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_BOOTSTRAP_ENSURE') {
+        // Called by the manifest bootstrap content script as a safety net: inject enabled modules into *this* tab
+        // if dynamic scripts didn't run for some reason (SW restart edge cases / tab restore oddities).
+        const tabId = sender?.tab?.id;
+        const href = typeof msg.href === 'string' ? msg.href : typeof sender?.url === 'string' ? sender.url : '';
+        if (!Number.isFinite(tabId) || !href) {
+          sendResponse({ ok: false, error: 'No tabId/href' });
+          return true;
+        }
+        getSettings()
+          .then((settings) =>
+            // Keep registrations up-to-date (future loads) but inject only into the sender tab (lightweight).
+            applySettingsAndRegister(settings).catch(() => ({ registeredIds: [], unregisteredIds: [] })).then(() => settings)
+          )
+          .then((settings) => {
+            try {
+              const enabled = getEnabledContentScriptDefs(settings);
+              const defsForUrl = enabled.filter((d) => urlMatchesAny(href, d.matches));
+              injectContentScriptDefsIntoTab(tabId, defsForUrl);
+            } catch {}
+            sendResponse({ ok: true });
           })
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
@@ -1077,6 +1218,7 @@
         }
         (async () => {
           const alarm = await ensureGpt53Alarm();
+          const urls = await getGpt53Urls();
           const state = await getGpt53State();
           let enabled = true;
           try {
@@ -1086,7 +1228,37 @@
           return {
             ok: true,
             enabled,
-            url: GPT53_MONITOR.url,
+            urls,
+            url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
+            alarm,
+            state,
+            now: Date.now()
+          };
+        })()
+          .then((resp) => sendResponse(resp))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_GPT53_SET_URLS') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        (async () => {
+          const urls = await setGpt53Urls(msg?.urlsText ?? msg?.urls ?? null);
+          const alarm = await ensureGpt53Alarm();
+          const state = await getGpt53State();
+          let enabled = true;
+          try {
+            const settings = await getSettings();
+            if (settings && settings.enabled === false) enabled = false;
+          } catch {}
+          return {
+            ok: true,
+            enabled,
+            urls,
+            url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
             alarm,
             state,
             now: Date.now()
@@ -1105,6 +1277,7 @@
         (async () => {
           const alarm = await ensureGpt53Alarm();
           await runGpt53Probe();
+          const urls = await getGpt53Urls();
           const state = await getGpt53State();
           let enabled = true;
           try {
@@ -1114,7 +1287,8 @@
           return {
             ok: true,
             enabled,
-            url: GPT53_MONITOR.url,
+            urls,
+            url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
             alarm,
             state,
             now: Date.now()

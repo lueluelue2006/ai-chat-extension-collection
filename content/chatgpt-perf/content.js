@@ -61,6 +61,7 @@
     io: null,
     containerMo: null,
     routeTimer: null,
+    routeUnsub: null,
     containerEl: null,
     observed: new WeakSet(),
     scanScheduled: false,
@@ -704,6 +705,28 @@
 
   function ensureRouteWatch() {
     if (state.routeTimer) return;
+
+    // Prefer shared bridge route-change events; keep a slow poll as a safety net.
+    try {
+      if (!state.routeUnsub) {
+        const bridge = globalThis.__aichat_quicknav_bridge_v1__;
+        if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
+          try {
+            bridge.ensureRouteListener();
+          } catch {}
+          state.routeUnsub = bridge.on('routeChange', () => {
+            try {
+              if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+              if (document.visibilityState === 'hidden') return;
+              startVirtualization();
+            } catch {
+              // ignore
+            }
+          });
+        }
+      }
+    } catch {}
+
     state.routeTimer = setInterval(() => {
       if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
       if (document.visibilityState === 'hidden') return;
@@ -714,12 +737,16 @@
       if (state.containerEl && current === state.containerEl) return;
       // Container replaced due to SPA navigation; reattach cheaply (avoid clearing classes on a large DOM).
       startVirtualization();
-    }, 2000);
+    }, 4000);
   }
 
   function stopRouteWatch() {
     if (state.routeTimer) clearInterval(state.routeTimer);
     state.routeTimer = null;
+    try {
+      if (state.routeUnsub) state.routeUnsub();
+    } catch {}
+    state.routeUnsub = null;
   }
 
   function ensureUi() {

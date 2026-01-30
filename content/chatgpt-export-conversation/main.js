@@ -7,6 +7,14 @@
 
   const TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"]';
 
+  function getCore() {
+    try {
+      return globalThis.__aichat_chatgpt_core_v1__ || null;
+    } catch {
+      return null;
+    }
+  }
+
   function escapeHtml(input) {
     return String(input ?? '')
       .replace(/&/g, '&amp;')
@@ -74,6 +82,13 @@
 
   function getConversationIdFromUrl() {
     try {
+      const core = getCore();
+      if (core && typeof core.getConversationIdFromUrl === 'function') {
+        const id = core.getConversationIdFromUrl(location.href);
+        if (id) return id;
+      }
+    } catch {}
+    try {
       const u = new URL(location.href);
       const parts = u.pathname.split('/').filter(Boolean);
       const idx = parts.indexOf('c');
@@ -88,6 +103,14 @@
   }
 
   function getTurns() {
+    try {
+      const core = getCore();
+      if (core && typeof core.getTurnArticles === 'function') {
+        const root = typeof core.getTurnsRoot === 'function' ? core.getTurnsRoot() : document;
+        const turns = core.getTurnArticles(root);
+        if (Array.isArray(turns) && turns.length) return turns;
+      }
+    } catch {}
     return Array.from(document.querySelectorAll(TURN_SELECTOR));
   }
 

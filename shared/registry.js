@@ -248,7 +248,7 @@
       id: 'chatgpt_split_view',
       name: 'ChatGPT 拆分视图（实验）',
       sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: ['Esc×3'],
       menuPreview: ['重置右侧状态 / 清理 Split View 存储', '在新标签页打开右侧（并关闭 Split View）'],
       authors: ['lueluelue2006'],

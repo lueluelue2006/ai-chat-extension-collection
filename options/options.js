@@ -1556,13 +1556,23 @@
     const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
     const SYNC_REV_KEY = '__aichat_gm_chatgpt_usage_monitor__:__sync_rev_v1__';
 
-    const TIME_WINDOWS = Object.freeze({
-      hour3: 3 * 60 * 60 * 1000,
-      hour5: 5 * 60 * 60 * 1000,
-      daily: 24 * 60 * 60 * 1000,
-      weekly: 7 * 24 * 60 * 60 * 1000,
-      monthly: 30 * 24 * 60 * 60 * 1000
-    });
+    const usageUtils = (() => {
+      try {
+        const u = globalThis.__aichatChatGPTUsageMonitorUtilsV1__;
+        return u && typeof u === 'object' ? u : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (!usageUtils) {
+      const err = document.createElement('div');
+      err.className = 'smallHint';
+      err.textContent = '内部错误：用量统计工具库未加载（shared/chatgpt-usage-monitor-utils.js）。请尝试重新加载扩展。';
+      elModuleSettings.appendChild(err);
+      setStatus('用量统计工具库缺失，无法导入/合并/展示数据', 'err');
+      return;
+    }
+    const { TIME_WINDOWS, tsOf, validateImportedData, summarizeImport, mergeUsageData } = usageUtils;
 
     const windowLabel = (windowType) => {
       const t = String(windowType || '').trim();
@@ -1572,13 +1582,6 @@
       if (t === 'weekly') return '7d';
       if (t === 'monthly') return '30d';
       return t || '—';
-    };
-
-    const tsOf = (req) => {
-      if (typeof req === 'number') return req;
-      if (req && typeof req.t === 'number') return req.t;
-      if (req && typeof req.timestamp === 'number') return req.timestamp;
-      return NaN;
     };
 
     const formatTimeLeft = (windowEnd) => {
@@ -1606,85 +1609,6 @@
       if (!activeTs.length) return { windowEnd: null };
       const oldest = activeTs[0];
       return { windowEnd: oldest + windowDuration };
-    };
-
-    const validateImportedData = (data) => {
-      if (!data || typeof data !== 'object') return false;
-      if (!('models' in data) || !data.models || typeof data.models !== 'object') return false;
-      for (const [modelKey, model] of Object.entries(data.models)) {
-        if (!modelKey) return false;
-        if (!model || typeof model !== 'object') return false;
-        if (!Array.isArray(model.requests)) return false;
-        if (typeof model.quota !== 'number' && typeof model.sharedGroup !== 'string') return false;
-        if (model.windowType && !TIME_WINDOWS[String(model.windowType)]) return false;
-      }
-      return true;
-    };
-
-    const summarizeImport = (importedData) => {
-      const models = importedData && importedData.models && typeof importedData.models === 'object' ? importedData.models : {};
-      const entries = Object.entries(models);
-      const modelCount = entries.length;
-      let totalRequests = 0;
-      const detail = [];
-      for (const [k, m] of entries) {
-        const c = Array.isArray(m?.requests) ? m.requests.length : 0;
-        totalRequests += c;
-        if (c > 0) detail.push(`${k}: ${c}条`);
-      }
-      const head = `共 ${modelCount} 个模型，${totalRequests} 条请求记录`;
-      if (detail.length <= 8) return `${head}\n\n模型详情:\n${detail.join('\n')}`;
-      return head;
-    };
-
-    const mergeUsageData = (currentData, importedData) => {
-      const base = currentData && typeof currentData === 'object' ? currentData : {};
-      const result = JSON.parse(JSON.stringify(base));
-      result.models = result.models && typeof result.models === 'object' ? result.models : {};
-      const now = Date.now();
-
-      const importedModels = importedData?.models && typeof importedData.models === 'object' ? importedData.models : {};
-      for (const [modelKey, importedModel] of Object.entries(importedModels)) {
-        if (!result.models[modelKey]) {
-          result.models[modelKey] = {
-            requests: [],
-            quota: typeof importedModel.quota === 'number' ? importedModel.quota : 50,
-            windowType: importedModel.windowType || 'daily'
-          };
-          if (importedModel.sharedGroup) result.models[modelKey].sharedGroup = importedModel.sharedGroup;
-        }
-
-        const currentRequests = Array.isArray(result.models[modelKey].requests) ? result.models[modelKey].requests : [];
-        const windowType = String(result.models[modelKey].windowType || 'daily');
-        const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
-        const oldestRelevantTime = now - windowDuration;
-
-        const relevantImportedRequests = (Array.isArray(importedModel.requests) ? importedModel.requests : [])
-          .map((req) => tsOf(req))
-          .filter((ts) => Number.isFinite(ts) && ts > oldestRelevantTime);
-
-        const existingTimeMap = new Map();
-        for (const req of currentRequests) {
-          const t = tsOf(req);
-          if (!Number.isFinite(t)) continue;
-          const rounded = Math.floor(t / 1000) * 1000;
-          existingTimeMap.set(rounded, true);
-        }
-
-        const newRequests = [];
-        for (const ts of relevantImportedRequests) {
-          const rounded = Math.floor(ts / 1000) * 1000;
-          if (existingTimeMap.has(rounded)) continue;
-          existingTimeMap.set(rounded, true);
-          newRequests.push(ts);
-        }
-
-        result.models[modelKey].requests = [...currentRequests.map(tsOf), ...newRequests]
-          .filter((ts) => Number.isFinite(ts))
-          .sort((a, b) => b - a);
-      }
-
-      return result;
     };
 
     const getAllUsageKeys = async () => {

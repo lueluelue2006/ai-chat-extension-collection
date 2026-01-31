@@ -27,6 +27,10 @@
     return __aichatGMKeyPrefix + String(key || '');
   }
 
+  // Options page uses chrome.storage.local as the source of truth for import/export/clear.
+  // We keep localStorage as the fast read path, and sync both ways with a monotonic "revision" key.
+  const __aichatGMSyncRevKey = __aichatGMStorageKey('__sync_rev_v1__');
+
   const __aichatHasChromeStorage = (() => {
     try {
       return !!(globalThis.chrome?.storage?.local?.get && globalThis.chrome?.storage?.local?.set);
@@ -81,14 +85,74 @@
   function __aichatWarmLocalStorageFromChromeStorage() {
     if (!__aichatHasChromeStorage) return;
     try {
+      const localRev = (() => {
+        try {
+          const raw = localStorage.getItem(__aichatGMSyncRevKey);
+          if (raw == null) return 0;
+          const n = Number(JSON.parse(raw));
+          return Number.isFinite(n) ? n : 0;
+        } catch {
+          return 0;
+        }
+      })();
+
       chrome.storage.local.get(null, (items) => {
         void chrome.runtime?.lastError;
         try {
-          for (const [k, v] of Object.entries(items || {})) {
+          const all = items && typeof items === 'object' ? items : {};
+          let chromeRev = 0;
+          try {
+            chromeRev = Number(all?.[__aichatGMSyncRevKey]);
+          } catch {
+            chromeRev = 0;
+          }
+          if (!Number.isFinite(chromeRev)) chromeRev = 0;
+
+          const chromeKeys = [];
+          for (const k of Object.keys(all)) {
             if (!String(k).startsWith(__aichatGMKeyPrefix)) continue;
+            chromeKeys.push(String(k));
+          }
+          const chromeKeySet = new Set(chromeKeys);
+
+          // If chrome has a newer revision (set by Options import/clear), treat chrome as authoritative:
+          // overwrite localStorage and remove orphaned local keys.
+          if (chromeKeySet.size && chromeRev > localRev) {
+            for (const k of chromeKeys) {
+              try {
+                localStorage.setItem(k, JSON.stringify(all[k]));
+              } catch {}
+            }
+            try {
+              const toRemove = [];
+              const n = Number(localStorage.length || 0);
+              for (let i = 0; i < n; i++) {
+                const k = localStorage.key(i);
+                if (!k || !String(k).startsWith(__aichatGMKeyPrefix)) continue;
+                if (!chromeKeySet.has(k)) toRemove.push(k);
+              }
+              for (const k of toRemove) {
+                try {
+                  localStorage.removeItem(k);
+                } catch {}
+              }
+            } catch {}
+            return;
+          }
+
+          // Otherwise, non-destructive warm: only fill missing keys from chrome.
+          for (const k of chromeKeys) {
             try {
               if (localStorage.getItem(k) != null) continue;
-              localStorage.setItem(k, JSON.stringify(v));
+              localStorage.setItem(k, JSON.stringify(all[k]));
+            } catch {}
+          }
+
+          // One-time migration from older localStorage-only builds:
+          // if chrome has no prefixed keys at all, seed chrome from localStorage.
+          if (!chromeKeySet.size) {
+            try {
+              __aichatMigrateLocalStorageToChromeStorage();
             } catch {}
           }
         } catch {}
@@ -111,6 +175,8 @@
         } catch {}
       }
       if (Object.keys(batch).length) {
+        // Mark the migrated snapshot as "newer" so future boots prefer chrome storage.
+        if (typeof batch[__aichatGMSyncRevKey] !== 'number') batch[__aichatGMSyncRevKey] = Date.now();
         chrome.storage.local.set(batch, () => void chrome.runtime?.lastError);
       }
     } catch {}
@@ -118,8 +184,8 @@
 
   // Best-effort: keep chrome.storage in sync and allow recovery if localStorage is cleared.
   try {
+    // NOTE: warm includes an optional one-time migration when chrome has no keys.
     __aichatWarmLocalStorageFromChromeStorage();
-    __aichatMigrateLocalStorageToChromeStorage();
   } catch {}
 
   function GM_getValue(key, defaultValue) {
@@ -138,10 +204,20 @@
       if (typeof value === 'undefined') {
         try { localStorage.removeItem(sk); } catch {}
         __aichatQueueChromeRemove(sk);
+        try {
+          const rev = Date.now();
+          localStorage.setItem(__aichatGMSyncRevKey, JSON.stringify(rev));
+          __aichatQueueChromeSet(__aichatGMSyncRevKey, rev);
+        } catch {}
         return;
       }
       localStorage.setItem(sk, JSON.stringify(value));
       __aichatQueueChromeSet(sk, value);
+      try {
+        const rev = Date.now();
+        localStorage.setItem(__aichatGMSyncRevKey, JSON.stringify(rev));
+        __aichatQueueChromeSet(__aichatGMSyncRevKey, rev);
+      } catch {}
     } catch {}
   }
 

@@ -1554,6 +1554,7 @@
 
     const USAGE_DATA_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
     const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
+    const SYNC_REV_KEY = '__aichat_gm_chatgpt_usage_monitor__:__sync_rev_v1__';
 
     const TIME_WINDOWS = Object.freeze({
       hour3: 3 * 60 * 60 * 1000,
@@ -1901,7 +1902,7 @@
             const merged = mergeUsageData(current, imported);
             await new Promise((resolve, reject) => {
               try {
-                chrome.storage.local.set({ [USAGE_DATA_KEY]: merged }, () => {
+                chrome.storage.local.set({ [USAGE_DATA_KEY]: merged, [SYNC_REV_KEY]: Date.now() }, () => {
                   const err = chrome.runtime.lastError;
                   if (err) reject(new Error(err.message || String(err)));
                   else resolve();
@@ -1953,6 +1954,19 @@
             }
           });
         }
+
+        // Mark the clear as authoritative so chatgpt.com will wipe its localStorage snapshot on next load.
+        await new Promise((resolve) => {
+          try {
+            chrome.storage.local.set({ [SYNC_REV_KEY]: Date.now() }, () => {
+              void chrome.runtime.lastError;
+              resolve();
+            });
+          } catch {
+            resolve();
+          }
+        });
+
         setStatus('已清空用量统计数据', 'ok');
         await renderUsageBox();
       } catch (e) {

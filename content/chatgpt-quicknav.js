@@ -126,6 +126,72 @@
       }
       return { panels: panels.length, styles: styles.length, keysBound: !!window.__cgptKeysBound, booting: __cgptBooting };
     },
+    getStats: () => {
+      try {
+        return {
+          previewCache: typeof previewCache?.size === 'number' ? previewCache.size : 0,
+          roleCache: typeof roleCache?.size === 'number' ? roleCache.size : 0,
+          turnIdToPos: typeof turnIdToPos?.size === 'number' ? turnIdToPos.size : 0,
+          cachedTurnIds: Array.isArray(cachedTurnIds) ? cachedTurnIds.length : 0,
+          treeNavigatePending: typeof treeNavigatePending?.size === 'number' ? treeNavigatePending.size : 0,
+          treeSummary: !!treeSummary,
+          treePathCount: typeof treePathSet?.size === 'number' ? treePathSet.size : 0
+        };
+      } catch {
+        return null;
+      }
+    },
+    softCleanup: (reason = '') => {
+      const before = (() => {
+        try {
+          return window.chatGptNavDebug?.getStats?.();
+        } catch {
+          return null;
+        }
+      })();
+
+      try { previewCache?.clear?.(); } catch {}
+      try { roleCache?.clear?.(); } catch {}
+      try { turnIdToPos?.clear?.(); } catch {}
+      try { cachedTurnIds = []; } catch {}
+
+      try {
+        for (const [reqId, p] of treeNavigatePending.entries()) {
+          try { clearTimeout(p?.timer); } catch {}
+          treeNavigatePending.delete(reqId);
+          try { p?.resolve?.(false); } catch {}
+        }
+      } catch {}
+
+      try {
+        treeSummary = null;
+        treePathSet = new Set();
+        treeSummaryPendingReqId = '';
+        if (treeSummaryReqTimer) {
+          try { clearTimeout(treeSummaryReqTimer); } catch {}
+          treeSummaryReqTimer = 0;
+        }
+      } catch {}
+
+      try {
+        const ui = document.getElementById('cgpt-compact-nav')?._ui;
+        if (ui) scheduleRefresh(ui, { force: true, delay: 120 });
+      } catch {}
+
+      const after = (() => {
+        try {
+          return window.chatGptNavDebug?.getStats?.();
+        } catch {
+          return null;
+        }
+      })();
+
+      try {
+        console.log('[QuickNav] softCleanup', { reason, before, after });
+      } catch {}
+
+      return { reason, before, after };
+    },
     getTreeSummary: () => treeSummary,
     testObserver: () => {
       const nav = document.getElementById('cgpt-compact-nav');

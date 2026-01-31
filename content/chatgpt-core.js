@@ -561,8 +561,15 @@
 
     const MAX_SAMPLES = 24; // ~12 minutes @ 30s interval
     const SAMPLE_MS = 30 * 1000;
-    const WARN_RATIO = 0.55;
-    const CRIT_RATIO = 0.75;
+    // WARNING: avoid being too aggressive. This guard is a last resort for 8GB-memory machines.
+    // Prefer detecting "runaway growth" over stable high usage.
+    const WARN_RATIO = 0.45;
+    const CRIT_RATIO = 0.6;
+    const WARN_USED_MB = 800;
+    const CRIT_USED_MB = 1100;
+    const RAPID_GROWTH_WINDOW_MS = 2 * 60 * 1000;
+    const RAPID_GROWTH_MB = 300;
+    const RAPID_GROWTH_MIN_USED_MB = 500;
     const NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
     const CLEANUP_COOLDOWN_MS = 3 * 60 * 1000;
 
@@ -593,6 +600,29 @@
       const n = Number(bytes) || 0;
       if (!Number.isFinite(n) || n <= 0) return '0MB';
       return `${Math.round(n / 1024 / 1024)}MB`;
+    }
+
+    function computeGrowthMb(sample) {
+      try {
+        const windowStart = Number(sample?.at || 0) - RAPID_GROWTH_WINDOW_MS;
+        if (!Number.isFinite(windowStart) || windowStart <= 0) return 0;
+        let baseline = null;
+        for (let i = state.samples.length - 1; i >= 0; i--) {
+          const s = state.samples[i];
+          if (!s) continue;
+          if (Number(s.at || 0) <= windowStart) {
+            baseline = s;
+            break;
+          }
+          baseline = s;
+        }
+        if (!baseline) return 0;
+        const diff = Number(sample.used || 0) - Number(baseline.used || 0);
+        if (!Number.isFinite(diff) || diff <= 0) return 0;
+        return diff / 1024 / 1024;
+      } catch {
+        return 0;
+      }
     }
 
     function notify(title, message) {
@@ -630,6 +660,11 @@
       } catch {}
 
       try {
+        // QuickNav: drop ephemeral caches to reduce JS heap pressure.
+        window.chatGptNavDebug?.softCleanup?.(`mem:${level}`);
+      } catch {}
+
+      try {
         notify(
           'ChatGPT 内存保护：已执行清理',
           `level=${level} used=${formatMb(sample.used)} (${Math.round(sample.ratio * 100)}%)`
@@ -644,14 +679,29 @@
       if (state.samples.length > MAX_SAMPLES) state.samples.splice(0, state.samples.length - MAX_SAMPLES);
 
       const ratio = sample.ratio;
-      const level = ratio >= CRIT_RATIO ? 'critical' : ratio >= WARN_RATIO ? 'warning' : 'ok';
+      const usedMb = Number(sample.used || 0) / 1024 / 1024;
+      const growthMb = computeGrowthMb(sample);
+      const isRapidGrowth =
+        Number.isFinite(growthMb) &&
+        growthMb >= RAPID_GROWTH_MB &&
+        Number.isFinite(usedMb) &&
+        usedMb >= RAPID_GROWTH_MIN_USED_MB;
+
+      const thresholdLevel =
+        (Number.isFinite(usedMb) && usedMb >= CRIT_USED_MB) || ratio >= CRIT_RATIO
+          ? 'critical'
+          : (Number.isFinite(usedMb) && usedMb >= WARN_USED_MB) || ratio >= WARN_RATIO
+            ? 'warning'
+            : 'ok';
+
+      const level = isRapidGrowth ? 'critical' : thresholdLevel;
       const levelChanged = level !== state.lastLevel;
       state.lastLevel = level;
 
       if (level === 'critical') {
         notify(
           'ChatGPT 内存预警（严重）',
-          `JS heap 已接近上限：${formatMb(sample.used)} / ${formatMb(sample.limit)}`
+          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}${isRapidGrowth ? `（2min +${Math.round(growthMb)}MB）` : ''}`
         );
         emergencyCleanup(level, sample);
         return;
@@ -660,7 +710,7 @@
       if (level === 'warning' && levelChanged) {
         notify(
           'ChatGPT 内存预警',
-          `JS heap 占用偏高：${formatMb(sample.used)} / ${formatMb(sample.limit)}`
+          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}`
         );
       }
     }

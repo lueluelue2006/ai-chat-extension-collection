@@ -390,8 +390,10 @@
   // 性能缓存：避免长对话频繁扫描/强制重排
   const previewCache = new Map(); // msgKey -> preview
   const roleCache = new Map(); // msgKey -> 'user' | 'assistant'
-  const turnIdToPos = new Map(); // turnId -> position in cachedTurns
-  let cachedTurns = [];
+  const turnIdToPos = new Map(); // turnId -> position in cachedTurnIds
+  // Store only turn element ids (strings), not DOM nodes. This avoids accidentally keeping
+  // old/virtualized turns alive and reduces long-session memory pressure.
+  let cachedTurnIds = [];
 
   function scheduleRefresh(ui, { delay = 80, force = false, soft = null } = {}) {
     if (force) {
@@ -579,7 +581,7 @@
     previewCache.clear();
     roleCache.clear();
     turnIdToPos.clear();
-    cachedTurns = [];
+    cachedTurnIds = [];
     lastDomTurnCount = 0;
     currentActiveTurnPos = 0;
     currentActiveId = null;
@@ -1093,7 +1095,6 @@
 
   function buildIndex(turnsOverride) {
     const turns = turnsOverride || qsTurns();
-    cachedTurns = turns;
     lastDomTurnCount = turns.length;
     lastDomFirstKey = turns.length ? getTurnKey(turns[0]) : '';
     lastDomLastKey = turns.length ? getTurnKey(turns[turns.length - 1]) : '';
@@ -1115,6 +1116,12 @@
       if (res.item) list.push(res.item);
     }
 
+    try {
+      cachedTurnIds = turns.map((t) => String(t?.id || '')).filter(Boolean);
+    } catch {
+      cachedTurnIds = [];
+    }
+
     if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
     lastUserSeq = u;
     lastAssistantSeq = a;
@@ -1125,14 +1132,14 @@
     const turnsArr = Array.isArray(turns) ? turns : [];
     const oldCount = Number(prevCount) || 0;
     if (!oldCount || turnsArr.length <= oldCount) return false;
-    if (!Array.isArray(cachedTurns) || cachedTurns.length !== oldCount) return false;
+    if (!Array.isArray(cachedTurnIds) || cachedTurnIds.length !== oldCount) return false;
 
     // Cheap structural checks: same DOM nodes at key positions => safe to treat as append-only.
     try {
-      if (turnsArr[0] !== cachedTurns[0]) return false;
-      if (turnsArr[oldCount - 1] !== cachedTurns[oldCount - 1]) return false;
+      if (String(turnsArr[0]?.id || '') !== cachedTurnIds[0]) return false;
+      if (String(turnsArr[oldCount - 1]?.id || '') !== cachedTurnIds[oldCount - 1]) return false;
       const mid = Math.floor(oldCount / 2);
-      if (mid > 0 && turnsArr[mid] !== cachedTurns[mid]) return false;
+      if (mid > 0 && String(turnsArr[mid]?.id || '') !== cachedTurnIds[mid]) return false;
     } catch {
       return false;
     }
@@ -1143,7 +1150,6 @@
   function appendTurnsToBaseIndex(turns, startIdx) {
     const t = Array.isArray(turns) ? turns : [];
     const start = Math.max(0, Number(startIdx) || 0);
-    cachedTurns = t;
     lastDomTurnCount = t.length;
     lastDomFirstKey = t.length ? getTurnKey(t[0]) : '';
     lastDomLastKey = t.length ? getTurnKey(t[t.length - 1]) : '';
@@ -1157,6 +1163,12 @@
       u = res.userSeq;
       a = res.assistantSeq;
       if (res.item) base.push(res.item);
+    }
+
+    try {
+      cachedTurnIds = t.map((el) => String(el?.id || '')).filter(Boolean);
+    } catch {
+      cachedTurnIds = [];
     }
 
     // Update seq baselines for the next append.
@@ -4925,10 +4937,27 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function findNearNextTop(y, eps) {
-    const turns = cachedTurns && cachedTurns.length ? cachedTurns : qsTurns();
-    if (!turns || !turns.length) return null;
     const start = Math.max(0, (currentActiveTurnPos || 0) - 3);
     const maxChecks = 30;
+
+    const ids = Array.isArray(cachedTurnIds) && cachedTurnIds.length ? cachedTurnIds : null;
+    // Prefer cached ids to avoid keeping turn DOM nodes alive.
+    if (ids) {
+      for (let i = start, checked = 0; i < ids.length && checked < maxChecks; i++, checked++) {
+        const id = ids[i];
+        if (!id) continue;
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const d = r.top - y;
+        if (d >= 0 && d <= eps) return el;
+        if (r.top > y + eps) break;
+      }
+      return null;
+    }
+
+    const turns = qsTurns();
+    if (!turns || !turns.length) return null;
     for (let i = start, checked = 0; i < turns.length && checked < maxChecks; i++, checked++) {
       const el = turns[i];
       if (!el) continue;

@@ -395,6 +395,15 @@
   async function runPrefixThenSend(prefixText) {
     if (isSending) return;
 
+    // If the user hasn't typed anything (spaces count as empty), do nothing.
+    // Sending only the prefix is usually accidental and can be confusing.
+    try {
+      if (!editorText()) {
+        notify('输入为空…（已忽略快捷深度搜索）');
+        return;
+      }
+    } catch {}
+
     // Never turn this into a "Stop generating" shortcut.
     try {
       const c = core();

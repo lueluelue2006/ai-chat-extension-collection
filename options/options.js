@@ -2069,7 +2069,11 @@
   }
 
   function renderChatGPTQuickDeepSearchModuleSettings(siteId) {
-    addModuleHeader('chatgpt_quick_deep_search', '快捷深度搜索（译/搜/思）', '提供 “译 / 搜 / 思” 按钮（优先放在输入框右侧），并支持快捷键触发。');
+    addModuleHeader(
+      'chatgpt_quick_deep_search',
+      '快捷深度搜索（译/搜/思）',
+      '仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）（不注入按钮，更稳）。'
+    );
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -2094,7 +2098,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块会在输入框右侧添加“译/搜/思”按钮并自动发送；并拦截 fetch，把下一次 /backend-api/(f/)conversation 的 body.model 强制改为 gpt-5。';
+      '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；并通过共享 fetch hub 让“这一次发送”强制使用 gpt-5（仅生效一次）。';
     elModuleSettings.appendChild(hint);
   }
 

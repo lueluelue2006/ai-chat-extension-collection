@@ -1,6 +1,19 @@
 (function () {
   'use strict';
 
+  // Prevent duplicate installs on MV3 reinject / extension reload.
+  // QuickNav binds multiple global listeners/timers; running twice can lead to heavy CPU/memory overhead.
+  const __aichatCgptQuickNavGuardKey = '__aichat_chatgpt_quicknav_v1__';
+  try {
+    if (globalThis[__aichatCgptQuickNavGuardKey]) return;
+    Object.defineProperty(globalThis, __aichatCgptQuickNavGuardKey, { value: true, configurable: false, enumerable: false, writable: false });
+  } catch {
+    try {
+      if (globalThis[__aichatCgptQuickNavGuardKey]) return;
+      globalThis[__aichatCgptQuickNavGuardKey] = true;
+    } catch {}
+  }
+
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
   const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
   const BOUNDARY_EPS = 28;

@@ -1,6 +1,19 @@
 (() => {
   'use strict';
 
+  // Prevent duplicate installs on MV3 reinject / extension reload.
+  // This module registers global hotkeys and DOM listeners; running twice can cause double-trigger.
+  const GUARD_KEY = '__aichat_chatgpt_thinking_toggle_v1__';
+  try {
+    if (globalThis[GUARD_KEY]) return;
+    Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  } catch {
+    try {
+      if (globalThis[GUARD_KEY]) return;
+      globalThis[GUARD_KEY] = true;
+    } catch {}
+  }
+
   const DEBUG = false;
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
   const HOTKEY_COOLDOWN_MS = 100;

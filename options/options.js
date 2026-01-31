@@ -1804,15 +1804,25 @@
       }
     });
 
-    btnImport.addEventListener('click', async () => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'application/json';
-      input.style.display = 'none';
-      document.body.appendChild(input);
-      input.addEventListener(
-        'change',
-        async () => {
+    const IMPORT_INPUT_ID = 'qn-cgpt-usage-import-input';
+    const ensureImportInput = () => {
+      /** @type {HTMLInputElement|null} */
+      let input = document.getElementById(IMPORT_INPUT_ID);
+      if (!(input instanceof HTMLInputElement)) {
+        input = document.createElement('input');
+        input.id = IMPORT_INPUT_ID;
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.setAttribute('aria-label', '用量统计导入 JSON');
+        // Keep it non-visible but still present in DOM (better accessibility + easier to debug/automate).
+        input.style.cssText = 'position:fixed; left:-9999px; top:-9999px; width:1px; height:1px; opacity:0;';
+        (document.body || document.documentElement).appendChild(input);
+      }
+
+      // Install listener once (avoid accumulating listeners when switching modules).
+      if (input.dataset.qnListener !== '1') {
+        input.dataset.qnListener = '1';
+        input.addEventListener('change', async () => {
           try {
             const file = input.files && input.files[0];
             if (!file) return;
@@ -1840,13 +1850,22 @@
           } catch (e) {
             setStatus(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'err');
           } finally {
+            // Allow importing the same file repeatedly.
             try {
-              document.body.removeChild(input);
+              input.value = '';
             } catch {}
           }
-        },
-        { once: true }
-      );
+        });
+      }
+
+      return input;
+    };
+
+    btnImport.addEventListener('click', () => {
+      const input = ensureImportInput();
+      try {
+        input.value = '';
+      } catch {}
       input.click();
     });
 

@@ -85,7 +85,9 @@
     const mods = getRegistryModules(registry);
     const def = mods?.[moduleId];
     if (def && typeof def === 'object' && typeof def.defaultEnabled === 'boolean') return def.defaultEnabled;
-    return true;
+    // Default to OFF unless explicitly enabled in registry.
+    // Rationale: many content scripts are heavy; default-on across all sites can hurt stability/performance.
+    return false;
   }
 
   function buildDefaultSettings(registry) {

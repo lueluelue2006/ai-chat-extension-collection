@@ -89,6 +89,7 @@
       id: 'hide_disclaimer',
       name: '隐藏免责声明/提示条',
       sub: '自动隐藏“AI 可能会犯错/数据使用”等提示条',
+      defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
@@ -116,6 +117,7 @@
       id: 'chatgpt_thinking_toggle',
       name: 'ChatGPT 推理强度/模型 快捷切换',
       sub: '⌘O 推理强度 / ⌘J 模型切换',
+      defaultEnabled: true,
       hotkeys: ['⌘O', '⌘J'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
@@ -124,6 +126,7 @@
       id: 'chatgpt_cmdenter_send',
       name: '⌘Enter 发送（Enter 换行）',
       sub: 'Enter/Shift+Enter 换行（强制）',
+      defaultEnabled: true,
       hotkeys: ['⌘Enter', 'Ctrl+Enter'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
@@ -189,6 +192,7 @@
       id: 'chatgpt_quick_deep_search',
       name: '快捷深度搜索（译/搜/思）',
       sub: '仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）',
+      defaultEnabled: true,
       hotkeys: ['Ctrl+S', 'Ctrl+T', 'Ctrl+Y', 'Ctrl+Z'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

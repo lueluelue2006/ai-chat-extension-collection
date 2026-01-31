@@ -340,15 +340,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: chatgpt,
-      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/menu-bridge.js', 'content/chatgpt-usage-monitor/bridge.js'],
-      runAt: 'document_start'
-    });
-    defs.push({
-      id: 'quicknav_chatgpt_usage_monitor_menu_bridge',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_usage_monitor',
-      matches: chatgpt,
-      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/menu-bridge.js'],
+      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-usage-monitor/bridge.js'],
       runAt: 'document_start'
     });
 
@@ -360,7 +352,6 @@
       js: [
         MAIN_BRIDGE_FILE,
         CHATGPT_CORE_MAIN_FILE,
-        'content/ui-pos-drag.js',
         'content/chatgpt-fetch-hub/main.js',
         'content/chatgpt-usage-monitor/main.js'
       ],

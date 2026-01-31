@@ -152,16 +152,15 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-		    chatgpt_usage_monitor: {
-		      id: 'chatgpt_usage_monitor',
-		      name: 'ChatGPT 用量统计',
-		      sub: '实时统计各模型调用量，支持导入/导出与分析报告',
-	      hotkeys: ['⌘I'],
-	      menuPreview: ['重置监视器位置', '切换静默模式（隐藏/显示面板）', '导出用量统计数据', '导入用量统计数据'],
-	      authors: ['lueluelue2006（抄了 tizee@Github 的 GUI）'],
-	      license: 'MIT',
-	      upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
-	    },
+    chatgpt_usage_monitor: {
+      id: 'chatgpt_usage_monitor',
+      name: 'ChatGPT 用量统计',
+      sub: '后台统计各模型调用量（不再注入页面内面板）；在扩展配置页查看/导入/导出',
+      hotkeys: [],
+      authors: ['lueluelue2006（基于 tizee@Github 的实现移植）'],
+      license: 'MIT',
+      upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
+    },
     chatgpt_reply_timer: {
       id: 'chatgpt_reply_timer',
       name: 'ChatGPT 回复计时器',

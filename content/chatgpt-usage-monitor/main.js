@@ -4242,16 +4242,53 @@
 
   // src/main.js
   function main() {
-	    installTextScrambler();
-	    injectStyles();
+	    // Headless mode: keep tracking + plan sync, but remove the in-page floating GUI to reduce
+	    // DOM overhead and improve stability on long conversations. Stats/import/export move to Options.
+	    const UI_ENABLED = false;
+
+	    if (UI_ENABLED) {
+	      installTextScrambler();
+	      injectStyles();
+	    }
+
 	    refreshUsageData();
 	    installFetchInterceptor();
+
+	    // Ensure plan structure is applied at least once (even without UI).
+	    try {
+	      const currentPlan = usageData?.planType || "team";
+	      if (currentPlan && PLAN_CONFIGS[currentPlan]) {
+	        const shouldReapply = !__aichatIsPlanStructureApplied(currentPlan, usageData);
+	        if (shouldReapply) {
+	          applyPlanConfig(currentPlan);
+	        } else {
+	          const planConfig = PLAN_CONFIGS[currentPlan];
+	          let addedModels = 0;
+	          updateUsageData((data) => {
+	            Object.entries(planConfig.models).forEach(([modelKey, cfg]) => {
+	              if (data.models[modelKey]) return;
+	              data.models[modelKey] = { requests: [], quota: cfg.quota, windowType: cfg.windowType };
+	              if (cfg.sharedGroup) delete data.models[modelKey].quota;
+	              if (cfg.sharedGroup) delete data.models[modelKey].windowType;
+	              if (cfg.sharedGroup) data.models[modelKey].sharedGroup = cfg.sharedGroup;
+	              addedModels++;
+	            });
+	          });
+	          if (addedModels > 0) {
+	            console.log(`[monitor] Added ${addedModels} missing models for ${planConfig.name} plan during init`);
+	          }
+	        }
+	      }
+	      cleanupExpiredRequests();
+	    } catch {}
+
     onDataChanged(() => {
-      if (isSilent()) return;
-      const monitor = document.getElementById("chatUsageMonitor");
-      if (monitor?.classList?.contains("minimized")) return;
-      updateUI();
-    });
+	      if (!UI_ENABLED) return;
+	      if (isSilent()) return;
+	      const monitor = document.getElementById("chatUsageMonitor");
+	      if (monitor?.classList?.contains("minimized")) return;
+	      updateUI();
+	    });
     let _pendingInitTimerId = null;
     let _pendingInitDueAt = 0;
     let _initializedOnce = false;
@@ -4293,41 +4330,22 @@
                   data.planType = nextPlan;
                 });
               }
-              applyPlanConfig(nextPlan);
-              if (isSilent()) return;
-              try {
-                updateUI();
-              } catch {}
-              try {
-                showToast(`已切换到 ${PLAN_CONFIGS[nextPlan].name} 套餐`, "success");
-              } catch {}
-              scheduleInitialize(0);
-            } catch {}
-          },
-          true
-        );
-      }
-    } catch {}
-
-    // Menu actions dispatched from isolated-world bridge (Options/Popup -> page)
-    try {
-      if (!window.__aichatChatGptUsageMonitorActionListenerInstalled) {
-        window.__aichatChatGptUsageMonitorActionListenerInstalled = true;
-        window.addEventListener(
-          __aichatUsageMonitorActionEvent,
-          (e) => {
-            try {
-              const action = String(e?.detail?.action || "").trim();
-              if (!action) return;
-              if (action === "reset_position") return void resetMonitorPosition();
-              if (action === "toggle_silent") return void toggleSilentMode();
-              if (action === "export") return void exportUsageData();
-              if (action === "import") return void importUsageData();
-            } catch {}
-          },
-          true
-        );
-      }
+	              applyPlanConfig(nextPlan);
+	              cleanupExpiredRequests();
+	              if (UI_ENABLED && !isSilent()) {
+	                try {
+	                  updateUI();
+	                } catch {}
+	                try {
+	                  showToast(`已切换到 ${PLAN_CONFIGS[nextPlan].name} 套餐`, "success");
+	                } catch {}
+	                scheduleInitialize(0);
+	              }
+	            } catch {}
+	          },
+	          true
+	        );
+	      }
     } catch {}
 
     function initialize() {
@@ -4416,52 +4434,53 @@
       } catch {}
     }
 
-    GM_registerMenuCommand("重置监视器位置", resetMonitorPosition);
-    GM_registerMenuCommand("切换静默模式（隐藏/显示面板）", toggleSilentMode);
-    GM_registerMenuCommand("导出用量统计数据", exportUsageData);
-    GM_registerMenuCommand("导入用量统计数据", importUsageData);
-    if (document.readyState === "loading") {
-      window.addEventListener("DOMContentLoaded", () => scheduleInitialize(0));
-    } else {
-      scheduleInitialize(0);
-    }
-    // SPA navigation: re-init when route changes.
-    try {
-      if (!window.__aichatChatGptUsageMonitorRouteWatchInstalled) {
-        window.__aichatChatGptUsageMonitorRouteWatchInstalled = true;
-        // Avoid a "double init" during the initial ChatGPT hydration/router bootstrap, which can look like a page refresh.
-        // We only start reacting to route changes after the monitor has been initialized at least once.
-        const onRoute = () => {
-          try {
-            if (!_initializedOnce) return;
-          } catch {}
-          scheduleInitialize(300);
-        };
-        const core = window.__aichat_chatgpt_core_main_v1__;
-        if (core && typeof core.onRouteChange === "function") {
-          window.__aichatChatGptUsageMonitorRouteUnsub = core.onRouteChange(onRoute);
-        } else {
-          // Fallback: use the shared MAIN-world bridge; avoid patching history (can conflict with other modules).
-          const bridge = window.__aichat_quicknav_bridge_main_v1__;
-          if (bridge && typeof bridge.ensureRouteListener === "function" && typeof bridge.on === "function") {
-            try { bridge.ensureRouteListener(); } catch {}
-            window.__aichatChatGptUsageMonitorRouteUnsub = bridge.on("routeChange", onRoute);
-          } else {
-            let last = "";
-            try { last = String(location.href || ""); } catch { last = ""; }
-            setInterval(() => {
-              try {
-                const href = String(location.href || "");
-                if (!href || href === last) return;
-                last = href;
-                onRoute();
-              } catch {}
-            }, 1200);
-          }
-        }
-      }
-    } catch {
-    }
+	    if (!UI_ENABLED) {
+	      console.log("🚀 ChatGPT Usage Monitor loaded (headless)");
+	      return;
+	    }
+
+	    if (document.readyState === "loading") {
+	      window.addEventListener("DOMContentLoaded", () => scheduleInitialize(0));
+	    } else {
+	      scheduleInitialize(0);
+	    }
+
+	    // SPA navigation: re-init when route changes.
+	    try {
+	      if (!window.__aichatChatGptUsageMonitorRouteWatchInstalled) {
+	        window.__aichatChatGptUsageMonitorRouteWatchInstalled = true;
+	        // Avoid a "double init" during the initial ChatGPT hydration/router bootstrap, which can look like a page refresh.
+	        // We only start reacting to route changes after the monitor has been initialized at least once.
+	        const onRoute = () => {
+	          try {
+	            if (!_initializedOnce) return;
+	          } catch {}
+	          scheduleInitialize(300);
+	        };
+	        const core = window.__aichat_chatgpt_core_main_v1__;
+	        if (core && typeof core.onRouteChange === "function") {
+	          window.__aichatChatGptUsageMonitorRouteUnsub = core.onRouteChange(onRoute);
+	        } else {
+	          // Fallback: use the shared MAIN-world bridge; avoid patching history (can conflict with other modules).
+	          const bridge = window.__aichat_quicknav_bridge_main_v1__;
+	          if (bridge && typeof bridge.ensureRouteListener === "function" && typeof bridge.on === "function") {
+	            try { bridge.ensureRouteListener(); } catch {}
+	            window.__aichatChatGptUsageMonitorRouteUnsub = bridge.on("routeChange", onRoute);
+	          } else {
+	            let last = "";
+	            try { last = String(location.href || ""); } catch { last = ""; }
+	            setInterval(() => {
+	              try {
+	                const href = String(location.href || "");
+	                if (!href || href === last) return;
+	                last = href;
+	                onRoute();
+	              } catch {}
+	            }, 1200);
+	          }
+	        }
+	      }
+	    } catch {}
 
 	    // Cheap self-heal: body child observer + slow timer (avoid global subtree MutationObserver on ChatGPT).
 	    try {
@@ -4516,10 +4535,9 @@
 	        __aichatBootstrapEnsure();
 	        __aichatScheduleEnsure(4000);
 	      }
-	    } catch {
-	    }
+	    } catch {}
 
-    console.log("🚀 ChatGPT Usage Monitor loaded");
+	    console.log("🚀 ChatGPT Usage Monitor loaded");
   }
 
   // src/index.js

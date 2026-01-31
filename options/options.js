@@ -1464,7 +1464,7 @@
   }
 
   async function renderChatGPTUsageMonitorModuleSettings(siteId, token) {
-    addModuleHeader('chatgpt_usage_monitor', 'ChatGPT 用量统计', '实时统计各模型调用量（支持导入/导出、一周/一月分析报告）。');
+    addModuleHeader('chatgpt_usage_monitor', 'ChatGPT 用量统计', '后台统计各模型调用量（不再注入页面内面板）；在此配置页查看/导入/导出。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1489,7 +1489,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；面板可拖动/缩放，⌘I 可快速最小化。';
+      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；为稳定与性能考虑，不再在 chatgpt.com 注入悬浮面板。';
     elModuleSettings.appendChild(hint);
 
     let planType;
@@ -1506,7 +1506,7 @@
     if (token !== renderSeq) return;
 
     addPanelDivider();
-    addPanelTitle('套餐（Plan）', '默认 Team；配置页与面板会自动保持一致（写入 storage.sync）。');
+    addPanelTitle('套餐（Plan）', '默认 Team；配置页与页面统计逻辑会自动保持一致（写入 storage.sync）。');
 
     const rowPlan = document.createElement('label');
     rowPlan.className = 'formRow';
@@ -1548,7 +1548,421 @@
     rowPlan.appendChild(selectPlan);
     elModuleSettings.appendChild(rowPlan);
 
-    addPanelMenuPreview('chatgpt_usage_monitor');
+    // Usage data viewer (options-only).
+    addPanelDivider();
+    addPanelTitle('用量数据', '数据存储在扩展 storage.local；需要在 chatgpt.com 实际发送过消息才会产生记录。');
+
+    const USAGE_DATA_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
+    const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
+
+    const TIME_WINDOWS = Object.freeze({
+      hour3: 3 * 60 * 60 * 1000,
+      hour5: 5 * 60 * 60 * 1000,
+      daily: 24 * 60 * 60 * 1000,
+      weekly: 7 * 24 * 60 * 60 * 1000,
+      monthly: 30 * 24 * 60 * 60 * 1000
+    });
+
+    const windowLabel = (windowType) => {
+      const t = String(windowType || '').trim();
+      if (t === 'hour3') return '3h';
+      if (t === 'hour5') return '5h';
+      if (t === 'daily') return '24h';
+      if (t === 'weekly') return '7d';
+      if (t === 'monthly') return '30d';
+      return t || '—';
+    };
+
+    const tsOf = (req) => {
+      if (typeof req === 'number') return req;
+      if (req && typeof req.t === 'number') return req.t;
+      if (req && typeof req.timestamp === 'number') return req.timestamp;
+      return NaN;
+    };
+
+    const formatTimeLeft = (windowEnd) => {
+      const now = Date.now();
+      const timeLeft = Number(windowEnd) - now;
+      if (!Number.isFinite(timeLeft) || timeLeft <= 0) return '0h 0m';
+      const hours = Math.floor(timeLeft / (60 * 60 * 1000));
+      const minutes = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+      return `${hours}h ${minutes}m`;
+    };
+
+    const collectActiveTs = (requests, windowDuration, now) => {
+      const list = Array.isArray(requests) ? requests : [];
+      const out = [];
+      for (const r of list) {
+        const ts = tsOf(r);
+        if (!Number.isFinite(ts)) continue;
+        if (now - ts < windowDuration) out.push(ts);
+      }
+      out.sort((a, b) => a - b);
+      return out;
+    };
+
+    const computeWindowInfo = (activeTs, windowDuration) => {
+      if (!activeTs.length) return { windowEnd: null };
+      const oldest = activeTs[0];
+      return { windowEnd: oldest + windowDuration };
+    };
+
+    const validateImportedData = (data) => {
+      if (!data || typeof data !== 'object') return false;
+      if (!('models' in data) || !data.models || typeof data.models !== 'object') return false;
+      for (const [modelKey, model] of Object.entries(data.models)) {
+        if (!modelKey) return false;
+        if (!model || typeof model !== 'object') return false;
+        if (!Array.isArray(model.requests)) return false;
+        if (typeof model.quota !== 'number' && typeof model.sharedGroup !== 'string') return false;
+        if (model.windowType && !TIME_WINDOWS[String(model.windowType)]) return false;
+      }
+      return true;
+    };
+
+    const summarizeImport = (importedData) => {
+      const models = importedData && importedData.models && typeof importedData.models === 'object' ? importedData.models : {};
+      const entries = Object.entries(models);
+      const modelCount = entries.length;
+      let totalRequests = 0;
+      const detail = [];
+      for (const [k, m] of entries) {
+        const c = Array.isArray(m?.requests) ? m.requests.length : 0;
+        totalRequests += c;
+        if (c > 0) detail.push(`${k}: ${c}条`);
+      }
+      const head = `共 ${modelCount} 个模型，${totalRequests} 条请求记录`;
+      if (detail.length <= 8) return `${head}\n\n模型详情:\n${detail.join('\n')}`;
+      return head;
+    };
+
+    const mergeUsageData = (currentData, importedData) => {
+      const base = currentData && typeof currentData === 'object' ? currentData : {};
+      const result = JSON.parse(JSON.stringify(base));
+      result.models = result.models && typeof result.models === 'object' ? result.models : {};
+      const now = Date.now();
+
+      const importedModels = importedData?.models && typeof importedData.models === 'object' ? importedData.models : {};
+      for (const [modelKey, importedModel] of Object.entries(importedModels)) {
+        if (!result.models[modelKey]) {
+          result.models[modelKey] = {
+            requests: [],
+            quota: typeof importedModel.quota === 'number' ? importedModel.quota : 50,
+            windowType: importedModel.windowType || 'daily'
+          };
+          if (importedModel.sharedGroup) result.models[modelKey].sharedGroup = importedModel.sharedGroup;
+        }
+
+        const currentRequests = Array.isArray(result.models[modelKey].requests) ? result.models[modelKey].requests : [];
+        const windowType = String(result.models[modelKey].windowType || 'daily');
+        const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
+        const oldestRelevantTime = now - windowDuration;
+
+        const relevantImportedRequests = (Array.isArray(importedModel.requests) ? importedModel.requests : [])
+          .map((req) => tsOf(req))
+          .filter((ts) => Number.isFinite(ts) && ts > oldestRelevantTime);
+
+        const existingTimeMap = new Map();
+        for (const req of currentRequests) {
+          const t = tsOf(req);
+          if (!Number.isFinite(t)) continue;
+          const rounded = Math.floor(t / 1000) * 1000;
+          existingTimeMap.set(rounded, true);
+        }
+
+        const newRequests = [];
+        for (const ts of relevantImportedRequests) {
+          const rounded = Math.floor(ts / 1000) * 1000;
+          if (existingTimeMap.has(rounded)) continue;
+          existingTimeMap.set(rounded, true);
+          newRequests.push(ts);
+        }
+
+        result.models[modelKey].requests = [...currentRequests.map(tsOf), ...newRequests]
+          .filter((ts) => Number.isFinite(ts))
+          .sort((a, b) => b - a);
+      }
+
+      return result;
+    };
+
+    const getAllUsageKeys = async () => {
+      try {
+        const items = await new Promise((resolve) => {
+          try {
+            chrome.storage.local.get(null, (res) => {
+              void chrome.runtime.lastError;
+              resolve(res && typeof res === 'object' ? res : {});
+            });
+          } catch {
+            resolve({});
+          }
+        });
+        return Object.keys(items).filter((k) => String(k).startsWith('__aichat_gm_chatgpt_usage_monitor__:'));
+      } catch {
+        return [];
+      }
+    };
+
+    const loadUsageSnapshot = async () => {
+      const res = await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get({ [USAGE_DATA_KEY]: null, [PLAN_TYPE_GM_KEY]: null }, (items) => {
+            void chrome.runtime.lastError;
+            resolve(items || {});
+          });
+        } catch {
+          resolve({ [USAGE_DATA_KEY]: null, [PLAN_TYPE_GM_KEY]: null });
+        }
+      });
+      return {
+        usageData: res?.[USAGE_DATA_KEY] || null,
+        planType: String(res?.[PLAN_TYPE_GM_KEY] || '').trim()
+      };
+    };
+
+    const box = document.createElement('div');
+    box.className = 'codeBox';
+    box.textContent = '（点击“刷新数据”以加载）';
+    elModuleSettings.appendChild(box);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const btnRefresh = document.createElement('button');
+    btnRefresh.type = 'button';
+    btnRefresh.className = 'btn';
+    btnRefresh.textContent = '刷新数据';
+
+    const btnExport = document.createElement('button');
+    btnExport.type = 'button';
+    btnExport.className = 'btn secondary';
+    btnExport.textContent = '导出 JSON';
+
+    const btnImport = document.createElement('button');
+    btnImport.type = 'button';
+    btnImport.className = 'btn secondary';
+    btnImport.textContent = '导入 JSON';
+
+    const btnClear = document.createElement('button');
+    btnClear.type = 'button';
+    btnClear.className = 'btn secondary';
+    btnClear.textContent = '清空数据';
+
+    actions.appendChild(btnRefresh);
+    actions.appendChild(btnExport);
+    actions.appendChild(btnImport);
+    actions.appendChild(btnClear);
+    elModuleSettings.appendChild(actions);
+
+    const renderUsageBox = async () => {
+      btnRefresh.disabled = true;
+      try {
+        const { usageData, planType: gmPlan } = await loadUsageSnapshot();
+        if (!usageData || typeof usageData !== 'object') {
+          box.textContent = '暂无用量记录。\n\n提示：打开 https://chatgpt.com/ 并发送一条消息后，这里才会出现统计数据。';
+          return;
+        }
+
+        const now = Date.now();
+        const models = usageData.models && typeof usageData.models === 'object' ? usageData.models : {};
+        const sharedGroups =
+          usageData.sharedQuotaGroups && typeof usageData.sharedQuotaGroups === 'object' ? usageData.sharedQuotaGroups : {};
+
+        let lastReq = 0;
+        for (const m of Object.values(models)) {
+          const reqs = Array.isArray(m?.requests) ? m.requests : [];
+          for (const r of reqs) {
+            const ts = tsOf(r);
+            if (Number.isFinite(ts)) lastReq = Math.max(lastReq, ts);
+          }
+        }
+
+        const lines = [];
+        const effectivePlan = String(usageData.planType || gmPlan || planType || '').trim();
+        if (effectivePlan) lines.push(`Plan: ${effectivePlan}`);
+        if (lastReq) lines.push(`Last activity: ${formatDateTime(lastReq)} (${formatAgeMs(now - lastReq)})`);
+        lines.push('');
+
+        const groupIds = Object.keys(sharedGroups);
+        if (groupIds.length) {
+          lines.push('Shared groups:');
+          for (const groupId of groupIds) {
+            const group = sharedGroups[groupId];
+            const windowType = String(group?.windowType || 'daily');
+            const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
+            const quota = typeof group?.quota === 'number' ? group.quota : null;
+            const displayName = String(group?.displayName || '').trim();
+
+            const active = [];
+            const memberModels = [];
+            for (const [modelKey, model] of Object.entries(models)) {
+              if (String(model?.sharedGroup || '') !== groupId) continue;
+              memberModels.push(modelKey);
+              const ts = collectActiveTs(model?.requests, windowDuration, now);
+              active.push(...ts.map((t) => ({ ts: t, modelKey })));
+            }
+            active.sort((a, b) => a.ts - b.ts);
+            const used = active.length;
+            const info = computeWindowInfo(active.map((x) => x.ts), windowDuration);
+            const reset = info.windowEnd ? `, resets in ${formatTimeLeft(info.windowEnd)}` : '';
+            const name = displayName ? `${displayName} (${groupId})` : groupId;
+            const quotaText = quota != null ? `${used}/${quota}` : `${used}/?`;
+            lines.push(`- ${name}: ${quotaText} (${windowLabel(windowType)})${reset}`);
+            if (memberModels.length) lines.push(`  models: ${memberModels.join(', ')}`);
+          }
+          lines.push('');
+        }
+
+        const standalone = Object.entries(models).filter(([, m]) => !String(m?.sharedGroup || '').trim());
+        if (standalone.length) {
+          lines.push('Models:');
+          for (const [modelKey, model] of standalone) {
+            const windowType = String(model?.windowType || 'daily');
+            const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
+            const quota = typeof model?.quota === 'number' ? model.quota : null;
+            const activeTs = collectActiveTs(model?.requests, windowDuration, now);
+            const used = activeTs.length;
+            const info = computeWindowInfo(activeTs, windowDuration);
+            const reset = info.windowEnd ? `, resets in ${formatTimeLeft(info.windowEnd)}` : '';
+            const quotaText = quota != null ? `${used}/${quota}` : `${used}/?`;
+            lines.push(`- ${modelKey}: ${quotaText} (${windowLabel(windowType)})${reset}`);
+          }
+        }
+
+        const jsonBytes = (() => {
+          try {
+            return new Blob([JSON.stringify(usageData)]).size;
+          } catch {
+            return 0;
+          }
+        })();
+        lines.push('');
+        if (jsonBytes) lines.push(`Storage size (approx): ${(jsonBytes / 1024).toFixed(1)} KiB`);
+
+        box.textContent = lines.join('\n');
+      } catch (e) {
+        box.textContent = `加载失败：${e instanceof Error ? e.message : String(e)}`;
+      } finally {
+        btnRefresh.disabled = false;
+      }
+    };
+
+    btnRefresh.addEventListener('click', () => void renderUsageBox());
+
+    btnExport.addEventListener('click', async () => {
+      btnExport.disabled = true;
+      try {
+        const { usageData } = await loadUsageSnapshot();
+        if (!usageData || typeof usageData !== 'object') throw new Error('暂无可导出的用量数据');
+        const json = JSON.stringify(usageData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chatgpt-usage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(a);
+          } catch {}
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 0);
+        setStatus('已导出用量统计数据', 'ok');
+      } catch (e) {
+        setStatus(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        btnExport.disabled = false;
+      }
+    });
+
+    btnImport.addEventListener('click', async () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener(
+        'change',
+        async () => {
+          try {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const imported = JSON.parse(text);
+            if (!validateImportedData(imported)) throw new Error('数据格式不正确（models/requests/quota/windowType）');
+            const summary = summarizeImport(imported);
+            if (!confirm(`导入将合并现有记录与导入文件中的记录。\n\n${summary}\n\n确认导入吗？`)) return;
+
+            const { usageData: current } = await loadUsageSnapshot();
+            const merged = mergeUsageData(current, imported);
+            await new Promise((resolve, reject) => {
+              try {
+                chrome.storage.local.set({ [USAGE_DATA_KEY]: merged }, () => {
+                  const err = chrome.runtime.lastError;
+                  if (err) reject(new Error(err.message || String(err)));
+                  else resolve();
+                });
+              } catch (e) {
+                reject(e);
+              }
+            });
+            setStatus('已导入并合并用量数据（下次打开 chatgpt.com 会自动同步）', 'ok');
+            await renderUsageBox();
+          } catch (e) {
+            setStatus(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+          } finally {
+            try {
+              document.body.removeChild(input);
+            } catch {}
+          }
+        },
+        { once: true }
+      );
+      input.click();
+    });
+
+    btnClear.addEventListener('click', async () => {
+      if (!confirm('确认清空 ChatGPT 用量统计数据？（仅清空扩展存储；不会影响你的 ChatGPT 账号）')) return;
+      btnClear.disabled = true;
+      try {
+        const keys = await getAllUsageKeys();
+        if (keys.length) {
+          await new Promise((resolve) => {
+            try {
+              chrome.storage.local.remove(keys, () => {
+                void chrome.runtime.lastError;
+                resolve();
+              });
+            } catch {
+              resolve();
+            }
+          });
+        } else {
+          await new Promise((resolve) => {
+            try {
+              chrome.storage.local.remove([USAGE_DATA_KEY, PLAN_TYPE_GM_KEY], () => {
+                void chrome.runtime.lastError;
+                resolve();
+              });
+            } catch {
+              resolve();
+            }
+          });
+        }
+        setStatus('已清空用量统计数据', 'ok');
+        await renderUsageBox();
+      } catch (e) {
+        setStatus(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        btnClear.disabled = false;
+      }
+    });
+
+    await renderUsageBox();
   }
 
   function renderChatGPTReplyTimerModuleSettings(siteId) {

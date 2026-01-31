@@ -12,7 +12,7 @@
 当前 registry 标注了菜单预览（menuPreview）的模块：
 
 - `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天）” / “清理无效收藏”）
-- `chatgpt_usage_monitor`: ChatGPT 用量统计（“重置监视器位置” / “切换静默模式（隐藏/显示面板）” / “导出用量统计数据” / “导入用量统计数据”）
+- `chatgpt_usage_monitor`: ChatGPT 用量统计（后台统计；在配置页查看/导入/导出）
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
 - `chatgpt_split_view`: ChatGPT 拆分视图（实验）（“重置右侧状态 / 清理 Split View 存储” / “在新标签页打开右侧（并关闭 Split View）”）
 
@@ -50,13 +50,12 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-readaloud-speed-controller/main.js`
-- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 实时统计各模型调用量，支持导入/导出与分析报告
-  - 作者: lueluelue2006（抄了 tizee@Github 的 GUI）
+- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 后台统计各模型调用量（不再注入页面内面板）；在扩展配置页查看/导入/导出
+  - 作者: lueluelue2006（基于 tizee@Github 的实现移植）
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`
-  - 注入: document_start / ISOLATED: `content/menu-bridge.js`, `content/chatgpt-usage-monitor/bridge.js`
-  - 注入: document_start / ISOLATED: `content/menu-bridge.js`
-  - 注入: document_start / MAIN: `content/ui-pos-drag.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-usage-monitor/main.js`
+  - 注入: document_start / ISOLATED: `content/chatgpt-usage-monitor/bridge.js`
+  - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-usage-monitor/main.js`
 - `chatgpt_reply_timer`: ChatGPT 回复计时器 — 统计从发送到回复完成的耗时（右下角极简数字）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）

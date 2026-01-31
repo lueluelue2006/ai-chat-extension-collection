@@ -1144,6 +1144,30 @@
         return true;
       }
 
+      if (msg.type === 'QUICKNAV_NOTIFY') {
+        // Best-effort notification helper (used by content scripts for warnings).
+        try {
+          const title = typeof msg.title === 'string' ? msg.title : '';
+          const message = typeof msg.message === 'string' ? msg.message : '';
+          if (!title || !message) {
+            sendResponse({ ok: false, error: 'Missing title/message' });
+            return true;
+          }
+          const notifyId = typeof msg.id === 'string' && msg.id ? msg.id : `quicknav_notify_${Date.now()}`;
+          chrome.notifications.create(notifyId, {
+            type: 'basic',
+            iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+            title: title.slice(0, 64),
+            message: message.slice(0, 256),
+            priority: 1
+          });
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+        }
+        return true;
+      }
+
       if (msg.type === 'QUICKNAV_GET_SETTINGS') {
         getSettings().then((settings) => sendResponse({ ok: true, settings })).catch(() => sendResponse({ ok: true, settings: normalizeSettings(null) }));
         return true;

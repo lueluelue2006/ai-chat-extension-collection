@@ -548,6 +548,142 @@
     };
   }
 
+  // === Memory guard (ChatGPT stability) ===
+  // NOTE: This is a best-effort early warning based on JS heap usage. It cannot see total renderer RSS.
+  // It is intentionally conservative to avoid noisy alerts in normal use.
+  const memGuard = (() => {
+    try {
+      // Top-frame only: avoid duplicated timers when split-view enables `allFrames` injection.
+      if (window.self !== window.top) return null;
+    } catch {
+      return null;
+    }
+
+    const MAX_SAMPLES = 24; // ~12 minutes @ 30s interval
+    const SAMPLE_MS = 30 * 1000;
+    const WARN_RATIO = 0.55;
+    const CRIT_RATIO = 0.75;
+    const NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
+    const CLEANUP_COOLDOWN_MS = 3 * 60 * 1000;
+
+    const state = {
+      timer: 0,
+      samples: /** @type {Array<{at:number, used:number, total:number, limit:number, ratio:number}>} */ ([]),
+      lastNotifyAt: 0,
+      lastCleanupAt: 0,
+      lastLevel: 'ok'
+    };
+
+    function readHeap() {
+      try {
+        const pm = performance?.memory;
+        if (!pm) return null;
+        const used = Number(pm.usedJSHeapSize) || 0;
+        const total = Number(pm.totalJSHeapSize) || 0;
+        const limit = Number(pm.jsHeapSizeLimit) || 0;
+        if (!used || !limit) return null;
+        const ratio = used / limit;
+        return { at: now(), used, total, limit, ratio };
+      } catch {
+        return null;
+      }
+    }
+
+    function formatMb(bytes) {
+      const n = Number(bytes) || 0;
+      if (!Number.isFinite(n) || n <= 0) return '0MB';
+      return `${Math.round(n / 1024 / 1024)}MB`;
+    }
+
+    function notify(title, message) {
+      const ts = now();
+      if (ts - state.lastNotifyAt < NOTIFY_COOLDOWN_MS) return;
+      state.lastNotifyAt = ts;
+      try {
+        if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
+        chrome.runtime.sendMessage(
+          { type: 'QUICKNAV_NOTIFY', id: 'quicknav_chatgpt_mem_guard', title, message },
+          () => void chrome.runtime.lastError
+        );
+      } catch {}
+    }
+
+    function emergencyCleanup(level, sample) {
+      const ts = now();
+      if (ts - state.lastCleanupAt < CLEANUP_COOLDOWN_MS) return;
+      state.lastCleanupAt = ts;
+
+      try {
+        // Split View: unload/destroy iframe and close.
+        const split = window.__aichat_chatgpt_split_view_api_v1__;
+        split?.hardClose?.(`mem:${level}`);
+      } catch {}
+
+      try {
+        // Message Tree runs in MAIN world; close it via the existing QuickNav bridge message.
+        window.postMessage({ __quicknav: 1, type: 'QUICKNAV_CHATGPT_TREE_CLOSE' }, '*');
+      } catch {}
+
+      try {
+        // QuickNav: best-effort de-dupe panel if reinject happened.
+        window.chatGptNavDebug?.checkOverlap?.();
+      } catch {}
+
+      try {
+        notify(
+          'ChatGPT 内存保护：已执行清理',
+          `level=${level} used=${formatMb(sample.used)} (${Math.round(sample.ratio * 100)}%)`
+        );
+      } catch {}
+    }
+
+    function tick() {
+      const sample = readHeap();
+      if (!sample) return;
+      state.samples.push(sample);
+      if (state.samples.length > MAX_SAMPLES) state.samples.splice(0, state.samples.length - MAX_SAMPLES);
+
+      const ratio = sample.ratio;
+      const level = ratio >= CRIT_RATIO ? 'critical' : ratio >= WARN_RATIO ? 'warning' : 'ok';
+      const levelChanged = level !== state.lastLevel;
+      state.lastLevel = level;
+
+      if (level === 'critical') {
+        notify(
+          'ChatGPT 内存预警（严重）',
+          `JS heap 已接近上限：${formatMb(sample.used)} / ${formatMb(sample.limit)}`
+        );
+        emergencyCleanup(level, sample);
+        return;
+      }
+
+      if (level === 'warning' && levelChanged) {
+        notify(
+          'ChatGPT 内存预警',
+          `JS heap 占用偏高：${formatMb(sample.used)} / ${formatMb(sample.limit)}`
+        );
+      }
+    }
+
+    try {
+      if (!state.timer) {
+        state.timer = setInterval(tick, SAMPLE_MS);
+        // Quick first sample once the page settles a bit.
+        setTimeout(tick, 6000);
+      }
+    } catch {}
+
+    return Object.freeze({
+      sample: () => readHeap(),
+      history: () => state.samples.slice(),
+      tick,
+      cleanup: (reason) => {
+        const sample = readHeap();
+        if (sample) emergencyCleanup(String(reason || 'manual'), sample);
+      }
+    });
+  })();
+
   const api = Object.freeze({
     version: API_VERSION,
     now,
@@ -567,7 +703,8 @@
     getTurnRole,
     getTurnId,
     getMessageId,
-    onRouteChange
+    onRouteChange,
+    memGuard
   });
 
   try {

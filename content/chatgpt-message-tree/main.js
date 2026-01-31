@@ -1042,6 +1042,25 @@
     }
   }
 
+  // Expose a tiny API for other modules (e.g. memory-pressure cleanup).
+  // NOTE: This is not a public stable interface; keep it minimal and versioned.
+  try {
+    const API_VERSION = 1;
+    state.api = Object.freeze({
+      version: API_VERSION,
+      isOpen: () => !!state.open,
+      open: () => setOpen(true),
+      close: () => setOpen(false),
+      toggle: () => setOpen(!state.open),
+      dropCache: (reason) => dropLastDataIfClosed(reason || 'api'),
+      dispose: () => {
+        try {
+          state.cleanup?.();
+        } catch {}
+      }
+    });
+  } catch {}
+
   function setUiHidden(hidden) {
     ensureUi();
     const v = hidden ? '1' : '0';

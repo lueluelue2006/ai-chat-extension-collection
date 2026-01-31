@@ -10,6 +10,8 @@
   // - When closed, should not affect normal usage (minimal DOM/CSS, no layout rewrites)
 
   const FLAG = '__quicknavChatgptSplitViewV1';
+  const API_KEY = '__aichat_chatgpt_split_view_api_v1__';
+  const API_VERSION = 1;
   const __qnMaybeHasUi = () => {
     try {
       return !!(document.getElementById('qn-split-root') || document.getElementById('qn-split-handle'));
@@ -1372,6 +1374,44 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     } catch {}
   }
 
+  // A more aggressive close used for memory pressure scenarios:
+  // - Close immediately (no delayed checks)
+  // - Unload/destroy iframe now, even if DOM is in a transient state
+  function hardCloseSplit(reason) {
+    try {
+      setOpen(false);
+    } catch {}
+    try {
+      ensureHostLayout(false);
+    } catch {}
+    try {
+      hideAsk();
+    } catch {}
+    try {
+      resetIframeSidebarAutoState();
+    } catch {}
+    try {
+      clearHostSidebarCollapseSchedule();
+    } catch {}
+    try {
+      maybeRestoreLeftSidebar();
+    } catch {}
+    try {
+      const pane = document.getElementById(PANE_ID);
+      const iframe = pane && pane.querySelector && pane.querySelector(`#${IFRAME_ID}`);
+      try {
+        unloadIframe(iframe);
+      } catch {}
+      try {
+        if (pane) destroyPaneIframe(pane);
+      } catch {}
+    } catch {}
+    try {
+      // eslint-disable-next-line no-console
+      if (reason) console.warn('[QuickNav][SplitView] hardClose:', reason);
+    } catch {}
+  }
+
   function toggleSplit() {
     const on = document.documentElement.classList.contains('qn-split-open');
     if (on) closeSplit();
@@ -1562,7 +1602,38 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       if (typeof reg !== 'function') return;
       reg('重置右侧状态 / 清理 Split View 存储', resetSplitViewState);
       reg('在新标签页打开右侧（并关闭 Split View）', () => openRightPaneInNewTab({ close: true }));
+      reg('关闭 Split View（卸载 iframe）', () => hardCloseSplit('menu'));
     } catch {}
+  }
+
+  function registerApi() {
+    try {
+      const prev = window[API_KEY];
+      if (prev && typeof prev === 'object' && Number(prev.version || 0) >= API_VERSION) return;
+    } catch {}
+
+    const api = Object.freeze({
+      version: API_VERSION,
+      isOpen: () => {
+        try {
+          return document.documentElement.classList.contains('qn-split-open');
+        } catch {
+          return false;
+        }
+      },
+      open: () => openSplit(),
+      close: () => closeSplit(),
+      toggle: () => toggleSplit(),
+      hardClose: (reason) => hardCloseSplit(reason || 'api')
+    });
+
+    try {
+      Object.defineProperty(window, API_KEY, { value: api, configurable: true, enumerable: false, writable: false });
+    } catch {
+      try {
+        window[API_KEY] = api;
+      } catch {}
+    }
   }
 
   function showAskAt(rect, text) {
@@ -1968,6 +2039,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       bindGlobalEvents();
       ensureUiResilience();
       registerMenuCommands();
+      registerApi();
 
       const persistedOpen = readBool(OPEN_KEY, false);
       if (persistedOpen) {

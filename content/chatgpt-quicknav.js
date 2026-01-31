@@ -167,6 +167,7 @@
   registerMenuCommand("重置问题栏位置", resetPanelPosition);
   registerMenuCommand("清理过期检查点（30天）", cleanupExpiredCheckpoints);
   registerMenuCommand("清理无效收藏", cleanupInvalidFavorites);
+  registerMenuCommand("紧急：释放内存（关闭树/分屏/去重）", emergencyCleanup);
   function resetPanelPosition() {
     const nav = document.getElementById('cgpt-compact-nav');
     if (nav) {
@@ -224,6 +225,29 @@
     } catch (e) {
       console.error('清理无效收藏失败:', e);
     }
+  }
+
+  function emergencyCleanup() {
+    // Best-effort: delegate to ChatGPT core memory guard if present.
+    try {
+      const core = globalThis.__aichat_chatgpt_core_v1__ || null;
+      if (core && core.memGuard && typeof core.memGuard.cleanup === 'function') {
+        core.memGuard.cleanup('quicknav_menu');
+        return;
+      }
+    } catch {}
+
+    // Fallback: perform minimal direct cleanup steps.
+    try {
+      window.__aichat_chatgpt_split_view_api_v1__?.hardClose?.('quicknav_menu');
+    } catch {}
+    try {
+      // Message Tree runs in MAIN world; close it via bridge.
+      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_CHATGPT_TREE_CLOSE' }, '*');
+    } catch {}
+    try {
+      window.chatGptNavDebug?.checkOverlap?.();
+    } catch {}
   }
 
   let pending = false, rafId = null, idleId = null;

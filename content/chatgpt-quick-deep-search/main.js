@@ -1,6 +1,15 @@
 (() => {
   'use strict';
 
+  // ChatGPT 快捷深度搜索（扩展版，稳定优先）
+  // Based on the user's long‑term stable Tampermonkey v1.8.4 logic:
+  // - Strict 2-step pipeline (insert prefix → confirm → send)
+  // - Confirmation + delays to avoid double send / flaky sends
+  // - No global MutationObserver / deep DOM scanning (memory + stability)
+  // - UI: inline (composer) + floating fallback, draggable + position memory
+
+  const STARTED_AT = Date.now();
+
   // Avoid running inside internal ChatGPT iframes when split-view enables `allFrames` injection.
   const ALLOWED_FRAME = (() => {
     let inIframe = false;
@@ -19,71 +28,63 @@
   })();
   if (!ALLOWED_FRAME) return;
 
-  const GUARD_KEY = '__aichat_chatgpt_quick_deep_search_v1__';
-  if (globalThis[GUARD_KEY]) return;
-  Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
-
-  const SITE = (() => {
-    try {
-      const host = String(location.hostname || '').toLowerCase();
-      const path = String(location.pathname || '');
-      if (host === 'chatgpt.com') return 'chatgpt';
-      if (host === 'gemini.google.com' && path.startsWith('/app')) return 'gemini_app';
-      if (host === 'business.gemini.google') return 'gemini_business';
-      if (host === 'www.genspark.ai') return 'genspark';
-      return 'unknown';
-    } catch {
-      return 'unknown';
-    }
-  })();
-
-  // genspark: only AI Chat page (agents). The "moa_chat" entry currently redirects to ai_chat, allow both.
+  // ChatGPT-only guard (injections should already scope to chatgpt.com, but keep this defensive).
   try {
-    if (SITE === 'genspark') {
-      const u = new URL(location.href);
-      const type = String(u.searchParams.get('type') || '').toLowerCase();
-      const okType = type === 'moa_chat' || type === 'ai_chat';
-      const okPath = String(u.pathname || '').startsWith('/agents');
-      if (!okPath || !okType) return;
-    }
-  } catch {}
+    if (String(location.hostname || '').toLowerCase() !== 'chatgpt.com') return;
+  } catch {
+    return;
+  }
 
-  // ===== 配置（可微调延时和阈值） =====
-  const DEFAULT_POSITION = { top: '30%', right: '0px' };
-  const DEFAULT_POSITION_TRANSLATE = { top: '40%', right: '0px' };
+  // Keep the legacy guard key so we never double-install in existing tabs.
+  // (The extension may re-inject scripts; we prefer a safe no-op over duplicate listeners.)
+  const GUARD_KEY = '__aichat_chatgpt_quick_deep_search_v1__';
+  try {
+    if (globalThis[GUARD_KEY]) return;
+    Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  } catch {
+    return;
+  }
+
+  // ===== Config =====
+  const DEFAULT_POSITION_SEARCH = { top: '30%', right: '0px' };
   const DEFAULT_POSITION_THINK = { top: '50%', right: '0px' };
+  const LONG_CONTENT_THRESHOLD = 5000;
+
   const TIMEOUTS = {
-    editorCommit: 2000, // 等待"写入生效"的最大时间
-    findSendBtn: 8000, // 等待找到发送按钮的最大时间
-    btnEnable: 1500 // 等待按钮可点
+    editorCommit: 2000,
+    findSendBtn: 8000,
+    btnEnable: 1500
   };
   const DELAYS = {
-    afterInsert: 160, // 写入后等一会
-    beforeClick: 80, // 点击前留一点时间
-    afterClickClear: 140, // 点击后再清空
-    nextClickWindow: 5000 // 防重复点击窗口
+    afterInsert: 160,
+    beforeClick: 80,
+    afterClickClear: 140,
+    unlockBtn: 2000,
+    nextClickWindow: 5000
   };
+  const POLL_INTERVAL = 70;
 
-  const POLL_INTERVAL = 70; // 轮询间隔
-  // Performance-first: only inject inline buttons (no floating fallback UI).
-  const ENABLE_FLOATING_FALLBACK = false;
-  const PREFIX = `ultra think and deeper websearch
+  // Avoid mutating the composer during the initial hydration window.
+  // We'll show floating buttons immediately, and only attempt inline injection later.
+  const INLINE_MIN_DELAY_MS = 1200;
+  const BOOT_FALLBACK_INTERVAL_MS = 12_000;
 
-`;
-  const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.
+  const PREFIX = `ultra think and deeper websearch\n\n`;
+  const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.\n\n`;
+  const TRANSLATE_PREFIX = `翻译成中文`;
 
-`;
-  const CHATGPT_SEND_BTN_SELECTORS = [
+  const SEND_BTN_SELECTORS = [
     '#composer-submit-button',
     'button[data-testid="send-button"]',
     'button[aria-label="Send prompt"]',
-    'button[aria-label*="Send" i]'
+    'button[aria-label*="Send" i]',
+    'form button[type="submit"][data-testid="send-button"]',
+    'form button[type="submit"]'
   ];
-  const TRANSLATE_PREFIX = `翻译成中文`;
 
-  const STORAGE_KEY_BUTTON_POS = 'aichat_chatgpt_qds_button_pos_v1';
-  const STORAGE_KEY_TRANSLATE_BUTTON_POS = 'aichat_chatgpt_qds_translate_button_pos_v1';
-  const STORAGE_KEY_THINK_BUTTON_POS = 'aichat_chatgpt_qds_think_button_pos_v1';
+  // Keep legacy keys to preserve existing saved positions.
+  const STORAGE_KEY_SEARCH_POS = 'aichat_chatgpt_qds_button_pos_v1';
+  const STORAGE_KEY_THINK_POS = 'aichat_chatgpt_qds_think_button_pos_v1';
 
   function readJsonStorage(key, fallback) {
     try {
@@ -107,50 +108,16 @@
     }
   }
 
-  // ===== 状态 =====
-  let buttonPosition = readJsonStorage(STORAGE_KEY_BUTTON_POS, DEFAULT_POSITION);
-  let translateButtonPosition = readJsonStorage(STORAGE_KEY_TRANSLATE_BUTTON_POS, DEFAULT_POSITION_TRANSLATE);
-  let thinkButtonPosition = readJsonStorage(STORAGE_KEY_THINK_BUTTON_POS, DEFAULT_POSITION_THINK);
-  let pendingModelSwitch = false; // 点"搜/思/译"后，仅下一次请求切模型
-  let isSending = false; // 防重入
-  let cycle = 0; // 事务编号
+  // ===== State =====
+  let searchButtonPosition = readJsonStorage(STORAGE_KEY_SEARCH_POS, DEFAULT_POSITION_SEARCH);
+  let thinkButtonPosition = readJsonStorage(STORAGE_KEY_THINK_POS, DEFAULT_POSITION_THINK);
+  let pendingModelSwitch = false;
+  let isSending = false;
+  let cycle = 0;
 
-  // ===== 调试信息（仅在点击触发时更新，便于排查站点差异）=====
-  const DEBUG_LAST_KEY = '__aichat_qds_debug_last_v1__';
-  function setDebug(patch) {
+  // ===== ChatGPT: model switch via shared fetch hub (only once) =====
+  (function installModelSwitchHook() {
     try {
-      globalThis[DEBUG_LAST_KEY] = { ...(globalThis[DEBUG_LAST_KEY] || {}), ...(patch || {}) };
-    } catch {}
-  }
-
-  // ===== 轻量缓存（避免频繁深度查询）=====
-  const CACHE_TTL_MS = { editor: 600, sendButton: 350 };
-  const editorElCache = { value: null, at: 0 };
-  const editorFallbackCache = { value: null, at: 0 };
-  const sendButtonCache = { value: null, at: 0 };
-
-  function readCached(cache, ttlMs, resolver) {
-    const now = Date.now();
-    const cachedValue = cache.value;
-    if (now - cache.at < ttlMs) {
-      if (!cachedValue) return null;
-      if (cachedValue && cachedValue.isConnected) return cachedValue;
-    }
-    let next = null;
-    try {
-      next = resolver() || null;
-    } catch {
-      next = null;
-    }
-    cache.value = next;
-    cache.at = now;
-    return next;
-  }
-
-  // ===== ChatGPT：通过共享 fetch hub 仅切一次模型为 gpt-5 =====
-  function installChatGPTModelSwitchHook() {
-    try {
-      if (SITE !== 'chatgpt') return;
       const hub = window.__aichat_chatgpt_fetch_hub_v1__;
       if (!hub || typeof hub.register !== 'function') return;
       hub.register({
@@ -159,168 +126,18 @@
           try {
             if (!pendingModelSwitch) return;
             if (!payload || typeof payload !== 'object') return;
-            pendingModelSwitch = false; // 只改一次
+            pendingModelSwitch = false;
             payload.model = 'gpt-5';
             return payload;
           } catch {}
         }
       });
     } catch {}
-  }
-  installChatGPTModelSwitchHook();
+  })();
 
-  // ===== 小工具 =====
+  // ===== Helpers =====
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  function walkOpenShadows(start, visit) {
-    const stack = [start];
-    const seen = new Set();
-    while (stack.length) {
-      const root = stack.pop();
-      if (!root || seen.has(root)) continue;
-      seen.add(root);
-      try { visit(root); } catch {}
-      if (!root.querySelectorAll) continue;
-      const all = root.querySelectorAll('*');
-      for (const el of all) {
-        if (el && el.shadowRoot) stack.push(el.shadowRoot);
-      }
-    }
-  }
-
-  function deepQueryFirst(start, selector) {
-    let found = null;
-    walkOpenShadows(start, (root) => {
-      if (found || !root.querySelector) return;
-      const hit = root.querySelector(selector);
-      if (hit) found = hit;
-    });
-    return found;
-  }
-
-  function deepQueryAll(start, selector) {
-    const out = [];
-    walkOpenShadows(start, (root) => {
-      if (!root.querySelectorAll) return;
-      out.push(...root.querySelectorAll(selector));
-    });
-    return out;
-  }
-
-  function getSiteRoot() {
-    if (SITE === 'gemini_business') {
-      try {
-        return document.querySelector('ucs-standalone-app')?.shadowRoot || null;
-      } catch {
-        return null;
-      }
-    }
-    if (SITE === 'gemini_app') {
-      return document.querySelector('chat-app#app-root') || document.documentElement;
-    }
-    return document.documentElement;
-  }
-
-  function pickBottomMostVisible(candidates) {
-    const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
-    let best = null;
-    let bestScore = -Infinity;
-    for (const el of list) {
-      try {
-        if (!el || !el.getBoundingClientRect) continue;
-        const r = el.getBoundingClientRect();
-        if (r.width < 10 || r.height < 10) continue;
-        const cs = getComputedStyle(el);
-        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
-        // Prefer elements closer to the bottom (composer)
-        const score = r.bottom;
-        if (score > bestScore) { bestScore = score; best = el; }
-      } catch {}
-    }
-    return best;
-  }
-
-  function editorEl() {
-    return readCached(editorElCache, CACHE_TTL_MS.editor, editorElRaw);
-  }
-  function editorElRaw() {
-    if (SITE === 'chatgpt') {
-      try {
-        const core = window.__aichat_chatgpt_core_main_v1__;
-        const el = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : null;
-        if (el) return el;
-      } catch {}
-      // ChatGPT has changed composer DOM multiple times; keep this permissive and prefer the visible editor.
-      return (
-        document.querySelector('#prompt-textarea.ProseMirror') ||
-        document.querySelector('#prompt-textarea[contenteditable="true"]') ||
-        document.querySelector('#prompt-textarea .ProseMirror[contenteditable="true"]') ||
-        document.querySelector('.ProseMirror[contenteditable="true"]')
-      );
-    }
-    if (SITE === 'gemini_app') {
-      const root = getSiteRoot() || document.documentElement;
-      const direct = root.querySelector?.('div.ql-editor[contenteditable="true"][role="textbox"]') || null;
-      if (direct) return direct;
-      return pickBottomMostVisible(Array.from(root.querySelectorAll?.('[role="textbox"][contenteditable="true"]') || []));
-    }
-    if (SITE === 'gemini_business') {
-      const root = getSiteRoot();
-      if (!root) return null;
-      const direct =
-        deepQueryFirst(root, 'div[contenteditable="true"][role="textbox"][aria-label]') ||
-        deepQueryFirst(root, 'div[contenteditable="true"][role="textbox"]') ||
-        deepQueryFirst(root, 'div[contenteditable="true"][aria-label]') ||
-        null;
-      if (direct) return direct;
-      return pickBottomMostVisible(deepQueryAll(root, '[role="textbox"][contenteditable="true"], div[contenteditable="true"]'));
-    }
-    return null;
-  }
-  function editorFallback() {
-    return readCached(editorFallbackCache, CACHE_TTL_MS.editor, editorFallbackRaw);
-  }
-  function editorFallbackRaw() {
-    if (SITE === 'chatgpt') {
-      const candidates = Array.from(document.querySelectorAll('textarea#prompt-textarea, textarea[name="prompt-textarea"]'));
-      return pickBottomMostVisible(candidates);
-    }
-    if (SITE === 'genspark') {
-      return (
-        document.querySelector('textarea.search-input.j-search-input') ||
-        Array.from(document.querySelectorAll('textarea')).find((t) => String(t.getAttribute('placeholder') || '').toLowerCase().includes('ask anything')) ||
-        null
-      );
-    }
-    // Gemini sometimes uses textarea in fallback UIs.
-    const root = getSiteRoot() || document.documentElement;
-    const tas = Array.from(root.querySelectorAll?.('textarea') || []);
-    return pickBottomMostVisible(tas);
-  }
-  function readContentEditableText(el) {
-    try {
-      if (!el) return '';
-      const text = typeof el.innerText === 'string' ? (el.innerText || '').trim() : '';
-      if (!text) return '';
-      const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
-      const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
-      if (placeholderText && text === placeholderText) return '';
-      return text;
-    } catch {
-      return '';
-    }
-  }
-  function editorText() {
-    const el = editorEl();
-    if (el) {
-      const t = readContentEditableText(el);
-      if (t) return t;
-      // When the real editor exists, ignore the hidden textarea mirror (it can be stale).
-      return '';
-    }
-    const fb = editorFallback();
-    return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
-  }
   function waitUntil(condFn, timeout = 1000, step = 50) {
     return new Promise((resolve, reject) => {
       const deadline = Date.now() + timeout;
@@ -336,563 +153,163 @@
       })();
     });
   }
-  function clearEditorSafely() {
-    const pm = editorEl();
-    if (pm) {
-      pm.focus();
-      document.execCommand('selectAll', false, null);
-      try {
-        pm.dispatchEvent(
-          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward', data: '' })
-        );
-      } catch {}
-      document.execCommand('insertText', false, '');
-      pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      pm.blur();
-      pm.focus();
-      return;
-    }
-    const fb = editorFallback();
-    if (fb) {
-      fb.focus();
-      fb.value = '';
-      fb.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      fb.blur();
-      fb.focus();
-    }
-  }
 
-  // ===== Draft guard (ChatGPT): best-effort protect user pasted text from composer re-mount wipes =====
-  const DRAFT_GUARD_ENABLED = SITE === 'chatgpt';
-  const DRAFT_GUARD_SESSION_KEY = '__aichat_chatgpt_draft_guard_v1__';
-  const DRAFT_GUARD_TTL_MS = 30_000;
-  const DRAFT_GUARD_RESTORE_WINDOW_MS = 3500;
-  const DRAFT_GUARD_MAX_CHARS = 50_000;
-  const DRAFT_GUARD_MAX_RESTORES = 2;
-  let dgSavedText = '';
-  let dgSavedAt = 0;
-  let dgLastUserInputAt = 0;
-  let dgLastSubmitAt = 0;
-  let dgLastRestoreAt = 0;
-  let dgRestoreCount = 0;
-  let dgCaptureTimer = 0;
-  let dgIgnoreUntil = 0;
-  let dgSuppressUntil = 0;
-  let dgRestoreLoopId = 0;
-  let dgRestoreLoopActiveUntil = 0;
-
-  function dgNow() {
-    return Date.now();
-  }
-
-  function dgIsComposerTarget(t) {
+  function core() {
     try {
-      if (!t) return false;
-      const el = /** @type {Element} */ (t.nodeType === 1 ? t : t.parentElement);
-      if (!el || typeof el.closest !== 'function') return false;
-      if (el.closest('#prompt-textarea') || el.closest('textarea[name="prompt-textarea"]')) return true;
-      const pm = el.closest('.ProseMirror[contenteditable="true"]');
-      if (!pm) return false;
-      // Reduce false positives: ensure this ProseMirror is inside the composer form.
-      return !!pm.closest('form')?.querySelector('textarea[name="prompt-textarea"]');
+      const c = window.__aichat_chatgpt_core_main_v1__;
+      return c && typeof c === 'object' ? c : null;
     } catch {
-      return false;
+      return null;
     }
   }
 
-  function dgIsGenerating() {
+  function editorEl() {
     try {
-      return !!document.querySelector('[data-testid="stop-button"]');
-    } catch {
-      return false;
-    }
-  }
-
-  function dgLoad() {
+      const c = core();
+      const el = c && typeof c.getEditorEl === 'function' ? c.getEditorEl() : null;
+      if (el) return el;
+    } catch {}
     try {
-      const raw = sessionStorage.getItem(DRAFT_GUARD_SESSION_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      const t = Number(data?.t || 0);
-      const text = typeof data?.text === 'string' ? data.text : '';
-      if (!t || !text) return;
-      if (dgNow() - t > DRAFT_GUARD_TTL_MS) return;
-      dgSavedText = text;
-      dgSavedAt = t;
-      dgLastUserInputAt = t;
-    } catch {
-      // ignore
-    }
-  }
-
-  function dgPersist() {
-    try {
-      if (!dgSavedText) {
-        sessionStorage.removeItem(DRAFT_GUARD_SESSION_KEY);
-        return;
-      }
-      sessionStorage.setItem(
-        DRAFT_GUARD_SESSION_KEY,
-        JSON.stringify({
-          t: dgSavedAt,
-          text: dgSavedText
-        })
+      return (
+        document.querySelector('#prompt-textarea.ProseMirror') ||
+        document.querySelector('#prompt-textarea[contenteditable="true"]') ||
+        document.querySelector('#prompt-textarea .ProseMirror[contenteditable="true"]') ||
+        document.querySelector('.ProseMirror[contenteditable="true"]') ||
+        null
       );
     } catch {
-      // ignore
+      return null;
     }
   }
 
-  function dgSaveText(text) {
-    const t = String(text || '').trimEnd();
-    dgSavedText = t.length > DRAFT_GUARD_MAX_CHARS ? t.slice(0, DRAFT_GUARD_MAX_CHARS) : t;
-    dgSavedAt = dgNow();
-    dgPersist();
-  }
-
-  function dgClearSaved() {
-    dgSavedText = '';
-    dgSavedAt = 0;
+  function editorFallback() {
     try {
-      sessionStorage.removeItem(DRAFT_GUARD_SESSION_KEY);
-    } catch {}
+      return document.querySelector('textarea#prompt-textarea, textarea[name="prompt-textarea"]');
+    } catch {
+      return null;
+    }
   }
 
-  function dgWriteEditorText(finalText) {
-    const pm = editorEl();
+  function readContentEditableText(el) {
+    try {
+      if (!el) return '';
+      const text = typeof el.innerText === 'string' ? (el.innerText || '').trim() : '';
+      if (!text) return '';
+      const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
+      const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
+      if (placeholderText && text === placeholderText) return '';
+      return text;
+    } catch {
+      return '';
+    }
+  }
+
+  function editorText() {
+    const el = editorEl();
+    if (el) return readContentEditableText(el);
     const fb = editorFallback();
-    const text = String(finalText || '');
+    return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
+  }
 
-    if (pm) {
-      try {
-        pm.focus();
-        document.execCommand('selectAll', false, null);
-        try {
-          pm.dispatchEvent(
-            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text })
-          );
-        } catch {}
-        const ok = document.execCommand('insertText', false, text);
-        try {
-          pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        } catch {}
-        pm.blur();
-        pm.focus();
-        return !!ok;
-      } catch {
-        return false;
-      }
-    }
-
-    if (fb) {
-      try {
-        fb.focus();
-        fb.value = text;
-        fb.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        fb.blur();
-        fb.focus();
-        return true;
-      } catch {
-        return false;
-      }
-    }
+  function isLongContent() {
+    try {
+      const el = editorEl();
+      if (el && typeof el.innerText === 'string') return el.innerText.length > LONG_CONTENT_THRESHOLD;
+    } catch {}
+    try {
+      const fb = editorFallback();
+      if (fb && typeof fb.value === 'string') return fb.value.length > LONG_CONTENT_THRESHOLD;
+    } catch {}
     return false;
   }
 
-  function dgShouldSuppressRestore() {
-    const now = dgNow();
-    if (now < dgSuppressUntil || now < dgIgnoreUntil) return true;
-    try {
-      const until = Number(globalThis.__aichatDraftGuardSuppressUntil || 0);
-      if (until && now < until) return true;
-    } catch {}
-    if (isSending) return true;
-    if (dgIsGenerating()) return true;
-    if (dgLastSubmitAt && now - dgLastSubmitAt < 3500) return true;
-    return false;
-  }
-
-  function dgMaybeRestore() {
-    if (!DRAFT_GUARD_ENABLED) return;
-    const now = dgNow();
-    if (!dgSavedText) return;
-    if (dgShouldSuppressRestore()) return;
-    if (now - dgSavedAt > DRAFT_GUARD_TTL_MS) return;
-    if (dgLastUserInputAt && now - dgLastUserInputAt > DRAFT_GUARD_RESTORE_WINDOW_MS) return;
-    if (dgRestoreCount >= DRAFT_GUARD_MAX_RESTORES && now - dgLastRestoreAt < 15_000) return;
-
-    const cur = editorText();
-    if (cur) return;
-
-    // Only restore when the composer exists; avoids noisy retries on pages without composer.
-    if (!editorEl() && !editorFallback()) return;
-
-    const ok = dgWriteEditorText(dgSavedText);
-    if (!ok) return;
-    dgRestoreCount += 1;
-    dgLastRestoreAt = now;
-    // After restoring, capture the new state to avoid re-restoring due to mirror lag.
-    dgSaveText(dgSavedText);
-  }
-
-  function dgScheduleCapture() {
-    if (!DRAFT_GUARD_ENABLED) return;
-    if (dgCaptureTimer) return;
-    dgCaptureTimer = setTimeout(() => {
-      dgCaptureTimer = 0;
-      if (dgNow() < dgIgnoreUntil) return;
-      const t = editorText();
-      if (!t) return dgClearSaved();
-      dgSaveText(t);
-    }, 120);
-  }
-
-  function dgSuppress(ms = 2500) {
-    const until = dgNow() + Math.max(0, Number(ms) || 0);
-    dgSuppressUntil = Math.max(dgSuppressUntil, until);
-    try {
-      globalThis.__aichatDraftGuardSuppressUntil = Math.max(Number(globalThis.__aichatDraftGuardSuppressUntil || 0), until);
-    } catch {}
-  }
-
-  function dgBumpRestoreLoop(ms = DRAFT_GUARD_RESTORE_WINDOW_MS + 800) {
-    if (!DRAFT_GUARD_ENABLED) return;
-    const until = dgNow() + Math.max(0, Number(ms) || 0);
-    dgRestoreLoopActiveUntil = Math.max(dgRestoreLoopActiveUntil, until);
-    if (dgRestoreLoopId) return;
-    dgRestoreLoopId = setInterval(() => {
-      try {
-        const now = dgNow();
-        if (document.hidden) return;
-        if (dgRestoreLoopActiveUntil && now > dgRestoreLoopActiveUntil) {
-          clearInterval(dgRestoreLoopId);
-          dgRestoreLoopId = 0;
-          return;
-        }
-        // Stop early when there's no recent input window to protect.
-        // Note: don't require `dgSavedText` here; the capture is async and may populate it shortly.
-        if (!dgLastUserInputAt || now - dgLastUserInputAt > DRAFT_GUARD_RESTORE_WINDOW_MS) {
-          clearInterval(dgRestoreLoopId);
-          dgRestoreLoopId = 0;
-          return;
-        }
-        dgMaybeRestore();
-      } catch {}
-    }, 450);
-  }
-
-  (function installDraftGuard() {
-    if (!DRAFT_GUARD_ENABLED) return;
-    try {
-      if (globalThis.__aichatDraftGuardInstalledV1) return;
-      Object.defineProperty(globalThis, '__aichatDraftGuardInstalledV1', { value: true, configurable: false });
-    } catch {}
-
-    dgLoad();
-
-    // Track user input/paste to keep a recent draft snapshot.
-    try {
-      document.addEventListener(
-        'beforeinput',
-        (e) => {
-          try {
-            if (!dgIsComposerTarget(e?.target)) return;
-            dgLastUserInputAt = dgNow();
-            dgScheduleCapture();
-            dgBumpRestoreLoop();
-          } catch {}
-        },
-        true
-      );
-      document.addEventListener(
-        'input',
-        (e) => {
-          try {
-            if (!dgIsComposerTarget(e?.target)) return;
-            dgLastUserInputAt = dgNow();
-            dgScheduleCapture();
-            dgBumpRestoreLoop();
-          } catch {}
-        },
-        true
-      );
-      document.addEventListener(
-        'paste',
-        (e) => {
-          try {
-            if (!dgIsComposerTarget(e?.target)) return;
-            dgLastUserInputAt = dgNow();
-            dgScheduleCapture();
-            dgBumpRestoreLoop();
-          } catch {}
-        },
-        true
-      );
-      document.addEventListener(
-        'submit',
-        (e) => {
-          try {
-            const form = e?.target;
-            if (!form || typeof form.querySelector !== 'function') return;
-            if (!(form.querySelector('#prompt-textarea') || form.querySelector('textarea[name=\"prompt-textarea\"]'))) return;
-            dgLastSubmitAt = dgNow();
-            dgSuppress(4000);
-            dgClearSaved();
-          } catch {}
-        },
-        true
-      );
-    } catch {}
-
-    // Also run a couple of early checks (covers the initial hydration window).
-    try {
-      setTimeout(dgMaybeRestore, 350);
-      setTimeout(dgMaybeRestore, 1200);
-    } catch {}
-  })();
-
-  // ===== 主流程：严格分步 + 确认 + 延时 =====
   function editorStartsWith(prefixText) {
     const prefix = String(prefixText || '').trimEnd();
     if (!prefix) return true;
     const el = editorEl();
-    if (el) {
-      const t = readContentEditableText(el);
-      if (t.startsWith(prefix)) return true;
-    }
+    if (el) return readContentEditableText(el).startsWith(prefix);
     const fb = editorFallback();
-    if (fb && typeof fb.value === 'string') {
-      const t = fb.value.trim();
-      if (t.startsWith(prefix)) return true;
-    }
-    return false;
+    return !!(fb && typeof fb.value === 'string' && String(fb.value || '').trim().startsWith(prefix));
   }
 
-  async function runPrefixThenSend(prefixText) {
-    if (isSending) return;
-    isSending = true;
-    const myCycle = ++cycle;
-    const draftBefore = editorText();
-    const draftSig = (() => {
-      try {
-        const t = String(draftBefore || '').trim();
-        if (!t) return '';
-        // Use a short signature so we can detect accidental “replace” without doing heavy comparisons.
-        return t.slice(0, Math.min(120, t.length));
-      } catch {
-        return '';
-      }
-    })();
-
+  function lockButton(btn, lock) {
     try {
-      // Our automation will intentionally clear the composer; prevent the draft guard from restoring it.
-      dgIgnoreUntil = dgNow() + 10_000;
-      dgSuppress(10_000);
-      setDebug({ t: Date.now(), site: SITE, step: 'start', prefix: String(prefixText || '').slice(0, 60) });
-      // 第 1 步：写前缀
-      insertPrefixAtBeginning(prefixText);
-      await sleep(DELAYS.afterInsert);
-      await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
-      setDebug({ step: 'editorCommitted', editorPreview: editorText().slice(0, 120) });
-      // Safety net: if the prefix insertion accidentally replaced the user's draft (reported by users),
-      // rebuild the full text by explicitly writing "prefix + originalDraft".
-      try {
-        if (draftSig) {
-          const after = editorText();
-          if (after && !String(after).includes(draftSig)) {
-            const merged = String(prefixText || '') + String(draftBefore || '');
-            setDebug({ step: 'draftRepair', reason: 'signature_missing', mergedPreview: merged.slice(0, 120) });
-            dgSuppress(8000);
-            dgIgnoreUntil = dgNow() + 8000;
-            dgWriteEditorText(merged);
-            await sleep(DELAYS.afterInsert);
-            await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
-          }
-        }
-      } catch {}
-
-      // 第 2 步：等待发送按钮 → 锁 → 切模型 → 点击
-      await waitUntil(findSendButton, TIMEOUTS.findSendBtn, POLL_INTERVAL);
-      const btn = await waitUntil(() => {
-        const b = findSendButton();
-        if (!b) return null;
-        if (isDisabled(b)) return null;
-        return b;
-      }, TIMEOUTS.btnEnable, POLL_INTERVAL);
-      setDebug({ step: 'btnReady', btnFound: !!btn, btnDisabled: btn ? isDisabled(btn) : null });
-      pendingModelSwitch = SITE === 'chatgpt';
-      await sleep(DELAYS.beforeClick);
-      realClick(btn);
-      setDebug({ step: 'clicked' });
-
-      // 清空编辑器，避免草稿回放再次发送
-      await sleep(DELAYS.afterClickClear);
-      dgSuppress(8000);
-      clearEditorSafely();
-      setDebug({ step: 'cleared' });
-
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      setDebug({ step: 'error', error: e instanceof Error ? e.message : String(e) });
-      console.warn('[AIChat][QuickDeepSearch] pipeline error:', e);
-    } finally {
-      setTimeout(() => {
-        if (cycle === myCycle) isSending = false;
-      }, DELAYS.nextClickWindow);
-    }
+      if (!btn) return;
+      btn.setAttribute('aria-disabled', lock ? 'true' : 'false');
+      // @ts-ignore
+      btn.disabled = !!lock;
+    } catch {}
   }
 
-  function insertPrefixAtBeginning(prefixText) {
-    const prefix = String(prefixText || '');
-    if (!prefix) return;
-    if (editorStartsWith(prefixText)) return;
-
+  function clearEditorSafely() {
     const pm = editorEl();
-    const fallback = editorFallback();
-
-    // Prefer inserting into the contenteditable without reconstructing the full text.
-    // This avoids edge cases where reading the current draft fails (and would otherwise "replace" user input).
     if (pm) {
-      let ok = false;
       try {
         pm.focus();
-        try {
-          const sel = window.getSelection && window.getSelection();
-          if (sel && typeof document.createRange === 'function') {
-            const range = document.createRange();
-            range.selectNodeContents(pm);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        } catch {}
-        try {
-          pm.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: prefix }));
-        } catch {}
-        ok = !!document.execCommand('insertText', false, prefix);
-        try {
-          pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        } catch {}
-        try {
-          pm.blur();
-          pm.focus();
-        } catch {}
-      } finally {
-        setDebug({ step: 'insert', mode: 'insert_at_start', execOk: !!ok, editorPreview: readContentEditableText(pm).slice(0, 120) });
-      }
-      return;
-    }
-
-    if (fallback) {
-      try {
-        fallback.focus();
-        const cur = typeof fallback.value === 'string' ? fallback.value : '';
-        const next = cur ? prefix + cur : prefix;
-        fallback.value = next;
-        fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        fallback.blur();
-        fallback.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, '');
+        pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        pm.blur();
+        pm.focus();
+        return;
       } catch {}
     }
-  }
-
-  function findSendButton() {
-    return readCached(sendButtonCache, CACHE_TTL_MS.sendButton, findSendButtonRaw);
-  }
-  function findSendButtonRaw() {
-    if (SITE === 'chatgpt') {
+    const fb = editorFallback();
+    if (fb) {
       try {
-        const core = window.__aichat_chatgpt_core_main_v1__;
-        if (core && typeof core.findSendButton === 'function') {
-          const btn = core.findSendButton(editorEl());
-          if (btn) {
-            const testId = String(btn.getAttribute?.('data-testid') || '');
-            if (!/stop/i.test(testId)) return btn;
-          }
-        }
+        fb.focus();
+        fb.value = '';
+        fb.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        fb.blur();
+        fb.focus();
       } catch {}
-      const uniq = new Set();
-      /** @type {HTMLElement[]} */
-      const candidates = [];
-      try {
-        for (const sel of CHATGPT_SEND_BTN_SELECTORS) {
-          for (const el of Array.from(document.querySelectorAll(sel))) {
-            if (!(el instanceof HTMLElement)) continue;
-            if (uniq.has(el)) continue;
-            uniq.add(el);
-            candidates.push(el);
-          }
-        }
-      } catch {}
-
-      // Prefer the bottom-most visible candidate (composer is at the bottom).
-      const picked = pickBottomMostVisible(candidates);
-      if (picked) return picked;
-      return candidates.length ? candidates[candidates.length - 1] : null;
     }
-
-    if (SITE === 'gemini_app') {
-      const root = getSiteRoot() || document.documentElement;
-      const direct =
-        root.querySelector?.('button.send-button, button[aria-label="Send message"], button[aria-label*="Send"], button[title*="Send"]') || null;
-      if (direct) return direct;
-      const btns = Array.from(root.querySelectorAll?.('button[aria-label], button[title], button[type=\"submit\"]') || []);
-      const hits = btns.filter((b) => {
-        const label = (b.getAttribute('aria-label') || '').trim();
-        const title = (b.getAttribute('title') || '').trim();
-        const text = (b.textContent || '').trim();
-        const hay = `${label} ${title} ${text}`.trim();
-        return /\bsend\b/i.test(hay) || /\bsubmit\b/i.test(hay) || /发送|提交/.test(hay);
-      });
-      return pickBottomMostVisible(hits);
-    }
-
-    if (SITE === 'gemini_business') {
-      const root = getSiteRoot();
-      if (!root) return null;
-      const direct =
-        deepQueryFirst(root, 'button[aria-label="Send message"]') ||
-        deepQueryFirst(root, 'button[aria-label*="Send"]') ||
-        deepQueryFirst(root, 'button[title*="Send"]') ||
-        null;
-      if (direct) return direct;
-      const btns = deepQueryAll(root, 'button[aria-label], button[title], button[type="submit"]');
-      const hits = btns.filter((b) => {
-        const label = (b.getAttribute('aria-label') || '').trim();
-        const title = (b.getAttribute('title') || '').trim();
-        const text = (b.textContent || '').trim();
-        const hay = `${label} ${title} ${text}`.trim();
-        return /\bsend\b/i.test(hay) || /\bsubmit\b/i.test(hay) || /发送|提交/.test(hay);
-      });
-      return pickBottomMostVisible(hits);
-    }
-
-    if (SITE === 'genspark') {
-      const ta = editorFallback();
-      const parent = ta?.parentElement || null;
-      const group = parent?.querySelector?.('.icon-group') || document.querySelector('.icon-group') || null;
-      const candidates = [
-        group?.querySelector?.('.enter-icon-wrapper'),
-        group?.querySelector?.('.enter-icon'),
-        parent?.querySelector?.('.enter-icon-wrapper'),
-        parent?.querySelector?.('.enter-icon')
-      ].filter(Boolean);
-      const best = pickBottomMostVisible(candidates);
-      if (best) return best;
-      // fallback: try any obvious clickable in the icon group
-      const clickables = group ? Array.from(group.querySelectorAll('[role="button"], button, .cursor-pointer')) : [];
-      return pickBottomMostVisible(clickables);
-    }
-    return null;
   }
 
   function isDisabled(btn) {
-    const aria = btn.getAttribute('aria-disabled');
-    return btn.disabled || aria === 'true';
+    if (!btn) return true;
+    try {
+      // @ts-ignore
+      if (btn instanceof HTMLButtonElement) return !!btn.disabled;
+    } catch {}
+    try {
+      const aria = btn.getAttribute?.('aria-disabled');
+      if (aria && aria !== 'false') return true;
+    } catch {}
+    return false;
+  }
+
+  function findSendButton() {
+    try {
+      const c = core();
+      const el = c && typeof c.findSendButton === 'function' ? c.findSendButton(editorEl()) : null;
+      if (el) return el;
+    } catch {}
+    try {
+      for (const sel of SEND_BTN_SELECTORS) {
+        const btn = document.querySelector(sel);
+        if (btn) return btn;
+      }
+    } catch {}
+    return null;
+  }
+
+  function isStopButton(btn) {
+    try {
+      const testId = String(btn?.getAttribute?.('data-testid') || '');
+      if (testId && /stop/i.test(testId)) return true;
+    } catch {}
+    try {
+      const aria = String(btn?.getAttribute?.('aria-label') || '');
+      if (aria && /stop/i.test(aria)) return true;
+    } catch {}
+    return false;
   }
 
   function realClick(btn) {
     try {
+      if (!(btn instanceof HTMLElement)) return false;
+
       const form = btn.closest('form');
       if (form) {
         if (typeof form.requestSubmit === 'function') form.requestSubmit(btn);
@@ -912,47 +329,181 @@
       for (const ev of events) btn.dispatchEvent(ev);
       btn.click();
       return true;
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('[AIChat][QuickDeepSearch] realClick error:', e);
+    } catch {
       return false;
     }
   }
 
-  // ===== 快捷键监听 =====
+  // ===== Main pipeline: insert prefix → confirm → send =====
+  function insertPrefixAtBeginning(prefixText) {
+    const prefix = String(prefixText || '');
+    if (!prefix) return;
+
+    const currentText = editorText();
+    const finalText = currentText ? (currentText.startsWith(prefix) ? currentText : prefix + currentText) : prefix;
+
+    const pm = editorEl();
+    const fallback = editorFallback();
+    const isLong = isLongContent();
+
+    if (isLong) {
+      if (pm) {
+        try {
+          pm.focus();
+          document.execCommand('selectAll', false, null);
+          document.execCommand('insertText', false, '');
+          document.execCommand('insertText', false, finalText);
+          pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          pm.blur();
+          pm.focus();
+          return;
+        } catch {}
+      }
+      if (fallback) {
+        try {
+          fallback.focus();
+          fallback.value = finalText;
+          fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          fallback.blur();
+          fallback.focus();
+        } catch {}
+      }
+      return;
+    }
+
+    if (pm) {
+      try {
+        pm.focus();
+        const range = document.createRange();
+        range.selectNodeContents(pm);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand('insertText', false, finalText);
+        pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        pm.blur();
+        pm.focus();
+        return;
+      } catch {}
+    }
+
+    if (fallback) {
+      try {
+        fallback.focus();
+        fallback.value = finalText;
+        fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        fallback.blur();
+        fallback.focus();
+      } catch {}
+    }
+  }
+
+  async function runPrefixThenSend(prefixText) {
+    if (isSending) return;
+
+    // Never turn this into a "Stop generating" shortcut.
+    try {
+      const c = core();
+      if (c && typeof c.isGenerating === 'function' && c.isGenerating(editorEl())) {
+        notify('正在生成中…（已忽略快捷深度搜索）');
+        return;
+      }
+    } catch {}
+
+    isSending = true;
+    const myCycle = ++cycle;
+
+    try {
+      insertPrefixAtBeginning(prefixText);
+      await sleep(DELAYS.afterInsert);
+      await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
+
+      const btn = await waitUntil(() => {
+        const b = findSendButton();
+        if (!b) return null;
+        if (isDisabled(b)) return null;
+        if (isStopButton(b)) return null;
+        return b;
+      }, Math.max(TIMEOUTS.findSendBtn, TIMEOUTS.btnEnable), POLL_INTERVAL);
+
+      lockButton(btn, true);
+      pendingModelSwitch = true;
+      await sleep(DELAYS.beforeClick);
+      realClick(btn);
+
+      await sleep(DELAYS.afterClickClear);
+      clearEditorSafely();
+      setTimeout(() => lockButton(btn, false), DELAYS.unlockBtn);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[AIChat][QuickDeepSearch] pipeline error:', e);
+    } finally {
+      setTimeout(() => {
+        if (cycle === myCycle) isSending = false;
+      }, DELAYS.nextClickWindow);
+    }
+  }
+
+  // ===== Keyboard shortcuts (same as user's TM script) =====
   function setupKeyboardShortcuts() {
     document.addEventListener(
       'keydown',
-      function (e) {
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-          switch (e.key.toLowerCase()) {
-            case 'y':
-            case 'z':
-              e.preventDefault();
-              e.stopPropagation();
-              runPrefixThenSend(TRANSLATE_PREFIX);
-              notify('快捷键"译"已激活：Ctrl+Y / Ctrl+Z');
-              break;
-            case 's':
-              e.preventDefault();
-              e.stopPropagation();
-              runPrefixThenSend(PREFIX);
-              notify('快捷键"搜"已激活：Ctrl+S');
-              break;
-            case 't':
-              e.preventDefault();
-              e.stopPropagation();
-              runPrefixThenSend(THINK_PREFIX);
-              notify('快捷键"思"已激活：Ctrl+T');
-              break;
-          }
+      (e) => {
+        if (!e || !e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+        const key = String(e.key || '').toLowerCase();
+        if (!key) return;
+
+        if (key === 'y' || key === 'z') {
+          e.preventDefault();
+          e.stopPropagation();
+          runPrefixThenSend(TRANSLATE_PREFIX);
+          notify('快捷键"译"已激活：Ctrl+Y / Ctrl+Z');
+          return;
+        }
+        if (key === 's') {
+          e.preventDefault();
+          e.stopPropagation();
+          runPrefixThenSend(PREFIX);
+          notify('快捷键"搜"已激活：Ctrl+S');
+          return;
+        }
+        if (key === 't') {
+          e.preventDefault();
+          e.stopPropagation();
+          runPrefixThenSend(THINK_PREFIX);
+          notify('快捷键"思"已激活：Ctrl+T');
         }
       },
       true
     );
   }
+  setupKeyboardShortcuts();
 
-  // ===== UI：按钮拖动 =====
+  // ===== UI =====
+  function notify(msg) {
+    try {
+      if (!document.body) return;
+      const n = document.createElement('div');
+      n.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(0,0,0,.8);
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 4px;
+        z-index: 2147483647;
+        transition: opacity .3s ease;
+      `;
+      n.textContent = String(msg || '');
+      document.body.appendChild(n);
+      setTimeout(() => {
+        n.style.opacity = '0';
+        setTimeout(() => n.remove(), 300);
+      }, 2000);
+    } catch {}
+  }
+
   function makeDraggable(el, onSavePosition) {
     let isDragging = false;
     let pointerId = null;
@@ -960,29 +511,28 @@
     let startTopPx = 0;
     const DRAG_THRESHOLD_PX = 6;
 
-    try {
-      el.style.touchAction = 'none';
-    } catch (_) {}
+    try { el.style.touchAction = 'none'; } catch {}
 
     function toPxTop(value) {
       if (!value) return 0;
       if (String(value).endsWith('%')) {
         const percent = parseFloat(value) || 0;
-        return window.innerHeight * (percent / 100);
+        return (window.innerHeight || 0) * (percent / 100);
       }
       const n = parseFloat(value);
       return Number.isFinite(n) ? n : 0;
     }
 
     function clampTop(px) {
-      const maxTop = Math.max(0, window.innerHeight - el.offsetHeight);
+      const maxTop = Math.max(0, (window.innerHeight || 0) - (el.offsetHeight || 0));
       return Math.max(0, Math.min(px, maxTop));
     }
 
     function onPointerDown(e) {
+      if (!e) return;
       if (e.button !== undefined && e.button !== 0) return;
       pointerId = e.pointerId || 'mouse';
-      el.setPointerCapture && el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch {}
       const comp = getComputedStyle(el);
       startTopPx = toPxTop(comp.top);
       startClientY = e.clientY;
@@ -990,31 +540,29 @@
     }
 
     function onPointerMove(e) {
+      if (!e) return;
       if ((e.pointerId || 'mouse') !== pointerId) return;
       const deltaY = e.clientY - startClientY;
       if (!isDragging && Math.abs(deltaY) >= DRAG_THRESHOLD_PX) {
         isDragging = true;
         el.style.cursor = 'move';
       }
-      if (isDragging) {
-        const nextTop = clampTop(startTopPx + deltaY);
-        el.style.top = `${Math.round(nextTop)}px`;
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      if (!isDragging) return;
+      const nextTop = clampTop(startTopPx + deltaY);
+      el.style.top = `${Math.round(nextTop)}px`;
+      e.preventDefault();
+      e.stopPropagation();
     }
 
     function onPointerUp(e) {
+      if (!e) return;
       if ((e.pointerId || 'mouse') !== pointerId) return;
-      try {
-        el.releasePointerCapture && el.releasePointerCapture(e.pointerId);
-      } catch (_) {}
+      try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch {}
       if (isDragging) {
+        // @ts-ignore
         el._suppressNextClick = true;
         el.style.cursor = 'pointer';
-        if (typeof onSavePosition === 'function') {
-          onSavePosition({ top: el.style.top, right: el.style.right });
-        }
+        if (typeof onSavePosition === 'function') onSavePosition({ top: el.style.top, right: el.style.right });
       }
       isDragging = false;
       pointerId = null;
@@ -1025,67 +573,15 @@
     window.addEventListener('pointerup', onPointerUp, { passive: true });
   }
 
-  // ===== 创建浮动按钮（回退） =====
-  function addTranslateButton() {
-    if (document.getElementById('o4-translate-button')) return;
-
+  function addFloatingSearchButton() {
+    if (!document.body) return;
+    if (document.getElementById('qn-qds-search-btn')) return;
     const btn = document.createElement('div');
-    btn.id = 'o4-translate-button';
+    btn.id = 'qn-qds-search-btn';
     btn.style.cssText = `
       position: fixed;
-      top: ${translateButtonPosition.top};
-      right: ${translateButtonPosition.right};
-      z-index: 2147483647;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%);
-      color: #fff;
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0,0,0,.2);
-      transition: background .3s ease;
-      font-size: 18px;
-      user-select: none;
-      touch-action: none;
-    `;
-    btn.textContent = '译';
-
-    makeDraggable(btn, ({ top, right }) => {
-      translateButtonPosition = { top, right };
-      writeJsonStorage(STORAGE_KEY_TRANSLATE_BUTTON_POS, translateButtonPosition);
-      notify('"译"按钮位置已保存');
-    });
-
-    btn.addEventListener('click', function () {
-      if (this._suppressNextClick) {
-        this._suppressNextClick = false;
-        return;
-      }
-      runPrefixThenSend(TRANSLATE_PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #27ae60 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%)';
-      }, 2000);
-      notify('"译"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    document.body.appendChild(btn);
-  }
-
-  function addQuickSearchButton() {
-    if (document.getElementById('o4-mini-button')) return;
-
-    const btn = document.createElement('div');
-    btn.id = 'o4-mini-button';
-    btn.style.cssText = `
-      position: fixed;
-      top: ${buttonPosition.top};
-      right: ${buttonPosition.right};
+      top: ${searchButtonPosition.top};
+      right: ${searchButtonPosition.right};
       z-index: 2147483647;
       display: flex;
       align-items: center;
@@ -1107,32 +603,28 @@
     btn.textContent = '搜';
 
     makeDraggable(btn, ({ top, right }) => {
-      buttonPosition = { top, right };
-      writeJsonStorage(STORAGE_KEY_BUTTON_POS, buttonPosition);
+      searchButtonPosition = { top, right };
+      writeJsonStorage(STORAGE_KEY_SEARCH_POS, searchButtonPosition);
       notify('"搜"按钮位置已保存');
     });
 
     btn.addEventListener('click', function () {
-      if (this._suppressNextClick) {
-        this._suppressNextClick = false;
-        return;
-      }
+      // @ts-ignore
+      if (this._suppressNextClick) { this._suppressNextClick = false; return; }
       runPrefixThenSend(PREFIX);
       this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #3498db 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)';
-      }, 2000);
+      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)'; }, 2000);
       notify('"搜"已激活：1)写前缀→2)发送（逐步确认+延时）');
     });
 
     document.body.appendChild(btn);
   }
 
-  function addThinkButton() {
-    if (document.getElementById('o4-think-button')) return;
-
+  function addFloatingThinkButton() {
+    if (!document.body) return;
+    if (document.getElementById('qn-qds-think-btn')) return;
     const btn = document.createElement('div');
-    btn.id = 'o4-think-button';
+    btn.id = 'qn-qds-think-btn';
     btn.style.cssText = `
       position: fixed;
       top: ${thinkButtonPosition.top};
@@ -1159,217 +651,67 @@
 
     makeDraggable(btn, ({ top, right }) => {
       thinkButtonPosition = { top, right };
-      writeJsonStorage(STORAGE_KEY_THINK_BUTTON_POS, thinkButtonPosition);
+      writeJsonStorage(STORAGE_KEY_THINK_POS, thinkButtonPosition);
       notify('"思"按钮位置已保存');
     });
 
     btn.addEventListener('click', function () {
-      if (this._suppressNextClick) {
-        this._suppressNextClick = false;
-        return;
-      }
+      // @ts-ignore
+      if (this._suppressNextClick) { this._suppressNextClick = false; return; }
       runPrefixThenSend(THINK_PREFIX);
       this.style.background = 'linear-gradient(140.91deg, #27ae60 12.61%, #2ecc71 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)';
-      }, 2000);
+      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)'; }, 2000);
       notify('"思"已激活：1)写前缀→2)发送（逐步确认+延时）');
     });
 
     document.body.appendChild(btn);
   }
 
-  // ===== 提示 =====
-  function notify(msg) {
-    const n = document.createElement('div');
-    n.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,.8);
-      color: #fff;
-      padding: 10px 20px;
-      border-radius: 4px;
-      z-index: 2147483647;
-      transition: opacity .3s ease;
-    `;
-    n.textContent = msg;
-    document.body.appendChild(n);
-    setTimeout(() => {
-      n.style.opacity = '0';
-      setTimeout(() => n.remove(), 300);
-    }, 2000);
+  function removeFloatingButtonsIfAny() {
+    try { document.getElementById('qn-qds-search-btn')?.remove(); } catch {}
+    try { document.getElementById('qn-qds-think-btn')?.remove(); } catch {}
   }
 
-  // ===== 注入与保活 =====
-  // ChatGPT uses React + hydration; mutating the composer subtree during hydration can cause
-  // recoverable errors and visible remount “flashing”. To avoid this, render the inline
-  // buttons as a BODY-level overlay positioned next to the send/stop button.
-  const CHATGPT_OVERLAY_GAP_PX = 6;
-  const CHATGPT_OVERLAY_BTN_SIZE_PX = 32;
-  const CHATGPT_OVERLAY_WIDTH_PX = CHATGPT_OVERLAY_BTN_SIZE_PX * 3 + CHATGPT_OVERLAY_GAP_PX * 2;
-  let chatgptOverlayRaf = 0;
-  let chatgptOverlayHasPosition = false;
-
-  function pickRightMostVisibleButton(root) {
-    const scope = root && typeof root.querySelectorAll === 'function' ? root : null;
-    if (!scope) return null;
-    /** @type {HTMLElement|null} */
-    let best = null;
-    let bestRight = -Infinity;
+  function hasInlineButtons() {
     try {
-      const list = Array.from(scope.querySelectorAll('button')).slice(0, 120);
-      for (const el of list) {
-        try {
-          if (!(el instanceof HTMLElement)) continue;
-          if (el.closest?.('#o4-inline-btn-wrap')) continue;
-          const r = el.getBoundingClientRect();
-          if (!r || r.width < 12 || r.height < 12) continue;
-          const cs = getComputedStyle(el);
-          if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
-          const right = Number(r.right) || 0;
-          if (right >= bestRight) {
-            bestRight = right;
-            best = el;
-          }
-        } catch {}
-      }
-    } catch {}
-    return best;
+      const wrap = document.getElementById('qn-qds-inline-wrap');
+      return !!(wrap && wrap.isConnected);
+    } catch {
+      return false;
+    }
   }
 
-  function findChatgptOverlayAnchor() {
-    const send = findSendButton();
-    if (send && send.isConnected) return send;
-    const stop = document.querySelector('[data-testid="stop-button"]');
-    if (stop) return stop;
-    // Fallbacks: keep this strictly in the composer area to avoid anchoring to unrelated forms/buttons.
+  function findInlineContainer() {
+    const c = core();
+    const editor = editorEl();
+    const form = c && typeof c.getComposerForm === 'function' ? c.getComposerForm(editor) : editor?.closest?.('form') || null;
     try {
-      const core = window.__aichat_chatgpt_core_main_v1__;
-      const editor = core && typeof core.getEditorEl === 'function' ? core.getEditorEl() : editorEl();
-      const form = editor?.closest?.('form') || null;
-
-      // When the prompt is empty, ChatGPT replaces the send button with voice/dictation controls.
-      // Anchoring to the whole form (usually full width) can push our overlay to the far left.
-      // Prefer the right-most visible button in the composer (voice/dictation/send) as an anchor.
-      const rightMost = pickRightMostVisibleButton(form);
-      if (rightMost) return rightMost;
-
-      const actions =
-        form?.querySelector?.('div[data-testid="composer-trailing-actions"]') ||
-        document.querySelector('div[data-testid="composer-trailing-actions"]') ||
-        null;
-      if (actions) return pickRightMostVisibleButton(actions) || actions;
-      if (form) return form;
-      if (editor) return editor;
+      const direct = form?.querySelector?.('div[data-testid="composer-trailing-actions"]') || null;
+      if (direct) return direct;
     } catch {}
-    return document.querySelector('#thread-bottom') || null;
+    try {
+      const legacy = document.querySelector('div[data-testid="composer-trailing-actions"]');
+      if (legacy) return legacy;
+    } catch {}
+    try {
+      // Some builds use a grid-area encoded in the class string.
+      const alt = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
+      if (alt) return alt;
+    } catch {}
+    return null;
   }
 
-  function scheduleChatgptOverlayUpdate() {
-    if (SITE !== 'chatgpt') return;
-    if (chatgptOverlayRaf) return;
-    chatgptOverlayRaf = requestAnimationFrame(() => {
-      chatgptOverlayRaf = 0;
-      try {
-        const wrap = document.getElementById('o4-inline-btn-wrap');
-        if (!wrap || !wrap.isConnected) return;
-
-        const anchor = findChatgptOverlayAnchor();
-        if (!anchor || !anchor.isConnected || typeof anchor.getBoundingClientRect !== 'function') {
-          // Hide when we can't anchor (prevents stale "floating in the middle" positions).
-          wrap.style.display = 'none';
-          chatgptOverlayHasPosition = false;
-          return;
-        }
-
-        const r = anchor.getBoundingClientRect();
-        if (!Number.isFinite(r.left) || !Number.isFinite(r.top)) return;
-
-        const top = Math.max(
-          0,
-          Math.min(
-            window.innerHeight - CHATGPT_OVERLAY_BTN_SIZE_PX,
-            r.top + (r.height - CHATGPT_OVERLAY_BTN_SIZE_PX) / 2
-          )
-        );
-        const spaceRight = Math.max(0, window.innerWidth - r.right);
-        const preferRight = spaceRight >= CHATGPT_OVERLAY_WIDTH_PX + CHATGPT_OVERLAY_GAP_PX;
-
-        wrap.style.display = 'flex';
-        const left = preferRight ? r.right + CHATGPT_OVERLAY_GAP_PX : r.left;
-        const clampedLeft = Math.max(0, Math.min(window.innerWidth - CHATGPT_OVERLAY_WIDTH_PX, left));
-        wrap.style.left = `${Math.round(clampedLeft)}px`;
-        wrap.style.top = `${Math.round(top)}px`;
-        wrap.style.transform = preferRight ? 'none' : `translateX(calc(-100% - ${CHATGPT_OVERLAY_GAP_PX}px))`;
-
-        chatgptOverlayHasPosition = true;
-      } catch {}
-    });
-  }
   function addInlineButtons() {
-    try {
-      const existing = document.getElementById('o4-inline-btn-wrap');
-      if (existing && existing.isConnected) {
-        if (SITE === 'chatgpt') {
-          if (existing.parentElement !== document.body && document.body) {
-            existing.remove();
-          } else {
-            scheduleChatgptOverlayUpdate();
-            return true;
-          }
-        } else {
-          return true;
-        }
-      }
-    } catch {}
+    if (!document.body) return false;
+    if (hasInlineButtons()) return true;
+    if (Date.now() - STARTED_AT < INLINE_MIN_DELAY_MS) return false;
 
-    if (SITE === 'chatgpt') {
-      const anchor = findChatgptOverlayAnchor();
-      if (!anchor) return false;
-    }
-
-    let container = null;
-    let insertBefore = null;
-
-    if (SITE === 'chatgpt') {
-      container = document.body;
-    } else if (SITE === 'gemini_app') {
-      const sendBtn = findSendButton();
-      container = sendBtn?.parentElement || null;
-      insertBefore = sendBtn && sendBtn.parentElement === container ? sendBtn : null;
-    } else if (SITE === 'gemini_business') {
-      const sendBtn = findSendButton();
-      container = sendBtn?.parentElement || sendBtn?.parentNode || null;
-      insertBefore = sendBtn && sendBtn.parentNode === container ? sendBtn : null;
-    } else if (SITE === 'genspark') {
-      const ta = editorFallback();
-      const parent = ta?.parentElement || null;
-      const group = parent?.querySelector?.('.icon-group') || document.querySelector('.icon-group') || null;
-      container = group?.querySelector?.('.right-icon-group') || group || null;
-      const sendEl = group?.querySelector?.('.enter-icon') || group?.querySelector?.('.enter-icon-wrapper') || null;
-      insertBefore = sendEl && sendEl.parentElement === container ? sendEl : null;
-    }
-
+    const container = findInlineContainer();
     if (!container) return false;
-    try {
-      const root = typeof container.getRootNode === 'function' ? container.getRootNode() : document;
-      const q = root && typeof root.querySelector === 'function' ? root.querySelector.bind(root) : document.querySelector.bind(document);
-      if (
-        q('#o4-inline-btn-wrap') ||
-        q('#o4-translate-inline-btn') ||
-        q('#o4-mini-inline-btn') ||
-        q('#o4-think-inline-btn')
-      )
-        return true;
-    } catch {}
 
     const wrap = document.createElement('div');
-    wrap.id = 'o4-inline-btn-wrap';
-    wrap.style.cssText =
-      SITE === 'chatgpt'
-        ? 'position:fixed; z-index:2147483647; display:none; align-items:center; gap:6px; flex-shrink:0; pointer-events:auto;'
-        : 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
+    wrap.id = 'qn-qds-inline-wrap';
+    wrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
 
     const commonBtnCss = `
       display:flex; align-items:center; justify-content:center;
@@ -1379,295 +721,103 @@
     `;
 
     const translateBtn = document.createElement('div');
-    translateBtn.id = 'o4-translate-inline-btn';
+    translateBtn.id = 'qn-qds-inline-translate';
     translateBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%);';
     translateBtn.textContent = '译';
     translateBtn.addEventListener('click', function () {
       runPrefixThenSend(TRANSLATE_PREFIX);
       this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #27ae60 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%)';
-      }, 2000);
+      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%)'; }, 2000);
       notify('"译"已激活：1)写前缀→2)发送（逐步确认+延时）');
     });
 
     const searchBtn = document.createElement('div');
-    searchBtn.id = 'o4-mini-inline-btn';
+    searchBtn.id = 'qn-qds-inline-search';
     searchBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%);';
     searchBtn.textContent = '搜';
     searchBtn.addEventListener('click', function () {
       runPrefixThenSend(PREFIX);
       this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #3498db 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)';
-      }, 2000);
+      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)'; }, 2000);
       notify('"搜"已激活：1)写前缀→2)发送（逐步确认+延时）');
     });
 
     const thinkBtn = document.createElement('div');
-    thinkBtn.id = 'o4-think-inline-btn';
+    thinkBtn.id = 'qn-qds-inline-think';
     thinkBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%);';
     thinkBtn.textContent = '思';
     thinkBtn.addEventListener('click', function () {
       runPrefixThenSend(THINK_PREFIX);
       this.style.background = 'linear-gradient(140.91deg, #27ae60 12.61%, #2ecc71 76.89%)';
-      setTimeout(() => {
-        this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)';
-      }, 2000);
+      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)'; }, 2000);
       notify('"思"已激活：1)写前缀→2)发送（逐步确认+延时）');
     });
 
     wrap.appendChild(translateBtn);
     wrap.appendChild(searchBtn);
     wrap.appendChild(thinkBtn);
-    try {
-      if (insertBefore && insertBefore.parentNode === container && typeof container.insertBefore === 'function') {
-        container.insertBefore(wrap, insertBefore);
-      } else {
-        container.appendChild(wrap);
-      }
-      if (SITE === 'chatgpt') scheduleChatgptOverlayUpdate();
-    } catch {
-      return false;
-    }
+    container.appendChild(wrap);
     return true;
   }
 
-  function removeFloatingButtonsIfAny() {
-    document.getElementById('o4-translate-button')?.remove();
-    document.getElementById('o4-mini-button')?.remove();
-    document.getElementById('o4-think-button')?.remove();
-  }
-
   function boot() {
-    // Avoid touching React-managed DOM before hydration completes (can cause recoverable hydration errors
-    // and a “flash / remount” that wipes pasted drafts). Keyboard shortcuts remain active immediately.
-    if (document.readyState === 'loading') return;
     if (!document.body) return;
-    // Remove legacy floating UI immediately (some older versions injected fixed right-side buttons).
-    removeFloatingButtonsIfAny();
-    if (SITE !== 'chatgpt') {
-      try {
-        if (document.getElementById('o4-inline-btn-wrap')) return;
-      } catch {}
-    }
     const inlineOk = addInlineButtons();
     if (inlineOk) {
+      removeFloatingButtonsIfAny();
       return;
     }
-    if (!ENABLE_FLOATING_FALLBACK) {
-      return;
-    }
-    addTranslateButton();
-    addQuickSearchButton();
-    addThinkButton();
+    addFloatingSearchButton();
+    addFloatingThinkButton();
   }
 
-  setupKeyboardShortcuts();
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    boot();
-  } else {
-    document.addEventListener('DOMContentLoaded', boot);
+  // ===== Keep-alive (event-driven + slow fallback) =====
+  let bootTimer = 0;
+  function scheduleBoot(wait = 0) {
+    const w = Math.max(0, Number(wait) || 0);
+    if (bootTimer) return;
+    bootTimer = setTimeout(() => {
+      bootTimer = 0;
+      try { boot(); } catch {}
+    }, w);
   }
 
-  // Reduce constant polling: schedule boot on DOM changes with rate limiting.
-    (function setupBootWatcher() {
-      const BOOT_MIN_INTERVAL_MS = SITE === 'chatgpt' ? 120 : 1500;
-      const BOOT_FALLBACK_INTERVAL_MS = SITE === 'chatgpt' ? 20000 : 15000;
+  // Route change reinject (preferred).
+  try {
+    const b = window.__aichat_quicknav_bridge_main_v1__;
+    if (b && typeof b.on === 'function') b.on('routeChange', () => scheduleBoot(0));
+  } catch {}
 
-    let lastBootAt = 0;
-    let timer = 0;
-    /** @type {MutationObserver|null} */
-    let rootMo = null;
-    let rootMoDisabledUntil = 0;
-    let rootMoStormCount = 0;
-    let rootMoStormAt = 0;
-    /** @type {MutationObserver|null} */
-    let hostMo = null;
-
-    function scheduleBoot(delayMs = 0) {
-      if (timer) return;
-      const now = Date.now();
-      const earliest = lastBootAt + BOOT_MIN_INTERVAL_MS;
-      const wait = Math.max(delayMs, earliest - now, 0);
-      timer = setTimeout(() => {
-        timer = 0;
-        boot();
-        // Do not "consume" the min-interval before body exists, otherwise we can delay first paint.
-        // This keeps the first visible buttons (floating fallback) near-instant on ChatGPT.
-        if (document.body) lastBootAt = Date.now();
-        // Once inline buttons exist, switch to a narrow observer and drop the global subtree watcher.
-        try {
-          if (hasInlineButtons()) {
-            ensureHostObserver();
-            // ChatGPT frequently re-creates the composer; keep the global watcher so we can re-inject instantly.
-            if (SITE !== 'chatgpt') disconnectRootObserver();
-          }
-        } catch {}
-      }, wait);
-    }
-
-    function hasInlineButtons() {
+  // Composer event signal: if ChatGPT remounts composer without a route change, recover.
+  try {
+    const isComposerEventTarget = (t) => {
       try {
-        const wrap = document.getElementById('o4-inline-btn-wrap');
-        return !!(wrap && wrap.isConnected);
-      } catch {
-        return false;
-      }
-    }
-
-    function getInlineHost() {
-      try {
-        const wrap = document.getElementById('o4-inline-btn-wrap');
-        const host = wrap?.parentElement || null;
-        return host && host.isConnected ? host : null;
-      } catch {
-        return null;
-      }
-    }
-
-      function disconnectRootObserver() {
-        if (!rootMo) return;
-        try { rootMo.disconnect(); } catch {}
-        rootMo = null;
-      }
-
-      function findObserveRoot() {
-        if (SITE !== 'chatgpt') return document.documentElement;
-        try {
-          // IMPORTANT: never fall back to observing `document.body` / `documentElement` for ChatGPT.
-          // ChatGPT hydration + streaming produces huge mutation volumes, which can spike CPU/memory.
-          return document.getElementById('thread-bottom') || document.getElementById('thread-bottom-container') || null;
-        } catch {
-          return null;
-        }
-      }
-
-      function ensureRootObserver() {
-        try {
-          const ts = Date.now();
-          if (rootMoDisabledUntil && ts < rootMoDisabledUntil) return;
-          const root = findObserveRoot();
-          if (!root) {
-            disconnectRootObserver();
-            return;
-          }
-          if (typeof MutationObserver !== 'function') return;
-          // If the observed root changes (ChatGPT can re-create the composer subtree),
-          // reattach to keep the observer “local” (avoid global subtree watching).
-          // @ts-ignore: attach marker
-          if (rootMo && rootMo.__aichatRoot === root) return;
-          try { rootMo?.disconnect(); } catch {}
-          rootMo = new MutationObserver((muts) => {
-            try {
-              if (SITE === 'chatgpt') {
-                const now = Date.now();
-                if (!rootMoStormAt || now - rootMoStormAt > 1000) {
-                  rootMoStormAt = now;
-                  rootMoStormCount = 0;
-                }
-                rootMoStormCount += Array.isArray(muts) ? muts.length : 1;
-                // Safety: if something accidentally observes a large/streaming subtree, bail out.
-                if (rootMoStormCount > 200) {
-                  rootMoDisabledUntil = now + 30000;
-                  disconnectRootObserver();
-                  scheduleBoot(800);
-                  return;
-                }
-              }
-            } catch {}
-            if (hasInlineButtons()) {
-              scheduleChatgptOverlayUpdate();
-              return;
-            }
-            scheduleBoot(0);
-          });
-          // @ts-ignore: attach root marker for cheap reuse checks.
-          rootMo.__aichatRoot = root;
-          // ChatGPT can stream huge DOM diffs; keep this observer as shallow as possible.
-          // We rely on input/scroll/resize hooks + fallback timer for fine-grained updates.
-          rootMo.observe(root, { childList: true, subtree: SITE !== 'chatgpt' });
-        } catch {
-          disconnectRootObserver();
-        }
-      }
-
-    function ensureHostObserver() {
-      if (SITE === 'chatgpt') return;
-      const host = getInlineHost();
-      if (!host || typeof MutationObserver !== 'function') return;
-      try {
-        if (hostMo && hostMo.__aichatHost === host) return;
+        if (!(t instanceof Element)) return false;
+        if (t.id === 'prompt-textarea') return true;
+        if (t.closest?.('#prompt-textarea')) return true;
+        if (t.closest?.('textarea[name="prompt-textarea"]')) return true;
       } catch {}
-      try { hostMo?.disconnect(); } catch {}
-
+      return false;
+    };
+    const onComposerEvent = (e) => {
       try {
-        hostMo = new MutationObserver(() => {
-          if (hasInlineButtons()) return;
-          // Inline buttons were removed/re-rendered: re-enable the global watcher briefly and reboot.
-          try { hostMo?.disconnect(); } catch {}
-          hostMo = null;
-          ensureRootObserver();
-          scheduleBoot(0);
-        });
-        // @ts-ignore: attach host marker for cheap reuse checks.
-        hostMo.__aichatHost = host;
-        hostMo.observe(host, { childList: true, subtree: false });
-      } catch {
-        try { hostMo?.disconnect(); } catch {}
-        hostMo = null;
-      }
-    }
+        if (hasInlineButtons()) return;
+        if (!isComposerEventTarget(e?.target)) return;
+        scheduleBoot(0);
+      } catch {}
+    };
+    document.addEventListener('focusin', onComposerEvent, true);
+    document.addEventListener('input', onComposerEvent, true);
+  } catch {}
 
-    scheduleBoot(0);
+  // Initial boot.
+  if (document.readyState === 'complete' || document.readyState === 'interactive') scheduleBoot(0);
+  else document.addEventListener('DOMContentLoaded', () => scheduleBoot(0), { once: true });
 
+  // Slow safety net: only do work when inline buttons are missing.
+  setInterval(() => {
     try {
-      ensureRootObserver();
+      if (!hasInlineButtons()) scheduleBoot(0);
     } catch {}
-
-    // Fallback: only wake up when inline buttons are missing.
-    setInterval(() => {
-      try {
-        if (hasInlineButtons()) {
-          // keep host observer attached (in case the host changes)
-          ensureHostObserver();
-          scheduleChatgptOverlayUpdate();
-          return;
-        }
-      } catch {}
-      ensureRootObserver();
-      scheduleBoot(0);
-    }, BOOT_FALLBACK_INTERVAL_MS);
-
-    // Keep ChatGPT overlay aligned on scroll/resize.
-    if (SITE === 'chatgpt') {
-      try {
-        const isComposerEventTarget = (t) => {
-          try {
-            if (!(t instanceof Element)) return false;
-            if (t.id === 'prompt-textarea') return true;
-            if (t.closest?.('#prompt-textarea')) return true;
-            const form = t.closest?.('form');
-            if (form && form.querySelector?.('#prompt-textarea')) return true;
-          } catch {}
-          return false;
-        };
-        const onComposerEvent = (e) => {
-          try {
-            if (!hasInlineButtons()) return;
-            const t = e?.target;
-            if (!t) return;
-            if (!isComposerEventTarget(t)) return;
-            scheduleChatgptOverlayUpdate();
-          } catch {}
-        };
-        document.addEventListener('input', onComposerEvent, true);
-        document.addEventListener('focusin', onComposerEvent, true);
-        document.addEventListener('click', onComposerEvent, true);
-        window.addEventListener('resize', () => scheduleChatgptOverlayUpdate(), { passive: true });
-        window.addEventListener('scroll', () => scheduleChatgptOverlayUpdate(), { passive: true, capture: true });
-      } catch {}
-    }
-  })();
+  }, BOOT_FALLBACK_INTERVAL_MS);
 })();

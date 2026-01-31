@@ -273,7 +273,8 @@
       const dataIcon = String(el.getAttribute?.('data-icon') || '');
       const icon = String(el.getAttribute?.('icon') || '');
       const className = String(el.className || '');
-      const combined = `${testId} ${aria} ${title} ${name} ${dataIcon} ${icon} ${className}`;
+      const text = String(el.textContent || '').slice(0, 200);
+      const combined = `${testId} ${aria} ${title} ${name} ${dataIcon} ${icon} ${className} ${text}`;
       if (/(stop|cancel)/i.test(combined)) return true;
       if (/(停止|取消|中止|终止)/.test(combined)) return true;
     } catch {}
@@ -300,6 +301,18 @@
 
       if (SITE === 'kimi') {
         const root = promptEl?.closest?.('.chat-action') || promptEl?.closest?.('.chat-editor') || document;
+        // Kimi: the send control often morphs into a stop control while streaming.
+        // Be aggressive here: if any stop-like control is present in the composer area, treat as generating.
+        const stopLike =
+          root.querySelector?.(
+            '[data-testid*="stop" i],[aria-label*="Stop" i],[aria-label*="Cancel" i],[title*="Stop" i],[title*="Cancel" i],[name*="stop" i],[name*="cancel" i],[data-icon*="stop" i],[data-icon*="cancel" i],[icon*="stop" i],[icon*="cancel" i],[aria-label*="停止" i],[title*="停止" i],[aria-label*="取消" i],[title*="取消" i],[aria-label*="中止" i],[title*="中止" i],[aria-label*="终止" i],[title*="终止" i]'
+          ) ||
+          document.querySelector?.(
+            '[data-testid*="stop" i],[aria-label*="Stop" i],[aria-label*="Cancel" i],[title*="Stop" i],[title*="Cancel" i],[name*="stop" i],[name*="cancel" i],[data-icon*="stop" i],[data-icon*="cancel" i],[icon*="stop" i],[icon*="cancel" i],[aria-label*="停止" i],[title*="停止" i],[aria-label*="取消" i],[title*="取消" i],[aria-label*="中止" i],[title*="中止" i],[aria-label*="终止" i],[title*="终止" i]'
+          ) ||
+          null;
+        if (stopLike) return true;
+
         const control = root.querySelector?.('.send-button-container') || document.querySelector('.send-button-container');
         if (control && isStopLikeControl(control)) return true;
         return false;
@@ -307,7 +320,15 @@
 
       if (SITE === 'gemini_app') {
         const root = promptEl?.getRootNode?.() || document;
-        const button = root.querySelector?.('button.send-button') || root.querySelector?.('button[aria-label="Send message"]') || null;
+        // Gemini: there is typically a dedicated Stop generating control while streaming.
+        const stopLike =
+          root.querySelector?.(
+            'button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i],button[aria-label*="中止" i],button[title*="中止" i],button[aria-label*="终止" i],button[title*="终止" i]'
+          ) || null;
+        if (stopLike) return true;
+
+        const button =
+          root.querySelector?.('button.send-button') || root.querySelector?.('button[aria-label="Send message"]') || null;
         if (button && isStopLikeControl(button)) return true;
         return false;
       }

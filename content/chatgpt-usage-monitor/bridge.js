@@ -26,6 +26,8 @@
   const SET_PLAN_EVENT = '__aichat_chatgpt_usage_monitor_set_plan_v1__';
   const USAGE_DATA_LS_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
   const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
+  const SYNC_REV_KEY = '__aichat_gm_chatgpt_usage_monitor__:__sync_rev_v1__';
+  const DATA_CHANGED_EVENT = 'chatgpt-usage-monitor:data-changed';
 
   let lastAppliedPlan = '';
   let lastAppliedAt = 0;
@@ -85,7 +87,9 @@
       data.planType = planType;
       localStorage.setItem(USAGE_DATA_LS_KEY, JSON.stringify(data));
       try {
-        chrome.storage.local.set({ [USAGE_DATA_LS_KEY]: data }, () => void chrome.runtime?.lastError);
+        const rev = Date.now();
+        localStorage.setItem(SYNC_REV_KEY, JSON.stringify(rev));
+        chrome.storage.local.set({ [USAGE_DATA_LS_KEY]: data, [SYNC_REV_KEY]: rev }, () => void chrome.runtime?.lastError);
       } catch {}
     } catch {}
   }
@@ -135,4 +139,136 @@
       applyPlan(ch.newValue, 'sync:changed');
     });
   } catch {}
+
+  // === usageData sync (page localStorage <-> extension storage.local) ===
+  let __aichatUsageSyncTimer = 0;
+  let __aichatLastLocalToChromeRev = 0;
+  let __aichatLastAppliedChromeRev = 0;
+
+  function readRevFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(SYNC_REV_KEY);
+      if (raw == null) return 0;
+      const n = Number(JSON.parse(raw));
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function writeRevToLocalStorage(rev) {
+    try {
+      localStorage.setItem(SYNC_REV_KEY, JSON.stringify(Number(rev) || 0));
+    } catch {}
+  }
+
+  function readUsageFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(USAGE_DATA_LS_KEY);
+      if (raw == null) return null;
+      const data = JSON.parse(raw);
+      return data && typeof data === 'object' ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeUsageToLocalStorage(data) {
+    try {
+      if (data == null) localStorage.removeItem(USAGE_DATA_LS_KEY);
+      else localStorage.setItem(USAGE_DATA_LS_KEY, JSON.stringify(data));
+    } catch {}
+  }
+
+  function scheduleSyncUsageToChrome(delayMs = 260) {
+    if (__aichatUsageSyncTimer) return;
+    __aichatUsageSyncTimer = setTimeout(() => {
+      __aichatUsageSyncTimer = 0;
+      try {
+        const data = readUsageFromLocalStorage();
+        const rev = Date.now();
+        writeRevToLocalStorage(rev);
+        __aichatLastLocalToChromeRev = rev;
+        chrome.storage.local.set({ [USAGE_DATA_LS_KEY]: data, [SYNC_REV_KEY]: rev }, () => void chrome.runtime?.lastError);
+      } catch {}
+    }, Math.max(0, Number(delayMs) || 0));
+  }
+
+  function applyChromeSnapshotToLocalStorage(data, rev) {
+    const r = Number(rev) || 0;
+    if (r && r <= __aichatLastAppliedChromeRev) return;
+    __aichatLastAppliedChromeRev = r;
+    writeUsageToLocalStorage(data || null);
+    if (r) writeRevToLocalStorage(r);
+  }
+
+  function bootstrapUsageSync() {
+    try {
+      chrome.storage.local.get({ [USAGE_DATA_LS_KEY]: null, [SYNC_REV_KEY]: 0 }, (items) => {
+        void chrome.runtime?.lastError;
+        try {
+          const chromeRev = Number(items?.[SYNC_REV_KEY]) || 0;
+          const chromeData = items?.[USAGE_DATA_LS_KEY] || null;
+          const localRev = readRevFromLocalStorage();
+          const localData = readUsageFromLocalStorage();
+
+          if (chromeRev > localRev) {
+            applyChromeSnapshotToLocalStorage(chromeData, chromeRev);
+            return;
+          }
+
+          if (localData && localRev >= chromeRev) {
+            const nextRev = localRev > 0 ? localRev : Date.now();
+            writeRevToLocalStorage(nextRev);
+            __aichatLastLocalToChromeRev = nextRev;
+            chrome.storage.local.set({ [USAGE_DATA_LS_KEY]: localData, [SYNC_REV_KEY]: nextRev }, () => void chrome.runtime?.lastError);
+            return;
+          }
+
+          // Neither side has data -> nothing to do.
+        } catch {}
+      });
+    } catch {}
+  }
+
+  // Sync to chrome.storage.local when MAIN-world code updates usageData.
+  try {
+    window.addEventListener(
+      DATA_CHANGED_EVENT,
+      () => {
+        scheduleSyncUsageToChrome(300);
+      },
+      true
+    );
+  } catch {}
+
+  // Sync to localStorage when Options imports/clears usageData in chrome.storage.local.
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      const hasUsage = !!changes?.[USAGE_DATA_LS_KEY];
+      const hasRev = !!changes?.[SYNC_REV_KEY];
+      if (!hasUsage && !hasRev) return;
+
+      const newRevRaw = changes?.[SYNC_REV_KEY]?.newValue;
+      const newRev = Number(newRevRaw) || 0;
+      if (newRev && newRev === __aichatLastLocalToChromeRev) return;
+      if (newRev && newRev <= __aichatLastAppliedChromeRev) return;
+
+      // Prefer the current storage.local snapshot (in case the change event only carries rev).
+      try {
+        chrome.storage.local.get({ [USAGE_DATA_LS_KEY]: null, [SYNC_REV_KEY]: newRev || 0 }, (items) => {
+          void chrome.runtime?.lastError;
+          try {
+            const data = items?.[USAGE_DATA_LS_KEY] || null;
+            const rev = Number(items?.[SYNC_REV_KEY]) || newRev || Date.now();
+            applyChromeSnapshotToLocalStorage(data, rev);
+          } catch {}
+        });
+      } catch {}
+    });
+  } catch {}
+
+  // Bootstrap a one-time sync on load so Options can see existing usage data immediately.
+  bootstrapUsageSync();
 })();

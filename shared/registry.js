@@ -189,7 +189,7 @@
     chatgpt_quick_deep_search: {
       id: 'chatgpt_quick_deep_search',
       name: '快捷深度搜索（译/搜/思）',
-      sub: '一键插入前缀并发送（ChatGPT）',
+      sub: '仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）',
       hotkeys: ['Ctrl+S', 'Ctrl+T', 'Ctrl+Y', 'Ctrl+Z'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

@@ -69,7 +69,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-strong-highlight-lite/main.js`
-- `chatgpt_quick_deep_search`: 快捷深度搜索（译/搜/思） — 一键插入前缀并发送（ChatGPT）
+- `chatgpt_quick_deep_search`: 快捷深度搜索（译/搜/思） — 仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）（无按钮）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-quick-deep-search/main.js`
@@ -239,4 +239,3 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-cmdenter-send/main.js`
-

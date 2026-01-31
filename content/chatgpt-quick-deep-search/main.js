@@ -1,14 +1,12 @@
 (() => {
   'use strict';
 
-  // ChatGPT 快捷深度搜索（扩展版，稳定优先）
-  // Based on the user's long‑term stable Tampermonkey v1.8.4 logic:
-  // - Strict 2-step pipeline (insert prefix → confirm → send)
-  // - Confirmation + delays to avoid double send / flaky sends
-  // - No global MutationObserver / deep DOM scanning (memory + stability)
-  // - UI: inline (composer) + floating fallback, draggable + position memory
-
-  const STARTED_AT = Date.now();
+  // ChatGPT 快捷深度搜索（仅快捷键版）
+  // - Ctrl+S：搜（插入搜索前缀并发送）
+  // - Ctrl+T：思（插入思考前缀并发送）
+  // - Ctrl+Y / Ctrl+Z：译（插入“翻译成中文”并发送）
+  //
+  // 设计目标：稳定优先；不再注入任何按钮（避免 UI 注入/定位/保活导致的脆弱性与内存风险）。
 
   // Avoid running inside internal ChatGPT iframes when split-view enables `allFrames` injection.
   const ALLOWED_FRAME = (() => {
@@ -45,9 +43,38 @@
     return;
   }
 
+  // Best-effort cleanup: remove legacy injected QDS buttons from previous versions.
+  function removeLegacyQdsButtons() {
+    try {
+      const ids = [
+        // v1.2.10+ (our inline wrap / floating)
+        'qn-qds-inline-wrap',
+        'qn-qds-search-btn',
+        'qn-qds-think-btn',
+        // older overlay versions
+        'o4-inline-btn-wrap',
+        'o4-mini-button',
+        'o4-think-button',
+        'o4-translate-inline-btn',
+        'o4-mini-inline-btn',
+        'o4-think-inline-btn'
+      ];
+      for (const id of ids) {
+        try {
+          const el = document.getElementById(id);
+          if (el && el.remove) el.remove();
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Try immediately (in case the DOM is already available), and once more after DOMContentLoaded.
+  removeLegacyQdsButtons();
+  try {
+    document.addEventListener('DOMContentLoaded', () => removeLegacyQdsButtons(), { once: true });
+  } catch {}
+
   // ===== Config =====
-  const DEFAULT_POSITION_SEARCH = { top: '30%', right: '0px' };
-  const DEFAULT_POSITION_THINK = { top: '50%', right: '0px' };
   const LONG_CONTENT_THRESHOLD = 5000;
 
   const TIMEOUTS = {
@@ -64,11 +91,6 @@
   };
   const POLL_INTERVAL = 70;
 
-  // Avoid mutating the composer during the initial hydration window.
-  // We'll show floating buttons immediately, and only attempt inline injection later.
-  const INLINE_MIN_DELAY_MS = 1200;
-  const BOOT_FALLBACK_INTERVAL_MS = 12_000;
-
   const PREFIX = `ultra think and deeper websearch\n\n`;
   const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.\n\n`;
   const TRANSLATE_PREFIX = `翻译成中文`;
@@ -82,35 +104,7 @@
     'form button[type="submit"]'
   ];
 
-  // Keep legacy keys to preserve existing saved positions.
-  const STORAGE_KEY_SEARCH_POS = 'aichat_chatgpt_qds_button_pos_v1';
-  const STORAGE_KEY_THINK_POS = 'aichat_chatgpt_qds_think_button_pos_v1';
-
-  function readJsonStorage(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return { ...fallback };
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return { ...fallback };
-      const top = typeof parsed.top === 'string' ? parsed.top : fallback.top;
-      const right = typeof parsed.right === 'string' ? parsed.right : fallback.right;
-      return { top, right };
-    } catch {
-      return { ...fallback };
-    }
-  }
-
-  function writeJsonStorage(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore
-    }
-  }
-
   // ===== State =====
-  let searchButtonPosition = readJsonStorage(STORAGE_KEY_SEARCH_POS, DEFAULT_POSITION_SEARCH);
-  let thinkButtonPosition = readJsonStorage(STORAGE_KEY_THINK_POS, DEFAULT_POSITION_THINK);
   let pendingModelSwitch = false;
   let isSending = false;
   let cycle = 0;
@@ -479,7 +473,7 @@
   }
   setupKeyboardShortcuts();
 
-  // ===== UI =====
+  // ===== UI (tiny toast for feedback) =====
   function notify(msg) {
     try {
       if (!document.body) return;
@@ -503,321 +497,4 @@
       }, 2000);
     } catch {}
   }
-
-  function makeDraggable(el, onSavePosition) {
-    let isDragging = false;
-    let pointerId = null;
-    let startClientY = 0;
-    let startTopPx = 0;
-    const DRAG_THRESHOLD_PX = 6;
-
-    try { el.style.touchAction = 'none'; } catch {}
-
-    function toPxTop(value) {
-      if (!value) return 0;
-      if (String(value).endsWith('%')) {
-        const percent = parseFloat(value) || 0;
-        return (window.innerHeight || 0) * (percent / 100);
-      }
-      const n = parseFloat(value);
-      return Number.isFinite(n) ? n : 0;
-    }
-
-    function clampTop(px) {
-      const maxTop = Math.max(0, (window.innerHeight || 0) - (el.offsetHeight || 0));
-      return Math.max(0, Math.min(px, maxTop));
-    }
-
-    function onPointerDown(e) {
-      if (!e) return;
-      if (e.button !== undefined && e.button !== 0) return;
-      pointerId = e.pointerId || 'mouse';
-      try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch {}
-      const comp = getComputedStyle(el);
-      startTopPx = toPxTop(comp.top);
-      startClientY = e.clientY;
-      isDragging = false;
-    }
-
-    function onPointerMove(e) {
-      if (!e) return;
-      if ((e.pointerId || 'mouse') !== pointerId) return;
-      const deltaY = e.clientY - startClientY;
-      if (!isDragging && Math.abs(deltaY) >= DRAG_THRESHOLD_PX) {
-        isDragging = true;
-        el.style.cursor = 'move';
-      }
-      if (!isDragging) return;
-      const nextTop = clampTop(startTopPx + deltaY);
-      el.style.top = `${Math.round(nextTop)}px`;
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    function onPointerUp(e) {
-      if (!e) return;
-      if ((e.pointerId || 'mouse') !== pointerId) return;
-      try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch {}
-      if (isDragging) {
-        // @ts-ignore
-        el._suppressNextClick = true;
-        el.style.cursor = 'pointer';
-        if (typeof onSavePosition === 'function') onSavePosition({ top: el.style.top, right: el.style.right });
-      }
-      isDragging = false;
-      pointerId = null;
-    }
-
-    el.addEventListener('pointerdown', onPointerDown, { passive: true });
-    window.addEventListener('pointermove', onPointerMove, { passive: false });
-    window.addEventListener('pointerup', onPointerUp, { passive: true });
-  }
-
-  function addFloatingSearchButton() {
-    if (!document.body) return;
-    if (document.getElementById('qn-qds-search-btn')) return;
-    const btn = document.createElement('div');
-    btn.id = 'qn-qds-search-btn';
-    btn.style.cssText = `
-      position: fixed;
-      top: ${searchButtonPosition.top};
-      right: ${searchButtonPosition.right};
-      z-index: 2147483647;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%);
-      color: #fff;
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0,0,0,.2);
-      transition: background .3s ease;
-      font-size: 18px;
-      user-select: none;
-      touch-action: none;
-    `;
-    btn.textContent = '搜';
-
-    makeDraggable(btn, ({ top, right }) => {
-      searchButtonPosition = { top, right };
-      writeJsonStorage(STORAGE_KEY_SEARCH_POS, searchButtonPosition);
-      notify('"搜"按钮位置已保存');
-    });
-
-    btn.addEventListener('click', function () {
-      // @ts-ignore
-      if (this._suppressNextClick) { this._suppressNextClick = false; return; }
-      runPrefixThenSend(PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #3498db 76.89%)';
-      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)'; }, 2000);
-      notify('"搜"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    document.body.appendChild(btn);
-  }
-
-  function addFloatingThinkButton() {
-    if (!document.body) return;
-    if (document.getElementById('qn-qds-think-btn')) return;
-    const btn = document.createElement('div');
-    btn.id = 'qn-qds-think-btn';
-    btn.style.cssText = `
-      position: fixed;
-      top: ${thinkButtonPosition.top};
-      right: ${thinkButtonPosition.right};
-      z-index: 2147483647;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%);
-      color: #fff;
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0,0,0,.2);
-      transition: background .3s ease;
-      font-size: 18px;
-      user-select: none;
-      touch-action: none;
-    `;
-    btn.textContent = '思';
-
-    makeDraggable(btn, ({ top, right }) => {
-      thinkButtonPosition = { top, right };
-      writeJsonStorage(STORAGE_KEY_THINK_POS, thinkButtonPosition);
-      notify('"思"按钮位置已保存');
-    });
-
-    btn.addEventListener('click', function () {
-      // @ts-ignore
-      if (this._suppressNextClick) { this._suppressNextClick = false; return; }
-      runPrefixThenSend(THINK_PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #27ae60 12.61%, #2ecc71 76.89%)';
-      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)'; }, 2000);
-      notify('"思"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    document.body.appendChild(btn);
-  }
-
-  function removeFloatingButtonsIfAny() {
-    try { document.getElementById('qn-qds-search-btn')?.remove(); } catch {}
-    try { document.getElementById('qn-qds-think-btn')?.remove(); } catch {}
-  }
-
-  function hasInlineButtons() {
-    try {
-      const wrap = document.getElementById('qn-qds-inline-wrap');
-      return !!(wrap && wrap.isConnected);
-    } catch {
-      return false;
-    }
-  }
-
-  function findInlineContainer() {
-    const c = core();
-    const editor = editorEl();
-    const form = c && typeof c.getComposerForm === 'function' ? c.getComposerForm(editor) : editor?.closest?.('form') || null;
-    try {
-      const direct = form?.querySelector?.('div[data-testid="composer-trailing-actions"]') || null;
-      if (direct) return direct;
-    } catch {}
-    try {
-      const legacy = document.querySelector('div[data-testid="composer-trailing-actions"]');
-      if (legacy) return legacy;
-    } catch {}
-    try {
-      // Some builds use a grid-area encoded in the class string.
-      const alt = document.querySelector('form[data-type="unified-composer"] div[class*="[grid-area:trailing]"]');
-      if (alt) return alt;
-    } catch {}
-    return null;
-  }
-
-  function addInlineButtons() {
-    if (!document.body) return false;
-    if (hasInlineButtons()) return true;
-    if (Date.now() - STARTED_AT < INLINE_MIN_DELAY_MS) return false;
-
-    const container = findInlineContainer();
-    if (!container) return false;
-
-    const wrap = document.createElement('div');
-    wrap.id = 'qn-qds-inline-wrap';
-    wrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
-
-    const commonBtnCss = `
-      display:flex; align-items:center; justify-content:center;
-      width:32px; height:32px; border-radius:9999px; color:#fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,.18); cursor:pointer;
-      user-select:none; transition:opacity .2s ease, background .3s ease; font-weight:700; font-size:14px;
-    `;
-
-    const translateBtn = document.createElement('div');
-    translateBtn.id = 'qn-qds-inline-translate';
-    translateBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%);';
-    translateBtn.textContent = '译';
-    translateBtn.addEventListener('click', function () {
-      runPrefixThenSend(TRANSLATE_PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #27ae60 76.89%)';
-      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #3498db 12.61%, #2980b9 76.89%)'; }, 2000);
-      notify('"译"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    const searchBtn = document.createElement('div');
-    searchBtn.id = 'qn-qds-inline-search';
-    searchBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%);';
-    searchBtn.textContent = '搜';
-    searchBtn.addEventListener('click', function () {
-      runPrefixThenSend(PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #2ecc71 12.61%, #3498db 76.89%)';
-      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #7367F0 12.61%, #574AB8 76.89%)'; }, 2000);
-      notify('"搜"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    const thinkBtn = document.createElement('div');
-    thinkBtn.id = 'qn-qds-inline-think';
-    thinkBtn.style.cssText = commonBtnCss + 'background: linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%);';
-    thinkBtn.textContent = '思';
-    thinkBtn.addEventListener('click', function () {
-      runPrefixThenSend(THINK_PREFIX);
-      this.style.background = 'linear-gradient(140.91deg, #27ae60 12.61%, #2ecc71 76.89%)';
-      setTimeout(() => { this.style.background = 'linear-gradient(140.91deg, #FF6B6B 12.61%, #FF8E53 76.89%)'; }, 2000);
-      notify('"思"已激活：1)写前缀→2)发送（逐步确认+延时）');
-    });
-
-    wrap.appendChild(translateBtn);
-    wrap.appendChild(searchBtn);
-    wrap.appendChild(thinkBtn);
-    container.appendChild(wrap);
-    return true;
-  }
-
-  function boot() {
-    if (!document.body) return;
-    const inlineOk = addInlineButtons();
-    if (inlineOk) {
-      removeFloatingButtonsIfAny();
-      return;
-    }
-    addFloatingSearchButton();
-    addFloatingThinkButton();
-  }
-
-  // ===== Keep-alive (event-driven + slow fallback) =====
-  let bootTimer = 0;
-  function scheduleBoot(wait = 0) {
-    const w = Math.max(0, Number(wait) || 0);
-    if (bootTimer) return;
-    bootTimer = setTimeout(() => {
-      bootTimer = 0;
-      try { boot(); } catch {}
-    }, w);
-  }
-
-  // Route change reinject (preferred).
-  try {
-    const b = window.__aichat_quicknav_bridge_main_v1__;
-    if (b && typeof b.on === 'function') b.on('routeChange', () => scheduleBoot(0));
-  } catch {}
-
-  // Composer event signal: if ChatGPT remounts composer without a route change, recover.
-  try {
-    const isComposerEventTarget = (t) => {
-      try {
-        if (!(t instanceof Element)) return false;
-        if (t.id === 'prompt-textarea') return true;
-        if (t.closest?.('#prompt-textarea')) return true;
-        if (t.closest?.('textarea[name="prompt-textarea"]')) return true;
-      } catch {}
-      return false;
-    };
-    const onComposerEvent = (e) => {
-      try {
-        if (hasInlineButtons()) return;
-        if (!isComposerEventTarget(e?.target)) return;
-        scheduleBoot(0);
-      } catch {}
-    };
-    document.addEventListener('focusin', onComposerEvent, true);
-    document.addEventListener('input', onComposerEvent, true);
-  } catch {}
-
-  // Initial boot.
-  if (document.readyState === 'complete' || document.readyState === 'interactive') scheduleBoot(0);
-  else document.addEventListener('DOMContentLoaded', () => scheduleBoot(0), { once: true });
-
-  // Slow safety net: only do work when inline buttons are missing.
-  setInterval(() => {
-    try {
-      if (!hasInlineButtons()) scheduleBoot(0);
-    } catch {}
-  }, BOOT_FALLBACK_INTERVAL_MS);
 })();

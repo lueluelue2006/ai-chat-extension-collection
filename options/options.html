@@ -50,7 +50,7 @@
       <section class="card" aria-label="OpenAI 新模型监控">
         <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
         <div class="hint">
-          每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；当某条从 404 → 非 404 时将弹出系统通知（每条仅提示一次）。
+          每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；只要检测到可用资源（非 404）就会弹出系统通知（每次检测都会提醒，直到你删除该 URL）。
         </div>
         <div class="alertBox" id="gpt53AlertBox" hidden>
           <div class="alertTitle">OpenAI 新模型提示</div>

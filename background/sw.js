@@ -916,59 +916,57 @@
     const prevItems = prev && typeof prev === 'object' && prev.items && typeof prev.items === 'object' ? prev.items : {};
 
     const nextItems = {};
-    const newlyAvailable = [];
+    const availableNow = [];
 
     for (const url of urls) {
       const prevAvailable = !!prevItems?.[url]?.available;
       const status = await fetchUrlStatus(url);
       if (!status) {
         nextItems[url] = { available: prevAvailable, status: 0, checkedAt, error: 'fetch_failed' };
+        if (prevAvailable) availableNow.push({ url, status: 0 });
         continue;
       }
       const available = status !== 404;
       nextItems[url] = { available, status, checkedAt, error: '' };
-      if (!prevAvailable && available) newlyAvailable.push({ url, status });
+      if (available) availableNow.push({ url, status });
     }
 
     await setGpt53State({ checkedAt, items: nextItems });
 
-    if (newlyAvailable.length) {
+    try {
+      // Keep alerts as "current availability" (not a one-shot event stream).
+      const events = availableNow
+        .map((it) => ({ at: checkedAt, url: String(it.url || ''), status: Number(it.status) || 0 }))
+        .filter((e) => e.at && e.url)
+        .slice(-50);
+      const unread = Math.max(0, Math.min(99, availableNow.length));
+      const nextAlerts = { unread, events };
+      await setGpt53Alerts(nextAlerts);
+      setActionBadge(unread);
+
+      if (!availableNow.length) return;
+
+      const msg = buildGpt53AlertMessage(nextAlerts);
+      const title = 'OpenAI 新模型提示';
+
+      // System notification (best-effort).
+      // NOTE: intentionally notify every probe while resources remain available so users won't miss it.
       try {
-        const prevAlerts = await getGpt53Alerts();
-        const events = Array.isArray(prevAlerts.events) ? prevAlerts.events.slice() : [];
-        for (const it of newlyAvailable) {
-          events.push({ at: checkedAt, url: it.url, status: Number(it.status) || 0 });
-        }
-        // Keep last 50 events to avoid unbounded growth.
-        const trimmed = events.slice(Math.max(0, events.length - 50));
-        const unread = Math.max(0, Math.min(99, (Number(prevAlerts.unread) || 0) + newlyAvailable.length));
-        const nextAlerts = { unread, events: trimmed };
-        await setGpt53Alerts(nextAlerts);
-
-        // Badge is more reliable than system notifications for some users (OS-level notifications may be disabled).
-        setActionBadge(unread);
-
-        const msg = buildGpt53AlertMessage(nextAlerts);
-        const title = 'OpenAI 新模型提示';
-
-        // System notification (best-effort).
-        try {
-          chrome.notifications.create(`${GPT53_MONITOR.notifyId}_${checkedAt}`, {
-            type: 'basic',
-            iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-            title,
-            message:
-              newlyAvailable.length === 1
-                ? `检测到资源已可访问：${formatGpt53AlertLine({ url: newlyAvailable[0]?.url, status: newlyAvailable[0]?.status })}`
-                : `检测到 ${newlyAvailable.length} 个资源已可访问：${msg}`,
-            priority: 2
-          });
-        } catch {}
-
-        // In-extension alert (Options / Popup).
-        broadcastGpt53Alert({ title, message: msg, unread, checkedAt });
+        chrome.notifications.create(`${GPT53_MONITOR.notifyId}_${checkedAt}`, {
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+          title,
+          message:
+            availableNow.length === 1
+              ? `检测到资源可访问：${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
+              : `检测到 ${availableNow.length} 个资源可访问：${msg}`,
+          priority: 2
+        });
       } catch {}
-    }
+
+      // In-extension alert (Options / Popup).
+      broadcastGpt53Alert({ title, message: msg, unread, checkedAt });
+    } catch {}
   }
 
   async function getGpt53Alarm() {

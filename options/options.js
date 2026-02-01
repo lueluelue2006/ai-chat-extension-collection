@@ -382,7 +382,7 @@
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
     const more = events.length > 3 ? `…+${events.length - 3}` : '';
     const msg = parts.length ? `${parts.join('，')}${more}` : '';
-    elGpt53AlertText.textContent = `检测到 ${unread} 条新资源已可访问：${msg}`;
+    elGpt53AlertText.textContent = `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`;
     elGpt53AlertBox.hidden = false;
   }
 

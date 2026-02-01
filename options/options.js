@@ -14,7 +14,12 @@
   const btnGpt53Run = document.getElementById('gpt53Run');
   const elGpt53Urls = document.getElementById('gpt53Urls');
   const elGpt53Status = document.getElementById('gpt53Status');
-  const btnThemeToggle = document.getElementById('themeToggle');
+  const elGpt53AlertBox = document.getElementById('gpt53AlertBox');
+  const elGpt53AlertText = document.getElementById('gpt53AlertText');
+  const btnGpt53MarkRead = document.getElementById('gpt53MarkRead');
+  const elThemeToggle = document.getElementById('themeToggle');
+  const btnThemeLight = document.getElementById('themeLight');
+  const btnThemeDark = document.getElementById('themeDark');
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
   const elModuleSettings = document.getElementById('moduleSettings');
@@ -115,22 +120,32 @@
   }
 
   function renderThemeToggle() {
-    if (!btnThemeToggle) return;
     const effective = getEffectiveTheme();
-    const isDark = effective === 'dark';
-    btnThemeToggle.textContent = isDark ? '☀︎' : '☾';
-    btnThemeToggle.title = isDark ? '切换为亮色' : '切换为暗色';
-    btnThemeToggle.setAttribute('aria-label', isDark ? '切换为亮色主题' : '切换为暗色主题');
+    const isLight = effective === 'light';
+
+    if (btnThemeLight) {
+      btnThemeLight.classList.toggle('active', isLight);
+      btnThemeLight.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+      btnThemeLight.title = isLight ? '当前：亮色' : '切换为亮色';
+    }
+    if (btnThemeDark) {
+      btnThemeDark.classList.toggle('active', !isLight);
+      btnThemeDark.setAttribute('aria-pressed', !isLight ? 'true' : 'false');
+      btnThemeDark.title = !isLight ? '当前：暗色' : '切换为暗色';
+    }
   }
 
   function initUiThemeToggle() {
     applyUiTheme();
     renderThemeToggle();
 
-    btnThemeToggle?.addEventListener('click', () => {
-      const effective = getEffectiveTheme();
-      const next = effective === 'dark' ? 'light' : 'dark';
-      writeUiThemeOverride(next);
+    btnThemeLight?.addEventListener('click', () => {
+      writeUiThemeOverride('light');
+      applyUiTheme();
+      renderThemeToggle();
+    });
+    btnThemeDark?.addEventListener('click', () => {
+      writeUiThemeOverride('dark');
       applyUiTheme();
       renderThemeToggle();
     });
@@ -167,12 +182,23 @@
     return `${sec}s`;
   }
 
+  function formatGpt53AlertLine(ev) {
+    try {
+      const url = String(ev?.url || '');
+      const status = Number(ev?.status) || 0;
+      const u = new URL(url);
+      const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
+      return status ? `${name}（${status}）` : name;
+    } catch {
+      const status = Number(ev?.status) || 0;
+      return status ? `（${status}）` : '';
+    }
+  }
+
   function renderGpt53MonitorStatus(resp) {
     if (!elGpt53Status) return;
-    if (!resp || resp.ok !== true) {
-      elGpt53Status.textContent = '（无响应）';
-      return;
-    }
+    elGpt53Status.textContent = '';
+    if (!resp || resp.ok !== true) return void (elGpt53Status.textContent = '（无响应）');
     const alarm = resp.alarm && typeof resp.alarm === 'object' ? resp.alarm : null;
     const state = resp.state && typeof resp.state === 'object' ? resp.state : null;
     const now = Number(resp.now) || Date.now();
@@ -225,7 +251,139 @@
       nowText: formatDateTime(now)
     };
 
-    elGpt53Status.textContent = JSON.stringify(view, null, 2);
+    const summary = document.createElement('div');
+    summary.className = 'gpt53StatusSummary';
+
+    const pushLine = (label, value) => {
+      const line = document.createElement('div');
+      const strong = document.createElement('strong');
+      strong.textContent = `${label}：`;
+      line.appendChild(strong);
+      line.appendChild(document.createTextNode(String(value || '')));
+      summary.appendChild(line);
+    };
+
+    const enabledText = view.enabled ? '开启' : '关闭';
+    const interval = Number(view.alarm?.periodInMinutes) || 5;
+    pushLine('监控', `${enabledText}（每 ${interval} 分钟）`);
+
+    if (view.alarm?.scheduledAt) {
+      pushLine('下次', `${view.alarm.scheduledAt}${view.alarm.nextIn ? `（${view.alarm.nextIn}）` : ''}`);
+    } else {
+      pushLine('下次', '（未知）');
+    }
+
+    const checkedAtText = view.state?.checkedAtText || '';
+    const checkedAgo = view.state?.checkedAgo || '';
+    if (checkedAtText) {
+      pushLine('上次', `${checkedAtText}${checkedAgo ? `（${checkedAgo} 前）` : ''}`);
+    } else {
+      pushLine('上次', '（未检测）');
+    }
+
+    elGpt53Status.appendChild(summary);
+
+    const resultsList = Array.isArray(view.state?.results) ? view.state.results : [];
+    if (!resultsList.length) {
+      const empty = document.createElement('div');
+      empty.style.marginTop = '10px';
+      empty.style.color = 'var(--muted)';
+      empty.style.fontSize = '12px';
+      empty.textContent = '（URL 列表为空）';
+      elGpt53Status.appendChild(empty);
+      return;
+    }
+
+    const table = document.createElement('div');
+    table.className = 'gpt53Table';
+
+    const header = document.createElement('div');
+    header.className = 'gpt53TableHeader';
+    header.innerHTML = '<div>资源</div><div>状态</div><div>结果</div><div>上次</div>';
+    table.appendChild(header);
+
+    for (const it of resultsList) {
+      const url = String(it?.url || '').trim();
+      const status = Number(it?.status) || 0;
+      const available = typeof it?.available === 'boolean' ? it.available : null;
+      const error = String(it?.error || '').trim();
+      const checkedAgo = String(it?.checkedAgo || '').trim();
+      const checkedAtText = String(it?.checkedAtText || '').trim();
+
+      const name = (() => {
+        try {
+          const u = new URL(url);
+          return String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
+        } catch {
+          return url || 'unknown';
+        }
+      })();
+
+      const row = document.createElement('div');
+      row.className = 'gpt53TableRow';
+
+      const cellName = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'gpt53CellTitle';
+      title.textContent = name;
+      cellName.appendChild(title);
+      if (url) {
+        const sub = document.createElement('div');
+        sub.className = 'gpt53CellSub';
+        sub.textContent = url;
+        cellName.appendChild(sub);
+      }
+      if (error) {
+        const sub = document.createElement('div');
+        sub.className = 'gpt53CellSub';
+        sub.textContent = `error: ${error}`;
+        cellName.appendChild(sub);
+      }
+
+      const cellStatus = document.createElement('div');
+      cellStatus.textContent = status ? String(status) : '—';
+
+      const cellResult = document.createElement('div');
+      if (available === true) {
+        cellResult.className = 'gpt53ResultOk';
+        cellResult.textContent = '可用';
+      } else if (available === false) {
+        cellResult.className = 'gpt53ResultBad';
+        cellResult.textContent = '不可用';
+      } else {
+        cellResult.className = 'gpt53ResultUnknown';
+        cellResult.textContent = '未知';
+      }
+
+      const cellWhen = document.createElement('div');
+      cellWhen.textContent = checkedAgo ? `${checkedAgo} 前` : checkedAtText ? checkedAtText : '—';
+
+      row.appendChild(cellName);
+      row.appendChild(cellStatus);
+      row.appendChild(cellResult);
+      row.appendChild(cellWhen);
+      table.appendChild(row);
+    }
+
+    elGpt53Status.appendChild(table);
+  }
+
+  function renderGpt53AlertBox(alerts) {
+    if (!elGpt53AlertBox || !elGpt53AlertText) return;
+    const unread = Number(alerts?.unread) || 0;
+    const events = Array.isArray(alerts?.events) ? alerts.events : [];
+    if (!unread || !events.length) {
+      elGpt53AlertBox.hidden = true;
+      elGpt53AlertText.textContent = '';
+      return;
+    }
+
+    const last = events.slice(-3);
+    const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
+    const more = events.length > 3 ? `…+${events.length - 3}` : '';
+    const msg = parts.length ? `${parts.join('，')}${more}` : '';
+    elGpt53AlertText.textContent = `检测到 ${unread} 条新资源已可访问：${msg}`;
+    elGpt53AlertBox.hidden = false;
   }
 
   function formatHotkeys(hotkeys) {
@@ -434,6 +592,8 @@
   let saveSeq = 0;
   let gpt53Seq = 0;
   let renderSeq = 0;
+  let pendingDeepLinkScroll = null; // { siteId, moduleId }
+  let teardownModuleSettingsSideEffects = () => {}; // called before switching module settings
   let currentSettings = null;
   let selectedSiteId = SITES[0]?.id || 'chatgpt';
   let selectedModuleId = 'quicknav';
@@ -461,6 +621,106 @@
 
   function getSite(id) {
     return SITES.find((s) => s.id === id) || null;
+  }
+
+  function parseDeepLinkHash() {
+    try {
+      const raw = String(window.location.hash || '').trim();
+      if (!raw || raw === '#') return null;
+      const params = new URLSearchParams(raw.replace(/^#/, ''));
+      const site = String(params.get('site') || '').trim();
+      const moduleId = String(params.get('module') || '').trim();
+      if (!site) return null;
+      return { site, moduleId };
+    } catch {
+      return null;
+    }
+  }
+
+  function applyDeepLinkSelection() {
+    const parsed = parseDeepLinkHash();
+    if (!parsed) return false;
+    const site = getSite(parsed.site);
+    if (!site) return false;
+
+    selectedSiteId = site.id;
+    if (typeof parsed.moduleId === 'string' && parsed.moduleId && Array.isArray(site.modules) && site.modules.includes(parsed.moduleId)) {
+      selectedModuleId = parsed.moduleId;
+    }
+
+    // Clear searches so the deep-linked target is always visible/selected.
+    siteSearchText = '';
+    moduleSearchText = '';
+    if (elSiteSearch) elSiteSearch.value = '';
+    if (elModuleSearch) elModuleSearch.value = '';
+
+    pendingDeepLinkScroll = { siteId: selectedSiteId, moduleId: selectedModuleId };
+    return true;
+  }
+
+  function scrollTriListToSelected(listEl) {
+    if (!listEl) return false;
+    const selected = listEl.querySelector('.triRow.selected');
+    if (!selected) return false;
+    const isVisible = () => {
+      try {
+        const listRect = listEl.getBoundingClientRect();
+        const elRect = selected.getBoundingClientRect();
+        // Allow a tiny margin for sub-pixel/scrollbar rounding.
+        return elRect.top >= listRect.top - 2 && elRect.bottom <= listRect.bottom + 2;
+      } catch {
+        return false;
+      }
+    };
+    if (isVisible()) return true;
+    try {
+      selected.scrollIntoView({ block: 'center', inline: 'nearest' });
+      return isVisible();
+    } catch {
+      try {
+        selected.scrollIntoView();
+        return isVisible();
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  function flushDeepLinkScroll() {
+    if (!pendingDeepLinkScroll) return;
+
+    const startedAt = Date.now();
+    const DEADLINE_MS = 1500;
+
+    const attempt = () => {
+      if (!pendingDeepLinkScroll) return;
+      const okA = scrollTriListToSelected(elSiteList);
+      const okB = scrollTriListToSelected(elModuleList);
+
+      // If we at least located the selected row(s), treat it as success and stop retrying.
+      if (okA || okB) {
+        pendingDeepLinkScroll = null;
+        return;
+      }
+
+      if (Date.now() - startedAt > DEADLINE_MS) {
+        pendingDeepLinkScroll = null;
+        return;
+      }
+
+      try {
+        requestAnimationFrame(attempt);
+      } catch {
+        setTimeout(attempt, 50);
+      }
+    };
+
+    // Run after paint so the scroll containers have computed sizes.
+    try {
+      requestAnimationFrame(attempt);
+    } catch {
+      setTimeout(attempt, 0);
+    }
   }
 
   function normalizePatterns(input) {
@@ -1537,7 +1797,11 @@
   }
 
   async function renderChatGPTUsageMonitorModuleSettings(siteId, token) {
-    addModuleHeader('chatgpt_usage_monitor', 'ChatGPT 用量统计', '后台统计各模型调用量（不再注入页面内面板）；在此配置页查看/导入/导出。');
+    addModuleHeader(
+      'chatgpt_usage_monitor',
+      'ChatGPT 用量统计',
+      '在配置页展示“油猴同款”用量面板（含滑动窗口与进度条）；数据来自 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。'
+    );
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1562,7 +1826,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；为稳定与性能考虑，不再在 chatgpt.com 注入悬浮面板。';
+      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；为稳定与性能考虑，不在 chatgpt.com 页面注入用量面板，仅在本配置页展示。';
     elModuleSettings.appendChild(hint);
 
     let planType;
@@ -1621,9 +1885,9 @@
     rowPlan.appendChild(selectPlan);
     elModuleSettings.appendChild(rowPlan);
 
-    // Usage data viewer (options-only).
+    // Usage dashboard viewer (options-only).
     addPanelDivider();
-    addPanelTitle('用量数据', '数据存储在扩展 storage.local；需要在 chatgpt.com 实际发送过消息才会产生记录。');
+    addPanelTitle('用量面板', '展示效果与油猴脚本一致；数据存储在扩展 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。');
 
     const USAGE_DATA_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
     const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
@@ -1647,14 +1911,86 @@
     }
     const { TIME_WINDOWS, tsOf, validateImportedData, summarizeImport, mergeUsageData } = usageUtils;
 
-    const windowLabel = (windowType) => {
-      const t = String(windowType || '').trim();
-      if (t === 'hour3') return '3h';
-      if (t === 'hour5') return '5h';
-      if (t === 'daily') return '24h';
-      if (t === 'weekly') return '7d';
-      if (t === 'monthly') return '30d';
-      return t || '—';
+    // Match the upstream (Tampermonkey) usage dashboard UI.
+    const COLORS = {
+      background: '#1A1B1E',
+      surface: '#2A2B2E',
+      border: '#363636',
+      text: '#E5E7EB',
+      secondaryText: '#9CA3AF',
+      success: '#10B981',
+      warning: '#F59E0B',
+      danger: '#EF4444',
+      disabled: '#4B5563',
+      yellow: '#facc15',
+      progressLow: '#EF4444',
+      progressMed: '#F59E0B',
+      progressHigh: '#10B981',
+      progressExceed: '#4B5563',
+      hourModel: '#61DAFB',
+      dailyModel: '#9F7AEA',
+      weeklyModel: '#10B981',
+      monthlyModel: '#F472B6'
+    };
+
+    const SHARED_GROUP_COLORS = {
+      'pro-premium-shared': '#facc15',
+      'pro-thinking-shared': '#34d399',
+      'pro-instant-shared': '#60a5fa',
+      'team-premium-shared': '#facc15',
+      'edu-premium-shared': '#facc15',
+      'enterprise-premium-shared': '#facc15',
+      'go-thinking-shared': '#34d399',
+      'k12-thinking-shared': '#34d399',
+      'plus-thinking-shared': '#34d399',
+      'team-thinking-shared': '#34d399',
+      'edu-thinking-shared': '#34d399',
+      'enterprise-thinking-shared': '#34d399',
+      'free-instant-shared': '#60a5fa',
+      'go-instant-shared': '#60a5fa',
+      'k12-instant-shared': '#60a5fa',
+      'plus-instant-shared': '#60a5fa',
+      'team-instant-shared': '#60a5fa',
+      'edu-instant-shared': '#60a5fa',
+      'enterprise-instant-shared': '#60a5fa'
+    };
+
+    const MODEL_DISPLAY_ORDER = [
+      'gpt-5-2-pro',
+      'gpt-5-1-pro',
+      'gpt-5-pro',
+      'o3-pro',
+      'gpt-4-5',
+      'gpt-5-2-thinking',
+      'gpt-5-1-thinking',
+      'gpt-5-thinking',
+      'o3',
+      'gpt-5-2-instant',
+      'gpt-5-1',
+      'gpt-5-t-mini',
+      'o4-mini',
+      'gpt-4o',
+      'gpt-4-1',
+      'gpt-5-mini',
+      'gpt-5',
+      'alpha'
+    ];
+    const MODEL_DISPLAY_NAME_OVERRIDES = {
+      'gpt-5': 'gpt-5-instant',
+      'gpt-5-1': 'gpt-5-1-instant'
+    };
+    const displayModelName = (modelKey) => MODEL_DISPLAY_NAME_OVERRIDES[String(modelKey || '')] || String(modelKey || '');
+
+    const formatTimeAgo = (timestamp) => {
+      const now = Date.now();
+      const seconds = Math.floor((now - timestamp) / 1000);
+      if (seconds < 60) return `${seconds}s ago`;
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
     };
 
     const formatTimeLeft = (windowEnd) => {
@@ -1666,22 +2002,9 @@
       return `${hours}h ${minutes}m`;
     };
 
-    const collectActiveTs = (requests, windowDuration, now) => {
-      const list = Array.isArray(requests) ? requests : [];
-      const out = [];
-      for (const r of list) {
-        const ts = tsOf(r);
-        if (!Number.isFinite(ts)) continue;
-        if (now - ts < windowDuration) out.push(ts);
-      }
-      out.sort((a, b) => a - b);
-      return out;
-    };
-
-    const computeWindowInfo = (activeTs, windowDuration) => {
-      if (!activeTs.length) return { windowEnd: null };
-      const oldest = activeTs[0];
-      return { windowEnd: oldest + windowDuration };
+    const getWindowEnd = (timestamp, windowType) => {
+      const dur = TIME_WINDOWS[String(windowType || '')] || TIME_WINDOWS.daily;
+      return Number(timestamp) + dur;
     };
 
     const getAllUsageKeys = async () => {
@@ -1719,134 +2042,494 @@
       };
     };
 
-    const box = document.createElement('div');
-    box.className = 'codeBox';
-    box.textContent = '（点击“刷新数据”以加载）';
-    elModuleSettings.appendChild(box);
+    const dash = document.createElement('div');
+    dash.className = 'cgptUsageDash';
+    elModuleSettings.appendChild(dash);
 
-    const actions = document.createElement('div');
-    actions.className = 'actions';
+    const dashHeader = document.createElement('header');
+    dashHeader.className = 'cgptUsageDashHeader';
+    dash.appendChild(dashHeader);
+
+    const btnTabUsage = document.createElement('button');
+    btnTabUsage.type = 'button';
+    btnTabUsage.className = 'cgptUsageDashTab active';
+    btnTabUsage.textContent = '用量';
+    dashHeader.appendChild(btnTabUsage);
+
+    const btnTabSettings = document.createElement('button');
+    btnTabSettings.type = 'button';
+    btnTabSettings.className = 'cgptUsageDashTab';
+    btnTabSettings.textContent = '设置';
+    dashHeader.appendChild(btnTabSettings);
+
+    const dashContent = document.createElement('div');
+    dashContent.className = 'cgptUsageDashContent';
+    dash.appendChild(dashContent);
+
+    const usagePane = document.createElement('div');
+    usagePane.className = 'cgptUsageDashPane';
+    dashContent.appendChild(usagePane);
+
+    const settingsPane = document.createElement('div');
+    settingsPane.className = 'cgptUsageDashPane';
+    settingsPane.hidden = true;
+    dashContent.appendChild(settingsPane);
+
+    const setActivePane = (name) => {
+      const showUsage = name !== 'settings';
+      btnTabUsage.classList.toggle('active', showUsage);
+      btnTabSettings.classList.toggle('active', !showUsage);
+      usagePane.hidden = !showUsage;
+      settingsPane.hidden = showUsage;
+    };
+    btnTabUsage.addEventListener('click', () => setActivePane('usage'));
+    btnTabSettings.addEventListener('click', () => setActivePane('settings'));
+
+    const settingsHint = document.createElement('div');
+    settingsHint.className = 'cgptUsageHint';
+    settingsHint.textContent = '导入/导出/清空仅影响扩展本地存储；不会影响你的 ChatGPT 账号。';
+    settingsPane.appendChild(settingsHint);
+
+    const settingsActions = document.createElement('div');
+    settingsActions.className = 'cgptUsageActions';
+    settingsPane.appendChild(settingsActions);
 
     const btnRefresh = document.createElement('button');
     btnRefresh.type = 'button';
-    btnRefresh.className = 'btn';
+    btnRefresh.className = 'cgptUsageBtn';
     btnRefresh.textContent = '刷新数据';
+    settingsActions.appendChild(btnRefresh);
 
     const btnExport = document.createElement('button');
     btnExport.type = 'button';
-    btnExport.className = 'btn secondary';
+    btnExport.className = 'cgptUsageBtn';
     btnExport.textContent = '导出 JSON';
+    settingsActions.appendChild(btnExport);
 
     const btnImport = document.createElement('button');
     btnImport.type = 'button';
-    btnImport.className = 'btn secondary';
+    btnImport.className = 'cgptUsageBtn';
     btnImport.textContent = '导入 JSON';
+    settingsActions.appendChild(btnImport);
 
     const btnClear = document.createElement('button');
     btnClear.type = 'button';
-    btnClear.className = 'btn secondary';
+    btnClear.className = 'cgptUsageBtn cgptUsageBtnDanger';
     btnClear.textContent = '清空数据';
+    settingsActions.appendChild(btnClear);
 
-    actions.appendChild(btnRefresh);
-    actions.appendChild(btnExport);
-    actions.appendChild(btnImport);
-    actions.appendChild(btnClear);
-    elModuleSettings.appendChild(actions);
+    const collectSharedGroupUsage = (usageData, groupId, now) => {
+      const group = usageData?.sharedQuotaGroups?.[groupId];
+      if (!group) return null;
+      const windowType = group.windowType || 'daily';
+      const windowDuration = TIME_WINDOWS[String(windowType)] || TIME_WINDOWS.daily;
+      const activeRequests = [];
+      Object.entries(usageData?.models || {}).forEach(([key, model]) => {
+        if (String(model?.sharedGroup || '') !== String(groupId)) return;
+        if (!Array.isArray(model?.requests)) return;
+        model.requests
+          .map((req) => tsOf(req))
+          .filter((ts) => typeof ts === 'number' && !Number.isNaN(ts) && now - ts < windowDuration)
+          .forEach((ts) => activeRequests.push({ ts, modelKey: key }));
+      });
+      activeRequests.sort((a, b) => a.ts - b.ts);
+      return {
+        group,
+        windowType,
+        windowDuration,
+        activeRequests,
+        windowEnd: activeRequests.length > 0 ? getWindowEnd(activeRequests[0].ts, windowType) : null
+      };
+    };
 
-    const renderUsageBox = async () => {
-      btnRefresh.disabled = true;
-      try {
-        const { usageData, planType: gmPlan } = await loadUsageSnapshot();
-        if (!usageData || typeof usageData !== 'object') {
-          box.textContent = '暂无用量记录。\n\n提示：打开 https://chatgpt.com/ 并发送一条消息后，这里才会出现统计数据。';
-          return;
+    const createUsageModelRow = (usageData, model, modelKey) => {
+      const now = Date.now();
+      let count = 0;
+      let quota = 0;
+      let windowType = 'daily';
+      let lastRequestTime = 'never';
+      let windowEndInfo = '';
+
+      if (model?.sharedGroup) {
+        const sharedUsage = collectSharedGroupUsage(usageData, model.sharedGroup, now);
+        if (sharedUsage) {
+          quota = sharedUsage.group.quota;
+          windowType = sharedUsage.windowType;
+          count = sharedUsage.activeRequests.length;
+          const modelRequests = sharedUsage.activeRequests.filter((req) => req.modelKey === modelKey);
+          if (modelRequests.length > 0) {
+            lastRequestTime = formatTimeAgo(Math.max(...modelRequests.map((req) => req.ts)));
+          }
+          if (count > 0 && usageData?.showWindowResetTime) {
+            const oldestActiveTimestamp = Math.min(...sharedUsage.activeRequests.map((req) => req.ts));
+            const windowEnd = getWindowEnd(oldestActiveTimestamp, windowType);
+            if (windowEnd > now) windowEndInfo = `Window resets in: ${formatTimeLeft(windowEnd)}`;
+          }
         }
+      } else {
+        quota = model?.quota;
+        windowType = model?.windowType;
+        const windowDuration = TIME_WINDOWS[String(windowType)] || TIME_WINDOWS.daily;
+        const activeRequests = (model?.requests || []).map((req) => tsOf(req)).filter((ts) => now - ts < windowDuration);
+        count = activeRequests.length;
+        if (count > 0) lastRequestTime = formatTimeAgo(Math.max(...activeRequests));
+        if (count > 0 && usageData?.showWindowResetTime) {
+          const oldestActiveTimestamp = Math.min(...activeRequests);
+          const windowEnd = getWindowEnd(oldestActiveTimestamp, windowType);
+          if (windowEnd > now) windowEndInfo = `Window resets in: ${formatTimeLeft(windowEnd)}`;
+        }
+      }
 
-        const now = Date.now();
-        const models = usageData.models && typeof usageData.models === 'object' ? usageData.models : {};
-        const sharedGroups =
-          usageData.sharedQuotaGroups && typeof usageData.sharedQuotaGroups === 'object' ? usageData.sharedQuotaGroups : {};
+      const row = document.createElement('div');
+      row.className = 'model-row';
 
-        let lastReq = 0;
+      const modelNameContainer = document.createElement('div');
+      modelNameContainer.style.display = 'flex';
+      modelNameContainer.style.alignItems = 'center';
+      const modelName = document.createElement('span');
+      modelName.textContent = displayModelName(modelKey);
+      let sharedColor = null;
+      if (model?.sharedGroup) {
+        sharedColor = SHARED_GROUP_COLORS[String(model.sharedGroup)] || COLORS.warning;
+        modelName.style.color = sharedColor;
+        modelName.title = `共享组：${usageData?.sharedQuotaGroups?.[model.sharedGroup]?.displayName || model.sharedGroup}`;
+      }
+      modelNameContainer.appendChild(modelName);
+
+      const windowBadge = document.createElement('span');
+      windowBadge.className = `window-badge ${windowType}`;
+      windowBadge.textContent =
+        windowType === 'hour3'
+          ? '3h'
+          : windowType === 'hour5'
+            ? '5h'
+            : windowType === 'daily'
+              ? '24h'
+              : windowType === 'weekly'
+                ? '7d'
+                : '30d';
+      modelNameContainer.appendChild(windowBadge);
+      row.appendChild(modelNameContainer);
+
+      const lastUpdateValue = document.createElement('div');
+      lastUpdateValue.className = 'request-time';
+      lastUpdateValue.textContent = lastRequestTime;
+      row.appendChild(lastUpdateValue);
+
+      const usageValue = document.createElement('div');
+      if (sharedColor) usageValue.style.color = sharedColor;
+      const currentPlan = usageData?.planType || 'team';
+      const quotaDisplay = quota === 0 ? (currentPlan === 'pro' ? '∞' : '不可用') : String(quota ?? '不可用');
+      usageValue.textContent = `${count} / ${quotaDisplay}`;
+      if (windowEndInfo && usageData?.showWindowResetTime) {
+        const windowInfoEl = document.createElement('div');
+        windowInfoEl.className = 'window-info';
+        windowInfoEl.textContent = windowEndInfo;
+        usageValue.appendChild(windowInfoEl);
+      }
+      row.appendChild(usageValue);
+
+      const progressCell = document.createElement('div');
+      if (quota === 0) {
+        if (currentPlan === 'pro') {
+          progressCell.textContent = '无限制';
+          progressCell.style.color = COLORS.success;
+          progressCell.style.fontStyle = 'italic';
+        } else {
+          progressCell.textContent = '不可用';
+          progressCell.style.color = COLORS.disabled;
+          progressCell.style.fontStyle = 'italic';
+        }
+      } else {
+        const usagePercent = quota ? count / quota : 0;
+        if (usageData?.progressType === 'dots') {
+          const dotContainer = document.createElement('div');
+          dotContainer.className = 'dot-progress';
+          const totalDots = 8;
+          for (let i = 0; i < totalDots; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'dot';
+            const dotThreshold = (i + 1) / totalDots;
+            if (usagePercent >= 1) dot.classList.add('dot-exceeded');
+            else if (usagePercent >= dotThreshold) dot.classList.add('dot-full');
+            else if (usagePercent >= dotThreshold - 0.1) dot.classList.add('dot-partial');
+            else dot.classList.add('dot-empty');
+            dotContainer.appendChild(dot);
+          }
+          progressCell.appendChild(dotContainer);
+        } else {
+          const progressContainer = document.createElement('div');
+          progressContainer.className = 'progress-container';
+          const progressBar = document.createElement('div');
+          progressBar.className = 'progress-bar';
+          if (usagePercent > 1) progressBar.classList.add('exceeded');
+          else if (usagePercent < 0.3) progressBar.classList.add('low-usage');
+          progressBar.style.width = `${Math.min(usagePercent * 100, 100)}%`;
+          progressContainer.appendChild(progressBar);
+          progressCell.appendChild(progressContainer);
+        }
+      }
+      row.appendChild(progressCell);
+      return row;
+    };
+
+    const windowShort = (windowType) => {
+      const t = String(windowType || '').trim();
+      if (t === 'hour3') return '3h';
+      if (t === 'hour5') return '5h';
+      if (t === 'daily') return '24h';
+      if (t === 'weekly') return '7d';
+      if (t === 'monthly') return '30d';
+      return t || '—';
+    };
+
+    const formatBytes = (bytes) => {
+      const n = Number(bytes);
+      if (!Number.isFinite(n) || n < 0) return '';
+      if (n < 1024) return `${n} B`;
+      const kb = n / 1024;
+      if (kb < 1024) return `${kb.toFixed(1)} KiB`;
+      const mb = kb / 1024;
+      if (mb < 1024) return `${mb.toFixed(1)} MiB`;
+      const gb = mb / 1024;
+      return `${gb.toFixed(1)} GiB`;
+    };
+
+    const computeUsageDataBytes = (usageData) => {
+      try {
+        const json = JSON.stringify(usageData || null) || '';
+        return new Blob([json]).size;
+      } catch {
+        return 0;
+      }
+    };
+
+    const computeLastActivityAt = (usageData) => {
+      try {
+        const models = usageData?.models && typeof usageData.models === 'object' ? usageData.models : {};
+        let last = 0;
         for (const m of Object.values(models)) {
           const reqs = Array.isArray(m?.requests) ? m.requests : [];
           for (const r of reqs) {
-            const ts = tsOf(r);
-            if (Number.isFinite(ts)) lastReq = Math.max(lastReq, ts);
+            const t = tsOf(r);
+            if (!Number.isFinite(t)) continue;
+            if (t > last) last = t;
           }
         }
+        return last || 0;
+      } catch {
+        return 0;
+      }
+    };
 
-        const lines = [];
-        const effectivePlan = String(usageData.planType || gmPlan || planType || '').trim();
-        if (effectivePlan) lines.push(`Plan: ${effectivePlan}`);
-        if (lastReq) lines.push(`Last activity: ${formatDateTime(lastReq)} (${formatAgeMs(now - lastReq)})`);
-        lines.push('');
+    const renderUsagePane = (usageData) => {
+      usagePane.textContent = '';
+      if (!usageData || typeof usageData !== 'object') {
+        const empty = document.createElement('div');
+        empty.className = 'cgptUsageEmpty';
+        empty.textContent = '暂无用量记录。打开 chatgpt.com 发送一条消息后才会产生统计数据。';
+        usagePane.appendChild(empty);
+        return;
+      }
 
-        const groupIds = Object.keys(sharedGroups);
-        if (groupIds.length) {
-          lines.push('Shared groups:');
-          for (const groupId of groupIds) {
-            const group = sharedGroups[groupId];
-            const windowType = String(group?.windowType || 'daily');
-            const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
-            const quota = typeof group?.quota === 'number' ? group.quota : null;
-            const displayName = String(group?.displayName || '').trim();
+      const now = Date.now();
+      const planKey = String(usageData?.planType || planType || 'team').trim() || 'team';
+      const planLabel = CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === planKey)?.[1] || planKey;
+      const lastAt = computeLastActivityAt(usageData);
+      const sizeBytes = computeUsageDataBytes(usageData);
 
-            const active = [];
-            const memberModels = [];
-            for (const [modelKey, model] of Object.entries(models)) {
-              if (String(model?.sharedGroup || '') !== groupId) continue;
-              memberModels.push(modelKey);
-              const ts = collectActiveTs(model?.requests, windowDuration, now);
-              active.push(...ts.map((t) => ({ ts: t, modelKey })));
-            }
-            active.sort((a, b) => a.ts - b.ts);
-            const used = active.length;
-            const info = computeWindowInfo(active.map((x) => x.ts), windowDuration);
-            const reset = info.windowEnd ? `, resets in ${formatTimeLeft(info.windowEnd)}` : '';
-            const name = displayName ? `${displayName} (${groupId})` : groupId;
-            const quotaText = quota != null ? `${used}/${quota}` : `${used}/?`;
-            lines.push(`- ${name}: ${quotaText} (${windowLabel(windowType)})${reset}`);
-            if (memberModels.length) lines.push(`  models: ${memberModels.join(', ')}`);
-          }
-          lines.push('');
+      const meta = document.createElement('div');
+      meta.className = 'cgptUsageMeta';
+      const addMetaRow = (k, v) => {
+        const row = document.createElement('div');
+        row.className = 'cgptUsageMetaRow';
+        const key = document.createElement('div');
+        key.className = 'cgptUsageMetaKey';
+        key.textContent = k;
+        const val = document.createElement('div');
+        val.className = 'cgptUsageMetaVal';
+        val.textContent = v;
+        row.appendChild(key);
+        row.appendChild(val);
+        meta.appendChild(row);
+      };
+      addMetaRow('套餐', planLabel);
+      addMetaRow('最近活动', lastAt ? `${formatDateTime(lastAt)}（${formatAgeMs(now - lastAt)}）` : '—');
+      addMetaRow('数据大小', sizeBytes ? formatBytes(sizeBytes) : '—');
+      usagePane.appendChild(meta);
+
+      const sharedGroups =
+        usageData?.sharedQuotaGroups && typeof usageData.sharedQuotaGroups === 'object' ? usageData.sharedQuotaGroups : {};
+      const groupIds = Object.keys(sharedGroups);
+      const weightGroup = (id) => {
+        const s = String(id || '').toLowerCase();
+        if (s.includes('instant')) return 0;
+        if (s.includes('premium')) return 1;
+        if (s.includes('thinking')) return 2;
+        return 3;
+      };
+      groupIds.sort((a, b) => weightGroup(a) - weightGroup(b) || String(a).localeCompare(String(b)));
+
+      const makeTitleSub = (title, sub) => {
+        const wrap = document.createElement('div');
+        const t = document.createElement('div');
+        t.className = 'cgptUsageCellTitle';
+        t.textContent = title;
+        wrap.appendChild(t);
+        if (sub) {
+          const s = document.createElement('div');
+          s.className = 'cgptUsageCellSub';
+          s.textContent = sub;
+          wrap.appendChild(s);
         }
+        return wrap;
+      };
 
-        const standalone = Object.entries(models).filter(([, m]) => !String(m?.sharedGroup || '').trim());
-        if (standalone.length) {
-          lines.push('Models:');
-          for (const [modelKey, model] of standalone) {
-            const windowType = String(model?.windowType || 'daily');
-            const windowDuration = TIME_WINDOWS[windowType] || TIME_WINDOWS.daily;
-            const quota = typeof model?.quota === 'number' ? model.quota : null;
-            const activeTs = collectActiveTs(model?.requests, windowDuration, now);
-            const used = activeTs.length;
-            const info = computeWindowInfo(activeTs, windowDuration);
-            const reset = info.windowEnd ? `, resets in ${formatTimeLeft(info.windowEnd)}` : '';
-            const quotaText = quota != null ? `${used}/${quota}` : `${used}/?`;
-            lines.push(`- ${modelKey}: ${quotaText} (${windowLabel(windowType)})${reset}`);
-          }
+      const renderSectionTitle = (text) => {
+        const h = document.createElement('div');
+        h.className = 'cgptUsageSectionTitle';
+        h.textContent = text;
+        usagePane.appendChild(h);
+      };
+
+      // Shared quota groups (共用池)
+      renderSectionTitle('共用池');
+      if (!groupIds.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cgptUsageEmpty';
+        empty.textContent = '（无共用池数据）';
+        usagePane.appendChild(empty);
+      } else {
+        const table = document.createElement('div');
+        table.className = 'cgptUsageTable cgptUsageTableShared';
+        const header = document.createElement('div');
+        header.className = 'cgptUsageTableHeader';
+        header.innerHTML = '<div>组</div><div>用量</div><div>窗口</div><div>重置</div><div>模型</div>';
+        table.appendChild(header);
+
+        const modelsObj = usageData?.models && typeof usageData.models === 'object' ? usageData.models : {};
+        for (const groupId of groupIds) {
+          const group = sharedGroups[groupId] && typeof sharedGroups[groupId] === 'object' ? sharedGroups[groupId] : {};
+          const sharedUsage = collectSharedGroupUsage(usageData, groupId, now);
+          const quota = Number(sharedUsage?.group?.quota ?? group?.quota ?? 0);
+          const quotaDisplay = quota === 0 && planKey === 'pro' ? '∞' : String(quota);
+          const count = Number(sharedUsage?.activeRequests?.length ?? 0);
+          const windowType = String(sharedUsage?.windowType || group?.windowType || '').trim() || 'daily';
+          const resetText =
+            count > 0 && sharedUsage?.windowEnd && Number(sharedUsage.windowEnd) > now ? `剩余 ${formatTimeLeft(sharedUsage.windowEnd)}` : '—';
+
+          const modelNames = Object.entries(modelsObj)
+            .filter(([, m]) => String(m?.sharedGroup || '') === String(groupId))
+            .map(([k]) => displayModelName(k))
+            .filter(Boolean);
+
+          const row = document.createElement('div');
+          row.className = 'cgptUsageTableRow';
+          row.appendChild(makeTitleSub(String(group.displayName || groupId), groupId));
+          row.appendChild(makeTitleSub(`${count}/${quotaDisplay}`, ''));
+          row.appendChild(makeTitleSub(windowShort(windowType), ''));
+          row.appendChild(makeTitleSub(resetText, ''));
+          row.appendChild(makeTitleSub(modelNames.join(', ') || '—', ''));
+          table.appendChild(row);
         }
+        usagePane.appendChild(table);
+      }
 
-        const jsonBytes = (() => {
-          try {
-            return new Blob([JSON.stringify(usageData)]).size;
-          } catch {
-            return 0;
+      // Direct quota models (模型)
+      renderSectionTitle('模型');
+      const modelsObj = usageData?.models && typeof usageData.models === 'object' ? usageData.models : {};
+      const directKeys = Object.keys(modelsObj).filter((k) => !(modelsObj[k] && typeof modelsObj[k] === 'object' && modelsObj[k].sharedGroup));
+
+      const ordered = [];
+      for (const key of MODEL_DISPLAY_ORDER) {
+        if (!directKeys.includes(key)) continue;
+        ordered.push(key);
+      }
+      const extras = directKeys.filter((k) => !MODEL_DISPLAY_ORDER.includes(k)).sort((a, b) => String(a).localeCompare(String(b)));
+      const allKeys = [...ordered, ...extras];
+
+      if (!allKeys.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cgptUsageEmpty';
+        empty.textContent = '（无模型数据）';
+        usagePane.appendChild(empty);
+      } else {
+        const table = document.createElement('div');
+        table.className = 'cgptUsageTable cgptUsageTableModel';
+        const header = document.createElement('div');
+        header.className = 'cgptUsageTableHeader';
+        header.innerHTML = '<div>模型</div><div>用量</div><div>窗口</div><div>重置</div>';
+        table.appendChild(header);
+
+        for (const modelKey of allKeys) {
+          const model = modelsObj[modelKey] && typeof modelsObj[modelKey] === 'object' ? modelsObj[modelKey] : {};
+          const windowType = String(model?.windowType || 'daily');
+          const windowDuration = TIME_WINDOWS[String(windowType)] || TIME_WINDOWS.daily;
+          const active = (Array.isArray(model?.requests) ? model.requests : [])
+            .map(tsOf)
+            .filter((ts) => Number.isFinite(ts) && now - ts < windowDuration);
+          const count = active.length;
+          const quota = Number(model?.quota ?? 0);
+          const quotaDisplay = quota === 0 && planKey === 'pro' ? '∞' : String(quota);
+          let resetText = '—';
+          if (count > 0) {
+            try {
+              const oldest = Math.min(...active);
+              const end = getWindowEnd(oldest, windowType);
+              if (Number.isFinite(end) && end > now) resetText = `剩余 ${formatTimeLeft(end)}`;
+            } catch {}
           }
-        })();
-        lines.push('');
-        if (jsonBytes) lines.push(`Storage size (approx): ${(jsonBytes / 1024).toFixed(1)} KiB`);
 
-        box.textContent = lines.join('\n');
+          const display = displayModelName(modelKey);
+          const sub = display !== modelKey ? modelKey : '';
+          const row = document.createElement('div');
+          row.className = 'cgptUsageTableRow';
+          row.appendChild(makeTitleSub(display, sub));
+          row.appendChild(makeTitleSub(`${count}/${quotaDisplay}`, ''));
+          row.appendChild(makeTitleSub(windowShort(windowType), ''));
+          row.appendChild(makeTitleSub(resetText, ''));
+          table.appendChild(row);
+        }
+        usagePane.appendChild(table);
+      }
+    };
+
+    let latestUsageData = null;
+    const refreshDashboard = async (showStatus) => {
+      btnRefresh.disabled = true;
+      try {
+        const { usageData } = await loadUsageSnapshot();
+        latestUsageData = usageData || null;
+        renderUsagePane(latestUsageData);
+        if (showStatus) setStatus('已刷新用量数据', 'ok');
       } catch (e) {
-        box.textContent = `加载失败：${e instanceof Error ? e.message : String(e)}`;
+        setStatus(`刷新失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         btnRefresh.disabled = false;
       }
     };
 
-    btnRefresh.addEventListener('click', () => void renderUsageBox());
+    btnRefresh.addEventListener('click', () => void refreshDashboard(true));
+
+    // Auto-refresh when storage changes (avoid polling).
+    const storageListener = (changes, areaName) => {
+      try {
+        if (token !== renderSeq) return;
+        if (areaName !== 'local') return;
+        if (!changes || typeof changes !== 'object') return;
+        if (!(USAGE_DATA_KEY in changes) && !(PLAN_TYPE_GM_KEY in changes)) return;
+        latestUsageData = changes?.[USAGE_DATA_KEY]?.newValue || null;
+        renderUsagePane(latestUsageData);
+      } catch {}
+    };
+    try {
+      chrome.storage.onChanged.addListener(storageListener);
+    } catch {}
+    teardownModuleSettingsSideEffects = () => {
+      try {
+        chrome.storage.onChanged.removeListener(storageListener);
+      } catch {}
+    };
 
     btnExport.addEventListener('click', async () => {
       btnExport.disabled = true;
@@ -1919,7 +2602,7 @@
               }
             });
             setStatus('已导入并合并用量数据（下次打开 chatgpt.com 会自动同步）', 'ok');
-            await renderUsageBox();
+            await refreshDashboard();
           } catch (e) {
             setStatus(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'err');
           } finally {
@@ -1984,7 +2667,7 @@
         });
 
         setStatus('已清空用量统计数据', 'ok');
-        await renderUsageBox();
+        await refreshDashboard();
       } catch (e) {
         setStatus(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
@@ -1992,7 +2675,7 @@
       }
     });
 
-    await renderUsageBox();
+    await refreshDashboard();
   }
 
   function renderChatGPTReplyTimerModuleSettings(siteId) {
@@ -2444,6 +3127,10 @@
 
   function renderModuleSettings(siteId, moduleId, token) {
     if (!elModuleSettings) return;
+    try {
+      teardownModuleSettingsSideEffects?.();
+    } catch {}
+    teardownModuleSettingsSideEffects = () => {};
     elModuleSettings.textContent = '';
 
     if (!currentSettings) {
@@ -2490,6 +3177,7 @@
     renderSites(siteId);
     renderModules(siteId, moduleId);
     renderModuleSettings(siteId, moduleId, token);
+    flushDeepLinkScroll();
   }
 
   async function init() {
@@ -2497,6 +3185,7 @@
     try {
       const settings = await getSettings();
       currentSettings = settings;
+      applyDeepLinkSelection();
       renderAll();
       setStatus('就绪');
     } catch (e) {
@@ -2594,11 +3283,16 @@
         });
         if (seq !== gpt53Seq) return;
         if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed');
+        renderGpt53AlertBox(resp.alerts);
         renderGpt53MonitorStatus(resp);
         setStatus(isRun ? '已完成检测' : isSave ? '已保存监控列表' : '已读取监控状态', 'ok');
       } catch (e) {
         if (seq !== gpt53Seq) return;
-        elGpt53Status.textContent = `（失败）\n${e instanceof Error ? e.message : String(e)}`;
+        elGpt53Status.textContent = '';
+        const box = document.createElement('div');
+        box.className = 'gpt53StatusSummary';
+        box.textContent = `（失败）${e instanceof Error ? e.message : String(e)}`;
+        elGpt53Status.appendChild(box);
         setStatus(`OpenAI 监控操作失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         if (btnA) btnA.disabled = false;
@@ -2612,11 +3306,49 @@
   btnGpt53Save?.addEventListener('click', () => runGpt53Action('save'));
   btnGpt53Refresh?.addEventListener('click', () => runGpt53Action('status'));
   btnGpt53Run?.addEventListener('click', () => runGpt53Action('run'));
+  btnGpt53MarkRead?.addEventListener('click', () => {
+    const run = async () => {
+      if (btnGpt53MarkRead) btnGpt53MarkRead.disabled = true;
+      try {
+        const resp = await sendMessage({ type: 'QUICKNAV_GPT53_MARK_READ' });
+        if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed');
+        renderGpt53AlertBox(resp.alerts);
+        setStatus('已清除 OpenAI 新模型提示', 'ok');
+        try {
+          if (elGpt53Status) runGpt53Action('status');
+        } catch {}
+      } catch (e) {
+        setStatus(`清除提示失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      } finally {
+        if (btnGpt53MarkRead) btnGpt53MarkRead.disabled = false;
+      }
+    };
+    void run();
+  });
 
   // Load the current monitor config/status once on open so users can edit immediately.
   try {
     if (elGpt53Status) runGpt53Action('status');
   } catch {}
+
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      try {
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.type !== 'QUICKNAV_GPT53_ALERT') return;
+        // Refresh alert box (and status JSON) when a new alert arrives while options is open.
+        if (elGpt53Status) runGpt53Action('status');
+      } catch {}
+    });
+  } catch {}
+
+  window.addEventListener('hashchange', () => {
+    try {
+      if (!applyDeepLinkSelection()) return;
+      if (!currentSettings) return;
+      renderAll();
+    } catch {}
+  });
 
   initUiThemeToggle();
   init();

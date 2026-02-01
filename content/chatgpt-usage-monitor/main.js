@@ -363,7 +363,8 @@
     minimizedPositionV2: null,
     size: { width: 400, height: 500 },
     minimized: false,
-    silentMode: false,
+    // MV3: 默认静默（不在页面注入悬浮 UI），仅记录数据并在扩展配置页展示。
+    silentMode: true,
     progressType: "bar",
     planType: "team",
     showWindowResetTime: false,
@@ -761,7 +762,9 @@
   // src/userConfig.js
   // User-controlled silent mode (stored in usageData.silentMode) applies to the top frame.
   // In split-view iframes we always force silent mode, but never persist it back to shared storage.
-  var FORCE_SILENT_MODE = false;
+  // MV3: 在页面主世界注入悬浮 UI 会显著增加 DOM/定时器负担，且容易与 split-view/性能优化模块叠加造成不稳定。
+  // 因此在扩展内强制静默：仅记录用量数据，展示放到 options 页面。
+  var FORCE_SILENT_MODE = true;
   try {
     if (window !== window.top) FORCE_SILENT_MODE = true;
   } catch {
@@ -4316,11 +4319,11 @@
     _uiUpdateIntervalId = setInterval(updateUI, 6e4);
   }
 
-  // src/main.js
-  function main() {
-	    // Headless mode: keep tracking + plan sync, but remove the in-page floating GUI to reduce
-	    // DOM overhead and improve stability on long conversations. Stats/import/export move to Options.
-	    const UI_ENABLED = false;
+	  // src/main.js
+	  function main() {
+		    // UI mode: show the original in-page floating usage monitor panel (upstream UI),
+		    // while still keeping Options as a secondary place for viewing/import/export/clear.
+		    const UI_ENABLED = true;
 
 	    if (UI_ENABLED) {
 	      installTextScrambler();

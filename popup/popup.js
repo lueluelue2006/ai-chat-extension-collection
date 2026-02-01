@@ -26,6 +26,10 @@
   const btnCheck = document.getElementById('checkUpdate');
   const btnOpen = document.getElementById('openRepo');
   const btnOptions = document.getElementById('openOptions');
+  const elGpt53AlertCard = document.getElementById('gpt53AlertCard');
+  const elGpt53AlertText = document.getElementById('gpt53AlertText');
+  const btnGpt53AlertOpenOptions = document.getElementById('gpt53AlertOpenOptions');
+  const btnGpt53AlertMarkRead = document.getElementById('gpt53AlertMarkRead');
   const elSiteName = document.getElementById('siteName');
   const elSiteUrl = document.getElementById('siteUrl');
   const elToggleList = document.getElementById('toggleList');
@@ -107,6 +111,30 @@
     }
   }
 
+  function buildOptionsDeepLink(siteId, moduleId) {
+    const base = chrome?.runtime?.getURL?.('options/options.html') || 'options/options.html';
+    const params = new URLSearchParams();
+    const site = String(siteId || '').trim();
+    const mod = String(moduleId || '').trim();
+    if (site) params.set('site', site);
+    if (mod) params.set('module', mod);
+    const hash = params.toString();
+    return hash ? `${base}#${hash}` : base;
+  }
+
+  function openOptionsTo(siteId, moduleId) {
+    try {
+      const hasHash = !!(String(siteId || '').trim() || String(moduleId || '').trim());
+      if (!hasHash && chrome?.runtime?.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+        return;
+      }
+      openUrl(buildOptionsDeepLink(siteId, moduleId));
+    } catch {
+      setStatus('打开配置失败', 'err');
+    }
+  }
+
   function sendRuntimeMessage(msg) {
     return new Promise((resolve, reject) => {
       try {
@@ -119,6 +147,44 @@
         reject(e);
       }
     });
+  }
+
+  function formatGpt53AlertLine(ev) {
+    try {
+      const url = String(ev?.url || '');
+      const status = Number(ev?.status) || 0;
+      const u = new URL(url);
+      const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
+      return status ? `${name}（${status}）` : name;
+    } catch {
+      const status = Number(ev?.status) || 0;
+      return status ? `（${status}）` : '';
+    }
+  }
+
+  function renderGpt53AlertCard(alerts) {
+    if (!elGpt53AlertCard || !elGpt53AlertText) return;
+    const unread = Number(alerts?.unread) || 0;
+    const events = Array.isArray(alerts?.events) ? alerts.events : [];
+    if (!unread || !events.length) {
+      elGpt53AlertCard.hidden = true;
+      elGpt53AlertText.textContent = '';
+      return;
+    }
+    const last = events.slice(-3);
+    const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
+    const more = events.length > 3 ? `…+${events.length - 3}` : '';
+    const msg = parts.length ? `${parts.join('，')}${more}` : '';
+    elGpt53AlertText.textContent = `检测到 ${unread} 条新资源已可访问：${msg}`;
+    elGpt53AlertCard.hidden = false;
+  }
+
+  async function refreshGpt53AlertCard() {
+    try {
+      const resp = await sendRuntimeMessage({ type: 'QUICKNAV_GPT53_GET_STATUS' });
+      if (!resp || resp.ok !== true) return;
+      renderGpt53AlertCard(resp.alerts);
+    } catch {}
   }
 
   async function getSettings() {
@@ -324,7 +390,7 @@
     }
   }
 
-  function createToggleRow({ main, sub, checked, disabled, onChange }) {
+  function createToggleRow({ main, sub, checked, disabled, onChange, onDetails }) {
     const row = document.createElement('div');
     row.className = 'toggleRow';
 
@@ -352,6 +418,28 @@
     label.appendChild(input);
     label.appendChild(textWrap);
     row.appendChild(label);
+
+    if (typeof onDetails === 'function') {
+      const actions = document.createElement('div');
+      actions.className = 'toggleRowActions';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rowIconBtn';
+      btn.title = '打开配置（定位到该脚本）';
+      btn.textContent = '⚙︎';
+      btn.addEventListener('click', (e) => {
+        try {
+          e.preventDefault();
+          e.stopPropagation();
+        } catch {}
+        Promise.resolve()
+          .then(() => onDetails())
+          .catch(() => void 0);
+      });
+      actions.appendChild(btn);
+      row.appendChild(actions);
+    }
 
     input.addEventListener('change', () => {
       Promise.resolve()
@@ -394,6 +482,7 @@
     const g = String(group || '');
     if (/对话导出/.test(g)) return 'chatgpt_export_conversation';
     if (/用量统计/.test(g)) return 'chatgpt_usage_monitor';
+    if (/Split\s*View/i.test(g) || /拆分视图|分屏/.test(g)) return 'chatgpt_split_view';
     if (/QuickNav/.test(g)) return 'quicknav';
     // Future: map more groups to module ids here.
     return null;
@@ -450,7 +539,8 @@
             sub: def.sub,
             checked: settings?.siteModules?.common?.[moduleId] !== false,
             disabled: !settings?.enabled || settings?.sites?.common === false,
-            onChange: (v) => onMutate((draft) => { draft.siteModules.common[moduleId] = !!v; })
+            onChange: (v) => onMutate((draft) => { draft.siteModules.common[moduleId] = !!v; }),
+            onDetails: () => openOptionsTo('common', moduleId)
           })
         );
       }
@@ -498,7 +588,8 @@
         sub: def.sub,
         checked: settings?.siteModules?.[activeSiteId]?.[moduleId] !== false,
         disabled: !settings?.enabled || settings?.sites?.[activeSiteId] === false,
-        onChange: (v) => onMutate((draft) => { draft.siteModules[activeSiteId][moduleId] = !!v; })
+        onChange: (v) => onMutate((draft) => { draft.siteModules[activeSiteId][moduleId] = !!v; }),
+        onDetails: () => openOptionsTo(activeSiteId, moduleId)
       });
       group.appendChild(row);
 
@@ -563,7 +654,32 @@
 
   btnOpen?.addEventListener('click', () => openUrl(REPO_URL));
   btnCheck?.addEventListener('click', checkUpdate);
-  btnOptions?.addEventListener('click', openOptions);
+  btnOptions?.addEventListener('click', () => openOptionsTo('', ''));
+  btnGpt53AlertOpenOptions?.addEventListener('click', () => openOptionsTo('', ''));
+  btnGpt53AlertMarkRead?.addEventListener('click', async () => {
+    if (btnGpt53AlertMarkRead) btnGpt53AlertMarkRead.disabled = true;
+    try {
+      await sendRuntimeMessage({ type: 'QUICKNAV_GPT53_MARK_READ' });
+      await refreshGpt53AlertCard();
+      setStatus('已清除 OpenAI 新模型提示', 'ok');
+    } catch (e) {
+      setStatus(`清除提示失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+    } finally {
+      if (btnGpt53AlertMarkRead) btnGpt53AlertMarkRead.disabled = false;
+    }
+  });
+
+  // Show alerts as soon as the popup opens.
+  void refreshGpt53AlertCard();
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      try {
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.type !== 'QUICKNAV_GPT53_ALERT') return;
+        void refreshGpt53AlertCard();
+      } catch {}
+    });
+  } catch {}
 
   // Per-site toggles + menu (Tampermonkey-like)
   (async () => {

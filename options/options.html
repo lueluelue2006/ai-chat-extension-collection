@@ -10,7 +10,10 @@
     <header class="header">
       <div class="title">ai chat 扩展合集 设置</div>
       <div class="subtitle">在这里控制各网站与各模块的启用状态。</div>
-      <button class="themeToggle" id="themeToggle" type="button" aria-label="切换主题"></button>
+      <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
+        <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">☀︎</button>
+        <button class="themeToggleBtn" id="themeDark" type="button" aria-label="暗色">☾</button>
+      </div>
     </header>
 
     <main class="main">
@@ -49,13 +52,20 @@
         <div class="hint">
           每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；当某条从 404 → 非 404 时将弹出系统通知（每条仅提示一次）。
         </div>
+        <div class="alertBox" id="gpt53AlertBox" hidden>
+          <div class="alertTitle">OpenAI 新模型提示</div>
+          <div class="alertText" id="gpt53AlertText"></div>
+          <div class="actions">
+            <button class="btn secondary" id="gpt53MarkRead" type="button">知道了（清除角标）</button>
+          </div>
+        </div>
         <textarea class="codeBox" id="gpt53Urls" rows="3" spellcheck="false" placeholder="每行一个：https://cdn.openai.com/..."></textarea>
         <div class="actions">
           <button class="btn secondary" id="gpt53Save" type="button">保存列表</button>
           <button class="btn secondary" id="gpt53Refresh" type="button">查看状态</button>
           <button class="btn" id="gpt53Run" type="button">立即检测</button>
         </div>
-        <pre class="codeBox" id="gpt53Status">（未检测）</pre>
+        <div class="gpt53Status" id="gpt53Status">（未检测）</div>
       </section>
 
       <section class="actions">

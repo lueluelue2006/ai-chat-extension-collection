@@ -12,7 +12,7 @@
 当前 registry 标注了菜单预览（menuPreview）的模块：
 
 - `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天）” / “清理无效收藏”）
-- `chatgpt_usage_monitor`: ChatGPT 用量统计（后台统计；在配置页查看/导入/导出）
+- `chatgpt_usage_monitor`: ChatGPT 用量统计（仅后台统计；在配置页查看/导入/导出）
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
 - `chatgpt_split_view`: ChatGPT 拆分视图（实验）（“重置右侧状态 / 清理 Split View 存储” / “在新标签页打开右侧（并关闭 Split View）”）
 
@@ -50,7 +50,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/chatgpt-readaloud-speed-controller/main.js`
-- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 后台统计各模型调用量（不再注入页面内面板）；在扩展配置页查看/导入/导出
+- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 仅记录各模型/共用池用量（不在页面注入悬浮窗）；在扩展配置页查看/导入/导出/清空
   - 作者: lueluelue2006（基于 tizee@Github 的实现移植）
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`

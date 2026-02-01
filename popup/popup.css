@@ -215,6 +215,27 @@ a:hover { color: var(--accentSecondary); text-decoration: underline; }
 .toggleRow .labelText { display: flex; flex-direction: column; gap: 1px; }
 .toggleRow .labelMain { font-weight: 650; }
 .toggleRow .labelSub { color: var(--muted); font-size: 12px; }
+.toggleRowActions { display: inline-flex; align-items: center; }
+.rowIconBtn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--btn) 75%, transparent 25%);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease, color 0.15s ease;
+}
+.rowIconBtn:hover {
+  background: var(--btnHover);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
+}
+.rowIconBtn:active { background: var(--btnActive); transform: translateY(1px); }
+.rowIconBtn:focus-visible { outline: none; box-shadow: var(--shadow), var(--focusRing); }
 .menuNote { margin-left: 26px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 
 .moduleMenu {

@@ -589,11 +589,25 @@
 
     if (SITE === 'unknown') return;
 
+    const wantsSend = event.metaKey || event.ctrlKey;
+
+    // Important: On some sites the UI maps Cmd/Ctrl+Enter to "Stop generating" even when the composer
+    // is not focused. We never want a "stop" shortcut (users reported accidental stops on Kimi/Gemini).
+    // So when the site is currently generating, swallow Cmd/Ctrl+Enter globally.
+    if (wantsSend && (SITE === 'kimi' || SITE === 'gemini_app' || SITE === 'gemini_business')) {
+      try {
+        if (isGeneratingForSite(null)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+      } catch {}
+    }
+
     const deepActive = getDeepActiveElement();
     const promptEl = getPromptElementFrom(event.target) || getPromptElementFrom(deepActive) || getPromptElementFrom(document.activeElement);
     if (!promptEl) return;
 
-    const wantsSend = event.metaKey || event.ctrlKey;
     if (wantsSend && event.repeat) {
       event.preventDefault();
       event.stopImmediatePropagation();

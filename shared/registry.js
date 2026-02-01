@@ -158,7 +158,7 @@
     chatgpt_usage_monitor: {
       id: 'chatgpt_usage_monitor',
       name: 'ChatGPT 用量统计',
-      sub: '后台统计各模型调用量（不再注入页面内面板）；在扩展配置页查看/导入/导出',
+      sub: '仅记录用量（不在页面注入悬浮窗）；在配置页查看/导入/导出/清空',
       hotkeys: [],
       authors: ['lueluelue2006（基于 tizee@Github 的实现移植）'],
       license: 'MIT',
@@ -259,7 +259,7 @@
     },
     gemini_math_fix: {
       id: 'gemini_math_fix',
-      name: 'Gemini Enterprise 数学修复',
+      name: 'Gemini Business 数学修复',
       sub: 'KaTeX / inline math 修复',
       hotkeys: [],
       authors: ['lueluelue2006'],
@@ -267,8 +267,8 @@
     },
     gemini_auto_3_pro: {
       id: 'gemini_auto_3_pro',
-      name: 'Gemini Enterprise 自动切换 3 Pro',
-      sub: '自动将模型切换为 Gemini 3 Pro（可用时）；并隐藏 Gemini Enterprise 的 disclaimer',
+      name: 'Gemini Business 自动切换 3 Pro',
+      sub: '自动将模型切换为 Gemini 3 Pro（可用时）；并隐藏 Gemini Business 的 disclaimer',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

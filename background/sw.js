@@ -672,8 +672,110 @@
     intervalMin: 5,
     urlsKey: 'quicknav_gpt53_probe_urls_v1',
     storageKey: 'quicknav_gpt53_probe_state_v1',
-    notifyId: 'quicknav_gpt53_available'
+    alertKey: 'quicknav_gpt53_probe_alerts_v1',
+    notifyId: 'quicknav_gpt53_available',
+    badgeBg: '#ed5284'
   });
+
+  async function getGpt53Alerts() {
+    try {
+      const raw = await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get({ [GPT53_MONITOR.alertKey]: null }, (items) => resolve(items[GPT53_MONITOR.alertKey]));
+        } catch {
+          resolve(null);
+        }
+      });
+      if (!raw || typeof raw !== 'object') return { unread: 0, events: [] };
+      const unread = Number(raw.unread) || 0;
+      const events = Array.isArray(raw.events) ? raw.events.filter((x) => x && typeof x === 'object') : [];
+      return {
+        unread: Math.max(0, Math.min(99, unread)),
+        events: events
+          .map((e) => ({
+            at: Number(e.at) || 0,
+            url: String(e.url || ''),
+            status: Number(e.status) || 0
+          }))
+          .filter((e) => e.at && e.url)
+      };
+    } catch {
+      return { unread: 0, events: [] };
+    }
+  }
+
+  async function setGpt53Alerts(next) {
+    try {
+      const v = next && typeof next === 'object' ? next : { unread: 0, events: [] };
+      await new Promise((resolve) => {
+        try {
+          chrome.storage.local.set({ [GPT53_MONITOR.alertKey]: v }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    } catch {}
+  }
+
+  function setActionBadge(unread) {
+    const n = Number(unread) || 0;
+    const text = n > 0 ? String(Math.min(99, n)) : '';
+    try {
+      if (chrome?.action?.setBadgeBackgroundColor) chrome.action.setBadgeBackgroundColor({ color: GPT53_MONITOR.badgeBg });
+    } catch {}
+    try {
+      if (chrome?.action?.setBadgeText) chrome.action.setBadgeText({ text });
+    } catch {}
+  }
+
+  async function syncGpt53Badge() {
+    try {
+      const alerts = await getGpt53Alerts();
+      setActionBadge(alerts.unread);
+    } catch {}
+  }
+
+  async function markGpt53AlertsRead() {
+    try {
+      const alerts = await getGpt53Alerts();
+      if (!alerts.unread) return alerts;
+      const next = { ...alerts, unread: 0 };
+      await setGpt53Alerts(next);
+      setActionBadge(0);
+      return next;
+    } catch {
+      setActionBadge(0);
+      return { unread: 0, events: [] };
+    }
+  }
+
+  function broadcastGpt53Alert(payload) {
+    try {
+      chrome.runtime.sendMessage({ type: 'QUICKNAV_GPT53_ALERT', payload }, () => void chrome.runtime.lastError);
+    } catch {}
+  }
+
+  function formatGpt53AlertLine(ev) {
+    try {
+      const url = String(ev?.url || '');
+      const status = Number(ev?.status) || 0;
+      const u = new URL(url);
+      const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
+      return status ? `${name}（${status}）` : name;
+    } catch {
+      const status = Number(ev?.status) || 0;
+      return status ? `（${status}）` : '';
+    }
+  }
+
+  function buildGpt53AlertMessage(alerts) {
+    const events = Array.isArray(alerts?.events) ? alerts.events : [];
+    if (!events.length) return '';
+    const last = events.slice(-3);
+    const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
+    const more = events.length > 3 ? `…+${events.length - 3}` : '';
+    return parts.length ? `${parts.join('，')}${more}` : '';
+  }
 
   function normalizeGpt53ProbeUrls(input) {
     const rawLines = (() => {
@@ -832,29 +934,39 @@
 
     if (newlyAvailable.length) {
       try {
-        const parts = newlyAvailable
-          .slice(0, 3)
-          .map((x) => {
-            try {
-              const u = new URL(x.url);
-              const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
-              return `${name}（${x.status}）`;
-            } catch {
-              return `（${x.status}）`;
-            }
-          })
-          .filter(Boolean);
-        const more = newlyAvailable.length > 3 ? `…+${newlyAvailable.length - 3}` : '';
-        chrome.notifications.create(GPT53_MONITOR.notifyId, {
-          type: 'basic',
-          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-          title: 'OpenAI 新模型提示',
-          message:
-            newlyAvailable.length === 1
-              ? `检测到资源已可访问：${parts[0] || ''}`
-              : `检测到 ${newlyAvailable.length} 个资源已可访问：${parts.join('，')}${more}`,
-          priority: 2
-        });
+        const prevAlerts = await getGpt53Alerts();
+        const events = Array.isArray(prevAlerts.events) ? prevAlerts.events.slice() : [];
+        for (const it of newlyAvailable) {
+          events.push({ at: checkedAt, url: it.url, status: Number(it.status) || 0 });
+        }
+        // Keep last 50 events to avoid unbounded growth.
+        const trimmed = events.slice(Math.max(0, events.length - 50));
+        const unread = Math.max(0, Math.min(99, (Number(prevAlerts.unread) || 0) + newlyAvailable.length));
+        const nextAlerts = { unread, events: trimmed };
+        await setGpt53Alerts(nextAlerts);
+
+        // Badge is more reliable than system notifications for some users (OS-level notifications may be disabled).
+        setActionBadge(unread);
+
+        const msg = buildGpt53AlertMessage(nextAlerts);
+        const title = 'OpenAI 新模型提示';
+
+        // System notification (best-effort).
+        try {
+          chrome.notifications.create(`${GPT53_MONITOR.notifyId}_${checkedAt}`, {
+            type: 'basic',
+            iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+            title,
+            message:
+              newlyAvailable.length === 1
+                ? `检测到资源已可访问：${formatGpt53AlertLine({ url: newlyAvailable[0]?.url, status: newlyAvailable[0]?.status })}`
+                : `检测到 ${newlyAvailable.length} 个资源已可访问：${msg}`,
+            priority: 2
+          });
+        } catch {}
+
+        // In-extension alert (Options / Popup).
+        broadcastGpt53Alert({ title, message: msg, unread, checkedAt });
       } catch {}
     }
   }
@@ -893,6 +1005,21 @@
     });
   } catch {}
 
+  // Restore badge state when the service worker wakes.
+  void syncGpt53Badge();
+  // Keep the 5-minute polling alive even if the user never opens Options/Popup.
+  void (async () => {
+    try {
+      await ensureGpt53Alarm();
+    } catch {}
+    // Prime state once (best-effort) so the UI shows meaningful data immediately.
+    try {
+      const state = await getGpt53State();
+      const checkedAt = Number(state?.checkedAt) || 0;
+      if (!checkedAt) await runGpt53Probe();
+    } catch {}
+  })();
+
   try {
     // For service-worker DevTools console: `__quicknavGpt53Probe.run()`
     globalThis.__quicknavGpt53Probe = {
@@ -900,7 +1027,9 @@
       urls: () => getGpt53Urls(),
       setUrls: (urls) => setGpt53Urls(urls),
       run: () => runGpt53Probe(),
-      state: () => getGpt53State()
+      state: () => getGpt53State(),
+      alerts: () => getGpt53Alerts(),
+      markRead: () => markGpt53AlertsRead()
     };
   } catch {}
 
@@ -1244,6 +1373,7 @@
           const alarm = await ensureGpt53Alarm();
           const urls = await getGpt53Urls();
           const state = await getGpt53State();
+          const alerts = await getGpt53Alerts();
           let enabled = true;
           try {
             const settings = await getSettings();
@@ -1256,6 +1386,7 @@
             url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
             alarm,
             state,
+            alerts: { unread: alerts.unread, events: alerts.events.slice(-20) },
             now: Date.now()
           };
         })()
@@ -1273,6 +1404,7 @@
           const urls = await setGpt53Urls(msg?.urlsText ?? msg?.urls ?? null);
           const alarm = await ensureGpt53Alarm();
           const state = await getGpt53State();
+          const alerts = await getGpt53Alerts();
           let enabled = true;
           try {
             const settings = await getSettings();
@@ -1285,6 +1417,7 @@
             url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
             alarm,
             state,
+            alerts: { unread: alerts.unread, events: alerts.events.slice(-20) },
             now: Date.now()
           };
         })()
@@ -1303,6 +1436,7 @@
           await runGpt53Probe();
           const urls = await getGpt53Urls();
           const state = await getGpt53State();
+          const alerts = await getGpt53Alerts();
           let enabled = true;
           try {
             const settings = await getSettings();
@@ -1315,8 +1449,23 @@
             url: urls[0] || GPT53_MONITOR.defaultUrls[0] || '',
             alarm,
             state,
+            alerts: { unread: alerts.unread, events: alerts.events.slice(-20) },
             now: Date.now()
           };
+        })()
+          .then((resp) => sendResponse(resp))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_GPT53_MARK_READ') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        (async () => {
+          const alerts = await markGpt53AlertsRead();
+          return { ok: true, alerts: { unread: alerts.unread, events: alerts.events.slice(-20) }, now: Date.now() };
         })()
           .then((resp) => sendResponse(resp))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));

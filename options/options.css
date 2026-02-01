@@ -100,18 +100,18 @@ body {
   position: absolute;
   top: 18px;
   right: 18px;
-  width: 38px;
   height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 78%, transparent 22%);
   color: var(--text);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
-  cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
@@ -124,12 +124,47 @@ body {
   border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
 }
 
-.themeToggle:active {
+.themeToggleBtn {
+  width: 32px;
+  height: 30px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 16px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.themeToggleBtn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--btnHover) 70%, transparent 30%);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent 30%);
+}
+
+.themeToggleBtn:active {
   transform: translateY(1px);
 }
 
-.themeToggle:focus-visible {
+.themeToggleBtn:focus-visible {
   outline: none;
+  box-shadow: var(--focusRing);
+}
+
+.themeToggleBtn.active {
+  background: var(--btn);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent 30%);
+  box-shadow: var(--shadow);
+}
+
+.themeToggle:focus-within {
   box-shadow: var(--shadow), var(--focusRing);
 }
 
@@ -506,6 +541,29 @@ body {
   font-size: 12px;
 }
 
+.alertBox {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
+  background: color-mix(in srgb, var(--accent2) 55%, var(--panel) 45%);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.alertTitle {
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.alertText {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .codeBox {
   margin-top: 10px;
   padding: 10px 12px;
@@ -527,6 +585,295 @@ textarea.codeBox {
   resize: vertical;
   min-height: 92px;
   white-space: pre;
+}
+
+/* ChatGPT 用量面板（配置页内“油猴同款”UI） */
+.cgptUsageDash {
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid #363636;
+  background: #1a1b1e;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  color: #e5e7eb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cgptUsageDashHeader {
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  background: #1a1b1e;
+}
+
+.cgptUsageDashTab {
+  border: none;
+  background: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-weight: 600;
+  transition: color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 12px;
+  padding-top: 8px;
+}
+
+.cgptUsageDashTab:first-child {
+  margin-left: 0;
+}
+
+.cgptUsageDashTab:hover,
+.cgptUsageDashTab.active {
+  color: #facc15;
+}
+
+.cgptUsageDashContent {
+  padding: 4px 16px 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cgptUsageDashContent::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cgptUsageDashContent::-webkit-scrollbar-track {
+  background: #2a2b2e;
+  border-radius: 4px;
+}
+
+.cgptUsageDashContent::-webkit-scrollbar-thumb {
+  background: #363636;
+  border-radius: 4px;
+}
+
+.cgptUsageDashContent::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.cgptUsageDashPane[hidden] {
+  display: none !important;
+}
+
+.cgptUsageHint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 4px 0 8px;
+  line-height: 1.4;
+}
+
+.cgptUsageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cgptUsageBtn {
+  padding: 6px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #e5e7eb;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.cgptUsageBtn:hover {
+  color: #facc15;
+}
+
+.cgptUsageBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.cgptUsageBtnDanger:hover {
+  color: #ef4444;
+}
+
+.cgptUsageEmpty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 18px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cgptUsageDash .reset-info {
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 4px 0;
+}
+
+.cgptUsageWindowTypes {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cgptUsageDash .window-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+  color: #1a1b1e;
+  font-weight: bold;
+}
+
+.cgptUsageDash .window-badge.hour3 {
+  background-color: #61dafb;
+}
+
+.cgptUsageDash .window-badge.hour5 {
+  background-color: #61dafb;
+}
+
+.cgptUsageDash .window-badge.daily {
+  background-color: #9f7aea;
+}
+
+.cgptUsageDash .window-badge.weekly {
+  background-color: #10b981;
+}
+
+.cgptUsageDash .window-badge.monthly {
+  background-color: #f472b6;
+}
+
+.cgptUsageDash .table-header {
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.2;
+  display: grid;
+  align-items: center;
+  grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+}
+
+.cgptUsageDash .model-row {
+  color: #9ca3af;
+  transition: color 0.2s ease;
+  font-size: 12px;
+  line-height: 1.2;
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+  align-items: center;
+}
+
+.cgptUsageDash .model-row:hover {
+  color: #facc15;
+  text-decoration-line: underline;
+}
+
+.cgptUsageDash .request-time {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.cgptUsageDash .window-info {
+  color: #9ca3af;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.cgptUsageDash .progress-container {
+  width: 100%;
+  background: #2a2b2e;
+  margin-top: 4px;
+  border-radius: 6px;
+  overflow: hidden;
+  height: 8px;
+  position: relative;
+}
+
+.cgptUsageDash .progress-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ef4444 0%, #f59e0b 50%, #10b981 100%);
+  background-size: 200% 100%;
+  animation: cgptUsageGradientShift 2s linear infinite;
+}
+
+.cgptUsageDash .progress-bar.low-usage {
+  animation: cgptUsagePulse 1.5s ease-in-out infinite;
+}
+
+.cgptUsageDash .progress-bar.exceeded {
+  background: #4b5563;
+  animation: none;
+}
+
+@keyframes cgptUsageGradientShift {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes cgptUsagePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.cgptUsageDash .dot-progress {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 8px;
+}
+
+.cgptUsageDash .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.cgptUsageDash .dot-empty {
+  background: rgba(239, 68, 68, 0.3);
+  border: 1px solid #ef4444;
+}
+
+.cgptUsageDash .dot-partial {
+  background: #f59e0b;
+}
+
+.cgptUsageDash .dot-full {
+  background: #10b981;
+}
+
+.cgptUsageDash .dot-exceeded {
+  background: #4b5563;
+  position: relative;
+}
+
+.cgptUsageDash .dot-exceeded::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -2px;
+  right: -2px;
+  height: 2px;
+  background: #2a2b2e;
+  transform: rotate(45deg);
 }
 
 .siteItem {
@@ -639,4 +986,177 @@ textarea.codeBox {
 
 .status.err {
   color: color-mix(in srgb, var(--text) 85%, #ef4444 15%);
+}
+
+/* ChatGPT 用量面板：更接近“列表/表格”输出（配置页内） */
+.cgptUsageMeta {
+  padding: 8px 0 12px;
+  border-bottom: 1px solid #2a2b2e;
+}
+
+.cgptUsageMetaRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.4;
+}
+
+.cgptUsageMetaRow + .cgptUsageMetaRow {
+  margin-top: 6px;
+}
+
+.cgptUsageMetaKey {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.cgptUsageMetaVal {
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  word-break: break-word;
+}
+
+.cgptUsageSectionTitle {
+  margin-top: 14px;
+  font-weight: 900;
+  color: #facc15;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
+.cgptUsageTable {
+  margin-top: 8px;
+}
+
+.cgptUsageTableHeader,
+.cgptUsageTableRow {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+}
+
+.cgptUsageTableHeader {
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid #2a2b2e;
+}
+
+.cgptUsageTableRow {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(54, 54, 54, 0.7);
+  font-size: 12px;
+}
+
+.cgptUsageTableRow:last-child {
+  border-bottom: none;
+}
+
+.cgptUsageTableShared .cgptUsageTableHeader,
+.cgptUsageTableShared .cgptUsageTableRow {
+  grid-template-columns: 1.6fr 0.8fr 0.6fr 0.9fr 2.3fr;
+}
+
+.cgptUsageTableModel .cgptUsageTableHeader,
+.cgptUsageTableModel .cgptUsageTableRow {
+  grid-template-columns: 1.6fr 0.8fr 0.6fr 0.9fr;
+}
+
+.cgptUsageCellTitle {
+  font-weight: 800;
+  color: #e5e7eb;
+}
+
+.cgptUsageCellSub {
+  margin-top: 2px;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+/* OpenAI 新模型监控：状态表格（避免 pre/code 风格） */
+.gpt53Status {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 86%, transparent 14%);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  word-break: break-word;
+}
+
+.gpt53StatusSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gpt53StatusSummary strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.gpt53Table {
+  margin-top: 10px;
+}
+
+.gpt53TableHeader,
+.gpt53TableRow {
+  display: grid;
+  grid-template-columns: 2.2fr 0.7fr 0.8fr 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.gpt53TableHeader {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gpt53TableRow {
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent 30%);
+  font-size: 12px;
+}
+
+.gpt53TableRow:last-child {
+  border-bottom: none;
+}
+
+.gpt53CellTitle {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.gpt53CellSub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.gpt53ResultOk {
+  color: #059669;
+  font-weight: 800;
+}
+
+.gpt53ResultBad {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.gpt53ResultUnknown {
+  color: var(--muted);
+  font-weight: 700;
 }

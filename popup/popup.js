@@ -7,6 +7,19 @@
   const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/manifest.json`;
   const SHOW_DESCRIPTIONS = false;
 
+  const UI_THEME_OVERRIDE_KEY = 'quicknav_ui_theme_override_v1';
+
+  function applyUiThemeOverride() {
+    try {
+      const v = String(window.localStorage.getItem(UI_THEME_OVERRIDE_KEY) || '').trim();
+      const theme = v === 'dark' || v === 'light' ? v : '';
+      if (theme) document.documentElement.dataset.theme = theme;
+      else delete document.documentElement.dataset.theme;
+    } catch {}
+  }
+
+  applyUiThemeOverride();
+
   const elAuthor = document.getElementById('author');
   const elVersion = document.getElementById('version');
   const elStatus = document.getElementById('status');

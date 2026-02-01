@@ -498,6 +498,41 @@
   // old/virtualized turns alive and reduces long-session memory pressure.
   let cachedTurnIds = [];
 
+  function maybeTrimTurnCaches(turns) {
+    try {
+      // These caches are per-conversation and should be bounded by current turns.
+      // If ChatGPT remounts turns (new DOM nodes) with different `data-testid`/ids,
+      // stale keys can accumulate and slowly grow memory over long sessions.
+      const turnCount = turns && typeof turns.length === 'number' ? Number(turns.length) || 0 : 0;
+      const maxEntries = Math.max(800, turnCount * 2 + 240);
+
+      const pc = previewCache?.size || 0;
+      const rc = roleCache?.size || 0;
+      if (pc <= maxEntries && rc <= maxEntries) return;
+
+      const keep = new Set();
+      for (const t of Array.from(turns || [])) {
+        const k = getTurnKey(t);
+        if (k) keep.add(k);
+      }
+
+      if (!keep.size) return;
+
+      if (pc > maxEntries) {
+        for (const k of Array.from(previewCache.keys())) {
+          if (previewCache.size <= maxEntries) break;
+          if (!keep.has(k)) previewCache.delete(k);
+        }
+      }
+      if (rc > maxEntries) {
+        for (const k of Array.from(roleCache.keys())) {
+          if (roleCache.size <= maxEntries) break;
+          if (!keep.has(k)) roleCache.delete(k);
+        }
+      }
+    } catch {}
+  }
+
   function scheduleRefresh(ui, { delay = 80, force = false, soft = null } = {}) {
     if (force) {
       if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = 0; }
@@ -3017,6 +3052,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (DEBUG) console.log('ChatGPT Navigation: turns', next.length, '(含📌)');
     lastTurnCount = next.length;
     cacheIndex = next;
+    // Keep per-conversation caches bounded.
+    try { maybeTrimTurnCaches(turns); } catch {}
     renderList(ui);
     return true;
   }
@@ -3813,6 +3850,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (document.hidden) return;
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
+      try {
+        // Defensive: if caches ever grow beyond reasonable bounds (e.g. due to React remount changing ids),
+        // trim even when the list looks "unchanged".
+        if ((previewCache.size > 5000 || roleCache.size > 5000) && count > 0) {
+          maybeTrimTurnCaches(qsTurns());
+        }
+      } catch {}
       const bootstrapRunning = !!ui._moBootstrapTimer;
       const targetGone = !!(ui._moTarget && !ui._moTarget.isConnected);
       if (targetGone) {

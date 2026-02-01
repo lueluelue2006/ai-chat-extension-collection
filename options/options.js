@@ -14,6 +14,7 @@
   const btnGpt53Run = document.getElementById('gpt53Run');
   const elGpt53Urls = document.getElementById('gpt53Urls');
   const elGpt53Status = document.getElementById('gpt53Status');
+  const btnThemeToggle = document.getElementById('themeToggle');
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
   const elModuleSettings = document.getElementById('moduleSettings');
@@ -64,6 +65,8 @@
     ['pro', 'Pro']
   ]);
 
+  const UI_THEME_OVERRIDE_KEY = 'quicknav_ui_theme_override_v1';
+
   function setStatus(text, kind = '') {
     if (!elStatus) return;
     elStatus.textContent = text || '';
@@ -72,6 +75,76 @@
   }
 
   if (!REGISTRY_OK) setStatus('脚本注册表缺失：shared/registry.js 未加载（请刷新扩展或重装）', 'err');
+
+  function readUiThemeOverride() {
+    try {
+      const v = String(window.localStorage.getItem(UI_THEME_OVERRIDE_KEY) || '').trim();
+      return v === 'dark' || v === 'light' ? v : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function writeUiThemeOverride(next) {
+    const v = String(next || '').trim();
+    try {
+      if (!v) window.localStorage.removeItem(UI_THEME_OVERRIDE_KEY);
+      else window.localStorage.setItem(UI_THEME_OVERRIDE_KEY, v);
+    } catch {}
+  }
+
+  function getSystemTheme() {
+    try {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  }
+
+  function getEffectiveTheme() {
+    const stored = readUiThemeOverride();
+    return stored || getSystemTheme();
+  }
+
+  function applyUiTheme() {
+    const stored = readUiThemeOverride();
+    try {
+      if (stored) document.documentElement.dataset.theme = stored;
+      else delete document.documentElement.dataset.theme;
+    } catch {}
+  }
+
+  function renderThemeToggle() {
+    if (!btnThemeToggle) return;
+    const effective = getEffectiveTheme();
+    const isDark = effective === 'dark';
+    btnThemeToggle.textContent = isDark ? '☀︎' : '☾';
+    btnThemeToggle.title = isDark ? '切换为亮色' : '切换为暗色';
+    btnThemeToggle.setAttribute('aria-label', isDark ? '切换为亮色主题' : '切换为暗色主题');
+  }
+
+  function initUiThemeToggle() {
+    applyUiTheme();
+    renderThemeToggle();
+
+    btnThemeToggle?.addEventListener('click', () => {
+      const effective = getEffectiveTheme();
+      const next = effective === 'dark' ? 'light' : 'dark';
+      writeUiThemeOverride(next);
+      applyUiTheme();
+      renderThemeToggle();
+    });
+
+    try {
+      const mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      if (mql && typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', () => {
+          if (readUiThemeOverride()) return; // user override wins
+          renderThemeToggle();
+        });
+      }
+    } catch {}
+  }
 
   function formatDateTime(ms) {
     const n = Number(ms);
@@ -2545,5 +2618,6 @@
     if (elGpt53Status) runGpt53Action('status');
   } catch {}
 
+  initUiThemeToggle();
   init();
 })();

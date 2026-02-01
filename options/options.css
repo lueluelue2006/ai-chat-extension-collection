@@ -1,28 +1,73 @@
 :root {
   color-scheme: light dark;
-  --bg: #0b0f18;
-  --panel: rgba(255, 255, 255, 0.08);
-  --border: rgba(255, 255, 255, 0.14);
-  --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.68);
-  --accent: #7c3aed;
-  --btn: rgba(255, 255, 255, 0.10);
-  --btnHover: rgba(255, 255, 255, 0.14);
-  --btnActive: rgba(255, 255, 255, 0.18);
+  /* Match MusicPlayer_v2.4 theme (light "warm haze", dark "aurora") */
+  --bg: linear-gradient(135deg, #f7f2fa 0%, #fcf5f2 50%, #faf2ed 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --border: rgba(0, 0, 0, 0.06);
+  --text: #0f172a;
+  --muted: rgba(15, 23, 42, 0.62);
+  --accent: #ed5284; /* rose */
+  --accentSecondary: #ff8c52; /* warm orange */
+  --accentTertiary: #9440cc; /* dreamy purple */
+  --accent2: rgba(237, 82, 132, 0.14);
+  --accentGradient: linear-gradient(135deg, var(--accentTertiary) 0%, var(--accent) 50%, var(--accentSecondary) 100%);
+  --btn: rgba(255, 255, 255, 0.92);
+  --btnHover: rgba(237, 82, 132, 0.10);
+  --btnActive: rgba(237, 82, 132, 0.18);
+  --shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+  --accentShadow: 0 14px 34px rgba(255, 140, 82, 0.18);
+  --focusRing: 0 0 0 3px rgba(237, 82, 132, 0.22);
+  --btnSecondaryText: rgba(255, 255, 255, 0.96);
+  --btnSecondaryTextShadow: 0 1px 0 rgba(0, 0, 0, 0.22);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f7fb;
-    --panel: rgba(0, 0, 0, 0.04);
-    --border: rgba(0, 0, 0, 0.10);
-    --text: rgba(0, 0, 0, 0.88);
-    --muted: rgba(0, 0, 0, 0.58);
-    --accent: #6d28d9;
-    --btn: rgba(0, 0, 0, 0.06);
-    --btnHover: rgba(0, 0, 0, 0.09);
-    --btnActive: rgba(0, 0, 0, 0.12);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: linear-gradient(135deg, #0a141f 0%, #0f1a24 50%, #080f1a 100%);
+    --panel: rgba(20, 31, 41, 0.78);
+    --border: rgba(255, 255, 255, 0.10);
+    --text: rgba(255, 255, 255, 0.92);
+    --muted: rgba(255, 255, 255, 0.65);
+    --accent: #59d8ea; /* ice blue */
+    --accentSecondary: #4df2b2; /* mint */
+    --accentTertiary: #8cffd8; /* aurora green */
+    --accent2: rgba(89, 216, 234, 0.16);
+    --accentGradient: linear-gradient(135deg, var(--accentSecondary) 0%, var(--accent) 50%, #73bff2 100%);
+    --btn: rgba(255, 255, 255, 0.08);
+    --btnHover: rgba(89, 216, 234, 0.14);
+    --btnActive: rgba(89, 216, 234, 0.22);
+    --shadow: 0 14px 36px rgba(0, 0, 0, 0.50);
+    --accentShadow: 0 14px 36px rgba(89, 216, 234, 0.20);
+    --focusRing: 0 0 0 3px rgba(89, 216, 234, 0.28);
+    --btnSecondaryText: rgba(15, 23, 42, 0.92);
+    --btnSecondaryTextShadow: 0 1px 0 rgba(255, 255, 255, 0.22);
   }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: linear-gradient(135deg, #0a141f 0%, #0f1a24 50%, #080f1a 100%);
+  --panel: rgba(20, 31, 41, 0.78);
+  --border: rgba(255, 255, 255, 0.10);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.65);
+  --accent: #59d8ea; /* ice blue */
+  --accentSecondary: #4df2b2; /* mint */
+  --accentTertiary: #8cffd8; /* aurora green */
+  --accent2: rgba(89, 216, 234, 0.16);
+  --accentGradient: linear-gradient(135deg, var(--accentSecondary) 0%, var(--accent) 50%, #73bff2 100%);
+  --btn: rgba(255, 255, 255, 0.08);
+  --btnHover: rgba(89, 216, 234, 0.14);
+  --btnActive: rgba(89, 216, 234, 0.22);
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.50);
+  --accentShadow: 0 14px 36px rgba(89, 216, 234, 0.20);
+  --focusRing: 0 0 0 3px rgba(89, 216, 234, 0.28);
+  --btnSecondaryText: rgba(15, 23, 42, 0.92);
+  --btnSecondaryTextShadow: 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 * {
@@ -38,21 +83,64 @@ body {
 body {
   min-height: 100vh;
   background: var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
 .header {
-  padding: 22px 18px 10px;
+  position: relative;
+  padding: 22px 64px 10px 18px;
   max-width: 920px;
   margin: 0 auto;
+}
+
+.themeToggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 78%, transparent 22%);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
+  font: 16px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.themeToggle:hover {
+  background: color-mix(in srgb, var(--panel) 88%, transparent 12%);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
+}
+
+.themeToggle:active {
+  transform: translateY(1px);
+}
+
+.themeToggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow), var(--focusRing);
 }
 
 .title {
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0.2px;
+  background: var(--accentGradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .subtitle {
@@ -72,11 +160,14 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
 .cardTitle {
   font-weight: 800;
   margin-bottom: 10px;
+  color: var(--accent);
 }
 
 .toggle {
@@ -87,10 +178,12 @@ body {
   border-radius: 12px;
   border: 1px solid transparent;
   user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .toggle:hover {
   border-color: var(--border);
+  background: color-mix(in srgb, var(--accent2) 65%, transparent 35%);
 }
 
 .toggle input[type="checkbox"] {
@@ -143,6 +236,7 @@ body {
 .triTitle {
   font-weight: 800;
   margin-bottom: 8px;
+  color: var(--accent);
 }
 
 .triSearch {
@@ -154,11 +248,15 @@ body {
   background: var(--btn);
   color: var(--text);
   font: inherit;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .triSearch:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent 60%);
-  outline-offset: 2px;
+  outline: none;
+  border-color: color-mix(in srgb, var(--border) 55%, var(--accent) 45%);
+  box-shadow: var(--focusRing);
 }
 
 .triList {
@@ -171,6 +269,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
   min-height: 220px;
   overflow: auto;
 }
@@ -191,7 +291,7 @@ body {
 
 .triRow.selected {
   border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
-  background: color-mix(in srgb, var(--panel) 78%, var(--accent) 22%);
+  background: color-mix(in srgb, var(--panel) 76%, var(--accent2) 24%);
 }
 
 .triBtn {
@@ -418,6 +518,8 @@ body {
   word-break: break-word;
   max-height: 220px;
   overflow: auto;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
 textarea.codeBox {
@@ -492,11 +594,14 @@ textarea.codeBox {
   color: var(--text);
   cursor: pointer;
   font-weight: 700;
-  transition: background 0.15s ease, transform 0.04s ease;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
 }
 
 .btn:hover {
   background: var(--btnHover);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
 }
 
 .btn:active {
@@ -505,7 +610,11 @@ textarea.codeBox {
 }
 
 .btn.secondary {
-  border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+  border-color: transparent;
+  background: var(--accentGradient);
+  color: var(--btnSecondaryText);
+  text-shadow: var(--btnSecondaryTextShadow);
+  box-shadow: var(--accentShadow);
 }
 
 .status {

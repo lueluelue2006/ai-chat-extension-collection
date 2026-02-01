@@ -88,6 +88,7 @@
     onStorageChanged: null,
     onMessage: null,
     cleanup: null,
+    lastHref: '',
   };
 
   function clampInt(n, min, max) {
@@ -617,6 +618,19 @@
       while (state.observeQueue.length) {
         const a = state.observeQueue.pop();
         if (!a) break;
+        if (!a.isConnected) {
+          try {
+            state.io.unobserve(a);
+          } catch {
+            // ignore
+          }
+          try {
+            state.observed.delete(a);
+          } catch {
+            // ignore
+          }
+          continue;
+        }
         try {
           state.io.observe(a);
         } catch {
@@ -643,6 +657,36 @@
       for (const r of records) {
         for (const n of r.addedNodes) {
           enqueueArticle(n);
+        }
+        // Prevent memory leaks: IntersectionObserver keeps strong refs to observed nodes.
+        // If ChatGPT swaps/removes turn <article> elements (common on SPA navigations),
+        // we must `unobserve()` removed nodes so they can be GC'd.
+        for (const n of r.removedNodes || []) {
+          try {
+            if (!state.io) continue;
+            if (!(n instanceof HTMLElement)) continue;
+            if (n.tagName === 'ARTICLE') {
+              state.io.unobserve(n);
+              try {
+                state.observed.delete(n);
+              } catch {
+                // ignore
+              }
+              continue;
+            }
+            const list = n.querySelectorAll?.('article');
+            if (!list || !list.length) continue;
+            for (const a of Array.from(list)) {
+              try {
+                if (a instanceof HTMLElement) state.io.unobserve(a);
+                if (a instanceof HTMLElement) state.observed.delete(a);
+              } catch {
+                // ignore
+              }
+            }
+          } catch {
+            // ignore
+          }
         }
       }
       scheduleScan();
@@ -697,6 +741,12 @@
   }
 
   function stopVirtualization() {
+    // Cancel any ongoing idle reconciliation that may still hold a NodeList reference.
+    try {
+      state.reconcileToken += 1;
+      state.reconcileArticles = null;
+      state.reconcileIdx = 0;
+    } catch {}
     detachContainerObserver();
     detachIo();
     state.containerEl = null;
@@ -705,6 +755,12 @@
 
   function ensureRouteWatch() {
     if (state.routeTimer) return;
+
+    try {
+      state.lastHref = String(location.href || '');
+    } catch {
+      state.lastHref = '';
+    }
 
     // Prefer shared bridge route-change events; keep a slow poll as a safety net.
     try {
@@ -730,6 +786,14 @@
     state.routeTimer = setInterval(() => {
       if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
       if (document.visibilityState === 'hidden') return;
+      try {
+        const href = String(location.href || '');
+        if (href && href !== state.lastHref) {
+          state.lastHref = href;
+          startVirtualization();
+          return;
+        }
+      } catch {}
       // Steady state: the existing container is still connected; avoid any DOM queries.
       if (state.containerEl && state.containerEl.isConnected) return;
       const current = findArticlesContainer();

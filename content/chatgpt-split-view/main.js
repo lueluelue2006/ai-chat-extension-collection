@@ -37,8 +37,6 @@
   const WIDTH_KEY = `${STORE_NS}:rightWidthPx`;
   const SRC_KEY = `${STORE_NS}:src`;
   const IFRAME_SIDEBAR_USER_WANTED_KEY = `${STORE_NS}:iframeSidebarUserWanted`;
-  const AUTOLOAD_KEY = `${STORE_NS}:autoload`;
-  const DEFAULT_AUTOLOAD = false;
 
   const STYLE_ID = 'qn-split-style';
   const ROOT_ID = 'qn-split-root';
@@ -46,7 +44,6 @@
   const DIVIDER_ID = 'qn-split-divider';
   const HANDLE_ID = 'qn-split-handle';
   const IFRAME_ID = 'qn-split-iframe';
-  const PLACEHOLDER_ID = 'qn-split-placeholder';
   const TOPBAR_ID = 'qn-split-topbar';
   const ASK_ID = 'qn-split-ask';
 
@@ -227,51 +224,6 @@ html.qn-split-open #__aichat_chatgpt_reply_timer_el_v1__{
 
 #${IFRAME_ID}{ width:100%; height:100%; border:0; display:block; background:#fff; }
 
-#${PLACEHOLDER_ID}{
-  position:absolute;
-  inset:0;
-  display:none;
-  pointer-events:auto;
-  align-items:center;
-  justify-content:center;
-  flex-direction:column;
-  gap:10px;
-  padding: 64px 18px 18px;
-  text-align:center;
-  color:#0f172a;
-  background: rgba(255,255,255,0.80);
-  backdrop-filter: blur(10px);
-}
-@media (prefers-color-scheme: dark) {
-  #${PLACEHOLDER_ID}{
-    color:#e2e8f0;
-    background: rgba(2,6,23,0.66);
-  }
-}
-#${PLACEHOLDER_ID}[data-open="1"]{ display:flex; }
-#${PLACEHOLDER_ID} .tip{ font-size:12px; opacity:0.88; max-width: 420px; line-height:1.45; }
-#${PLACEHOLDER_ID} .actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-#${PLACEHOLDER_ID} button{
-  appearance:none;
-  border:1px solid rgba(148,163,184,0.55);
-  background: rgba(255,255,255,0.92);
-  color:#0f172a;
-  border-radius:10px;
-  padding:6px 10px;
-  font-size:12px;
-  line-height:1;
-  cursor:pointer;
-}
-@media (prefers-color-scheme: dark) {
-  #${PLACEHOLDER_ID} button{
-    background: rgba(15,23,42,0.85);
-    color:#e2e8f0;
-    border-color: rgba(148,163,184,0.35);
-  }
-}
-#${PLACEHOLDER_ID} button:hover{ border-color: rgba(59,130,246,0.7); }
-#${PLACEHOLDER_ID} button:active{ transform: translateY(1px); }
-
 #${DIVIDER_ID}{
   position:absolute;
   top:0; bottom:0;
@@ -383,77 +335,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     if (close) closeSplit();
   }
 
-  function readAutoloadEnabled() {
-    try {
-      return readBool(AUTOLOAD_KEY, DEFAULT_AUTOLOAD);
-    } catch {
-      return DEFAULT_AUTOLOAD;
-    }
-  }
-
-  function isIframeLoaded(iframe) {
-    try {
-      const current = String(iframe?.getAttribute?.('src') || iframe?.src || '').trim();
-      return !!(current && current !== BLANK_SRC);
-    } catch {
-      return false;
-    }
-  }
-
-  function updatePlaceholder(pane) {
-    try {
-      const p = pane || document.getElementById(PANE_ID);
-      if (!p) return;
-      const placeholder = p.querySelector(`#${PLACEHOLDER_ID}`);
-      if (!placeholder) return;
-      const iframe = p.querySelector(`#${IFRAME_ID}`);
-      const open = document.documentElement.classList.contains('qn-split-open');
-      const loaded = !!(iframe && isIframeLoaded(iframe));
-      placeholder.dataset.open = open && !loaded ? '1' : '0';
-    } catch {}
-  }
-
-  function ensurePlaceholder(pane) {
-    if (!pane) return null;
-    let el = pane.querySelector(`#${PLACEHOLDER_ID}`);
-    if (el) return el;
-
-    el = document.createElement('div');
-    el.id = PLACEHOLDER_ID;
-    el.dataset.open = '0';
-
-    const tip = document.createElement('div');
-    tip.className = 'tip';
-    tip.textContent =
-      '右侧 ChatGPT 未加载（省内存）。需要用时点上方 New / 选中文本点 Ask，或在这里点 Load；想释放内存可点上方 Unload/Close。';
-
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-
-    const btnLoad = document.createElement('button');
-    btnLoad.type = 'button';
-    btnLoad.textContent = 'Load';
-    btnLoad.title = 'Load right pane (may increase memory)';
-    btnLoad.addEventListener('click', (e) => {
-      try {
-        e.preventDefault();
-        e.stopPropagation();
-      } catch {}
-      try {
-        const iframe = ensurePaneIframe(pane);
-        ensureIframeLoaded(iframe);
-        void ensureIframeTweaks();
-      } catch {}
-      updatePlaceholder(pane);
-    });
-
-    actions.appendChild(btnLoad);
-    el.appendChild(tip);
-    el.appendChild(actions);
-    pane.appendChild(el);
-    return el;
-  }
-
   function createSplitIframe() {
     const iframe = document.createElement('iframe');
     iframe.id = IFRAME_ID;
@@ -490,9 +371,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     if (!pane) return false;
     const iframe = pane.querySelector(`#${IFRAME_ID}`);
     if (!iframe) return false;
-    try {
-      iframe.src = BLANK_SRC;
-    } catch {}
     try {
       iframe.remove();
     } catch {
@@ -565,22 +443,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     } else {
       iframeEverLoaded = true;
     }
-    try {
-      updatePlaceholder(iframe?.closest?.(`#${PANE_ID}`) || null);
-    } catch {}
     return true;
-  }
-
-  function unloadIframe(iframe) {
-    if (!iframe) return;
-    try {
-      const current = String(iframe.getAttribute('src') || iframe.src || '').trim();
-      if (!current || current === BLANK_SRC) return;
-      iframe.src = BLANK_SRC;
-    } catch {}
-    try {
-      updatePlaceholder(iframe?.closest?.(`#${PANE_ID}`) || null);
-    } catch {}
   }
 
   function getMaxRightWidthPx() {
@@ -1036,13 +899,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
             applyRightWidthPx(loadRightWidthPx());
             applyDomOpenState(true);
             const iframe = ensurePaneIframe(ui.pane);
-            try { ensurePlaceholder(ui.pane); } catch {}
-            if (readAutoloadEnabled() || iframeEverLoaded) {
-              ensureIframeLoaded(iframe);
-              void ensureIframeTweaks();
-            } else {
-              updatePlaceholder(ui.pane);
-            }
+            ensureIframeLoaded(iframe);
+            void ensureIframeTweaks();
           }
         } catch {}
 
@@ -1142,11 +1000,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       btnTab.textContent = 'Tab';
       btnTab.title = 'Open right pane in a new tab';
 
-      const btnUnload = document.createElement('button');
-      btnUnload.type = 'button';
-      btnUnload.textContent = 'Unload';
-      btnUnload.title = 'Unload right pane (free memory)';
-
       const btnClose = document.createElement('button');
       btnClose.type = 'button';
       btnClose.textContent = 'Close';
@@ -1154,12 +1007,10 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
       topbar.appendChild(btnNew);
       topbar.appendChild(btnTab);
-      topbar.appendChild(btnUnload);
       topbar.appendChild(btnClose);
 
       pane.appendChild(topbar);
-      try { ensurePlaceholder(pane); } catch {}
-      pane.appendChild(createSplitIframe());
+      // Create the iframe lazily on open to avoid keeping an extra browsing context alive when closed.
       root.appendChild(pane);
 
       btnClose.addEventListener('click', (e) => {
@@ -1175,26 +1026,12 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
         const currentIframe = ensurePaneIframe(pane);
         setDesiredIframeSrc(currentIframe, url);
         if (!forceNavigateIframe(currentIframe, url)) ensureIframeLoaded(currentIframe);
-        updatePlaceholder(pane);
       });
 
       btnTab.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         openRightPaneInNewTab({ close: true });
-      });
-
-      btnUnload.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        try {
-          const iframe = pane.querySelector(`#${IFRAME_ID}`);
-          unloadIframe(iframe);
-          if (DESTROY_IFRAME_ON_CLOSE) destroyPaneIframe(pane);
-          iframeEverLoaded = false;
-        } catch {}
-        try { ensurePlaceholder(pane); } catch {}
-        updatePlaceholder(pane);
       });
     }
 
@@ -1227,9 +1064,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       ask.title = 'Quote selection into the right ChatGPT pane';
       (document.body || document.documentElement).appendChild(ask);
     }
-
-    try { ensurePlaceholder(pane); } catch {}
-    try { updatePlaceholder(pane); } catch {}
 
     // Divider drag logic (only when open).
     let dragging = false;
@@ -1492,9 +1326,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     } catch {}
     try {
       const iframe = ensurePaneIframe(ui.pane);
-      try { ensurePlaceholder(ui.pane); } catch {}
-      if (readAutoloadEnabled() || iframeEverLoaded) ensureIframeLoaded(iframe);
-      else updatePlaceholder(ui.pane);
+      ensureIframeLoaded(iframe);
     } catch {}
     void ensureIframeTweaks();
   }
@@ -1527,18 +1359,15 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       setTimeout(() => {
         if (document.documentElement.classList.contains('qn-split-open')) return;
         const pane = document.getElementById(PANE_ID);
-        const iframe = pane && pane.querySelector(`#${IFRAME_ID}`);
-        unloadIframe(iframe);
         if (DESTROY_IFRAME_ON_CLOSE && pane) destroyPaneIframe(pane);
         iframeEverLoaded = false;
-        updatePlaceholder(pane);
       }, 250);
     } catch {}
   }
 
   // A more aggressive close used for memory pressure scenarios:
   // - Close immediately (no delayed checks)
-  // - Unload/destroy iframe now, even if DOM is in a transient state
+  // - Destroy iframe now (free memory), even if DOM is in a transient state
   function hardCloseSplit(reason) {
     try {
       setOpen(false);
@@ -1560,16 +1389,11 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     } catch {}
     try {
       const pane = document.getElementById(PANE_ID);
-      const iframe = pane && pane.querySelector && pane.querySelector(`#${IFRAME_ID}`);
-      try {
-        unloadIframe(iframe);
-      } catch {}
       try {
         if (pane) destroyPaneIframe(pane);
       } catch {}
     } catch {}
     try { iframeEverLoaded = false; } catch {}
-    try { updatePlaceholder(document.getElementById(PANE_ID)); } catch {}
     try {
       // eslint-disable-next-line no-console
       if (reason) console.warn('[QuickNav][SplitView] hardClose:', reason);
@@ -1745,8 +1569,6 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
 
     try {
       const pane = document.getElementById(PANE_ID);
-      const iframe = pane && pane.querySelector && pane.querySelector(`#${IFRAME_ID}`);
-      try { unloadIframe(iframe); } catch {}
       try { if (pane) destroyPaneIframe(pane); } catch {}
     } catch {}
 
@@ -1766,7 +1588,7 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       if (typeof reg !== 'function') return;
       reg('重置右侧状态 / 清理 Split View 存储', resetSplitViewState);
       reg('在新标签页打开右侧（并关闭 Split View）', () => openRightPaneInNewTab({ close: true }));
-      reg('关闭 Split View（卸载 iframe）', () => hardCloseSplit('menu'));
+      reg('关闭 Split View（释放右侧内存）', () => hardCloseSplit('menu'));
     } catch {}
   }
 
@@ -2074,7 +1896,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
     window.__qnSplitOpenStateGuard = true;
 
     // Track desired state from storage on first run.
-    try { desiredOpen = readBool(OPEN_KEY, false); } catch {}
+    // Default to open (user preference can still override by explicitly closing once).
+    try { desiredOpen = readBool(OPEN_KEY, true); } catch {}
 
     if (typeof MutationObserver !== 'function') return;
 
@@ -2170,13 +1993,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
           if (wasOpen) {
             setOpen(true);
             const iframe = ensurePaneIframe(ui.pane);
-            try { ensurePlaceholder(ui.pane); } catch {}
-            if (readAutoloadEnabled() || iframeEverLoaded) {
-              ensureIframeLoaded(iframe);
-              void ensureIframeTweaks();
-            } else {
-              updatePlaceholder(ui.pane);
-            }
+            ensureIframeLoaded(iframe);
+            void ensureIframeTweaks();
           }
         } catch {}
       }, 0);
@@ -2210,7 +2028,8 @@ html.qn-split-open #${HANDLE_ID}{ display:none; }
       registerMenuCommands();
       registerApi();
 
-      const persistedOpen = readBool(OPEN_KEY, false);
+      // Default to open (first install). Users can close once to persist "closed".
+      const persistedOpen = readBool(OPEN_KEY, true);
       if (persistedOpen) {
         setTimeout(() => {
           try {

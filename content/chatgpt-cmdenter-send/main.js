@@ -285,7 +285,72 @@
       );
       if (inner) return true;
     } catch {}
+    try {
+      // Icon-based stop markers (some sites only change an SVG icon name/class).
+      const svgs = Array.from(el.querySelectorAll?.('svg[name],svg[aria-label],svg[title],svg[class]') || []);
+      for (const svg of svgs.slice(0, 6)) {
+        const combined = `${svg.getAttribute('name') || ''} ${svg.getAttribute('aria-label') || ''} ${svg.getAttribute('title') || ''} ${
+          svg.getAttribute('class') || ''
+        }`;
+        if (/(stop|cancel)/i.test(combined)) return true;
+        if (/(停止|取消|中止|终止)/.test(combined)) return true;
+      }
+    } catch {}
     return false;
+  }
+
+  function isSendLikeControl(el) {
+    if (!(el instanceof Element)) return false;
+    try {
+      const testId = String(el.getAttribute?.('data-testid') || '');
+      const aria = String(el.getAttribute?.('aria-label') || '');
+      const title = String(el.getAttribute?.('title') || '');
+      const name = String(el.getAttribute?.('name') || '');
+      const dataIcon = String(el.getAttribute?.('data-icon') || '');
+      const icon = String(el.getAttribute?.('icon') || '');
+      const className = String(el.className || '');
+      const text = String(el.textContent || '').slice(0, 200);
+      const combined = `${testId} ${aria} ${title} ${name} ${dataIcon} ${icon} ${className} ${text}`;
+
+      // Special-case: Kimi uses a persistent wrapper class `send-button-container` even when the icon morphs.
+      // Treat that wrapper class as ambiguous; require explicit send markers from inner icon/attrs.
+      if (/\bsend-button-container\b/.test(className)) {
+        try {
+          const svg = el.querySelector?.('svg[name],svg[aria-label],svg[title],svg[class]');
+          const svgCombined = svg
+            ? `${svg.getAttribute('name') || ''} ${svg.getAttribute('aria-label') || ''} ${svg.getAttribute('title') || ''} ${
+                svg.getAttribute('class') || ''
+              }`
+            : '';
+          if (/(send|submit)/i.test(svgCombined)) return true;
+          if (/(发送|提交|发送消息)/.test(svgCombined)) return true;
+        } catch {}
+        return false;
+      }
+
+      if (/(send|submit)/i.test(combined)) return true;
+      if (/(发送|提交|发送消息)/.test(combined)) return true;
+    } catch {}
+    try {
+      const inner = el.querySelector?.(
+        '[data-testid*="send" i],[aria-label*="send" i],[title*="send" i],[name*="send" i],[data-icon*="send" i],[icon*="send" i],[aria-label*="submit" i],[title*="submit" i],[name*="submit" i],[data-icon*="submit" i],[icon*="submit" i],[aria-label*="发送" i],[title*="发送" i],[aria-label*="提交" i],[title*="提交" i]'
+      );
+      if (inner) return true;
+    } catch {}
+    return false;
+  }
+
+  function getPromptText(promptEl) {
+    if (!promptEl) return '';
+    try {
+      if (promptEl instanceof HTMLTextAreaElement) return String(promptEl.value || '');
+    } catch {}
+    try {
+      // Prefer innerText for contenteditable; fall back to textContent.
+      return String(promptEl.innerText || promptEl.textContent || '');
+    } catch {
+      return '';
+    }
   }
 
   function isGeneratingForSite(promptEl) {
@@ -314,22 +379,37 @@
         if (stopLike) return true;
 
         const control = root.querySelector?.('.send-button-container') || document.querySelector('.send-button-container');
-        if (control && isStopLikeControl(control)) return true;
+        if (control) {
+          if (isStopLikeControl(control)) return true;
+          // If we can't positively identify it as a send control, treat it as "generating"
+          // to avoid turning Cmd+Enter into a Stop shortcut.
+          if (!isSendLikeControl(control)) return true;
+        }
         return false;
       }
 
       if (SITE === 'gemini_app') {
         const root = promptEl?.getRootNode?.() || document;
         // Gemini: there is typically a dedicated Stop generating control while streaming.
-        const stopLike =
-          root.querySelector?.(
-            'button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i],button[aria-label*="中止" i],button[title*="中止" i],button[aria-label*="终止" i],button[title*="终止" i]'
-          ) || null;
+        const stopSel =
+          '[data-testid*="stop" i],[aria-label*="stop" i],[title*="stop" i],[name*="stop" i],[data-icon*="stop" i],[icon*="stop" i],' +
+          '[data-testid*="cancel" i],[aria-label*="cancel" i],[title*="cancel" i],[name*="cancel" i],[data-icon*="cancel" i],[icon*="cancel" i],' +
+          '[aria-label*="停止" i],[title*="停止" i],[aria-label*="取消" i],[title*="取消" i],[aria-label*="中止" i],[title*="中止" i],[aria-label*="终止" i],[title*="终止" i]';
+
+        const stopLike = root.querySelector?.(stopSel) || document.querySelector?.(stopSel) || null;
         if (stopLike) return true;
 
         const button =
-          root.querySelector?.('button.send-button') || root.querySelector?.('button[aria-label="Send message"]') || null;
-        if (button && isStopLikeControl(button)) return true;
+          root.querySelector?.('button.send-button') ||
+          root.querySelector?.('button[aria-label="Send message"]') ||
+          document.querySelector?.('button.send-button') ||
+          document.querySelector?.('button[aria-label="Send message"]') ||
+          null;
+        if (button) {
+          if (isStopLikeControl(button)) return true;
+          // Same safety rule as Kimi: if we can't confirm it's a send control, assume it's a stop/cancel morph.
+          if (!isSendLikeControl(button)) return true;
+        }
         return false;
       }
     } catch {}
@@ -372,10 +452,16 @@
       }
 
       if (SITE === 'gemini_app') {
+        const root = promptEl?.getRootNode?.() || document;
         const button =
-          document.querySelector('button.send-button') || document.querySelector('button[aria-label="Send message"]') || null;
+          root.querySelector?.('button.send-button') ||
+          root.querySelector?.('button[aria-label="Send message"]') ||
+          document.querySelector?.('button.send-button') ||
+          document.querySelector?.('button[aria-label="Send message"]') ||
+          null;
         if (!button || !(button instanceof HTMLButtonElement) || isElementDisabled(button)) return false;
-        if (isStopButton(button)) return false;
+        if (isStopLikeControl(button)) return false;
+        if (!isSendLikeControl(button)) return false;
         button.click();
         return true;
       }
@@ -403,6 +489,11 @@
         const button = root.querySelector('.send-button-container') || document.querySelector('.send-button-container') || null;
         if (!button || !(button instanceof Element)) return false;
         if (isStopLikeControl(button)) return false;
+        if (!isSendLikeControl(button)) return false;
+        try {
+          const cls = String(button.className || '');
+          if (/\bdisabled\b/i.test(cls)) return false;
+        } catch {}
         try {
           const ariaDisabled = button.getAttribute?.('aria-disabled');
           if (ariaDisabled && ariaDisabled !== 'false') return false;
@@ -465,6 +556,12 @@
   function sendMessage(promptEl) {
     // Do not turn Cmd/Ctrl+Enter into a "stop generation" hotkey on sites where the send button
     // morphs into a stop/cancel control while streaming.
+    // Also don't send when the input is empty (spaces count as empty). This prevents accidental
+    // clicks on stop/cancel morph controls after a send (when the input is typically empty).
+    try {
+      const text = getPromptText(promptEl).replace(/\u00a0/g, ' ').trim();
+      if (!text) return;
+    } catch {}
     if (isGeneratingForSite(promptEl)) return;
 
     if (SITE === 'chatgpt') {

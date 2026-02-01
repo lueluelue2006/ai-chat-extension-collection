@@ -573,15 +573,23 @@
     const NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
     const CLEANUP_COOLDOWN_MS = 3 * 60 * 1000;
 
+    const RAPID_DOM_GROWTH_WINDOW_MS = RAPID_GROWTH_WINDOW_MS;
+    const RAPID_DOM_GROWTH_NODES = 12000;
+    const RAPID_DOM_GROWTH_MIN_DOM_NODES = 20000;
+    const RAPID_DOM_GROWTH_MAX_TURN_DELTA = 30;
+
     const state = {
       timer: 0,
-      samples: /** @type {Array<{at:number, used:number, total:number, limit:number, ratio:number}>} */ ([]),
+      samples:
+        /** @type {Array<{at:number, used:number, total:number, limit:number, ratio:number, dom:number, turns:number, iframes:number, splitLoaded:boolean}>} */ (
+          []
+        ),
       lastNotifyAt: 0,
       lastCleanupAt: 0,
       lastLevel: 'ok'
     };
 
-    function readHeap() {
+    function readSample() {
       try {
         const pm = performance?.memory;
         if (!pm) return null;
@@ -590,7 +598,45 @@
         const limit = Number(pm.jsHeapSizeLimit) || 0;
         if (!used || !limit) return null;
         const ratio = used / limit;
-        return { at: now(), used, total, limit, ratio };
+        const at = now();
+
+        // Extra heuristics: while we cannot access total RSS, we can still detect pathological DOM growth.
+        // Keep this cheap: only sample counts (no deep traversal / no text reads).
+        let dom = 0;
+        let turns = 0;
+        let iframes = 0;
+        let splitLoaded = false;
+        try {
+          dom = document.getElementsByTagName('*').length;
+        } catch {}
+        try {
+          turns = document.querySelectorAll('article[data-testid^="conversation-turn-"]').length;
+        } catch {}
+        try {
+          iframes = document.getElementsByTagName('iframe').length;
+        } catch {}
+        try {
+          const iframe = document.getElementById('qn-split-iframe');
+          if (iframe) {
+            const src = String(iframe.getAttribute('src') || iframe.src || '').trim();
+            splitLoaded = !!src && src !== 'about:blank';
+          }
+        } catch {}
+
+        // Expose last sample in DOM for quick debugging (DevTools / other worlds).
+        try {
+          const ds = document.documentElement?.dataset;
+          if (ds) {
+            ds.quicknavMemHeapMb = String(Math.round(used / 1024 / 1024));
+            ds.quicknavMemDomNodes = String(dom || 0);
+            ds.quicknavMemTurns = String(turns || 0);
+            ds.quicknavMemIframes = String(iframes || 0);
+            ds.quicknavMemSplitLoaded = splitLoaded ? '1' : '0';
+            ds.quicknavMemAt = String(at);
+          }
+        } catch {}
+
+        return { at, used, total, limit, ratio, dom, turns, iframes, splitLoaded };
       } catch {
         return null;
       }
@@ -620,6 +666,30 @@
         const diff = Number(sample.used || 0) - Number(baseline.used || 0);
         if (!Number.isFinite(diff) || diff <= 0) return 0;
         return diff / 1024 / 1024;
+      } catch {
+        return 0;
+      }
+    }
+
+    function computeDomGrowth(sample) {
+      try {
+        const windowStart = Number(sample?.at || 0) - RAPID_DOM_GROWTH_WINDOW_MS;
+        if (!Number.isFinite(windowStart) || windowStart <= 0) return 0;
+        let baseline = null;
+        for (let i = state.samples.length - 1; i >= 0; i--) {
+          const s = state.samples[i];
+          if (!s) continue;
+          if (Number(s.at || 0) <= windowStart) {
+            baseline = s;
+            break;
+          }
+          baseline = s;
+        }
+        if (!baseline) return 0;
+        const domDiff = Number(sample.dom || 0) - Number(baseline.dom || 0);
+        if (!Number.isFinite(domDiff) || domDiff <= 0) return 0;
+        const turnDelta = Math.abs(Number(sample.turns || 0) - Number(baseline.turns || 0));
+        return { domDiff, turnDelta };
       } catch {
         return 0;
       }
@@ -667,13 +737,13 @@
       try {
         notify(
           'ChatGPT 内存保护：已执行清理',
-          `level=${level} used=${formatMb(sample.used)} (${Math.round(sample.ratio * 100)}%)`
+          `level=${level} used=${formatMb(sample.used)} (${Math.round(sample.ratio * 100)}%) dom=${Number(sample.dom || 0)} ifr=${Number(sample.iframes || 0)} split=${sample.splitLoaded ? '1' : '0'}`
         );
       } catch {}
     }
 
     function tick() {
-      const sample = readHeap();
+      const sample = readSample();
       if (!sample) return;
       state.samples.push(sample);
       if (state.samples.length > MAX_SAMPLES) state.samples.splice(0, state.samples.length - MAX_SAMPLES);
@@ -681,11 +751,20 @@
       const ratio = sample.ratio;
       const usedMb = Number(sample.used || 0) / 1024 / 1024;
       const growthMb = computeGrowthMb(sample);
+      const domGrowth = computeDomGrowth(sample);
+      const domGrowthNodes = domGrowth && typeof domGrowth === 'object' ? Number(domGrowth.domDiff || 0) : 0;
+      const domTurnDelta = domGrowth && typeof domGrowth === 'object' ? Number(domGrowth.turnDelta || 0) : 0;
       const isRapidGrowth =
         Number.isFinite(growthMb) &&
         growthMb >= RAPID_GROWTH_MB &&
         Number.isFinite(usedMb) &&
         usedMb >= RAPID_GROWTH_MIN_USED_MB;
+
+      const isRapidDomGrowth =
+        Number.isFinite(domGrowthNodes) &&
+        domGrowthNodes >= RAPID_DOM_GROWTH_NODES &&
+        Number(sample.dom || 0) >= RAPID_DOM_GROWTH_MIN_DOM_NODES &&
+        domTurnDelta <= RAPID_DOM_GROWTH_MAX_TURN_DELTA;
 
       const thresholdLevel =
         (Number.isFinite(usedMb) && usedMb >= CRIT_USED_MB) || ratio >= CRIT_RATIO
@@ -694,14 +773,14 @@
             ? 'warning'
             : 'ok';
 
-      const level = isRapidGrowth ? 'critical' : thresholdLevel;
+      const level = isRapidGrowth || isRapidDomGrowth ? 'critical' : thresholdLevel;
       const levelChanged = level !== state.lastLevel;
       state.lastLevel = level;
 
       if (level === 'critical') {
         notify(
           'ChatGPT 内存预警（严重）',
-          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}${isRapidGrowth ? `（2min +${Math.round(growthMb)}MB）` : ''}`
+          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}${isRapidGrowth ? `（2min +${Math.round(growthMb)}MB）` : ''}${isRapidDomGrowth ? `（DOM 2min +${Math.round(domGrowthNodes)}）` : ''}`
         );
         emergencyCleanup(level, sample);
         return;

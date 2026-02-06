@@ -23,6 +23,7 @@
     lastHref: location.href,
     seenTurns: null,
     retryTurns: null,
+    retryAttempts: null,
     scanTimer: null,
     retryTimer: null,
     retryDelayMs: 0,
@@ -388,6 +389,7 @@
 
     state.seenTurns = null;
     state.retryTurns = null;
+    state.retryAttempts = null;
     state.retryDelayMs = 0;
     cancelEditMode();
   }
@@ -574,6 +576,7 @@
     state.lastHref = location.href;
     state.seenTurns = new WeakSet();
     state.retryTurns = null;
+    state.retryAttempts = null;
     state.retryDelayMs = 0;
     try {
       if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
@@ -590,6 +593,36 @@
 
   function getRetryTurns() {
     return state.retryTurns || (state.retryTurns = new Set());
+  }
+
+  const MAX_RETRY_TURNS = 80;
+  const MAX_RETRY_ATTEMPTS = 6;
+
+  function getRetryAttempts() {
+    return state.retryAttempts || (state.retryAttempts = new WeakMap());
+  }
+
+  function noteRetryAttempt(turnEl) {
+    try {
+      if (!turnEl) return false;
+      const wm = getRetryAttempts();
+      const prev = Number(wm.get(turnEl) || 0);
+      const next = prev + 1;
+      wm.set(turnEl, next);
+      return next <= MAX_RETRY_ATTEMPTS;
+    } catch {
+      return false;
+    }
+  }
+
+  function pruneRetrySet(set) {
+    try {
+      if (!set || set.size <= MAX_RETRY_TURNS) return;
+      for (const t of set) {
+        set.delete(t);
+        if (set.size <= MAX_RETRY_TURNS) break;
+      }
+    } catch {}
   }
 
   function installTurnsWatcher() {
@@ -620,8 +653,11 @@
             if (ensureEditButtonForTurn(t)) {
               seen.add(t);
             } else {
-              retry.add(t);
-              needRetry = true;
+              if (noteRetryAttempt(t)) {
+                retry.add(t);
+                pruneRetrySet(retry);
+                needRetry = true;
+              }
             }
           }
 
@@ -803,8 +839,11 @@
       if (ensureEditButtonForTurn(t)) {
         seen.add(t);
       } else {
-        retry.add(t);
-        needRetry = true;
+        if (noteRetryAttempt(t)) {
+          retry.add(t);
+          pruneRetrySet(retry);
+          needRetry = true;
+        }
       }
     }
     if (needRetry) scheduleRetryScan();
@@ -833,6 +872,10 @@
           }
           if (ensureEditButtonForTurn(t)) {
             seen.add(t);
+            retry.delete(t);
+            continue;
+          }
+          if (!noteRetryAttempt(t)) {
             retry.delete(t);
             continue;
           }
@@ -883,8 +926,12 @@
           seen.add(turn);
           state.retryDelayMs = 0;
         } else {
-          getRetryTurns().add(turn);
-          scheduleRetryScan();
+          if (noteRetryAttempt(turn)) {
+            const set = getRetryTurns();
+            set.add(turn);
+            pruneRetrySet(set);
+            scheduleRetryScan();
+          }
         }
       } catch {}
     };

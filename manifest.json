@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "ai chat 扩展合集",
-  "version": "1.3.13",
+  "version": "1.3.26",
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
   "permissions": [
     "scripting",
     "storage",
     "alarms",
-    "notifications"
+    "notifications",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://business.gemini.google/*",
@@ -15,6 +17,7 @@
     "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",
     "https://chat.z.ai/*",
+    "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://ernie.baidu.com/*",
     "https://gemini.google.com/app*",
@@ -23,6 +26,15 @@
     "https://www.kimi.com/*",
     "https://www.genspark.ai/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "bypass_headers",
+        "enabled": true,
+        "path": "rules/bypass-headers.json"
+      }
+    ]
+  },
   "background": {
     "service_worker": "background/sw.js"
   },
@@ -55,5 +67,15 @@
     "page": "options/options.html",
     "open_in_tab": true
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/chatgpt-split-view/iframe-hotkeys-impl.mjs"
+      ],
+      "matches": [
+        "https://chatgpt.com/*"
+      ]
+    }
+  ],
   "minimum_chrome_version": "96"
 }

@@ -812,6 +812,29 @@
   }
 
   const representativeMsgIdCache = new Map();
+  const REP_MSG_CACHE_MAX = 8000;
+  const REP_MSG_CACHE_TRIM_TO = 6000;
+
+  function clearRepresentativeMsgCache() {
+    try {
+      representativeMsgIdCache.clear();
+    } catch {}
+  }
+
+  function trimRepresentativeMsgCache() {
+    try {
+      const over = representativeMsgIdCache.size - REP_MSG_CACHE_MAX;
+      if (over <= 0) return;
+      const target = REP_MSG_CACHE_TRIM_TO;
+      let drop = representativeMsgIdCache.size - target;
+      if (drop <= 0) drop = over;
+      for (const k of representativeMsgIdCache.keys()) {
+        representativeMsgIdCache.delete(k);
+        drop -= 1;
+        if (drop <= 0) break;
+      }
+    } catch {}
+  }
   function isRenderableMessage(msg) {
     try {
       if (!msg || typeof msg !== 'object') return false;
@@ -859,6 +882,7 @@
     }
 
     representativeMsgIdCache.set(start, found);
+    trimRepresentativeMsgCache();
     return found;
   }
 
@@ -1916,7 +1940,20 @@
 
   async function refreshConversation(reason = '', opts = {}) {
     const silent = !!opts.silent;
+    const prevConversationId = String(state.conversationId || '');
     const conversationId = getConversationIdFromUrl();
+    if (prevConversationId && conversationId && prevConversationId !== conversationId) {
+      // Conversation-level caches must not grow across SPA route changes.
+      clearRepresentativeMsgCache();
+      try {
+        state.lastData = null;
+      } catch {}
+      try {
+        state.lastSummary = null;
+        state.lastSummaryKey = '';
+        state.lastSummaryAt = 0;
+      } catch {}
+    }
     state.conversationId = conversationId;
 
     if (!conversationId) {
@@ -2163,6 +2200,8 @@
     state.treeEl = null;
     state.statusEl = null;
     state.statsEl = null;
+
+    clearRepresentativeMsgCache();
   }
 
   state.cleanup = cleanup;

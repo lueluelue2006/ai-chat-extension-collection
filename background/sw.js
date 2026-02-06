@@ -40,6 +40,323 @@
   let lastReinjectAt = 0;
   let pendingReinjectSettings = null;
 
+  // Memtest (dev only) state bridge: used by OS-level guards to stop the running matrix + close the current test tab.
+  const MEMTEST = {
+    controllerTabId: null,
+    testTabId: null,
+    running: false,
+    lastAt: 0,
+    lastCaseId: '',
+    lastModules: null
+  };
+
+  // ChatGPT "Split View" (Panelize-style popup) window tracking.
+  const SPLIT_PANEL = {
+    windowId: null,
+    tabId: null,
+    lastAt: 0
+  };
+  const SPLIT_PANEL_PAGE = 'panelize/panelize.html';
+  const SPLIT_PANEL_DEFAULT_RIGHT = 'https://chatgpt.com/';
+
+  function buildSplitPanelUrl({ leftUrl, rightUrl } = {}) {
+    const base = (() => {
+      try {
+        return chrome.runtime.getURL(SPLIT_PANEL_PAGE);
+      } catch {
+        return '';
+      }
+    })();
+    if (!base) return '';
+    try {
+      const u = new URL(base);
+      if (leftUrl && typeof leftUrl === 'string') u.searchParams.set('left', leftUrl);
+      if (rightUrl && typeof rightUrl === 'string') u.searchParams.set('right', rightUrl);
+      return u.toString();
+    } catch {
+      return base;
+    }
+  }
+
+  function isSplitPanelUrl(url) {
+    try {
+      const base = chrome.runtime.getURL(SPLIT_PANEL_PAGE);
+      return typeof url === 'string' && url.startsWith(base);
+    } catch {
+      return false;
+    }
+  }
+
+  async function findExistingSplitPanelTab() {
+    try {
+      const windows = await new Promise((resolve) => {
+        try {
+          chrome.windows.getAll({ populate: true }, (wins) => resolve(Array.isArray(wins) ? wins : []));
+        } catch {
+          resolve([]);
+        }
+      });
+
+      for (const win of windows) {
+        const tabs = Array.isArray(win?.tabs) ? win.tabs : [];
+        for (const tab of tabs) {
+          const url = tab?.url;
+          if (!isSplitPanelUrl(url)) continue;
+          const windowId = Number.isFinite(win?.id) ? win.id : null;
+          const tabId = Number.isFinite(tab?.id) ? tab.id : null;
+          if (windowId != null && tabId != null) return { windowId, tabId };
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  async function focusSplitPanel(found) {
+    const windowId = found && Number.isFinite(found.windowId) ? found.windowId : null;
+    const tabId = found && Number.isFinite(found.tabId) ? found.tabId : null;
+    if (windowId == null || tabId == null) return false;
+    try {
+      await new Promise((resolve) => chrome.windows.update(windowId, { focused: true }, () => resolve()));
+    } catch {}
+    try {
+      await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, () => resolve()));
+    } catch {}
+    try {
+      SPLIT_PANEL.windowId = windowId;
+      SPLIT_PANEL.tabId = tabId;
+      SPLIT_PANEL.lastAt = Date.now();
+    } catch {}
+    return true;
+  }
+
+  async function openSplitPanel({ leftUrl, rightUrl, mode } = {}) {
+    const ts = Date.now();
+    try {
+      if (ts - Number(SPLIT_PANEL.lastAt || 0) < 250) return true;
+    } catch {}
+    try {
+      SPLIT_PANEL.lastAt = ts;
+    } catch {}
+
+    const desiredUrl = buildSplitPanelUrl({
+      leftUrl: typeof leftUrl === 'string' ? leftUrl : '',
+      rightUrl: typeof rightUrl === 'string' ? rightUrl : SPLIT_PANEL_DEFAULT_RIGHT
+    });
+    if (!desiredUrl) return false;
+
+    // Fast path: focus last known window/tab (may be stale after SW restarts).
+    try {
+      const windowId = Number.isFinite(SPLIT_PANEL.windowId) ? SPLIT_PANEL.windowId : null;
+      const tabId = Number.isFinite(SPLIT_PANEL.tabId) ? SPLIT_PANEL.tabId : null;
+      if (windowId != null && tabId != null) {
+        await new Promise((resolve, reject) => {
+          try {
+            chrome.windows.get(windowId, {}, (win) => {
+              if (chrome.runtime.lastError || !win) return reject(new Error('not found'));
+              resolve(win);
+            });
+          } catch (e) {
+            reject(e);
+          }
+        });
+        // Update URL to carry latest leftUrl (best-effort).
+        try {
+          chrome.tabs.update(tabId, { url: desiredUrl, active: true }, () => void chrome.runtime.lastError);
+        } catch {}
+        return focusSplitPanel({ windowId, tabId });
+      }
+    } catch {}
+
+    const existing = await findExistingSplitPanelTab();
+    if (existing) {
+      // Update URL to carry latest leftUrl (best-effort).
+      try {
+        chrome.tabs.update(existing.tabId, { url: desiredUrl, active: true }, () => void chrome.runtime.lastError);
+      } catch {}
+      return focusSplitPanel(existing);
+    }
+
+    const openAs = mode === 'tab' ? 'tab' : 'popup';
+    if (openAs === 'tab') {
+      try {
+        const tab = await new Promise((resolve, reject) => {
+          try {
+            chrome.tabs.create({ url: desiredUrl, active: true }, (t) => {
+              if (chrome.runtime.lastError || !t) return reject(new Error('create tab failed'));
+              resolve(t);
+            });
+          } catch (e) {
+            reject(e);
+          }
+        });
+        const tabId = Number.isFinite(tab?.id) ? tab.id : null;
+        if (tabId == null) return false;
+        try {
+          SPLIT_PANEL.windowId = Number.isFinite(tab?.windowId) ? tab.windowId : null;
+          SPLIT_PANEL.tabId = tabId;
+        } catch {}
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      const win = await new Promise((resolve, reject) => {
+        try {
+          chrome.windows.create(
+            { url: desiredUrl, type: 'popup', width: 1400, height: 900, focused: true },
+            (w) => {
+              if (chrome.runtime.lastError || !w) return reject(new Error('create window failed'));
+              resolve(w);
+            }
+          );
+        } catch (e) {
+          reject(e);
+        }
+      });
+
+      const windowId = Number.isFinite(win?.id) ? win.id : null;
+      const tabId = Number.isFinite(win?.tabs?.[0]?.id) ? win.tabs[0].id : null;
+      if (windowId != null && tabId != null) {
+        try {
+          SPLIT_PANEL.windowId = windowId;
+          SPLIT_PANEL.tabId = tabId;
+          SPLIT_PANEL.lastAt = Date.now();
+        } catch {}
+      }
+      return windowId != null;
+    } catch {
+      return false;
+    }
+  }
+
+  async function closeSplitPanel() {
+    const ts = Date.now();
+    try {
+      if (ts - Number(SPLIT_PANEL.lastAt || 0) < 120) return true;
+    } catch {}
+    try {
+      SPLIT_PANEL.lastAt = ts;
+    } catch {}
+
+    const windowId = Number.isFinite(SPLIT_PANEL.windowId) ? SPLIT_PANEL.windowId : null;
+    const tabId = Number.isFinite(SPLIT_PANEL.tabId) ? SPLIT_PANEL.tabId : null;
+
+    try {
+      if (windowId != null) {
+        await new Promise((resolve) => {
+          try {
+            chrome.windows.remove(windowId, () => resolve());
+          } catch {
+            resolve();
+          }
+        });
+      } else if (tabId != null) {
+        await new Promise((resolve) => {
+          try {
+            chrome.tabs.remove(tabId, () => resolve());
+          } catch {
+            resolve();
+          }
+        });
+      }
+    } catch {}
+
+    try {
+      const existing = await findExistingSplitPanelTab();
+      if (existing) {
+        await new Promise((resolve) => {
+          try {
+            chrome.windows.remove(existing.windowId, () => resolve());
+          } catch {
+            resolve();
+          }
+        });
+      }
+    } catch {}
+
+    try {
+      SPLIT_PANEL.windowId = null;
+      SPLIT_PANEL.tabId = null;
+    } catch {}
+    return true;
+  }
+
+  function memtestUpdateStatus(msg) {
+    try {
+      MEMTEST.lastAt = Date.now();
+      MEMTEST.running = !!msg?.running;
+      MEMTEST.controllerTabId = Number.isFinite(msg?.controllerTabId) ? msg.controllerTabId : MEMTEST.controllerTabId;
+      MEMTEST.testTabId = Number.isFinite(msg?.testTabId) ? msg.testTabId : msg?.testTabId === null ? null : MEMTEST.testTabId;
+      MEMTEST.lastCaseId = typeof msg?.caseId === 'string' ? msg.caseId : MEMTEST.lastCaseId;
+      MEMTEST.lastModules = Array.isArray(msg?.modules) ? msg.modules.slice() : MEMTEST.lastModules;
+    } catch {}
+  }
+
+  function memtestBroadcastAbort(reason) {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'QUICKNAV_MEMTEST_ABORT',
+          reason: String(reason || 'abort'),
+          caseId: typeof MEMTEST.lastCaseId === 'string' ? MEMTEST.lastCaseId : '',
+          modules: Array.isArray(MEMTEST.lastModules) ? MEMTEST.lastModules.slice() : null,
+        },
+        () => void chrome.runtime.lastError
+      );
+    } catch {}
+  }
+
+  function memtestBroadcastGuard(reason) {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'QUICKNAV_MEMTEST_GUARD_EVENT',
+          reason: String(reason || 'guard'),
+          caseId: typeof MEMTEST.lastCaseId === 'string' ? MEMTEST.lastCaseId : '',
+          modules: Array.isArray(MEMTEST.lastModules) ? MEMTEST.lastModules.slice() : null,
+        },
+        () => void chrome.runtime.lastError
+      );
+    } catch {}
+  }
+
+  function memtestCloseTestTab(reason) {
+    const tabId = MEMTEST.testTabId;
+    if (!Number.isFinite(tabId)) return;
+    try {
+      chrome.tabs.remove(tabId, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {}
+    try {
+      chrome.tabs.discard(tabId, () => void chrome.runtime.lastError);
+    } catch {}
+    try {
+      memtestBroadcastGuard(reason);
+    } catch {}
+    try {
+      MEMTEST.testTabId = null;
+      MEMTEST.running = false;
+      MEMTEST.lastAt = Date.now();
+    } catch {}
+    try {
+      if (typeof reason === 'string' && reason) {
+        const caseId = typeof MEMTEST.lastCaseId === 'string' ? MEMTEST.lastCaseId : '';
+        const mods = Array.isArray(MEMTEST.lastModules) ? MEMTEST.lastModules.join(', ') : '';
+        const details = `${caseId ? `\ncase: ${caseId}` : ''}${mods ? `\nmodules: ${mods}` : ''}`;
+        chrome.notifications.create(`quicknav_memtest_abort_${Date.now()}`, {
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+          title: 'QuickNav memtest stopped',
+          message: (`Stopped due to: ${reason}${details}`).slice(0, 220),
+          priority: 1
+        });
+      }
+    } catch {}
+  }
+
   function deepCloneJsonSafe(obj) {
     try {
       return JSON.parse(JSON.stringify(obj));
@@ -247,29 +564,11 @@
     return DEFAULT_SETTINGS.siteModules?.[siteId]?.[moduleId] === true;
   }
 
-  const CHATGPT_SPLIT_VIEW_IFRAME_MODULE_IDS = new Set([
-    // Keep this list tight: only enable iframe injection for modules that are useful in split view.
-    'chatgpt_cmdenter_send',
-    'chatgpt_readaloud_speed_controller',
-    'chatgpt_reply_timer',
-    'chatgpt_usage_monitor',
-    'chatgpt_download_file_fix',
-    'chatgpt_strong_highlight_lite',
-    'chatgpt_quick_deep_search',
-    'chatgpt_hide_feedback_buttons',
-    'chatgpt_tex_copy_quote'
-  ]);
-
   function getEnabledContentScriptDefs(settings) {
     if (!settings?.enabled) return [];
-    const splitViewOn = isModuleEnabled(settings, 'chatgpt', 'chatgpt_split_view');
     const out = [];
     for (const d of CONTENT_SCRIPT_DEFS) {
       if (!isModuleEnabled(settings, d.siteId, d.moduleId)) continue;
-      if (splitViewOn && d.siteId === 'chatgpt' && CHATGPT_SPLIT_VIEW_IFRAME_MODULE_IDS.has(d.moduleId)) {
-        out.push({ ...d, allFrames: true });
-        continue;
-      }
       out.push(d);
     }
     return out;
@@ -1205,6 +1504,82 @@
       if (!msg || typeof msg !== 'object') return;
       const fromExtensionPage = isExtensionPageSender(sender);
 
+      if (msg.type === 'QUICKNAV_MEMTEST_STATUS') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        try {
+          memtestUpdateStatus(msg);
+        } catch {}
+        sendResponse({ ok: true });
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_MEMTEST_GUARD') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        const reason = typeof msg.reason === 'string' ? msg.reason : 'memguard';
+        try {
+          memtestCloseTestTab(reason);
+        } catch {}
+        sendResponse({ ok: true });
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_MEMTEST_ABORT') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        const reason = typeof msg.reason === 'string' ? msg.reason : 'abort';
+        try {
+          memtestBroadcastAbort(reason);
+        } catch {}
+        try {
+          memtestCloseTestTab(reason);
+        } catch {}
+        sendResponse({ ok: true });
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_SPLIT_PANEL_OPEN') {
+        const leftUrl = typeof msg.leftUrl === 'string' ? msg.leftUrl : typeof sender?.url === 'string' ? sender.url : '';
+        const rightUrl = typeof msg.rightUrl === 'string' ? msg.rightUrl : '';
+        const mode = typeof msg.mode === 'string' ? msg.mode : 'popup';
+        openSplitPanel({ leftUrl, rightUrl, mode })
+          .then((ok) => sendResponse({ ok: !!ok }))
+          .catch(() => sendResponse({ ok: false }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_SPLIT_PANEL_CLOSE') {
+        closeSplitPanel()
+          .then((ok) => sendResponse({ ok: !!ok }))
+          .catch(() => sendResponse({ ok: false }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_SPLIT_PANEL_TOGGLE') {
+        (async () => {
+          const existing = (await findExistingSplitPanelTab()) || null;
+          if (existing) {
+            await closeSplitPanel();
+            return { ok: true, open: false };
+          }
+          const leftUrl = typeof msg.leftUrl === 'string' ? msg.leftUrl : typeof sender?.url === 'string' ? sender.url : '';
+          const rightUrl = typeof msg.rightUrl === 'string' ? msg.rightUrl : '';
+          const mode = typeof msg.mode === 'string' ? msg.mode : 'popup';
+          const ok = await openSplitPanel({ leftUrl, rightUrl, mode });
+          return { ok: !!ok, open: !!ok };
+        })()
+          .then((resp) => sendResponse(resp))
+          .catch(() => sendResponse({ ok: false, open: null }));
+        return true;
+      }
+
       if (msg.type === 'QUICKNAV_BOOTSTRAP_PING') {
 	        const tabId = sender?.tab?.id;
 	        const href = typeof msg.href === 'string' ? msg.href : '';
@@ -1307,7 +1682,8 @@
         }
         runSettingsMutation(async () => {
           const settings = await setSettings(msg.settings);
-          await applySettingsAndInjectRegistered(settings);
+          if (msg && msg.noInject) await applySettingsAndRegister(settings);
+          else await applySettingsAndInjectRegistered(settings);
           return settings;
         })
           .then((settings) => sendResponse({ ok: true, settings }))
@@ -1324,7 +1700,8 @@
           const current = await getSettings();
           const patched = applySettingsPatchOps(current, msg.patch);
           const settings = await setSettings(patched);
-          await applySettingsAndInjectRegistered(settings);
+          if (msg && msg.noInject) await applySettingsAndRegister(settings);
+          else await applySettingsAndInjectRegistered(settings);
           return settings;
         })
           .then((settings) => sendResponse({ ok: true, settings }))
@@ -1339,7 +1716,8 @@
         }
         runSettingsMutation(async () => {
           const settings = await setSettings(DEFAULT_SETTINGS);
-          await applySettingsAndInjectRegistered(settings);
+          if (msg && msg.noInject) await applySettingsAndRegister(settings);
+          else await applySettingsAndInjectRegistered(settings);
           return settings;
         })
           .then((settings) => sendResponse({ ok: true, settings }))

@@ -778,12 +778,14 @@
       window.addEventListener('hashchange', detectUrlChange);
     } catch {}
     try {
-      setInterval(() => {
-        try {
-          if (document.hidden) return;
-          detectUrlChange();
-        } catch {}
-      }, 8000);
+      if (!window.__cgptRouteWatcherPollTimerV2) {
+        window.__cgptRouteWatcherPollTimerV2 = setInterval(() => {
+          try {
+            if (document.hidden) return;
+            detectUrlChange();
+          } catch {}
+        }, 8000);
+      }
     } catch {}
   }
 
@@ -4222,15 +4224,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return sc;
   }
 
-  function allowNavScrollFor(ms = 600) {
-    const dur = Math.max(0, Math.round(Number(ms) || 0));
-    navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
-    bumpNavAllowScrollUntil(dur);
-    postScrollLockAllowToMainWorld(dur);
-    setTimeout(() => {
-      navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
-    }, dur);
-  }
+	  function allowNavScrollFor(ms = 600) {
+	    const dur = Math.max(0, Math.round(Number(ms) || 0));
+	    navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
+	    // Keep upstream behavior: a simple global allow-flag for scroll guards.
+	    // Some guards still check this flag (e.g. shouldBlockScrollFor).
+	    window.__cgptNavAllowScroll = true;
+	    bumpNavAllowScrollUntil(dur);
+	    postScrollLockAllowToMainWorld(dur);
+	    setTimeout(() => {
+	      navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
+	      if (navAllowScrollDepth === 0) window.__cgptNavAllowScroll = false;
+	    }, dur);
+	  }
 
   function markNavScrollIntent(ms = 1200) {
     const now = Date.now();

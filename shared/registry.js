@@ -250,10 +250,10 @@
     chatgpt_split_view: {
       id: 'chatgpt_split_view',
       name: 'ChatGPT 拆分视图（实验）',
-      sub: '右侧嵌入 ChatGPT（iframe），并支持选区一键引用到右侧输入框',
-      defaultEnabled: true,
+      sub: '以弹窗方式打开 1×2 面板（Panelize 风格），避免在 chatgpt.com 内同源嵌 iframe 导致的严重内存问题',
+      defaultEnabled: false,
       hotkeys: ['Esc×3'],
-      menuPreview: ['重置右侧状态 / 清理 Split View 存储', '在新标签页打开右侧（并关闭 Split View）'],
+      menuPreview: ['打开 QuickNav Split（弹窗）', '关闭 QuickNav Split（释放内存）'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

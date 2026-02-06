@@ -4,7 +4,7 @@
   const HUB_KEY = '__aichat_chatgpt_fetch_hub_v1__';
   const FETCH_PATCH_FLAG = '__aichatChatGPTFetchHubPatchedV1__';
 
-  // When split-view is enabled, some modules are injected with `allFrames: true`.
+  // Some deployments may inject this hub with `allFrames: true`.
   // Avoid patching fetch in every internal ChatGPT iframe: only allow top-frame
   // (normal usage) and our split-view iframe.
   const isAllowedFrame = (() => {
@@ -237,6 +237,11 @@
       let buffer = '';
       /** @type {string[]} */
       let dataLines = [];
+      // Safety caps: guard against malformed SSE streams (no '\n', no blank line, no [DONE]) which would
+      // otherwise cause unbounded string growth and potentially OOM the renderer.
+      const MAX_BUFFER_CHARS = 1024 * 1024; // keep this conservative; strings are UTF-16 in JS
+      const MAX_EVENT_CHARS = 2 * 1024 * 1024;
+      let eventChars = 0;
       let sawDone = false;
       let firstByteAt = null;
       let streamError = null;
@@ -249,6 +254,17 @@
           let chunk = decoder.decode(value, { stream: true });
           if (chunk.includes('\r')) chunk = chunk.replace(/\r/g, '');
           buffer += chunk;
+          if (buffer.length > MAX_BUFFER_CHARS) {
+            // Keep only the tail. If the stream still has no newline, abort parsing to avoid OOM.
+            buffer = buffer.slice(-MAX_BUFFER_CHARS);
+            if (buffer.indexOf('\n') === -1) {
+              streamError = new Error('SSE parse aborted: line too long (missing newline)');
+              try {
+                await reader.cancel();
+              } catch {}
+              break;
+            }
+          }
 
           let idx;
           while ((idx = buffer.indexOf('\n')) !== -1) {
@@ -256,7 +272,17 @@
             buffer = buffer.slice(idx + 1);
 
             if (line.startsWith('data:')) {
-              dataLines.push(line.slice(5).trimStart());
+              const part = line.slice(5).trimStart();
+              eventChars += part.length;
+              if (eventChars > MAX_EVENT_CHARS) {
+                streamError = new Error('SSE parse aborted: event too large');
+                try {
+                  await reader.cancel();
+                } catch {}
+                sawDone = false;
+                break;
+              }
+              dataLines.push(part);
               continue;
             }
 
@@ -264,6 +290,7 @@
               if (!dataLines.length) continue;
               const data = dataLines.join('\n');
               dataLines = [];
+              eventChars = 0;
 
               if (!data) continue;
               if (data === '[DONE]') {
@@ -289,6 +316,7 @@
             }
           }
 
+          if (streamError) break;
           if (sawDone) break;
         }
       } catch (e) {

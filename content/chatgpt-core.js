@@ -802,16 +802,16 @@
       }
     } catch {}
 
-    return Object.freeze({
-      sample: () => readHeap(),
-      history: () => state.samples.slice(),
-      tick,
-      cleanup: (reason) => {
-        const sample = readHeap();
-        if (sample) emergencyCleanup(String(reason || 'manual'), sample);
-      }
-    });
-  })();
+	    return Object.freeze({
+	      sample: () => readSample(),
+	      history: () => state.samples.slice(),
+	      tick,
+	      cleanup: (reason) => {
+	        const sample = readSample();
+	        if (sample) emergencyCleanup(String(reason || 'manual'), sample);
+	      }
+	    });
+	  })();
 
   const api = Object.freeze({
     version: API_VERSION,

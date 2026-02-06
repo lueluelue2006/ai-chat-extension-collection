@@ -123,10 +123,8 @@
   } catch {}
 
   // How many pixels of downward drift we tolerate before blocking.
-  // Keep this small to avoid visible "micro jumps" when sites try to autoscroll.
-  const DRIFT = 2;
-  // Some apps occasionally reset scrollTop to ~0 during re-render. While locked, block large upward jumps too.
-  const UP_JUMP = Math.max(DRIFT * 4, 64);
+  // Keep this aligned with the upstream implementation to reduce "twitching" behavior.
+  const DRIFT = 16;
   const MAX_ALLOW_MS = 8000;
   const SCROLLER_ATTR = 'data-quicknav-scrolllock-scroller';
   const ANCHOR_STYLE_ID = '__quicknav_scrolllock_anchor_style__';
@@ -517,7 +515,6 @@
       const targetTop = Number(nextTop);
       if (!Number.isFinite(targetTop)) return false;
       if (targetTop > baseline + DRIFT) return true;
-      if (targetTop < baseline - UP_JUMP) return true;
       return false;
     }
 
@@ -528,7 +525,6 @@
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
     if (targetTop > baseline + DRIFT) return true;
-    if (targetTop < baseline - UP_JUMP) return true;
     return false;
   }
 
@@ -547,7 +543,6 @@
       const targetTop = Number(nextTop);
       if (!Number.isFinite(targetTop)) return false;
       if (targetTop > baseline + DRIFT) return true;
-      if (targetTop < baseline - UP_JUMP) return true;
       return false;
     }
 
@@ -558,7 +553,6 @@
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
     if (targetTop > baseline + DRIFT) return true;
-    if (targetTop < baseline - UP_JUMP) return true;
     return false;
   }
 

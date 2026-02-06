@@ -15,7 +15,8 @@
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     virtualizeOffscreen: true,
-    virtualizeMarkdownBlocks: true,
+    // Experimental: keep off by default to avoid unexpected behavior changes.
+    virtualizeMarkdownBlocks: false,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
     disableBackdropFilters: false,

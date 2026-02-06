@@ -441,7 +441,9 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_split_view',
       matches: chatgpt,
-      js: [ISOLATED_BRIDGE_FILE, CHATGPT_CORE_FILE, 'content/chatgpt-split-view/main.js'],
+      // Split view is designed to be "zero cost" when closed; keep its default injection minimal.
+      // (Avoid pulling in shared bridges/cores that start timers on load.)
+      js: ['content/chatgpt-split-view/main.js'],
       runAt: 'document_idle'
     });
 
@@ -450,10 +452,11 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_split_view',
       matches: chatgpt,
-      js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-split-view/iframe-hotkeys.js'],
+      // Keep iframe-side logic minimal: only run inside our split iframe (gated by frameElement.id),
+      // and avoid pulling in extra MAIN-world helpers when split view is enabled but unused.
+      js: ['content/chatgpt-split-view/iframe-hotkeys.js'],
       runAt: 'document_start',
-      allFrames: true,
-      world: 'MAIN'
+      allFrames: true
     });
 
     // Gemini enterprise extras

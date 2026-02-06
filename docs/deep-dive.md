@@ -13,7 +13,7 @@
 
 ## 1) 项目是什么
 
-这是一个“AI Chat 扩展合集”，对多个站点（ChatGPT/Gemini/DeepSeek/Qwen/Z.ai/Grok/Genspark/文心一言）注入一组脚本，核心是 **QuickNav**（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键），并集成了若干站点增强模块（性能优化、用量统计、导出对话、Split View、各种 UI 修复等）。
+这是一个“AI Chat 扩展合集”，对多个站点（ChatGPT/Gemini/DeepSeek/Qwen/Z.ai/Grok/Genspark/文心一言）注入一组脚本，核心是 **QuickNav**（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键），并集成了若干站点增强模块（性能优化、用量统计、导出对话、各种 UI 修复等）。
 
 它的工程化特点是：
 
@@ -90,7 +90,7 @@
 
 一个重要的细节：
 
-- ChatGPT 的 Split View 开启时，会把部分模块改成 `allFrames: true` 注入（只对一小部分模块启用），以便在 iframe 内也能工作。
+- 绝大多数模块只在顶层 frame 工作；Popup/Options 侧统一按 `frameId:0` 发消息，避免 iframe 回包导致菜单发现/执行不稳定。
 
 ---
 
@@ -99,7 +99,7 @@
 项目把“用户脚本的 GM 菜单”做成了扩展 popup 的按钮列表：
 
 - `content/menu-bridge.js` 在页面侧暴露 `window.__quicknavRegisterMenuCommand(name, fn)`  
-  - 内部会根据调用栈把命令分组（QuickNav / 用量统计 / Split View / 导出对话等）
+  - 内部会根据调用栈把命令分组（QuickNav / 用量统计 / 导出对话等）
 - Popup 用 `chrome.tabs.sendMessage` 发：  
   - `QUICKNAV_GET_MENU`：拿到 `{href, commands[]}`  
   - `QUICKNAV_RUN_MENU`：执行某个 `id`
@@ -204,24 +204,7 @@ QuickNav 自己维护“用户视角的基准 scrollTop”（`scrollLockStablePo
 
 ---
 
-## 9) Split View（ChatGPT 拆分视图）
-
-模块文件：
-
-- `content/chatgpt-split-view/main.js`（主页面 UI + iframe 管理）
-- `content/chatgpt-split-view/iframe-hotkeys.js`（注入到 iframe 内；处理 Esc×3 与部分拦截热键）
-
-核心点：
-
-- 右侧 iframe id 固定：`qn-split-iframe`
-- 右侧宽度：CSS 变量 `--qn-split-right-width`；`html` 上 class `qn-split-open` 表示开启
-- 存储在 **chatgpt.com 的 localStorage**（非 chrome.storage）：  
-  - `chatgpt-split-view:open` / `chatgpt-split-view:rightWidthPx` / `chatgpt-split-view:src` 等
-- 与 QuickNav 的配合：`content/ui-pos-drag.js` 有 `splitAware` 逻辑，避免拖拽位置在分屏开关时“坐标漂移”
-
----
-
-## 10) 用量统计（ChatGPT usage monitor）
+## 9) 用量统计（ChatGPT usage monitor）
 
 模块文件：
 
@@ -238,7 +221,7 @@ QuickNav 自己维护“用户视角的基准 scrollTop”（`scrollLockStablePo
 
 ---
 
-## 11) Dev 脚本与维护流程
+## 10) Dev 脚本与维护流程
 
 项目自带 3 个维护脚本（Node 直接运行，无需打包器）：
 

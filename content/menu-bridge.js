@@ -80,7 +80,6 @@
     if (!p) return 'unknown';
     if (p.includes('chatgpt-export-conversation')) return 'ChatGPT 对话导出';
     if (p.includes('chatgpt-quicknav')) return 'ChatGPT QuickNav';
-    if (p.includes('chatgpt-split-view')) return 'ChatGPT Split View';
     if (p.includes('chatgpt-usage-monitor')) return 'ChatGPT 用量统计';
     if (p.includes('ernie-quicknav')) return '文心一言 QuickNav';
     if (p.includes('deepseek-quicknav')) return 'DeepSeek QuickNav';

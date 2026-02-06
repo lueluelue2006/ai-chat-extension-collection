@@ -7,8 +7,7 @@
   const API_KEY = '__aichat_chatgpt_core_v1__';
   const API_VERSION = 5;
 
-  // Avoid installing timers/listeners inside unrelated iframes.
-  // Allow top-frame and our split-view iframe.
+  // Avoid installing timers/listeners inside iframes.
   const isAllowedFrame = (() => {
     let inIframe = false;
     try {
@@ -16,13 +15,7 @@
     } catch {
       inIframe = true;
     }
-    if (!inIframe) return true;
-    try {
-      const fe = window.frameElement;
-      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
-    } catch {
-      return false;
-    }
+    return !inIframe;
   })();
 
   if (!isAllowedFrame) return;
@@ -553,7 +546,7 @@
   // It is intentionally conservative to avoid noisy alerts in normal use.
   const memGuard = (() => {
     try {
-      // Top-frame only: avoid duplicated timers when split-view enables `allFrames` injection.
+      // Top-frame only.
       if (window.self !== window.top) return null;
     } catch {
       return null;
@@ -615,13 +608,7 @@
         try {
           iframes = document.getElementsByTagName('iframe').length;
         } catch {}
-        try {
-          const iframe = document.getElementById('qn-split-iframe');
-          if (iframe) {
-            const src = String(iframe.getAttribute('src') || iframe.src || '').trim();
-            splitLoaded = !!src && src !== 'about:blank';
-          }
-        } catch {}
+        splitLoaded = false;
 
         // Expose last sample in DOM for quick debugging (DevTools / other worlds).
         try {
@@ -714,9 +701,7 @@
       state.lastCleanupAt = ts;
 
       try {
-        // Split View: unload/destroy iframe and close.
-        const split = window.__aichat_chatgpt_split_view_api_v1__;
-        split?.hardClose?.(`mem:${level}`);
+        // Keep cleanup lightweight; split view has been removed.
       } catch {}
 
       try {

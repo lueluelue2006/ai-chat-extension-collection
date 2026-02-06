@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // Avoid patching downloads in internal ChatGPT iframes when split-view enables `allFrames` injection.
+  // Avoid patching downloads in iframes.
   const ALLOWED_FRAME = (() => {
     let inIframe = false;
     try {
@@ -9,13 +9,7 @@
     } catch {
       inIframe = true;
     }
-    if (!inIframe) return true;
-    try {
-      const fe = window.frameElement;
-      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
-    } catch {
-      return false;
-    }
+    return !inIframe;
   })();
   if (!ALLOWED_FRAME) return;
 

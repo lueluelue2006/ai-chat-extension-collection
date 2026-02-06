@@ -7,7 +7,6 @@
     Object.defineProperty(globalThis, __aichatUsageMonitorGuardKey, { value: true, configurable: false, enumerable: false, writable: false });
   } catch {}
 
-  // When split-view is enabled, some ChatGPT modules may be injected with `allFrames: true`.
   // Keep this module out of iframes to avoid duplicated monitors and extra fetch patch work.
   const __aichatUsageMonitorAllowedFrame = (() => {
     try {
@@ -761,8 +760,7 @@
 
   // src/userConfig.js
   // User-controlled silent mode (stored in usageData.silentMode) applies to the top frame.
-  // In split-view iframes we always force silent mode, but never persist it back to shared storage.
-  // MV3: 在页面主世界注入悬浮 UI 会显著增加 DOM/定时器负担，且容易与 split-view/性能优化模块叠加造成不稳定。
+  // MV3: 在页面主世界注入悬浮 UI 会显著增加 DOM/定时器负担，且容易与性能优化模块叠加造成不稳定。
   // 因此在扩展内强制静默：仅记录用量数据，展示放到 options 页面。
   var FORCE_SILENT_MODE = true;
   try {
@@ -847,7 +845,7 @@
       if (data.silentMode === void 0) {
         data.silentMode = false;
       }
-      // Legacy fix: older split-view builds could accidentally persist silentMode=true from the iframe.
+      // Legacy fix: older builds could accidentally persist silentMode=true from an iframe.
       // If the user never toggled silent mode explicitly, default to visible in the top frame.
       if (!FORCE_SILENT_MODE) {
         try {

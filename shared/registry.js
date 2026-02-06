@@ -28,8 +28,7 @@
         'chatgpt_export_conversation',
         'chatgpt_image_message_edit',
         'chatgpt_message_tree',
-        'chatgpt_sidebar_header_fix',
-        'chatgpt_split_view'
+        'chatgpt_sidebar_header_fix'
       ]
     },
     {
@@ -244,16 +243,6 @@
       name: 'ChatGPT 侧边栏顶部按钮修复',
       sub: '左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置',
       hotkeys: [],
-      authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
-    },
-    chatgpt_split_view: {
-      id: 'chatgpt_split_view',
-      name: 'ChatGPT 拆分视图（实验）',
-      sub: '以弹窗方式打开 1×2 面板（Panelize 风格），避免在 chatgpt.com 内同源嵌 iframe 导致的严重内存问题',
-      defaultEnabled: false,
-      hotkeys: ['Esc×3'],
-      menuPreview: ['打开 QuickNav Split（弹窗）', '关闭 QuickNav Split（释放内存）'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

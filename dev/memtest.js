@@ -18,7 +18,6 @@
   const sampleSecondsEl = $('sampleSeconds');
   const heapAbortMbEl = $('heapAbortMb');
   const promptTemplateEl = $('promptTemplate');
-  const splitOpenModeEl = $('splitOpenMode');
   const treeOpenModeEl = $('treeOpenMode');
   const matrixModeEl = $('matrixMode');
   const exerciseModeEl = $('exerciseMode');
@@ -808,13 +807,6 @@
       const enabled = new Set(Array.isArray(enabledModules) ? enabledModules : []);
       if (!enabled.has('quicknav')) return;
 
-      // Split view: ensure we can hard-close (releases iframe memory).
-      if (enabled.has('chatgpt_split_view')) {
-        const r = await runMenuCommandByName(tabId, '关闭 Split View（释放右侧内存）');
-        if (r.ok === false) writeLog(`[WARN] menu exercise: split close failed: ${r.error || 'unknown'}`);
-        else writeLog('[INFO] menu exercise: split close ok');
-      }
-
       // Export conversation: only meaningful on /c/* with at least one turn.
       if (enabled.has('chatgpt_export_conversation')) {
         let probe = null;
@@ -1386,7 +1378,6 @@
       // Background-tab timer throttling can cause the in-page runner to miss deadlines and produce false hangs.
 
       // Start in-page runner (MAIN world so it can see main-world objects if needed)
-      const splitMode = String(splitOpenModeEl.value || 'never');
       const treeMode = String(treeOpenModeEl.value || 'open_once');
       const caseOptions = {
         caseId,
@@ -1396,7 +1387,6 @@
         sampleMs,
         heapAbortMb,
         promptTemplate,
-        splitMode,
         treeMode,
         exerciseMode,
         // Use conservative timeouts to avoid stuck runs. Decouple this from `durationMs` so a long case
@@ -1594,19 +1584,6 @@
           return false;
         };
 
-        const maybeOpenSplit = async (mode) => {
-          if (mode === 'never') return;
-          const handle = document.getElementById('qn-split-handle');
-          if (!(handle instanceof HTMLElement)) return;
-          handle.click();
-          await sleep(1200);
-          if (mode === 'open_once') {
-            // Best-effort close (Esc×3 is handled by the module, but we keep this minimal here).
-            const closeBtn = document.querySelector('#qn-split-topbar button:last-child');
-            if (closeBtn instanceof HTMLElement) closeBtn.click();
-          }
-        };
-
         const maybeOpenTree = async (mode) => {
           if (mode === 'never') return;
           const toggle = document.getElementById('__aichat_chatgpt_message_tree_toggle_v1__');
@@ -1735,9 +1712,8 @@
                   clickTextBtn('⤒'); // top
                 }
 
-                // Split View / Tree: only do at startup to avoid flapping open/close every message.
+                // Tree: only do at startup to avoid flapping open/close every message.
                 if (!isAfterMsg) {
-                  if (enabled.includes('chatgpt_split_view')) await maybeOpenSplit(String(cfg.splitMode || 'never'));
                   if (enabled.includes('chatgpt_message_tree')) await maybeOpenTree(String(cfg.treeMode || 'open_once'));
 
                   // Thinking toggle hotkeys (Cmd+O / Cmd+J). Synthetic events are best-effort.
@@ -2196,7 +2172,6 @@
         messagesPerCase: Math.max(0, Math.min(50, Number(messagesPerCaseEl.value) || 0)),
         sampleSeconds: Math.max(1, Math.min(60, Number(sampleSecondsEl.value) || 3)),
         heapAbortMb: Math.max(128, Math.min(8192, Number(heapAbortMbEl.value) || 1400)),
-        splitOpenMode: String(splitOpenModeEl?.value || 'never'),
         treeOpenMode: String(treeOpenModeEl?.value || 'open_once'),
         exerciseMode: getExerciseMode(),
         groupMaxFactors: mode === 'grouped_exhaustive' ? runner.groupMaxFactors : null,
@@ -2394,7 +2369,6 @@
         messagesPerCase: Number(messagesPerCaseEl.value) || null,
         sampleSeconds: Number(sampleSecondsEl.value) || null,
         heapAbortMb: Number(heapAbortMbEl.value) || null,
-        splitOpenMode: String(splitOpenModeEl.value || ''),
         treeOpenMode: String(treeOpenModeEl.value || ''),
         matrixMode: String(getMatrixMode() || ''),
         exerciseMode: String(getExerciseMode() || ''),
@@ -2679,8 +2653,6 @@
           heapMb,
           domNodes: document.getElementsByTagName('*').length,
           iframes: document.getElementsByTagName('iframe').length,
-          splitOpen: document.documentElement.classList.contains('qn-split-open'),
-          hasSplitIframe: !!document.getElementById('qn-split-iframe'),
         };
       });
 
@@ -2783,8 +2755,6 @@
         }
       } catch {}
 
-      const split = p.get('splitOpenMode');
-      if (split) splitOpenModeEl.value = split;
       const tree = p.get('treeOpenMode');
       if (tree) treeOpenModeEl.value = tree;
       const mode = p.get('mode') || p.get('matrixMode');
@@ -2902,7 +2872,6 @@
           'messagesPerCase',
           'sampleSeconds',
           'heapAbortMb',
-          'splitOpenMode',
           'treeOpenMode',
           'mode',
           'matrixMode',
@@ -2943,7 +2912,6 @@
           setNum(sampleSecondsEl, cfg.sampleSeconds);
           setNum(heapAbortMbEl, cfg.heapAbortMb);
 
-          if (typeof cfg.splitOpenMode === 'string' && splitOpenModeEl) splitOpenModeEl.value = cfg.splitOpenMode;
           if (typeof cfg.treeOpenMode === 'string' && treeOpenModeEl) treeOpenModeEl.value = cfg.treeOpenMode;
           if (typeof cfg.exerciseMode === 'string' && exerciseModeEl) exerciseModeEl.value = normalizeExerciseMode(cfg.exerciseMode);
           if (typeof cfg.matrixMode === 'string' && matrixModeEl) matrixModeEl.value = normalizeMatrixMode(cfg.matrixMode);

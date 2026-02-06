@@ -305,9 +305,6 @@
 
     // Fallback: perform minimal direct cleanup steps.
     try {
-      window.__aichat_chatgpt_split_view_api_v1__?.hardClose?.('quicknav_menu');
-    } catch {}
-    try {
       // Message Tree runs in MAIN world; close it via bridge.
       window.postMessage({ __quicknav: 1, type: 'QUICKNAV_CHATGPT_TREE_CLOSE' }, '*');
     } catch {}
@@ -2460,7 +2457,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const api = globalThis.__aichat_ui_pos_drag_v1__;
       if (api && typeof api.posV2FromRect === 'function') {
         const rect = nav.getBoundingClientRect();
-        const payload = api.posV2FromRect(rect, { splitAware: true, clampBottomPx: 40 });
+        const payload = api.posV2FromRect(rect, { clampBottomPx: 40 });
         saveNavPosition(payload);
         return;
       }
@@ -2469,18 +2466,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const rect = nav.getBoundingClientRect();
       let vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
       const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
-      // If split view is open, QuickNav is visually shifted left via CSS.
-      // Persist the position in the "main pane" coordinate system so it doesn't get saved as "pushed away".
-      try {
-        if (document.documentElement.classList.contains('qn-split-open')) {
-          const raw = getComputedStyle(document.documentElement).getPropertyValue('--qn-split-right-width');
-          const splitW = parseFloat(String(raw || '').trim());
-          if (Number.isFinite(splitW) && splitW > 0) {
-            const clamped = Math.min(Math.max(0, splitW), vw);
-            vw = Math.max(0, vw - clamped);
-          }
-        }
-      } catch {}
       const centerX = rect.left + (rect.width || 0) / 2;
       const anchorRight = vw && centerX >= vw / 2;
       const top = Number.isFinite(rect.top) ? rect.top : 0;

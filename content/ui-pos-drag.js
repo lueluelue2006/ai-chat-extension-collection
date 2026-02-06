@@ -19,25 +19,9 @@
     return { vw, vh };
   }
 
-  function getSplitRightWidth() {
-    try {
-      const html = document.documentElement;
-      if (!html || !html.classList || !html.classList.contains('qn-split-open')) return 0;
-      const raw = getComputedStyle(html).getPropertyValue('--qn-split-right-width');
-      const splitW = parseFloat(String(raw || '').trim());
-      return Number.isFinite(splitW) && splitW > 0 ? splitW : 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  function effectiveViewportWidth({ splitAware }) {
+  function effectiveViewportWidth() {
     const { vw } = viewportSize();
-    if (!splitAware) return vw;
-    const splitW = getSplitRightWidth();
-    if (!Number.isFinite(splitW) || splitW <= 0) return vw;
-    const clamped = Math.min(Math.max(0, splitW), vw);
-    return Math.max(0, vw - clamped);
+    return vw;
   }
 
   function normalizePosV2(raw) {
@@ -66,7 +50,7 @@
 
   function posV2FromRect(rect, opts = {}) {
     const { vh } = viewportSize();
-    const vw = effectiveViewportWidth({ splitAware: !!opts.splitAware });
+    const vw = effectiveViewportWidth();
     const safeVw = Math.max(0, vw);
     const safeVh = Math.max(0, vh);
 
@@ -91,7 +75,7 @@
 
   function posV2FromLegacyXY(x, y, width, height, opts = {}) {
     const { vh } = viewportSize();
-    const vw = effectiveViewportWidth({ splitAware: !!opts.splitAware });
+    const vw = effectiveViewportWidth();
     const w = Math.max(0, Number(width) || 0);
     const h = Math.max(0, Number(height) || 0);
     const safeVw = Math.max(0, vw);
@@ -119,7 +103,7 @@
     if (!el || !pos) return false;
 
     const { vh } = viewportSize();
-    const vw = effectiveViewportWidth({ splitAware: !!opts.splitAware });
+    const vw = effectiveViewportWidth();
     const w = Math.max(0, Number(widthHint) || el.offsetWidth || 0);
     const h = Math.max(0, Number(heightHint) || el.offsetHeight || 0);
     const safeVw = Math.max(0, vw);

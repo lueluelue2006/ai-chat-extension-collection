@@ -13,7 +13,7 @@
   }
 
   // Keep this bridge in the top frame only:
-  // - Avoid duplicate storage listeners in split-view iframes
+  // - Avoid duplicate storage listeners in iframes
   // - localStorage is shared (same origin), so planType still propagates
   try {
     if (window.self !== window.top) return;

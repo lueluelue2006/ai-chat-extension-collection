@@ -4,9 +4,7 @@
   const HUB_KEY = '__aichat_chatgpt_fetch_hub_v1__';
   const FETCH_PATCH_FLAG = '__aichatChatGPTFetchHubPatchedV1__';
 
-  // Some deployments may inject this hub with `allFrames: true`.
-  // Avoid patching fetch in every internal ChatGPT iframe: only allow top-frame
-  // (normal usage) and our split-view iframe.
+  // Avoid patching fetch in every iframe: only allow top-frame.
   const isAllowedFrame = (() => {
     let inIframe = false;
     try {
@@ -14,14 +12,7 @@
     } catch {
       inIframe = true;
     }
-    if (!inIframe) return true;
-
-    try {
-      const fe = window.frameElement;
-      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
-    } catch {
-      return false;
-    }
+    return !inIframe;
   })();
 
   if (!isAllowedFrame) return;

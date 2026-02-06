@@ -5,8 +5,7 @@
   const API_KEY = '__aichat_chatgpt_core_main_v1__';
   const API_VERSION = 5;
 
-  // Avoid installing timers/listeners inside unrelated iframes.
-  // Allow top-frame and our split-view iframe.
+  // Avoid installing timers/listeners inside iframes.
   const isAllowedFrame = (() => {
     let inIframe = false;
     try {
@@ -14,13 +13,7 @@
     } catch {
       inIframe = true;
     }
-    if (!inIframe) return true;
-    try {
-      const fe = window.frameElement;
-      return !!(fe && fe.nodeType === 1 && String(fe.id || '') === 'qn-split-iframe');
-    } catch {
-      return false;
-    }
+    return !inIframe;
   })();
 
   if (!isAllowedFrame) return;

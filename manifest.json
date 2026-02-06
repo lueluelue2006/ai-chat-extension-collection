@@ -17,14 +17,13 @@
     "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",
     "https://chat.z.ai/*",
-    "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://ernie.baidu.com/*",
     "https://gemini.google.com/app*",
     "https://grok.com/*",
     "https://kimi.com/*",
-    "https://www.kimi.com/*",
-    "https://www.genspark.ai/*"
+    "https://www.genspark.ai/*",
+    "https://www.kimi.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -50,8 +49,8 @@
         "https://gemini.google.com/app*",
         "https://grok.com/*",
         "https://kimi.com/*",
-        "https://www.kimi.com/*",
-        "https://www.genspark.ai/*"
+        "https://www.genspark.ai/*",
+        "https://www.kimi.com/*"
       ],
       "js": [
         "content/bootstrap.js"
@@ -67,15 +66,6 @@
     "page": "options/options.html",
     "open_in_tab": true
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "content/chatgpt-split-view/iframe-hotkeys-impl.mjs"
-      ],
-      "matches": [
-        "https://chatgpt.com/*"
-      ]
-    }
-  ],
+  "web_accessible_resources": [],
   "minimum_chrome_version": "96"
 }

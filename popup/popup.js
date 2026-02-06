@@ -367,7 +367,7 @@
   function tabsSendMessage(tabId, msg, options = { frameId: 0 }) {
     return new Promise((resolve, reject) => {
       try {
-        // IMPORTANT: some modules (e.g. Split View helpers) are injected with `allFrames: true`.
+        // IMPORTANT: force top-frame response for stable menu discovery/execution.
         // Without forcing `frameId: 0`, `sendMessage` may respond from an iframe (often `about:blank`)
         // which breaks menu discovery/execution.
         chrome.tabs.sendMessage(tabId, msg, options, (resp) => {
@@ -482,7 +482,6 @@
     const g = String(group || '');
     if (/对话导出/.test(g)) return 'chatgpt_export_conversation';
     if (/用量统计/.test(g)) return 'chatgpt_usage_monitor';
-    if (/Split\s*View/i.test(g) || /拆分视图|分屏/.test(g)) return 'chatgpt_split_view';
     if (/QuickNav/.test(g)) return 'quicknav';
     // Future: map more groups to module ids here.
     return null;

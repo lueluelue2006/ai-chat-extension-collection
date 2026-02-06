@@ -436,29 +436,6 @@
       world: 'MAIN'
     });
 
-    defs.push({
-      id: 'quicknav_chatgpt_split_view',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_split_view',
-      matches: chatgpt,
-      // Split view is designed to be "zero cost" when closed; keep its default injection minimal.
-      // (Avoid pulling in shared bridges/cores that start timers on load.)
-      js: ['content/chatgpt-split-view/main.js'],
-      runAt: 'document_idle'
-    });
-
-    defs.push({
-      id: 'quicknav_chatgpt_split_view_iframe_hotkeys',
-      siteId: 'chatgpt',
-      moduleId: 'chatgpt_split_view',
-      matches: chatgpt,
-      // Keep iframe-side logic minimal: only run inside our split iframe (gated by frameElement.id),
-      // and avoid pulling in extra MAIN-world helpers when split view is enabled but unused.
-      js: ['content/chatgpt-split-view/iframe-hotkeys.js'],
-      runAt: 'document_start',
-      allFrames: true
-    });
-
     // Gemini enterprise extras
     const geminiBusiness = siteMatchPatterns(registry, 'gemini_business');
     defs.push({

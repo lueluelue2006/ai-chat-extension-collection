@@ -590,7 +590,7 @@ textarea.codeBox {
 /* ChatGPT 用量面板（配置页内“油猴同款”UI） */
 .cgptUsageDash {
   margin-top: 10px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid #363636;
   background: #1a1b1e;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
@@ -600,58 +600,46 @@ textarea.codeBox {
 }
 
 .cgptUsageDashHeader {
-  padding: 0 16px;
   display: flex;
   align-items: center;
-  height: 36px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 4px 10px 3px;
   background: #1a1b1e;
+  border-bottom: 1px solid #2c2d30;
 }
 
-.cgptUsageDashTab {
-  border: none;
-  background: none;
-  color: #9ca3af;
-  cursor: pointer;
-  font-weight: 600;
-  transition: color 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 12px;
-  padding-top: 8px;
-}
-
-.cgptUsageDashTab:first-child {
-  margin-left: 0;
-}
-
-.cgptUsageDashTab:hover,
-.cgptUsageDashTab.active {
-  color: #facc15;
+.cgptUsageDashTitle {
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-weight: 700;
 }
 
 .cgptUsageDashContent {
-  padding: 4px 16px 12px;
-  max-height: 320px;
+  padding: 4px 10px 8px;
+  max-height: 560px;
   overflow-y: auto;
 }
 
 .cgptUsageDashContent::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 .cgptUsageDashContent::-webkit-scrollbar-track {
-  background: #2a2b2e;
+  background: #232427;
   border-radius: 4px;
 }
 
 .cgptUsageDashContent::-webkit-scrollbar-thumb {
-  background: #363636;
+  background: #3a3b3f;
   border-radius: 4px;
 }
 
 .cgptUsageDashContent::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: #72757d;
 }
 
 .cgptUsageDashPane[hidden] {
@@ -659,36 +647,44 @@ textarea.codeBox {
 }
 
 .cgptUsageHint {
-  font-size: 12px;
-  color: #9ca3af;
-  margin: 4px 0 8px;
-  line-height: 1.4;
+  font-size: 10px;
+  color: #7c828f;
+  margin: 6px 0 0;
+  line-height: 1.25;
 }
 
 .cgptUsageActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
+}
+
+.cgptUsageActionsInline {
+  margin-left: auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
 }
 
 .cgptUsageBtn {
-  padding: 6px 0;
+  padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  color: #e5e7eb;
+  color: #9ca3af;
   font-weight: 600;
-  font-size: 13px;
-  text-decoration: underline;
-  transition: color 0.2s ease;
+  font-size: 11px;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: color 0.18s ease;
 }
 
 .cgptUsageBtn:hover {
   color: #facc15;
+  text-decoration: none;
 }
 
 .cgptUsageBtn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
   text-decoration: none;
 }
@@ -700,33 +696,51 @@ textarea.codeBox {
 .cgptUsageEmpty {
   text-align: center;
   color: #9ca3af;
-  padding: 18px 6px;
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 14px 4px;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .cgptUsageDash .reset-info {
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
-  margin: 4px 0;
+  margin: 2px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cgptUsageLegendTitle {
+  color: #9ca3af;
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .cgptUsageWindowTypes {
   display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  gap: 8px;
+  margin-top: 0;
+  gap: 4px;
   flex-wrap: wrap;
+}
+
+.cgptUsageWindowTypes > span {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 
 .cgptUsageDash .window-badge {
   display: inline-block;
-  font-size: 10px;
-  padding: 2px 4px;
+  font-size: 9px;
+  line-height: 1.1;
+  padding: 2px 4px 1px;
   border-radius: 4px;
-  margin-left: 4px;
+  margin-left: 0;
   color: #1a1b1e;
-  font-weight: bold;
+  font-weight: 700;
 }
 
 .cgptUsageDash .window-badge.hour3 {
@@ -751,56 +765,65 @@ textarea.codeBox {
 
 .cgptUsageDash .table-header {
   color: #e5e7eb;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.2;
   display: grid;
   align-items: center;
   grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: 0;
+  padding: 3px 0;
+  background: #1a1b1e;
+  border-bottom: 1px solid #2c2d30;
 }
 
 .cgptUsageDash .model-row {
   color: #9ca3af;
-  transition: color 0.2s ease;
-  font-size: 12px;
+  transition: color 0.15s ease;
+  font-size: 11px;
   line-height: 1.2;
   display: grid;
   grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
   align-items: center;
+  padding: 2px 0;
+  border-bottom: 1px solid #232427;
 }
 
 .cgptUsageDash .model-row:hover {
   color: #facc15;
-  text-decoration-line: underline;
+  text-decoration: none;
 }
 
 .cgptUsageDash .request-time {
   color: #9ca3af;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .cgptUsageDash .window-info {
-  color: #9ca3af;
-  font-size: 11px;
-  margin-top: 2px;
+  color: #7c828f;
+  font-size: 10px;
+  margin-top: 1px;
 }
 
 .cgptUsageDash .progress-container {
   width: 100%;
   background: #2a2b2e;
-  margin-top: 4px;
-  border-radius: 6px;
+  margin-top: 2px;
+  border-radius: 4px;
   overflow: hidden;
-  height: 8px;
+  height: 6px;
   position: relative;
 }
 
 .cgptUsageDash .progress-bar {
   height: 100%;
-  transition: width 0.3s ease;
-  border-radius: 6px;
+  transition: width 0.25s ease;
+  border-radius: 4px;
   background: linear-gradient(90deg, #ef4444 0%, #f59e0b 50%, #10b981 100%);
   background-size: 200% 100%;
-  animation: cgptUsageGradientShift 2s linear infinite;
+  animation: cgptUsageGradientShift 2.6s linear infinite;
 }
 
 .cgptUsageDash .progress-bar.low-usage {
@@ -835,16 +858,16 @@ textarea.codeBox {
 
 .cgptUsageDash .dot-progress {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
-  height: 8px;
+  height: 6px;
 }
 
 .cgptUsageDash .dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .cgptUsageDash .dot-empty {

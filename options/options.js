@@ -1975,11 +1975,68 @@
       'gpt-5',
       'alpha'
     ];
-    const MODEL_DISPLAY_NAME_OVERRIDES = {
-      'gpt-5': 'gpt-5-instant',
-      'gpt-5-1': 'gpt-5-1-instant'
+    const MODEL_KEY_ALIASES = {
+      'gpt-5-instant': 'gpt-5',
+      'gpt-5-1-instant': 'gpt-5-1',
+      'gpt-5-2': 'gpt-5-2-instant'
     };
-    const displayModelName = (modelKey) => MODEL_DISPLAY_NAME_OVERRIDES[String(modelKey || '')] || String(modelKey || '');
+    const canonicalizeUsageModelKey = (modelKey) => {
+      const key = String(modelKey || '').trim();
+      if (!key) return '';
+      return MODEL_KEY_ALIASES[key] || key;
+    };
+    const displayModelName = (modelKey) => canonicalizeUsageModelKey(modelKey);
+    const mergeAliasedUsageModels = (models) => {
+      if (!models || typeof models !== 'object') return false;
+      const validWindowTypes = new Set(['hour3', 'hour5', 'daily', 'weekly', 'monthly']);
+      let changed = false;
+      Object.keys(models).forEach((rawKey) => {
+        const canonicalKey = canonicalizeUsageModelKey(rawKey);
+        if (!canonicalKey || canonicalKey === rawKey) return;
+        const source = models[rawKey];
+        if (!source || typeof source !== 'object') {
+          delete models[rawKey];
+          changed = true;
+          return;
+        }
+        const target = models[canonicalKey];
+        if (!target || typeof target !== 'object') {
+          models[canonicalKey] = source;
+        } else {
+          const targetReq = Array.isArray(target.requests)
+            ? target.requests.map((r) => tsOf(r)).filter((ts) => typeof ts === 'number' && !Number.isNaN(ts))
+            : [];
+          const sourceReq = Array.isArray(source.requests)
+            ? source.requests.map((r) => tsOf(r)).filter((ts) => typeof ts === 'number' && !Number.isNaN(ts))
+            : [];
+          if (sourceReq.length) target.requests = [...targetReq, ...sourceReq].sort((a, b) => b - a);
+          if ((!target.sharedGroup || typeof target.sharedGroup !== 'string') && typeof source.sharedGroup === 'string' && source.sharedGroup) {
+            target.sharedGroup = source.sharedGroup;
+          }
+          if (typeof target.quota !== 'number' && typeof source.quota === 'number') target.quota = source.quota;
+          if (!validWindowTypes.has(target.windowType) && validWindowTypes.has(source.windowType)) {
+            target.windowType = source.windowType;
+          }
+        }
+        delete models[rawKey];
+        changed = true;
+      });
+      return changed;
+    };
+    const normalizeUsageDataForRender = (data) => {
+      if (!data || typeof data !== 'object') return null;
+      let next = null;
+      try {
+        next = JSON.parse(JSON.stringify(data));
+      } catch {
+        return data;
+      }
+      if (!next.models || typeof next.models !== 'object') next.models = {};
+      try {
+        mergeAliasedUsageModels(next.models);
+      } catch {}
+      return next;
+    };
 
     const formatTimeAgo = (timestamp) => {
       const now = Date.now();
@@ -2050,17 +2107,10 @@
     dashHeader.className = 'cgptUsageDashHeader';
     dash.appendChild(dashHeader);
 
-    const btnTabUsage = document.createElement('button');
-    btnTabUsage.type = 'button';
-    btnTabUsage.className = 'cgptUsageDashTab active';
-    btnTabUsage.textContent = '用量';
-    dashHeader.appendChild(btnTabUsage);
-
-    const btnTabSettings = document.createElement('button');
-    btnTabSettings.type = 'button';
-    btnTabSettings.className = 'cgptUsageDashTab';
-    btnTabSettings.textContent = '设置';
-    dashHeader.appendChild(btnTabSettings);
+    const dashTitle = document.createElement('div');
+    dashTitle.className = 'cgptUsageDashTitle';
+    dashTitle.textContent = 'ChatGPT 用量监视器';
+    dashHeader.appendChild(dashTitle);
 
     const dashContent = document.createElement('div');
     dashContent.className = 'cgptUsageDashContent';
@@ -2070,29 +2120,14 @@
     usagePane.className = 'cgptUsageDashPane';
     dashContent.appendChild(usagePane);
 
-    const settingsPane = document.createElement('div');
-    settingsPane.className = 'cgptUsageDashPane';
-    settingsPane.hidden = true;
-    dashContent.appendChild(settingsPane);
-
-    const setActivePane = (name) => {
-      const showUsage = name !== 'settings';
-      btnTabUsage.classList.toggle('active', showUsage);
-      btnTabSettings.classList.toggle('active', !showUsage);
-      usagePane.hidden = !showUsage;
-      settingsPane.hidden = showUsage;
-    };
-    btnTabUsage.addEventListener('click', () => setActivePane('usage'));
-    btnTabSettings.addEventListener('click', () => setActivePane('settings'));
+    const settingsActions = document.createElement('div');
+    settingsActions.className = 'cgptUsageActions cgptUsageActionsInline';
+    dashHeader.appendChild(settingsActions);
 
     const settingsHint = document.createElement('div');
     settingsHint.className = 'cgptUsageHint';
-    settingsHint.textContent = '导入/导出/清空仅影响扩展本地存储；不会影响你的 ChatGPT 账号。';
-    settingsPane.appendChild(settingsHint);
-
-    const settingsActions = document.createElement('div');
-    settingsActions.className = 'cgptUsageActions';
-    settingsPane.appendChild(settingsActions);
+    settingsHint.textContent = '仅本地数据：导入/导出/清空不会影响 ChatGPT 账号。';
+    dashContent.appendChild(settingsHint);
 
     const btnRefresh = document.createElement('button');
     btnRefresh.type = 'button';
@@ -2124,13 +2159,14 @@
       const windowType = group.windowType || 'daily';
       const windowDuration = TIME_WINDOWS[String(windowType)] || TIME_WINDOWS.daily;
       const activeRequests = [];
-      Object.entries(usageData?.models || {}).forEach(([key, model]) => {
+      Object.entries(usageData?.models || {}).forEach(([rawKey, model]) => {
         if (String(model?.sharedGroup || '') !== String(groupId)) return;
         if (!Array.isArray(model?.requests)) return;
+        const modelKey = canonicalizeUsageModelKey(rawKey) || rawKey;
         model.requests
           .map((req) => tsOf(req))
           .filter((ts) => typeof ts === 'number' && !Number.isNaN(ts) && now - ts < windowDuration)
-          .forEach((ts) => activeRequests.push({ ts, modelKey: key }));
+          .forEach((ts) => activeRequests.push({ ts, modelKey }));
       });
       activeRequests.sort((a, b) => a.ts - b.ts);
       return {
@@ -2332,165 +2368,85 @@
         return;
       }
 
+      const infoSection = document.createElement('div');
+      infoSection.className = 'reset-info';
+      const windowLegendLabel = document.createElement('span');
+      windowLegendLabel.className = 'cgptUsageLegendTitle';
+      windowLegendLabel.textContent = '窗口';
+      infoSection.appendChild(windowLegendLabel);
+      const windowTypes = document.createElement('div');
+      windowTypes.className = 'cgptUsageWindowTypes';
+      windowTypes.innerHTML = `
+        <span class="window-badge hour3">3h</span>
+        <span class="window-badge hour5">5h</span>
+        <span class="window-badge daily">24h</span>
+        <span class="window-badge weekly">7d</span>
+        <span class="window-badge monthly">30d</span>
+      `;
+      infoSection.appendChild(windowTypes);
+      usagePane.appendChild(infoSection);
+
+      const tableHeader = document.createElement('div');
+      tableHeader.className = 'table-header';
+      tableHeader.innerHTML = '<div>模型名称</div><div>最后使用</div><div>使用量</div><div>进度</div>';
+      usagePane.appendChild(tableHeader);
+
       const now = Date.now();
-      const planKey = String(usageData?.planType || planType || 'team').trim() || 'team';
-      const planLabel = CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === planKey)?.[1] || planKey;
-      const lastAt = computeLastActivityAt(usageData);
-      const sizeBytes = computeUsageDataBytes(usageData);
+      const currentPlan = String(usageData?.planType || planType || 'team').trim() || 'team';
+      const canonicalModelEntries = [];
+      const seenCanonicalKeys = new Set();
+      Object.entries(usageData?.models || {}).forEach(([rawKey, model]) => {
+        const key = canonicalizeUsageModelKey(rawKey);
+        if (!key || seenCanonicalKeys.has(key)) return;
+        seenCanonicalKeys.add(key);
+        canonicalModelEntries.push([key, usageData?.models?.[key] || model]);
+      });
 
-      const meta = document.createElement('div');
-      meta.className = 'cgptUsageMeta';
-      const addMetaRow = (k, v) => {
-        const row = document.createElement('div');
-        row.className = 'cgptUsageMetaRow';
-        const key = document.createElement('div');
-        key.className = 'cgptUsageMetaKey';
-        key.textContent = k;
-        const val = document.createElement('div');
-        val.className = 'cgptUsageMetaVal';
-        val.textContent = v;
-        row.appendChild(key);
-        row.appendChild(val);
-        meta.appendChild(row);
-      };
-      addMetaRow('套餐', planLabel);
-      addMetaRow('最近活动', lastAt ? `${formatDateTime(lastAt)}（${formatAgeMs(now - lastAt)}）` : '—');
-      addMetaRow('数据大小', sizeBytes ? formatBytes(sizeBytes) : '—');
-      usagePane.appendChild(meta);
-
-      const sharedGroups =
-        usageData?.sharedQuotaGroups && typeof usageData.sharedQuotaGroups === 'object' ? usageData.sharedQuotaGroups : {};
-      const groupIds = Object.keys(sharedGroups);
-      const weightGroup = (id) => {
-        const s = String(id || '').toLowerCase();
-        if (s.includes('instant')) return 0;
-        if (s.includes('premium')) return 1;
-        if (s.includes('thinking')) return 2;
-        return 3;
-      };
-      groupIds.sort((a, b) => weightGroup(a) - weightGroup(b) || String(a).localeCompare(String(b)));
-
-      const makeTitleSub = (title, sub) => {
-        const wrap = document.createElement('div');
-        const t = document.createElement('div');
-        t.className = 'cgptUsageCellTitle';
-        t.textContent = title;
-        wrap.appendChild(t);
-        if (sub) {
-          const s = document.createElement('div');
-          s.className = 'cgptUsageCellSub';
-          s.textContent = sub;
-          wrap.appendChild(s);
-        }
-        return wrap;
-      };
-
-      const renderSectionTitle = (text) => {
-        const h = document.createElement('div');
-        h.className = 'cgptUsageSectionTitle';
-        h.textContent = text;
-        usagePane.appendChild(h);
-      };
-
-      // Shared quota groups (共用池)
-      renderSectionTitle('共用池');
-      if (!groupIds.length) {
-        const empty = document.createElement('div');
-        empty.className = 'cgptUsageEmpty';
-        empty.textContent = '（无共用池数据）';
-        usagePane.appendChild(empty);
-      } else {
-        const table = document.createElement('div');
-        table.className = 'cgptUsageTable cgptUsageTableShared';
-        const header = document.createElement('div');
-        header.className = 'cgptUsageTableHeader';
-        header.innerHTML = '<div>组</div><div>用量</div><div>窗口</div><div>重置</div><div>模型</div>';
-        table.appendChild(header);
-
-        const modelsObj = usageData?.models && typeof usageData.models === 'object' ? usageData.models : {};
-        for (const groupId of groupIds) {
-          const group = sharedGroups[groupId] && typeof sharedGroups[groupId] === 'object' ? sharedGroups[groupId] : {};
-          const sharedUsage = collectSharedGroupUsage(usageData, groupId, now);
-          const quota = Number(sharedUsage?.group?.quota ?? group?.quota ?? 0);
-          const quotaDisplay = quota === 0 && planKey === 'pro' ? '∞' : String(quota);
-          const count = Number(sharedUsage?.activeRequests?.length ?? 0);
-          const windowType = String(sharedUsage?.windowType || group?.windowType || '').trim() || 'daily';
-          const resetText =
-            count > 0 && sharedUsage?.windowEnd && Number(sharedUsage.windowEnd) > now ? `剩余 ${formatTimeLeft(sharedUsage.windowEnd)}` : '—';
-
-          const modelNames = Object.entries(modelsObj)
-            .filter(([, m]) => String(m?.sharedGroup || '') === String(groupId))
-            .map(([k]) => displayModelName(k))
-            .filter(Boolean);
-
-          const row = document.createElement('div');
-          row.className = 'cgptUsageTableRow';
-          row.appendChild(makeTitleSub(String(group.displayName || groupId), groupId));
-          row.appendChild(makeTitleSub(`${count}/${quotaDisplay}`, ''));
-          row.appendChild(makeTitleSub(windowShort(windowType), ''));
-          row.appendChild(makeTitleSub(resetText, ''));
-          row.appendChild(makeTitleSub(modelNames.join(', ') || '—', ''));
-          table.appendChild(row);
-        }
-        usagePane.appendChild(table);
-      }
-
-      // Direct quota models (模型)
-      renderSectionTitle('模型');
-      const modelsObj = usageData?.models && typeof usageData.models === 'object' ? usageData.models : {};
-      const directKeys = Object.keys(modelsObj).filter((k) => !(modelsObj[k] && typeof modelsObj[k] === 'object' && modelsObj[k].sharedGroup));
-
-      const ordered = [];
-      for (const key of MODEL_DISPLAY_ORDER) {
-        if (!directKeys.includes(key)) continue;
-        ordered.push(key);
-      }
-      const extras = directKeys.filter((k) => !MODEL_DISPLAY_ORDER.includes(k)).sort((a, b) => String(a).localeCompare(String(b)));
-      const allKeys = [...ordered, ...extras];
-
-      if (!allKeys.length) {
-        const empty = document.createElement('div');
-        empty.className = 'cgptUsageEmpty';
-        empty.textContent = '（无模型数据）';
-        usagePane.appendChild(empty);
-      } else {
-        const table = document.createElement('div');
-        table.className = 'cgptUsageTable cgptUsageTableModel';
-        const header = document.createElement('div');
-        header.className = 'cgptUsageTableHeader';
-        header.innerHTML = '<div>模型</div><div>用量</div><div>窗口</div><div>重置</div>';
-        table.appendChild(header);
-
-        for (const modelKey of allKeys) {
-          const model = modelsObj[modelKey] && typeof modelsObj[modelKey] === 'object' ? modelsObj[modelKey] : {};
-          const windowType = String(model?.windowType || 'daily');
-          const windowDuration = TIME_WINDOWS[String(windowType)] || TIME_WINDOWS.daily;
-          const active = (Array.isArray(model?.requests) ? model.requests : [])
-            .map(tsOf)
-            .filter((ts) => Number.isFinite(ts) && now - ts < windowDuration);
-          const count = active.length;
-          const quota = Number(model?.quota ?? 0);
-          const quotaDisplay = quota === 0 && planKey === 'pro' ? '∞' : String(quota);
-          let resetText = '—';
-          if (count > 0) {
-            try {
-              const oldest = Math.min(...active);
-              const end = getWindowEnd(oldest, windowType);
-              if (Number.isFinite(end) && end > now) resetText = `剩余 ${formatTimeLeft(end)}`;
-            } catch {}
+      const modelCounts = canonicalModelEntries.map(([key, model]) => {
+        let activeCount = 0;
+        let hasBeenUsed = false;
+        let isAvailable = false;
+        if (model?.sharedGroup) {
+          const sharedUsage = collectSharedGroupUsage(usageData, model.sharedGroup, now);
+          if (sharedUsage) {
+            activeCount = sharedUsage.activeRequests.length;
+            hasBeenUsed = activeCount > 0;
+            isAvailable = sharedUsage.group.quota > 0 || (sharedUsage.group.quota === 0 && currentPlan === 'pro');
           }
-
-          const display = displayModelName(modelKey);
-          const sub = display !== modelKey ? modelKey : '';
-          const row = document.createElement('div');
-          row.className = 'cgptUsageTableRow';
-          row.appendChild(makeTitleSub(display, sub));
-          row.appendChild(makeTitleSub(`${count}/${quotaDisplay}`, ''));
-          row.appendChild(makeTitleSub(windowShort(windowType), ''));
-          row.appendChild(makeTitleSub(resetText, ''));
-          table.appendChild(row);
+        } else {
+          const windowDuration = TIME_WINDOWS[String(model?.windowType || '')] || TIME_WINDOWS.daily;
+          activeCount = (model?.requests || []).map(tsOf).filter((ts) => Number.isFinite(ts) && now - ts < windowDuration).length;
+          hasBeenUsed = (model?.requests || []).length > 0;
+          isAvailable = Number(model?.quota ?? 0) > 0 || (Number(model?.quota ?? 0) === 0 && currentPlan === 'pro');
         }
-        usagePane.appendChild(table);
+        return { key, model, hasBeenUsed, isAvailable };
+      });
+
+      const sortedModels = MODEL_DISPLAY_ORDER.filter((modelKey) => {
+        const modelData = modelCounts.find(({ key }) => key === modelKey);
+        if (!modelData) return false;
+        if (modelKey === 'o3-pro' && currentPlan !== 'pro') return false;
+        return modelData.hasBeenUsed || modelData.isAvailable;
+      })
+        .map((modelKey) => modelCounts.find(({ key }) => key === modelKey))
+        .filter(Boolean);
+
+      const extraModels = modelCounts
+        .filter(({ key }) => !MODEL_DISPLAY_ORDER.includes(key))
+        .filter(({ key }) => !(key === 'o3-pro' && currentPlan !== 'pro'))
+        .filter(({ hasBeenUsed, isAvailable }) => hasBeenUsed || isAvailable)
+        .sort((a, b) => String(a.key).localeCompare(String(b.key)));
+
+      [...sortedModels, ...extraModels].forEach(({ key, model }) => {
+        usagePane.appendChild(createUsageModelRow(usageData, model, key));
+      });
+
+      if (sortedModels.length === 0 && extraModels.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'cgptUsageEmpty';
+        emptyState.textContent =
+          Object.keys(usageData?.models || {}).length > 0 ? '使用模型后才会显示用量统计。' : '未配置任何模型，请在设置中添加。';
+        usagePane.appendChild(emptyState);
       }
     };
 
@@ -2499,7 +2455,7 @@
       btnRefresh.disabled = true;
       try {
         const { usageData } = await loadUsageSnapshot();
-        latestUsageData = usageData || null;
+        latestUsageData = normalizeUsageDataForRender(usageData || null);
         renderUsagePane(latestUsageData);
         if (showStatus) setStatus('已刷新用量数据', 'ok');
       } catch (e) {
@@ -2518,8 +2474,7 @@
         if (areaName !== 'local') return;
         if (!changes || typeof changes !== 'object') return;
         if (!(USAGE_DATA_KEY in changes) && !(PLAN_TYPE_GM_KEY in changes)) return;
-        latestUsageData = changes?.[USAGE_DATA_KEY]?.newValue || null;
-        renderUsagePane(latestUsageData);
+        void refreshDashboard(false);
       } catch {}
     };
     try {

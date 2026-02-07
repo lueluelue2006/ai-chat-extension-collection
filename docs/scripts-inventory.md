@@ -1,7 +1,7 @@
 # Scripts Inventory (MV3)
 
 - Name: ai chat 扩展合集
-- Version: 1.3.28
+- Version: 1.3.29
 - Generated: 2026-02-06 08:26
 - Source of truth: `shared/registry.js` (metadata) + `shared/injections.js` (injection defs)
 

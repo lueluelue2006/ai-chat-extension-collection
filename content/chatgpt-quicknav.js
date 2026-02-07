@@ -327,11 +327,18 @@
   let currentActiveTurnPos = 0; // 当前激活 turn 在 qsTurns() 里的位置，用于减少扫描
   let __cgptBooting = false;
   let refreshTimer = 0; // 新的尾随去抖定时器
+  let refreshTailTimer = 0;
   let lastStopCheckTs = 0;
   let lastHasStop = null;
   let __cgptKeydownHandler = null;
   let __cgptSendEventsBound = false;
   let __cgptActiveTrackingBound = false;
+  let __cgptSendBurstTimer = 0;
+  let __cgptSendBurstEndAt = 0;
+  let __cgptSendBurstStep = 160;
+  let __cgptSendBurstUi = null;
+  let __cgptSendBurstLastTriggerAt = 0;
+  const SEND_BURST_TRIGGER_DEDUP_MS = 260;
 
   function isChatRoute() {
     try {
@@ -550,7 +557,12 @@
 
         // 如果刷新期间 turn 数变化，再来一次"收尾"（防抖窗口内很常见）
         if (newCount !== oldCount) {
-          setTimeout(() => {
+          if (refreshTailTimer) {
+            try { clearTimeout(refreshTailTimer); } catch {}
+            refreshTailTimer = 0;
+          }
+          refreshTailTimer = setTimeout(() => {
+            refreshTailTimer = 0;
             refreshIndex(ui, { force: true });
             scheduleActiveUpdateNow();
           }, 120);
@@ -575,6 +587,30 @@
     if (lastHasStop && !hasStop && ui) scheduleRefresh(ui, { force: true });
     lastHasStop = hasStop;
     return hasStop;
+  }
+
+  function cancelSendBurstRefresh() {
+    if (__cgptSendBurstTimer) {
+      try { clearTimeout(__cgptSendBurstTimer); } catch {}
+      __cgptSendBurstTimer = 0;
+    }
+    __cgptSendBurstUi = null;
+    __cgptSendBurstEndAt = 0;
+  }
+
+  function safeCancelSendBurstRefresh() {
+    try {
+      if (typeof cancelSendBurstRefresh === 'function') {
+        cancelSendBurstRefresh();
+        return;
+      }
+    } catch {}
+    if (__cgptSendBurstTimer) {
+      try { clearTimeout(__cgptSendBurstTimer); } catch {}
+    }
+    __cgptSendBurstTimer = 0;
+    __cgptSendBurstUi = null;
+    __cgptSendBurstEndAt = 0;
   }
 
   function init() {
@@ -644,6 +680,7 @@
       try {
         const nav = document.getElementById('cgpt-compact-nav');
         if (nav && nav._ui) {
+          safeCancelSendBurstRefresh();
           try {
             if (nav._ui._forceRefreshTimer) clearInterval(nav._ui._forceRefreshTimer);
           } catch {}
@@ -690,6 +727,11 @@
       if (refreshTimer) clearTimeout(refreshTimer);
     } catch {}
     refreshTimer = 0;
+    try {
+      if (refreshTailTimer) clearTimeout(refreshTailTimer);
+    } catch {}
+    refreshTailTimer = 0;
+    safeCancelSendBurstRefresh();
     try {
       if (activeUpdateTimer) clearTimeout(activeUpdateTimer);
     } catch {}
@@ -4930,20 +4972,52 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return r;
   }
 
-  function startBurstRefresh(ui, ms = 6000, step = 160) {
-    const end = Date.now() + ms;
+  function startBurstRefresh(ui, ms = 3200, step = 160) {
+    if (!ui) return;
+    const now = Date.now();
     const isLongChat = (lastDomTurnCount || 0) > 120;
-    const tickStep = isLongChat ? Math.max(step, 700) : step;
+    __cgptSendBurstUi = ui;
+    __cgptSendBurstStep = isLongChat ? Math.max(step, 700) : Math.max(120, step);
+
+    // One real send may trigger multiple events (click + submit + keydown).
+    // Coalesce them into one burst window to avoid timer stacks.
+    const duplicatedTrigger = now - (__cgptSendBurstLastTriggerAt || 0) < SEND_BURST_TRIGGER_DEDUP_MS;
+    __cgptSendBurstLastTriggerAt = now;
+    __cgptSendBurstEndAt = Math.max(__cgptSendBurstEndAt || 0, now + Math.max(1200, Number(ms) || 0));
+
+    if (__cgptSendBurstTimer || duplicatedTrigger) return;
+
     const tick = () => {
-      const hasStop = !!checkStreamingState(ui, true);
-      if (hasStop) {
-        if (isLongChat) scheduleRefresh(ui, { delay: 260, soft: true });
-        else scheduleRefresh(ui, { force: true });
-        if (Date.now() < end) setTimeout(tick, tickStep);
+      const navUi = (() => {
+        try {
+          return document.getElementById('cgpt-compact-nav')?._ui || __cgptSendBurstUi;
+        } catch {
+          return __cgptSendBurstUi;
+        }
+      })();
+
+      if (!navUi || !isChatRoute()) {
+        safeCancelSendBurstRefresh();
         return;
       }
-      scheduleRefresh(ui, { force: true });
+
+      const hasStop = !!checkStreamingState(navUi, true);
+      if (hasStop) {
+        if (isLongChat) scheduleRefresh(navUi, { delay: 260, soft: true });
+        else scheduleRefresh(navUi, { delay: 120, soft: false });
+      } else {
+        scheduleRefresh(navUi, { force: true });
+      }
+
+      if (Date.now() >= (__cgptSendBurstEndAt || 0)) {
+        safeCancelSendBurstRefresh();
+        return;
+      }
+
+      __cgptSendBurstTimer = setTimeout(tick, __cgptSendBurstStep);
     };
+
+    // Run an immediate pass, then keep tail-refreshing during generation.
     tick();
   }
 
@@ -4976,7 +5050,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(currentUi);
+        startBurstRefresh(currentUi, 3200, 160);
       }
     }, true);
 
@@ -4988,7 +5062,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (!currentUi) return;
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到表单提交，启动突发刷新');
       armScrollLockGuard(2200);
-      startBurstRefresh(currentUi);
+      startBurstRefresh(currentUi, 3200, 160);
     }, true);
 
     // ⌘/Ctrl + Enter 发送
@@ -5001,7 +5075,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
         armScrollLockGuard(2200);
-        startBurstRefresh(currentUi);
+        startBurstRefresh(currentUi, 3200, 160);
       }
     }, true);
 

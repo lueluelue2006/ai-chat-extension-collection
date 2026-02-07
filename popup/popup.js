@@ -427,7 +427,7 @@
       btn.type = 'button';
       btn.className = 'rowIconBtn';
       btn.title = '打开配置（定位到该脚本）';
-      btn.textContent = '⚙︎';
+      btn.textContent = '⋯';
       btn.addEventListener('click', (e) => {
         try {
           e.preventDefault();

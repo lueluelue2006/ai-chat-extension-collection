@@ -8,7 +8,13 @@
   </head>
   <body>
     <header class="header">
-      <div class="title">QuickNav</div>
+      <div class="brand">
+        <div class="brandMark" aria-hidden="true">QN</div>
+        <div class="brandText">
+          <div class="title">QuickNav</div>
+          <div class="subtitle">脚本菜单</div>
+        </div>
+      </div>
       <div class="meta">
         <div class="row"><span class="k">作者</span><span class="v" id="author"></span></div>
         <div class="row"><span class="k">版本</span><span class="v" id="version"></span></div>
@@ -16,13 +22,15 @@
     </header>
 
     <main class="main">
-      <div class="actions">
-        <button class="btn" id="checkUpdate" type="button">检查更新</button>
-        <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
-      </div>
-      <div class="actions">
-        <button class="btn secondary" id="openOptions" type="button">配置</button>
-      </div>
+      <section class="toolbar" aria-label="快捷操作">
+        <div class="actions actionsPrimary">
+          <button class="btn" id="checkUpdate" type="button">检查更新</button>
+          <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
+        </div>
+        <div class="actions actionsSingle">
+          <button class="btn secondary" id="openOptions" type="button">配置</button>
+        </div>
+      </section>
 
       <section class="card" id="gpt53AlertCard" aria-label="OpenAI 新模型提示" hidden>
         <div class="cardTitle">OpenAI 新模型提示</div>

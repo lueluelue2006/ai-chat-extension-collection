@@ -429,12 +429,18 @@
     "gpt-5",
     "alpha"
   ];
-  var MODEL_DISPLAY_NAME_OVERRIDES = {
-    "gpt-5": "gpt-5-instant",
-    "gpt-5-1": "gpt-5-1-instant"
+  var MODEL_KEY_ALIASES = {
+    "gpt-5-instant": "gpt-5",
+    "gpt-5-1-instant": "gpt-5-1",
+    "gpt-5-2": "gpt-5-2-instant"
   };
+  function canonicalizeUsageModelKey(modelKey) {
+    const key = String(modelKey || "").trim();
+    if (!key) return "";
+    return MODEL_KEY_ALIASES[key] || key;
+  }
   function displayModelName(modelKey) {
-    return MODEL_DISPLAY_NAME_OVERRIDES[modelKey] || modelKey;
+    return canonicalizeUsageModelKey(modelKey);
   }
   var PLAN_DISPLAY_ORDER = [
     "free",
@@ -809,6 +815,43 @@
   function getWindowEnd(timestamp, windowType) {
     return timestamp + TIME_WINDOWS[windowType];
   }
+  function mergeAliasedUsageModels(models) {
+    if (!models || typeof models !== "object") return false;
+    const validWindowTypes = /* @__PURE__ */ new Set(["hour3", "hour5", "daily", "weekly", "monthly"]);
+    let changed = false;
+    Object.keys(models).forEach((rawKey) => {
+      const canonicalKey = canonicalizeUsageModelKey(rawKey);
+      if (!canonicalKey || canonicalKey === rawKey) return;
+      const source = models[rawKey];
+      if (!source || typeof source !== "object") {
+        delete models[rawKey];
+        changed = true;
+        return;
+      }
+      const target = models[canonicalKey];
+      if (!target || typeof target !== "object") {
+        models[canonicalKey] = source;
+      } else {
+        const targetReq = Array.isArray(target.requests) ? target.requests.map((r) => tsOf(r)).filter((ts) => typeof ts === "number" && !Number.isNaN(ts)) : [];
+        const sourceReq = Array.isArray(source.requests) ? source.requests.map((r) => tsOf(r)).filter((ts) => typeof ts === "number" && !Number.isNaN(ts)) : [];
+        if (sourceReq.length) {
+          target.requests = [...targetReq, ...sourceReq].sort((a, b) => b - a);
+        }
+        if ((!target.sharedGroup || typeof target.sharedGroup !== "string") && typeof source.sharedGroup === "string" && source.sharedGroup) {
+          target.sharedGroup = source.sharedGroup;
+        }
+        if (typeof target.quota !== "number" && typeof source.quota === "number") {
+          target.quota = source.quota;
+        }
+        if (!validWindowTypes.has(target.windowType) && validWindowTypes.has(source.windowType)) {
+          target.windowType = source.windowType;
+        }
+      }
+      delete models[rawKey];
+      changed = true;
+    });
+    return changed;
+  }
 
   // src/storage.js
   function deepClone(value) {
@@ -987,6 +1030,8 @@
           model.requests = model.requests.map((r) => tsOf(r)).filter((ts) => typeof ts === "number" && !Number.isNaN(ts));
         }
       });
+      try { mergeAliasedUsageModels(data.models); } catch {
+      }
       if (data.sharedQuotaGroups && typeof data.sharedQuotaGroups === "object") {
         Object.values(data.sharedQuotaGroups).forEach((group) => {
           if (group && Array.isArray(group.requests)) {
@@ -1948,9 +1993,7 @@
 		  }
 		  function normalizeUsageModelKey(modelId) {
 		    const redirected = resolveRedirectedModelId(modelId);
-		    if (redirected === "gpt-5-instant") return "gpt-5";
-		    if (redirected === "gpt-5-1-instant") return "gpt-5-1";
-		    return redirected;
+		    return canonicalizeUsageModelKey(redirected);
 		  }
 			  function getUsageModelKeyFromCookieOrBody(bodyLike) {
 			    // Prefer the actual outgoing request payload, because the cookie can lag behind
@@ -3131,7 +3174,15 @@
     container.appendChild(tableHeader);
     const now = Date.now();
     const planType = usageData.planType || "team";
-    const modelCounts = Object.entries(usageData.models || {}).map(([key, model]) => {
+    const canonicalModelEntries = [];
+    const seenCanonicalKeys = /* @__PURE__ */ new Set();
+    Object.entries(usageData.models || {}).forEach(([rawKey, model]) => {
+      const key = canonicalizeUsageModelKey(rawKey);
+      if (!key || seenCanonicalKeys.has(key)) return;
+      seenCanonicalKeys.add(key);
+      canonicalModelEntries.push([key, usageData.models?.[key] || model]);
+    });
+    const modelCounts = canonicalModelEntries.map(([key, model]) => {
       let activeCount = 0;
       let hasBeenUsed = false;
       let isAvailable = false;
@@ -3195,10 +3246,18 @@
       styleEl.textContent = css;
       document.head.appendChild(styleEl);
     }
-    const sortedModelKeys = MODEL_DISPLAY_ORDER.filter((modelKey) => usageData.models?.[modelKey]);
-    const extraModelKeys = Object.keys(usageData.models || {}).filter((k) => !MODEL_DISPLAY_ORDER.includes(k));
+    const canonicalModels = /* @__PURE__ */ new Map();
+    Object.entries(usageData.models || {}).forEach(([rawKey, model]) => {
+      const canonicalKey = canonicalizeUsageModelKey(rawKey);
+      if (!canonicalKey || canonicalModels.has(canonicalKey)) return;
+      canonicalModels.set(canonicalKey, usageData.models?.[canonicalKey] || model);
+    });
+    const sortedModelKeys = MODEL_DISPLAY_ORDER.filter((modelKey) => canonicalModels.has(modelKey));
+    const extraModelKeys = Array.from(canonicalModels.keys()).filter((k) => !MODEL_DISPLAY_ORDER.includes(k));
     [...sortedModelKeys, ...extraModelKeys].forEach((modelKey) => {
-      container.appendChild(createSettingsModelRow(usageData.models[modelKey], modelKey));
+      const model = canonicalModels.get(modelKey);
+      if (!model) return;
+      container.appendChild(createSettingsModelRow(model, modelKey));
     });
     const addBtn = document.createElement("button");
     addBtn.className = "btn";

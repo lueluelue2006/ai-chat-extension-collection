@@ -586,10 +586,7 @@
 
   function requestAutoBranchSend(reason = 'send-intent') {
     if (!state.pending) return false;
-    if (!ensureDraftReadyForAutoSend()) {
-      setBanner('消息编辑模式：未检测到可发送内容，请先输入文本或添加附件后重试（或点取消恢复正常发送）');
-      return false;
-    }
+    if (!hasDraftForSend()) return false;
     const existing = state.autoBranchSend;
     if (existing && typeof existing === 'object') {
       existing.reason = String(reason || existing.reason || 'send-intent');
@@ -606,32 +603,6 @@
     setBanner('消息编辑模式：检测到回复仍在生成，正在自动结束并分叉发送…');
     scheduleAutoBranchSendTick(0);
     return true;
-  }
-
-  function ensureDraftReadyForAutoSend() {
-    if (hasDraftForSend()) return true;
-    const pending = state.pending;
-    if (!pending) return false;
-    let hydrated = false;
-    try {
-      const sourceText = String(pending.sourceText || '').trim();
-      if (sourceText) {
-        clearComposerText();
-        setComposerText(sourceText);
-        hydrated = true;
-      }
-    } catch {}
-    try {
-      if (!hasDraftForSend() && Array.isArray(pending.sourceFiles) && pending.sourceFiles.length) {
-        if (attachFilesToComposer(pending.sourceFiles)) hydrated = true;
-      }
-    } catch {}
-    if (hydrated) {
-      try {
-        focusComposer();
-      } catch {}
-    }
-    return hasDraftForSend();
   }
 
   function cancelEditMode() {
@@ -798,7 +769,6 @@
     const userMsg = getUserMessageEl(turnEl);
     if (!userMsg) return;
     const hasImages = hasUserMessageImages(userMsg);
-    const sourceText = extractUserText(userMsg);
 
     const conversationId = getConversationIdFromUrl();
     const parentMessageId = findParentMessageId(turnEl);
@@ -806,16 +776,13 @@
       startedAt: now(),
       conversationId,
       parentMessageId,
-      sourceMessageId: userMsg.dataset?.messageId || '',
-      sourceText,
-      sourceHasImages: hasImages,
-      sourceFiles: null
+      sourceMessageId: userMsg.dataset?.messageId || ''
     };
 
     setBanner('消息编辑模式：正在准备…');
 
     clearComposerText();
-    setComposerText(sourceText);
+    setComposerText(extractUserText(userMsg));
 
     if (!hasImages) {
       setBanner('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
@@ -833,7 +800,6 @@
     setBanner(`消息编辑模式：正在载入原图（${files.length} 张）…`);
     await sleep(50);
     const ok = attachFilesToComposer(files);
-    state.pending.sourceFiles = files;
     if (!ok) {
       setBanner('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
     } else {
@@ -1264,17 +1230,19 @@
       const clickHandler = (e) => {
         try {
           if (!state.pending) return;
+          if (!e?.isTrusted) return;
           const target = e.target;
           if (!(target instanceof Element)) return;
+          const form = getComposerFormEl();
+          if (form && !form.contains(target)) return;
           const submitBtn = target.closest(`${COMPOSER_SUBMIT_SELECTOR},${STOP_BUTTON_SELECTOR},${SEND_BUTTON_SELECTOR}`);
           if (!(submitBtn instanceof HTMLElement) || isElementDisabled(submitBtn)) return;
-          const form = getComposerFormEl();
-          if (form && !form.contains(submitBtn)) return;
-          const mode = classifyComposerSubmitButton(submitBtn);
-          if (mode !== 'stop' && !isGeneratingNow()) return;
+          if (!hasDraftForSend()) return;
+          if (!isGeneratingNow()) return;
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
+          const mode = classifyComposerSubmitButton(submitBtn);
           requestAutoBranchSend(mode === 'stop' ? 'stop-button-click' : 'submit-button-click');
         } catch {}
       };
@@ -1288,9 +1256,11 @@
       const keyHandler = (e) => {
         try {
           if (!state.pending) return;
+          if (!e?.isTrusted) return;
           if (e.key !== 'Enter') return;
           if (e.isComposing || e.keyCode === 229) return;
-          if (e.shiftKey || e.altKey) return;
+          if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+          if (!hasDraftForSend()) return;
           if (!isGeneratingNow()) return;
           const target = e.target;
           if (!(target instanceof Element)) return;
@@ -1299,8 +1269,7 @@
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
-          const reason = e.metaKey || e.ctrlKey ? 'cmd-enter-while-generating' : 'enter-while-generating';
-          requestAutoBranchSend(reason);
+          requestAutoBranchSend('cmd-enter-while-generating');
         } catch {}
       };
       state.sendIntentKeyHandler = keyHandler;

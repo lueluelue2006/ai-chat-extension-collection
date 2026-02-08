@@ -15,6 +15,7 @@
   } catch {}
 
   const ROOT_PARENT_MESSAGE_ID = 'client-created-root';
+  const COMPOSER_SUBMIT_SELECTOR = '#composer-submit-button,button[data-testid="send-button"],button[data-testid="stop-button"]';
   const STOP_BUTTON_SELECTOR =
     'button[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
   const SEND_BUTTON_SELECTOR =
@@ -179,6 +180,36 @@
       if (text) return true;
     } catch {}
     return hasDraftAttachment();
+  }
+
+  function getComposerSubmitButton() {
+    try {
+      const form = getComposerFormEl();
+      const btn = form?.querySelector(COMPOSER_SUBMIT_SELECTOR) || document.querySelector(COMPOSER_SUBMIT_SELECTOR);
+      return btn instanceof HTMLElement ? btn : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function classifyComposerSubmitButton(btn) {
+    if (!(btn instanceof HTMLElement)) return 'unknown';
+    try {
+      const testId = String(btn.getAttribute?.('data-testid') || '').toLowerCase();
+      if (testId.includes('stop')) return 'stop';
+      if (testId.includes('send')) return 'send';
+    } catch {}
+    try {
+      const cls = String(btn.className || '').toLowerCase();
+      if (cls.includes('secondary-button-color')) return 'stop';
+      if (cls.includes('submit-button-color')) return 'send';
+    } catch {}
+    try {
+      const text = `${String(btn.getAttribute?.('aria-label') || '')} ${String(btn.getAttribute?.('title') || '')} ${String(btn.textContent || '')}`;
+      if (/stop|cancel|停止|取消/i.test(text)) return 'stop';
+      if (/send|发送/i.test(text)) return 'send';
+    } catch {}
+    return 'unknown';
   }
 
   function findCopyButton(turnEl) {
@@ -445,6 +476,8 @@
     try {
       if (core && typeof core.isGenerating === 'function') return !!core.isGenerating(editor);
     } catch {}
+    const submitBtn = getComposerSubmitButton();
+    if (classifyComposerSubmitButton(submitBtn) === 'stop') return true;
     try {
       const form = getComposerFormEl();
       return !!(form?.querySelector(STOP_BUTTON_SELECTOR) || document.querySelector(STOP_BUTTON_SELECTOR));
@@ -458,6 +491,13 @@
     const core = getCoreApi();
     try {
       if (core && typeof core.clickStopButton === 'function' && core.clickStopButton(editor)) return true;
+    } catch {}
+    try {
+      const submitBtn = getComposerSubmitButton();
+      if (classifyComposerSubmitButton(submitBtn) === 'stop' && !isElementDisabled(submitBtn)) {
+        submitBtn.click();
+        return true;
+      }
     } catch {}
     try {
       const form = getComposerFormEl();
@@ -477,11 +517,20 @@
       if (core && typeof core.clickSendButton === 'function' && core.clickSendButton(editor)) return true;
     } catch {}
     try {
+      const submitBtn = getComposerSubmitButton();
+      if (submitBtn && !isElementDisabled(submitBtn)) {
+        const mode = classifyComposerSubmitButton(submitBtn);
+        if (mode === 'send' || (mode === 'unknown' && !isGeneratingNow())) {
+          submitBtn.click();
+          return true;
+        }
+      }
+    } catch {}
+    try {
       const form = getComposerFormEl();
       const btn = form?.querySelector(SEND_BUTTON_SELECTOR) || document.querySelector(SEND_BUTTON_SELECTOR);
       if (!(btn instanceof HTMLElement) || isElementDisabled(btn)) return false;
-      const testId = String(btn.getAttribute?.('data-testid') || '');
-      if (testId && /stop/i.test(testId)) return false;
+      if (classifyComposerSubmitButton(btn) === 'stop') return false;
       btn.click();
       return true;
     } catch {
@@ -541,6 +590,7 @@
     const existing = state.autoBranchSend;
     if (existing && typeof existing === 'object') {
       existing.reason = String(reason || existing.reason || 'send-intent');
+      existing.requestedAt = now();
       scheduleAutoBranchSendTick(0);
       return true;
     }
@@ -1185,14 +1235,15 @@
           if (!(target instanceof Element)) return;
           const form = getComposerFormEl();
           if (form && !form.contains(target)) return;
-          const stopBtn = target.closest(STOP_BUTTON_SELECTOR);
-          if (!stopBtn) return;
-          if (isElementDisabled(stopBtn)) return;
+          const submitBtn = target.closest(`${COMPOSER_SUBMIT_SELECTOR},${STOP_BUTTON_SELECTOR},${SEND_BUTTON_SELECTOR}`);
+          if (!(submitBtn instanceof HTMLElement) || isElementDisabled(submitBtn)) return;
           if (!hasDraftForSend()) return;
+          if (!isGeneratingNow()) return;
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
-          requestAutoBranchSend('stop-button-click');
+          const mode = classifyComposerSubmitButton(submitBtn);
+          requestAutoBranchSend(mode === 'stop' ? 'stop-button-click' : 'submit-button-click');
         } catch {}
       };
       state.sendIntentClickHandler = clickHandler;

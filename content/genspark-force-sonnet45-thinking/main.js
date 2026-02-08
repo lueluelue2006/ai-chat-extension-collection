@@ -88,12 +88,42 @@
     style.id = STYLE_ID;
     style.textContent = `
       .${PANEL_CLASS} {
+        --aichat-thinking-bg: #f6f8fc;
+        --aichat-thinking-border: rgba(15, 23, 42, 0.16);
+        --aichat-thinking-title: #1f2937;
+        --aichat-thinking-text: #1f2937;
+        --aichat-thinking-toggle-bg: rgba(31, 41, 55, 0.04);
+        --aichat-thinking-toggle-border: rgba(31, 41, 55, 0.26);
+        --aichat-thinking-toggle-text: #243244;
         margin: 10px 0 14px;
-        border: 1px solid rgba(120,120,120,0.32);
+        border: 1px solid var(--aichat-thinking-border);
         border-radius: 12px;
-        background: rgba(127,127,127,0.08);
-        color: inherit;
+        background: var(--aichat-thinking-bg);
+        color: var(--aichat-thinking-text);
         overflow: hidden;
+      }
+      @media (prefers-color-scheme: dark) {
+        .${PANEL_CLASS} {
+          --aichat-thinking-bg: rgba(26, 33, 45, 0.9);
+          --aichat-thinking-border: rgba(148, 163, 184, 0.34);
+          --aichat-thinking-title: #e7efff;
+          --aichat-thinking-text: #e5edf8;
+          --aichat-thinking-toggle-bg: rgba(226, 232, 240, 0.08);
+          --aichat-thinking-toggle-border: rgba(226, 232, 240, 0.33);
+          --aichat-thinking-toggle-text: #f1f5f9;
+        }
+      }
+      html.dark .${PANEL_CLASS},
+      body.dark .${PANEL_CLASS},
+      [data-theme="dark"] .${PANEL_CLASS},
+      [data-color-mode="dark"] .${PANEL_CLASS} {
+        --aichat-thinking-bg: rgba(26, 33, 45, 0.9);
+        --aichat-thinking-border: rgba(148, 163, 184, 0.34);
+        --aichat-thinking-title: #e7efff;
+        --aichat-thinking-text: #e5edf8;
+        --aichat-thinking-toggle-bg: rgba(226, 232, 240, 0.08);
+        --aichat-thinking-toggle-border: rgba(226, 232, 240, 0.33);
+        --aichat-thinking-toggle-text: #f1f5f9;
       }
       .${PANEL_CLASS} .aichat-thinking-head {
         display: flex;
@@ -103,26 +133,31 @@
         padding: 9px 12px;
         font-size: 13px;
         font-weight: 600;
+        color: var(--aichat-thinking-title);
       }
       .${PANEL_CLASS} .aichat-thinking-toggle {
-        border: 1px solid rgba(120,120,120,0.35);
+        border: 1px solid var(--aichat-thinking-toggle-border);
         border-radius: 999px;
-        padding: 3px 10px;
+        padding: 3px 11px;
         font-size: 12px;
         line-height: 1.4;
-        background: transparent;
-        color: inherit;
+        background: var(--aichat-thinking-toggle-bg);
+        color: var(--aichat-thinking-toggle-text);
         cursor: pointer;
+      }
+      .${PANEL_CLASS} .aichat-thinking-toggle:hover {
+        filter: brightness(1.06);
       }
       .${PANEL_CLASS} .aichat-thinking-preview,
       .${PANEL_CLASS} .aichat-thinking-full {
         white-space: pre-wrap;
         word-break: break-word;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-        font-size: 12px;
-        line-height: 1.45;
+        font-size: 13px;
+        line-height: 1.5;
         padding: 0 12px 10px;
-        opacity: 0.92;
+        color: var(--aichat-thinking-text);
+        opacity: 1;
       }
       .${PANEL_CLASS}[${PANEL_OPEN_ATTR}="0"] .aichat-thinking-full { display: none; }
       .${PANEL_CLASS}[${PANEL_OPEN_ATTR}="1"] .aichat-thinking-preview { display: none; }

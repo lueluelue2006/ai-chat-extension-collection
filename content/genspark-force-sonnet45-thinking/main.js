@@ -10,6 +10,7 @@
   const TARGET_MODELS = new Set(['claude-sonnet-4-5', 'claude-sonnet-4-5-20250929']);
   const THINKING_MODEL = 'claude-sonnet-4-5-thinking';
   const MAX_REASONING_LEN = 12000;
+  const FETCH_PATCH_FLAG = '__aichatGensparkSonnet45ThinkingPatched';
 
   const STYLE_ID = '__aichat_genspark_thinking_inline_style_v1__';
   const PANEL_CLASS = 'aichat-genspark-thinking-panel';
@@ -21,7 +22,9 @@
     panelRoot: null,
     previewEl: null,
     fullEl: null,
-    toggleEl: null
+    toggleEl: null,
+    maskTimerShort: null,
+    maskTimerLong: null
   };
 
   function parseJsonSafe(text) {
@@ -63,6 +66,20 @@
       .map((line) => line.trimEnd())
       .filter(Boolean);
     return lines.slice(-5).join('\n');
+  }
+
+  function normalizeInlineText(text) {
+    return String(text || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function looksAnswerOnlyText(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return false;
+    if (raw.length > 48) return false;
+    return /^[\d\s.,+\-*/=()]+$/.test(raw);
   }
 
   function ensureStyle() {
@@ -116,6 +133,9 @@
 
   function findLastAssistantAnchor() {
     const selectors = [
+      '.conversation-statement.assistant .conversation-item-desc.assistant',
+      '.conversation-statement.assistant .conversation-item-desc',
+      '.conversation-statement.assistant',
       '.main-inner.j-chat-agent.ai_chat .item-box .markdown-body',
       '.main-inner.j-chat-agent.ai_chat .markdown-body',
       '.item-box .markdown-body'
@@ -137,6 +157,9 @@
   function findAttachContainer(anchor) {
     if (!anchor) return null;
     return (
+      anchor.closest('.conversation-statement.assistant') ||
+      anchor.closest('.conversation-statement') ||
+      anchor.closest('.conversation-content') ||
       anchor.closest('.item-box') ||
       anchor.closest('[class*="message"]') ||
       anchor.closest('article') ||
@@ -207,6 +230,58 @@
     attachPanelNearLatestAnswer();
     if (state.previewEl) state.previewEl.textContent = lastFiveLines(text) || text;
     if (state.fullEl) state.fullEl.textContent = text;
+    scheduleMaskInlineReasoning();
+  }
+
+  function scheduleMaskInlineReasoning() {
+    maskInlineReasoningInLatestAnswer();
+    if (state.maskTimerShort) clearTimeout(state.maskTimerShort);
+    if (state.maskTimerLong) clearTimeout(state.maskTimerLong);
+    state.maskTimerShort = setTimeout(() => {
+      state.maskTimerShort = null;
+      maskInlineReasoningInLatestAnswer();
+    }, 120);
+    state.maskTimerLong = setTimeout(() => {
+      state.maskTimerLong = null;
+      maskInlineReasoningInLatestAnswer();
+    }, 700);
+  }
+
+  function maskInlineReasoningInLatestAnswer() {
+    const panel = state.panelRoot;
+    if (!panel || !panel.isConnected) return;
+
+    const statement = panel.closest('.conversation-statement.assistant');
+    if (!(statement instanceof HTMLElement)) return;
+
+    const desc = statement.querySelector('.conversation-item-desc.assistant, .conversation-item-desc');
+    if (!(desc instanceof HTMLElement)) return;
+
+    const reasoningNorm = normalizeInlineText(state.reasoningText);
+    if (!reasoningNorm) return;
+
+    let blocks = Array.from(desc.querySelectorAll('p, li')).filter((el) => el instanceof HTMLElement);
+    if (!blocks.length) {
+      blocks = Array.from(desc.children).filter((el) => el instanceof HTMLElement);
+    }
+    for (const block of blocks) {
+      if (block === panel || panel.contains(block)) continue;
+
+      const raw = String(block.innerText || '').trim();
+      const norm = normalizeInlineText(raw);
+      if (!norm) continue;
+
+      const inReasoning = norm.length >= 10 && reasoningNorm.includes(norm);
+      const shouldHide = inReasoning && !looksAnswerOnlyText(raw);
+
+      if (shouldHide) {
+        block.setAttribute('data-aichat-thinking-hidden', '1');
+        block.style.display = 'none';
+      } else if (block.getAttribute('data-aichat-thinking-hidden') === '1') {
+        block.removeAttribute('data-aichat-thinking-hidden');
+        block.style.removeProperty('display');
+      }
+    }
   }
 
   function appendReasoningDelta(delta) {
@@ -223,31 +298,52 @@
     renderReasoning();
   }
 
-  function collectTextDeep(input, out) {
+  function collectReasoningDeep(input, out) {
     if (!input) return;
-    if (typeof input === 'string') {
-      out.push(input);
-      return;
-    }
     if (Array.isArray(input)) {
-      for (const item of input) collectTextDeep(item, out);
+      for (const item of input) collectReasoningDeep(item, out);
       return;
     }
-    if (typeof input === 'object') {
-      if (typeof input.reasoning_content === 'string') out.push(input.reasoning_content);
-      if (typeof input.reasoning_delta === 'string') out.push(input.reasoning_delta);
-      if (typeof input.content === 'string') out.push(input.content);
-      for (const value of Object.values(input)) collectTextDeep(value, out);
+    if (typeof input !== 'object') return;
+
+    if (typeof input.reasoning_content === 'string') out.push(input.reasoning_content);
+    if (typeof input.reasoning_delta === 'string') out.push(input.reasoning_delta);
+    if (typeof input.thinking === 'string') out.push(input.thinking);
+
+    if (input.field_name === 'reasoning_delta' && typeof input.delta === 'string') {
+      out.push(input.delta);
+    }
+    if (input.field_name === 'reasoning_content' && typeof input.field_value === 'string') {
+      out.push(input.field_value);
+    }
+
+    for (const value of Object.values(input)) {
+      if (value && typeof value === 'object') collectReasoningDeep(value, out);
     }
   }
 
   function processPayloadObject(obj) {
     if (!obj || typeof obj !== 'object') return;
+
     if (typeof obj.reasoning_delta === 'string') appendReasoningDelta(obj.reasoning_delta);
     if (typeof obj.reasoning_content === 'string') replaceReasoning(obj.reasoning_content);
-    if (obj.thinking_blocks != null) {
+
+    if (obj.type === 'message_field_delta' && obj.field_name === 'reasoning_delta' && typeof obj.delta === 'string') {
+      appendReasoningDelta(obj.delta);
+    }
+    if (obj.type === 'message_field' && obj.field_name === 'reasoning_content' && typeof obj.field_value === 'string') {
+      replaceReasoning(obj.field_value);
+    }
+
+    const thinkingBlocks =
+      obj.thinking_blocks ??
+      (obj.type === 'message_result' && obj.message && typeof obj.message === 'object'
+        ? obj.message.thinking_blocks
+        : null);
+
+    if (thinkingBlocks != null) {
       const out = [];
-      collectTextDeep(obj.thinking_blocks, out);
+      collectReasoningDeep(thinkingBlocks, out);
       const merged = out.join('\n').trim();
       if (merged) replaceReasoning(merged);
     }
@@ -304,7 +400,7 @@
   function patchFetch() {
     const originalFetch = window.fetch;
     if (typeof originalFetch !== 'function') return;
-    if (originalFetch.__aichatGensparkSonnet45ThinkingPatched) return;
+    if (originalFetch[FETCH_PATCH_FLAG]) return;
 
     const wrapped = async function (...args) {
       let [input, init] = args;
@@ -336,14 +432,38 @@
       return response;
     };
 
-    Object.defineProperty(wrapped, '__aichatGensparkSonnet45ThinkingPatched', {
-      value: true,
-      configurable: false,
-      enumerable: false,
-      writable: false
-    });
+    try {
+      Object.defineProperty(wrapped, FETCH_PATCH_FLAG, {
+        value: true,
+        configurable: false,
+        enumerable: false,
+        writable: false
+      });
+    } catch {
+      try {
+        wrapped[FETCH_PATCH_FLAG] = true;
+      } catch {}
+    }
     window.fetch = wrapped;
   }
 
-  patchFetch();
+  function ensurePatchedFetch() {
+    try {
+      patchFetch();
+    } catch {}
+  }
+
+  ensurePatchedFetch();
+  setTimeout(ensurePatchedFetch, 0);
+  setTimeout(ensurePatchedFetch, 250);
+  setTimeout(ensurePatchedFetch, 1200);
+  setTimeout(ensurePatchedFetch, 5000);
+  window.addEventListener('load', ensurePatchedFetch, { once: true });
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.visibilityState === 'visible') ensurePatchedFetch();
+    },
+    { passive: true }
+  );
 })();

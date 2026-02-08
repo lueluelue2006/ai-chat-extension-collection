@@ -3115,12 +3115,6 @@
     if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);
     if (moduleId === 'genspark_codeblock_fold') return renderBasicToggleModuleSettings(siteId, moduleId);
     if (moduleId === 'genspark_inline_upload_fix') return renderGensparkInlineUploadFixModuleSettings(siteId);
-    if (moduleId === 'genspark_force_sonnet45_thinking')
-      return renderBasicToggleModuleSettings(
-        siteId,
-        moduleId,
-        '说明：在 Genspark AI Chat 页会把 claude-sonnet-4-5 自动改为 claude-sonnet-4-5-thinking，并显示“可折叠思考框”（默认只展示最后 5 行，可展开查看完整思考）。'
-      );
     if (moduleId === 'grok_fast_unlock') return renderGrokFastUnlockModuleSettings(siteId);
     if (moduleId === 'grok_rate_limit_display') return renderGrokRateLimitDisplayModuleSettings(siteId);
 

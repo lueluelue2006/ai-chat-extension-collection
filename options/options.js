@@ -3115,6 +3115,12 @@
     if (moduleId === 'genspark_credit_balance') return renderGensparkCreditBalanceModuleSettings(siteId);
     if (moduleId === 'genspark_codeblock_fold') return renderBasicToggleModuleSettings(siteId, moduleId);
     if (moduleId === 'genspark_inline_upload_fix') return renderGensparkInlineUploadFixModuleSettings(siteId);
+    if (moduleId === 'genspark_force_sonnet45_thinking')
+      return renderBasicToggleModuleSettings(
+        siteId,
+        moduleId,
+        '说明：在 Genspark AI Chat 中将 Sonnet 4.5 自动改为 thinking 版本，并在回复区内联显示“可展开思考块（默认仅最后 5 行）”。'
+      );
     if (moduleId === 'grok_fast_unlock') return renderGrokFastUnlockModuleSettings(siteId);
     if (moduleId === 'grok_rate_limit_display') return renderGrokRateLimitDisplayModuleSettings(siteId);
 

@@ -67,7 +67,8 @@
         'genspark_moa_image_autosettings',
         'genspark_credit_balance',
         'genspark_codeblock_fold',
-        'genspark_inline_upload_fix'
+        'genspark_inline_upload_fix',
+        'genspark_force_sonnet45_thinking'
       ]
     },
     {
@@ -286,15 +287,24 @@
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
-	    genspark_inline_upload_fix: {
-	      id: 'genspark_inline_upload_fix',
-	      name: 'Genspark 消息编辑上传修复',
-	      sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
-	      hotkeys: [],
-	      authors: ['lueluelue2006（原始脚本 / MV3 集成）'],
-	      license: '未标注（内部脚本）'
-	    }
-	  };
+    genspark_inline_upload_fix: {
+      id: 'genspark_inline_upload_fix',
+      name: 'Genspark 消息编辑上传修复',
+      sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
+      hotkeys: [],
+      authors: ['lueluelue2006（原始脚本 / MV3 集成）'],
+      license: '未标注（内部脚本）'
+    },
+    genspark_force_sonnet45_thinking: {
+      id: 'genspark_force_sonnet45_thinking',
+      name: 'Genspark Sonnet 4.5 Thinking',
+      sub: '自动将 claude-sonnet-4-5 改为 claude-sonnet-4-5-thinking，并显示可折叠思考块',
+      defaultEnabled: true,
+      hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    }
+  };
 
   const freezeArrayShallow = (arr) => {
     if (!Array.isArray(arr)) return Object.freeze([]);

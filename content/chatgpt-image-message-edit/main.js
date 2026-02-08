@@ -15,10 +15,21 @@
   } catch {}
 
   const ROOT_PARENT_MESSAGE_ID = 'client-created-root';
+  const STOP_BUTTON_SELECTOR =
+    'button[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
+  const SEND_BUTTON_SELECTOR =
+    '#composer-submit-button,button[data-testid="send-button"],button[aria-label*="Send" i],button[title*="Send" i],button[aria-label*="发送" i],button[title*="发送" i]';
+  const COMPOSER_ATTACHMENT_SELECTOR =
+    '[data-testid*="composer-attachment" i],[data-testid*="attachment" i],[data-testid*="uploaded-file" i],[data-testid*="file-chip" i],button[aria-label*="Remove file" i],button[aria-label*="移除文件" i],button[aria-label*="删除文件" i]';
+  const AUTO_BRANCH_SEND_TIMEOUT_MS = 15000;
+  const AUTO_BRANCH_STOP_RETRY_MS = 4000;
+  const AUTO_BRANCH_MAX_STOP_CLICKS = 2;
 
   const state = {
     version: STATE_VERSION,
     pending: null,
+    autoBranchSend: null,
+    autoBranchSendTimer: null,
     bannerEl: null,
     lastHref: location.href,
     seenTurns: null,
@@ -37,6 +48,8 @@
     turnsUnsub: null,
     hubUnsub: null,
     unwatchHref: null,
+    sendIntentClickHandler: null,
+    sendIntentKeyHandler: null,
     cleanup: null
   };
 
@@ -95,6 +108,77 @@
       document.querySelector('input[type="file"][accept*="image"]') ||
       document.querySelector('input[type="file"][multiple]')
     );
+  }
+
+  function getCoreApi() {
+    try {
+      return window.__aichat_chatgpt_core_main_v1__ || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getComposerFormEl() {
+    const editor = getComposerEl();
+    try {
+      const core = getCoreApi();
+      if (core && typeof core.getComposerForm === 'function') {
+        const form = core.getComposerForm(editor);
+        if (form) return form;
+      }
+    } catch {}
+    try {
+      return editor?.closest?.('form') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isElementDisabled(el) {
+    if (!el) return true;
+    try {
+      if (el instanceof HTMLButtonElement && el.disabled) return true;
+    } catch {}
+    try {
+      const ariaDisabled = String(el.getAttribute?.('aria-disabled') || '').toLowerCase();
+      if (ariaDisabled && ariaDisabled !== 'false') return true;
+    } catch {}
+    return false;
+  }
+
+  function getComposerDraftText() {
+    const el = getComposerEl();
+    if (!el) return '';
+    try {
+      if (typeof el.value === 'string') return String(el.value || '');
+    } catch {}
+    try {
+      return String(el.innerText || el.textContent || '');
+    } catch {
+      return '';
+    }
+  }
+
+  function hasDraftAttachment() {
+    const input = getUploadPhotosInput();
+    try {
+      if (input?.files?.length) return true;
+    } catch {}
+    const form = getComposerFormEl();
+    if (!form) return false;
+    try {
+      return !!form.querySelector(COMPOSER_ATTACHMENT_SELECTOR);
+    } catch {
+      return false;
+    }
+  }
+
+  function hasDraftForSend() {
+    try {
+      const text = getComposerDraftText().replace(/[\u00a0\u200b]/g, ' ').trim();
+      if (text) return true;
+    } catch {}
+    return hasDraftAttachment();
   }
 
   function findCopyButton(turnEl) {
@@ -337,7 +421,142 @@
     cleanupBannerPositionObservers();
   }
 
+  function clearAutoBranchSend() {
+    try {
+      if (state.autoBranchSendTimer) clearTimeout(state.autoBranchSendTimer);
+    } catch {}
+    state.autoBranchSendTimer = null;
+    state.autoBranchSend = null;
+  }
+
+  function scheduleAutoBranchSendTick(delayMs = 80) {
+    if (state.autoBranchSendTimer) return;
+    state.autoBranchSendTimer = setTimeout(() => {
+      state.autoBranchSendTimer = null;
+      try {
+        runAutoBranchSendTick();
+      } catch {}
+    }, Math.max(0, Number(delayMs) || 0));
+  }
+
+  function isGeneratingNow() {
+    const editor = getComposerEl();
+    const core = getCoreApi();
+    try {
+      if (core && typeof core.isGenerating === 'function') return !!core.isGenerating(editor);
+    } catch {}
+    try {
+      const form = getComposerFormEl();
+      return !!(form?.querySelector(STOP_BUTTON_SELECTOR) || document.querySelector(STOP_BUTTON_SELECTOR));
+    } catch {
+      return false;
+    }
+  }
+
+  function clickStopButtonOnce() {
+    const editor = getComposerEl();
+    const core = getCoreApi();
+    try {
+      if (core && typeof core.clickStopButton === 'function' && core.clickStopButton(editor)) return true;
+    } catch {}
+    try {
+      const form = getComposerFormEl();
+      const btn = form?.querySelector(STOP_BUTTON_SELECTOR) || document.querySelector(STOP_BUTTON_SELECTOR);
+      if (!(btn instanceof HTMLElement) || isElementDisabled(btn)) return false;
+      btn.click();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function clickSendButtonOnce() {
+    const editor = getComposerEl();
+    const core = getCoreApi();
+    try {
+      if (core && typeof core.clickSendButton === 'function' && core.clickSendButton(editor)) return true;
+    } catch {}
+    try {
+      const form = getComposerFormEl();
+      const btn = form?.querySelector(SEND_BUTTON_SELECTOR) || document.querySelector(SEND_BUTTON_SELECTOR);
+      if (!(btn instanceof HTMLElement) || isElementDisabled(btn)) return false;
+      const testId = String(btn.getAttribute?.('data-testid') || '');
+      if (testId && /stop/i.test(testId)) return false;
+      btn.click();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function runAutoBranchSendTick() {
+    const req = state.autoBranchSend;
+    if (!req) return;
+    if (!state.pending) return clearAutoBranchSend();
+
+    const elapsed = now() - Number(req.requestedAt || 0);
+    if (elapsed > AUTO_BRANCH_SEND_TIMEOUT_MS) {
+      setBanner('消息编辑模式：自动分叉发送超时；请再点一次发送（或点取消恢复正常发送）');
+      clearAutoBranchSend();
+      return;
+    }
+
+    if (isGeneratingNow()) {
+      const nowMs = now();
+      const lastStopAt = Number(req.lastStopAt || 0);
+      const stopClicks = Number(req.stopClicks || 0);
+      if (stopClicks <= 0) {
+        if (clickStopButtonOnce()) {
+          req.lastStopAt = nowMs;
+          req.stopClicks = 1;
+        }
+      } else if (stopClicks < AUTO_BRANCH_MAX_STOP_CLICKS && nowMs - lastStopAt >= AUTO_BRANCH_STOP_RETRY_MS) {
+        if (clickStopButtonOnce()) {
+          req.lastStopAt = nowMs;
+          req.stopClicks = stopClicks + 1;
+        }
+      }
+      scheduleAutoBranchSendTick(stopClicks > 0 ? 180 : 100);
+      return;
+    }
+
+    if (!hasDraftForSend()) {
+      setBanner('消息编辑模式：已结束当前回复，但未检测到可发送内容；请继续编辑后发送（取消=恢复正常发送）');
+      clearAutoBranchSend();
+      return;
+    }
+
+    if (clickSendButtonOnce()) {
+      setBanner('消息编辑模式：已自动分叉发送（若失败可继续编辑后重试 / 或点取消恢复正常发送）');
+      clearAutoBranchSend();
+      return;
+    }
+
+    scheduleAutoBranchSendTick(120);
+  }
+
+  function requestAutoBranchSend(reason = 'send-intent') {
+    if (!state.pending) return false;
+    if (!hasDraftForSend()) return false;
+    const existing = state.autoBranchSend;
+    if (existing && typeof existing === 'object') {
+      existing.reason = String(reason || existing.reason || 'send-intent');
+      scheduleAutoBranchSendTick(0);
+      return true;
+    }
+    state.autoBranchSend = {
+      requestedAt: now(),
+      stopClicks: 0,
+      lastStopAt: 0,
+      reason: String(reason || 'send-intent')
+    };
+    setBanner('消息编辑模式：检测到回复仍在生成，正在自动结束并分叉发送…');
+    scheduleAutoBranchSendTick(0);
+    return true;
+  }
+
   function cancelEditMode() {
+    clearAutoBranchSend();
     state.pending = null;
     hideBanner();
   }
@@ -386,6 +605,20 @@
       }
     } catch {}
     state.hoverHandler = null;
+
+    try {
+      if (state.sendIntentClickHandler) {
+        document.removeEventListener('click', state.sendIntentClickHandler, true);
+      }
+    } catch {}
+    state.sendIntentClickHandler = null;
+
+    try {
+      if (state.sendIntentKeyHandler) {
+        document.removeEventListener('keydown', state.sendIntentKeyHandler, true);
+      }
+    } catch {}
+    state.sendIntentKeyHandler = null;
 
     state.seenTurns = null;
     state.retryTurns = null;
@@ -502,14 +735,14 @@
     setComposerText(extractUserText(userMsg));
 
     if (!hasImages) {
-      setBanner('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      setBanner('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
       focusComposer();
       return;
     }
 
     const files = await fetchImagesAsFiles(userMsg);
     if (!files.length) {
-      setBanner('消息编辑模式：未能读取原图；你可以手动添加图片/文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      setBanner('消息编辑模式：未能读取原图；你可以手动添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
       focusComposer();
       return;
     }
@@ -518,9 +751,9 @@
     await sleep(50);
     const ok = attachFilesToComposer(files);
     if (!ok) {
-      setBanner('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      setBanner('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
     } else {
-      setBanner('消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，下一次发送会从该条消息处分叉（取消=恢复正常发送）');
+      setBanner('消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
     }
 
     focusComposer();
@@ -942,6 +1175,59 @@
     } catch {}
   }
 
+  function installSendIntentCapture() {
+    if (!state.sendIntentClickHandler) {
+      const clickHandler = (e) => {
+        try {
+          if (!state.pending) return;
+          if (!e?.isTrusted) return;
+          const target = e.target;
+          if (!(target instanceof Element)) return;
+          const form = getComposerFormEl();
+          if (form && !form.contains(target)) return;
+          const stopBtn = target.closest(STOP_BUTTON_SELECTOR);
+          if (!stopBtn) return;
+          if (isElementDisabled(stopBtn)) return;
+          if (!hasDraftForSend()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          requestAutoBranchSend('stop-button-click');
+        } catch {}
+      };
+      state.sendIntentClickHandler = clickHandler;
+      try {
+        document.addEventListener('click', clickHandler, true);
+      } catch {}
+    }
+
+    if (!state.sendIntentKeyHandler) {
+      const keyHandler = (e) => {
+        try {
+          if (!state.pending) return;
+          if (!e?.isTrusted) return;
+          if (e.key !== 'Enter') return;
+          if (e.isComposing || e.keyCode === 229) return;
+          if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+          if (!hasDraftForSend()) return;
+          if (!isGeneratingNow()) return;
+          const target = e.target;
+          if (!(target instanceof Element)) return;
+          const form = getComposerFormEl();
+          if (form && !form.contains(target)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          requestAutoBranchSend('cmd-enter-while-generating');
+        } catch {}
+      };
+      state.sendIntentKeyHandler = keyHandler;
+      try {
+        document.addEventListener('keydown', keyHandler, true);
+      } catch {}
+    }
+  }
+
   function installPayloadRewriter() {
     const hub = window.__aichat_chatgpt_fetch_hub_v1__;
     if (hub && typeof hub.register === 'function') {
@@ -1025,6 +1311,7 @@
 
   installPayloadRewriter();
   installTurnActivator();
+  installSendIntentCapture();
 
   try {
     state.unwatchHref = installHrefWatcher();

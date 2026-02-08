@@ -217,6 +217,15 @@
       runAt: 'document_idle',
       world: 'MAIN'
     });
+    defs.push({
+      id: 'quicknav_genspark_force_sonnet45_thinking',
+      siteId: 'genspark',
+      moduleId: 'genspark_force_sonnet45_thinking',
+      matches: gensparkChat,
+      js: [MAIN_BRIDGE_FILE, 'content/genspark-force-sonnet45-thinking/main.js'],
+      runAt: 'document_start',
+      world: 'MAIN'
+    });
 
     // === ChatGPT extras ===
     const chatgpt = siteMatchPatterns(registry, 'chatgpt');

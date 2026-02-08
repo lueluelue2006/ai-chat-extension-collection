@@ -159,6 +159,14 @@
         color: var(--aichat-thinking-text);
         opacity: 1;
       }
+      .${PANEL_CLASS} .aichat-thinking-preview {
+        max-height: 96px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-gutter: stable;
+      }
       .${PANEL_CLASS}[${PANEL_OPEN_ATTR}="0"] .aichat-thinking-full { display: none; }
       .${PANEL_CLASS}[${PANEL_OPEN_ATTR}="1"] .aichat-thinking-preview { display: none; }
       .${PANEL_CLASS}[${PANEL_OPEN_ATTR}="1"] .aichat-thinking-full { display: block; }

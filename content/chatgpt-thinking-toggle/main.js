@@ -845,6 +845,47 @@ button.${HINT_CLASS}::after {
     return pill.getAttribute('aria-expanded') === 'true' || pill.getAttribute('data-state') === 'open';
   }
 
+  function dispatchSyntheticEscape(target) {
+    const evtInit = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
+    const dispatchTarget =
+      target instanceof HTMLElement
+        ? target
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : document.body;
+    dispatchTarget.dispatchEvent(new KeyboardEvent('keydown', evtInit));
+    dispatchTarget.dispatchEvent(new KeyboardEvent('keyup', evtInit));
+  }
+
+  async function ensureMenuCollapsed(trigger, getMenu) {
+    const isMenuVisible = () => {
+      const menu = typeof getMenu === 'function' ? getMenu() : null;
+      return menu instanceof HTMLElement && isVisibleElement(menu);
+    };
+
+    // In most cases the option click closes the menu immediately.
+    await sleep(20);
+    if (!isMenuVisible()) return true;
+
+    // First fallback: Escape is the least intrusive close action.
+    dispatchSyntheticEscape(trigger);
+    for (let i = 0; i < 3; i++) {
+      await sleep(30);
+      if (!isMenuVisible()) return true;
+    }
+
+    // Last fallback: click trigger to force-close laggy popovers.
+    if (trigger instanceof HTMLElement) {
+      clickLikeUser(trigger);
+      for (let i = 0; i < 3; i++) {
+        await sleep(30);
+        if (!isMenuVisible()) return true;
+      }
+    }
+
+    return !isMenuVisible();
+  }
+
   async function toggleThinkingTime() {
     if (busy) return;
     busy = true;
@@ -884,6 +925,7 @@ button.${HINT_CLASS}::after {
         const heavyChecked = heavy.getAttribute('aria-checked') === 'true';
         const target = heavyChecked ? light : heavy;
         clickLikeUser(target);
+        await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
         const label = heavyChecked ? 'Light' : 'Heavy';
         info(`检测到thinking模式，切换到${label} thinking`);
         try {
@@ -903,6 +945,7 @@ button.${HINT_CLASS}::after {
       const extendedChecked = extended.getAttribute('aria-checked') === 'true';
       const target = extendedChecked ? standard : extended;
       clickLikeUser(target);
+      await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
       const label = extendedChecked ? 'Standard' : 'Extended';
       info(`检测到pro模式，切换到${label} thinking`);
       try {
@@ -965,6 +1008,7 @@ button.${HINT_CLASS}::after {
       }
 
       clickLikeUser(targetItem);
+      await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu());
       preferredModelMode = targetMode;
       savePreferredModelMode(preferredModelMode);
       const pulseTarget = cachedThinkingProTrigger;

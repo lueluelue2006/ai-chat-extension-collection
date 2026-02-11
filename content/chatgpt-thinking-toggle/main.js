@@ -966,23 +966,44 @@ button.${HINT_CLASS}::after {
     const isStillOpen = () => isMenuVisible() || isTriggerMenuOpen(trigger);
 
     const waitForMenuHidden = (timeoutMs) => waitForTruthy(() => !isStillOpen(), timeoutMs, 20);
+    const scheduleResidualCleanup = () => {
+      const sweep = () => {
+        if (!isMenuVisible()) return;
+        forceCloseMenuDom(trigger, getMenu);
+      };
+      window.setTimeout(sweep, 80);
+      window.setTimeout(sweep, 180);
+    };
 
     // Let native menu close animation finish before forcing fallbacks.
-    if (await waitForMenuHidden(220)) return true;
+    if (await waitForMenuHidden(220)) {
+      scheduleResidualCleanup();
+      return true;
+    }
 
     // First fallback: Escape is the least intrusive close action.
     dispatchSyntheticEscape(trigger);
-    if (await waitForMenuHidden(180)) return true;
+    if (await waitForMenuHidden(180)) {
+      scheduleResidualCleanup();
+      return true;
+    }
 
     // Last fallback: some popovers only listen on document/window for Escape.
     dispatchSyntheticEscape();
-    if (await waitForMenuHidden(220)) return true;
+    if (await waitForMenuHidden(220)) {
+      scheduleResidualCleanup();
+      return true;
+    }
 
     // Radix popover can get stuck "visible but logically closed" after synthetic item click.
     // Remove the leftover DOM node so hotkey UX matches real click behavior.
     forceCloseMenuDom(trigger, getMenu);
-    if (await waitForMenuHidden(40)) return true;
+    if (await waitForMenuHidden(60)) {
+      scheduleResidualCleanup();
+      return true;
+    }
 
+    scheduleResidualCleanup();
     return !isStillOpen();
   }
 

@@ -73,6 +73,25 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  async function waitForValue(read, timeoutMs = 260, intervalMs = 16) {
+    const startAt = Date.now();
+    while (Date.now() - startAt <= timeoutMs) {
+      const value = read();
+      if (value) return value;
+      await sleep(intervalMs);
+    }
+    return read();
+  }
+
+  async function waitForTruthy(check, timeoutMs = 260, intervalMs = 16) {
+    const startAt = Date.now();
+    while (Date.now() - startAt <= timeoutMs) {
+      if (check()) return true;
+      await sleep(intervalMs);
+    }
+    return !!check();
+  }
+
   function ensurePulseStyle() {
     if (document.getElementById(PULSE_STYLE_ID)) return;
     const style = document.createElement('style');
@@ -594,6 +613,85 @@ button.${HINT_CLASS}::after {
     return null;
   }
 
+  function findMenuForTrigger(trigger) {
+    if (!(trigger instanceof HTMLElement)) return null;
+
+    const controls = trigger.getAttribute('aria-controls');
+    if (controls) {
+      const byId = document.getElementById(controls);
+      if (byId instanceof HTMLElement && byId.getAttribute('role') === 'menu') return byId;
+    }
+
+    const triggerId = trigger.id;
+    if (triggerId) {
+      try {
+        const byLabel = document.querySelector(`[role='menu'][aria-labelledby='${CSS.escape(triggerId)}']`);
+        if (byLabel instanceof HTMLElement) return byLabel;
+      } catch (_) {
+        // ignore
+      }
+    }
+    return null;
+  }
+
+  function isTriggerMenuOpen(trigger) {
+    if (!(trigger instanceof HTMLElement)) return false;
+    return trigger.getAttribute('aria-expanded') === 'true' || trigger.getAttribute('data-state') === 'open';
+  }
+
+  function forceCloseMenuDom(trigger, getMenu) {
+    /** @type {HTMLElement[]} */
+    const targets = [];
+    try {
+      const byGetter = typeof getMenu === 'function' ? getMenu() : null;
+      if (byGetter instanceof HTMLElement) targets.push(byGetter);
+    } catch (_) {
+      // ignore
+    }
+
+    const byTrigger = findMenuForTrigger(trigger);
+    if (byTrigger instanceof HTMLElement && !targets.includes(byTrigger)) targets.push(byTrigger);
+
+    if (trigger instanceof HTMLElement) {
+      const triggerId = String(trigger.id || '');
+      if (triggerId) {
+        try {
+          const byLabel = Array.from(
+            document.querySelectorAll(`[role='menu'][aria-labelledby='${CSS.escape(triggerId)}']`)
+          ).filter((el) => el instanceof HTMLElement);
+          for (const menu of byLabel) {
+            if (!targets.includes(menu)) targets.push(menu);
+          }
+        } catch (_) {
+          // ignore
+        }
+      }
+    }
+
+    for (const menu of targets) {
+      try {
+        menu.remove();
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    if (trigger instanceof HTMLElement) {
+      try {
+        trigger.setAttribute('aria-expanded', 'false');
+      } catch (_) {
+        // ignore
+      }
+      try {
+        trigger.setAttribute('data-state', 'closed');
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    return targets.length;
+  }
+
   function isModelLikeMenuItemText(text) {
     const t = normalizeText(text);
     if (!t) return false;
@@ -657,12 +755,7 @@ button.${HINT_CLASS}::after {
       if (!opened) continue;
 
       /** @type {Element|null} */
-      let menu = null;
-      for (let i = 0; i < 8; i++) {
-        menu = findMenuForPill(pill);
-        if (menu) break;
-        await sleep(40);
-      }
+      const menu = await waitForValue(() => findMenuForPill(pill), 260, 20);
       const hasThinking = !!findBestModelMenuItem(menu, 'thinking');
       const hasPro = !!findBestModelMenuItem(menu, 'pro');
       if (hasThinking && hasPro) return pill;
@@ -817,12 +910,7 @@ button.${HINT_CLASS}::after {
       if (!opened) continue;
 
       /** @type {Element|null} */
-      let menu = null;
-      for (let i = 0; i < 8; i++) {
-        menu = findMenuForPill(pill);
-        if (menu) break;
-        await sleep(40);
-      }
+      const menu = await waitForValue(() => findMenuForPill(pill), 260, 20);
 
       if (menu && menuHasEffortOptions(menu)) return pill;
 
@@ -835,55 +923,67 @@ button.${HINT_CLASS}::after {
   }
 
   async function openThinkingMenu(pill) {
-    clickLikeUser(pill);
-    await sleep(60);
-    if (pill.getAttribute('aria-expanded') === 'true') return true;
-    if (pill.getAttribute('data-state') === 'open') return true;
+    const isOpened = () => {
+      if (!(pill instanceof HTMLButtonElement)) return false;
+      if (pill.getAttribute('aria-expanded') === 'true') return true;
+      if (pill.getAttribute('data-state') === 'open') return true;
+      const menu = findMenuForPill(pill);
+      return menu instanceof HTMLElement && isVisibleElement(menu);
+    };
 
     clickLikeUser(pill);
-    await sleep(120);
-    return pill.getAttribute('aria-expanded') === 'true' || pill.getAttribute('data-state') === 'open';
+    if (await waitForTruthy(isOpened, 220, 16)) return true;
+
+    clickLikeUser(pill);
+    return waitForTruthy(isOpened, 380, 20);
   }
 
   function dispatchSyntheticEscape(target) {
     const evtInit = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
-    const dispatchTarget =
-      target instanceof HTMLElement
-        ? target
-        : document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : document.body;
-    dispatchTarget.dispatchEvent(new KeyboardEvent('keydown', evtInit));
-    dispatchTarget.dispatchEvent(new KeyboardEvent('keyup', evtInit));
+    /** @type {(EventTarget|null|undefined)[]} */
+    const targets = [];
+    if (target instanceof HTMLElement) targets.push(target);
+    if (document.activeElement instanceof HTMLElement) targets.push(document.activeElement);
+    targets.push(document.body, document, window);
+
+    for (const t of targets) {
+      if (!t || typeof t.dispatchEvent !== 'function') continue;
+      try {
+        t.dispatchEvent(new KeyboardEvent('keydown', evtInit));
+        t.dispatchEvent(new KeyboardEvent('keyup', evtInit));
+      } catch (_) {
+        // ignore
+      }
+    }
   }
 
   async function ensureMenuCollapsed(trigger, getMenu) {
     const isMenuVisible = () => {
-      const menu = typeof getMenu === 'function' ? getMenu() : null;
+      const menuFromGetter = typeof getMenu === 'function' ? getMenu() : null;
+      const menu = menuFromGetter || findMenuForTrigger(trigger);
       return menu instanceof HTMLElement && isVisibleElement(menu);
     };
+    const isStillOpen = () => isMenuVisible() || isTriggerMenuOpen(trigger);
 
-    // In most cases the option click closes the menu immediately.
-    await sleep(20);
-    if (!isMenuVisible()) return true;
+    const waitForMenuHidden = (timeoutMs) => waitForTruthy(() => !isStillOpen(), timeoutMs, 20);
+
+    // Let native menu close animation finish before forcing fallbacks.
+    if (await waitForMenuHidden(220)) return true;
 
     // First fallback: Escape is the least intrusive close action.
     dispatchSyntheticEscape(trigger);
-    for (let i = 0; i < 3; i++) {
-      await sleep(30);
-      if (!isMenuVisible()) return true;
-    }
+    if (await waitForMenuHidden(180)) return true;
 
-    // Last fallback: click trigger to force-close laggy popovers.
-    if (trigger instanceof HTMLElement) {
-      clickLikeUser(trigger);
-      for (let i = 0; i < 3; i++) {
-        await sleep(30);
-        if (!isMenuVisible()) return true;
-      }
-    }
+    // Last fallback: some popovers only listen on document/window for Escape.
+    dispatchSyntheticEscape();
+    if (await waitForMenuHidden(220)) return true;
 
-    return !isMenuVisible();
+    // Radix popover can get stuck "visible but logically closed" after synthetic item click.
+    // Remove the leftover DOM node so hotkey UX matches real click behavior.
+    forceCloseMenuDom(trigger, getMenu);
+    if (await waitForMenuHidden(40)) return true;
+
+    return !isStillOpen();
   }
 
   async function toggleThinkingTime() {
@@ -908,12 +1008,11 @@ button.${HINT_CLASS}::after {
       }
 
       /** @type {Element|null} */
-      let menu = null;
-      for (let i = 0; i < 10; i++) {
-        menu = findMenuForPill(pill);
-        if (menu && menuHasEffortOptions(menu)) break;
-        await sleep(50);
-      }
+      const menu = await waitForValue(() => {
+        const candidate = findMenuForPill(pill);
+        if (candidate && menuHasEffortOptions(candidate)) return candidate;
+        return null;
+      }, 520, 20);
       if (!menu) {
         warn('没找到推理强度菜单');
         return;
@@ -985,21 +1084,13 @@ button.${HINT_CLASS}::after {
       let targetItem = findVisibleByTestId(targetTestId);
       if (!targetItem) {
         clickLikeUser(trigger);
-        for (let i = 0; i < 12; i++) {
-          targetItem = findVisibleByTestId(targetTestId);
-          if (targetItem) break;
-          await sleep(50);
-        }
+        targetItem = await waitForValue(() => findVisibleByTestId(targetTestId), 360, 20);
       }
 
       if (!targetItem) {
         // 可能第一次 click 没弹出：再试一次
         clickLikeUser(trigger);
-        for (let i = 0; i < 12; i++) {
-          targetItem = findVisibleByTestId(targetTestId);
-          if (targetItem) break;
-          await sleep(50);
-        }
+        targetItem = await waitForValue(() => findVisibleByTestId(targetTestId), 420, 20);
       }
 
       if (!targetItem) {
@@ -1008,7 +1099,7 @@ button.${HINT_CLASS}::after {
       }
 
       clickLikeUser(targetItem);
-      await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu());
+      await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu() || findMenuForTrigger(trigger));
       preferredModelMode = targetMode;
       savePreferredModelMode(preferredModelMode);
       const pulseTarget = cachedThinkingProTrigger;

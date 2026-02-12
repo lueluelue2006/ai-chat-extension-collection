@@ -3,6 +3,7 @@
 
   const HUB_KEY = '__aichat_chatgpt_fetch_hub_v1__';
   const FETCH_PATCH_FLAG = '__aichatChatGPTFetchHubPatchedV1__';
+  const CF_CHALLENGE_UNTIL_KEY = '__aichat_cf_challenge_until_v1__';
 
   // Avoid patching fetch in every iframe: only allow top-frame.
   const isAllowedFrame = (() => {
@@ -162,6 +163,33 @@
     } catch {
       return false;
     }
+  }
+
+  function markCfChallenge(response, url) {
+    // Cloudflare sometimes returns an HTML challenge for API calls, which can make our
+    // hotkey-driven UI automation feel "stuck"/laggy. We expose a short cooldown flag
+    // for other modules to back off while CF is mitigating.
+    try {
+      if (!response) return;
+      if (response.status !== 403 && response.status !== 429) return;
+      const u = String(url || '');
+      if (!u.includes('/backend-api/')) return;
+
+      const headers = response.headers;
+      const ct = String(headers?.get?.('content-type') || '').toLowerCase();
+      if (!ct.includes('text/html')) return;
+
+      const cfMitigated = String(headers?.get?.('cf-mitigated') || '').toLowerCase();
+      const cfRay = String(headers?.get?.('cf-ray') || '');
+      const server = String(headers?.get?.('server') || '').toLowerCase();
+      const looksLikeCf = cfMitigated.includes('challenge') || !!cfRay || server.includes('cloudflare');
+      if (!looksLikeCf) return;
+
+      const nowMs = Date.now();
+      const prevUntil = Number(window[CF_CHALLENGE_UNTIL_KEY] || 0) || 0;
+      const nextUntil = nowMs + 20_000;
+      if (nextUntil > prevUntil) window[CF_CHALLENGE_UNTIL_KEY] = nextUntil;
+    } catch {}
   }
 
   function createHub() {
@@ -511,6 +539,8 @@
       }
       response = await responsePromise;
       ctx.response = response;
+
+      markCfChallenge(response, url);
 
       if (isConversation && state.hooks.conversationResponse.length) {
         for (const h of state.hooks.conversationResponse) safeCall(h.fn, ctx);

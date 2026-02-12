@@ -18,6 +18,7 @@
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
   const HOTKEY_QUEUE_MAX = 12;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
+  const CF_CHALLENGE_UNTIL_KEY = '__aichat_cf_challenge_until_v1__';
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
@@ -33,6 +34,7 @@
 
   let busy = false;
   let hotkeyDrainRunning = false;
+  let lastCfToastAt = 0;
   /** @type {('toggle_effort'|'toggle_model')[]} */
   let hotkeyQueue = [];
   let preferredModelMode = null; // 'thinking' | 'pro' | null
@@ -200,6 +202,23 @@ button.${HINT_CLASS}::after {
     } catch (_) {
       // ignore
     }
+  }
+
+  function isCfChallengeActive() {
+    try {
+      const until = Number(window[CF_CHALLENGE_UNTIL_KEY] || 0) || 0;
+      return until > Date.now();
+    } catch {
+      return false;
+    }
+  }
+
+  function toastCfChallengeOnce() {
+    // Avoid spamming while the user is retrying hotkeys.
+    const nowMs = Date.now();
+    if (nowMs - lastCfToastAt < 2000) return;
+    lastCfToastAt = nowMs;
+    showToast('Cloudflare 验证中：已暂时停用快捷键切换，请稍后再试');
   }
 
   function pulseOnce(el, rgb) {
@@ -1000,21 +1019,21 @@ button.${HINT_CLASS}::after {
     const waitForMenuHidden = (timeoutMs) => waitForTruthy(() => !isStillOpen(), timeoutMs, 20);
 
     // Keep the grace window short: mode text can switch instantly, so menu close must feel immediate.
-    if (await waitForMenuHidden(70)) return true;
+    if (await waitForMenuHidden(32)) return true;
 
     // Known Radix stuck state: trigger already reports closed, but menu DOM is still visible.
     if (!isTriggerMenuOpen(trigger) && isMenuVisible()) {
       forceCloseMenuDom(trigger, getMenu);
-      if (await waitForMenuHidden(50)) return true;
+      if (await waitForMenuHidden(40)) return true;
     }
 
     // Soft close first.
     dispatchSyntheticEscape(trigger);
-    if (await waitForMenuHidden(90)) return true;
+    if (await waitForMenuHidden(80)) return true;
 
     // If still open, hard-close immediately instead of waiting hundreds of ms.
     forceCloseMenuDom(trigger, getMenu);
-    if (await waitForMenuHidden(50)) return true;
+    if (await waitForMenuHidden(40)) return true;
 
     // Final belt-and-suspenders cleanup.
     dispatchSyntheticEscape();
@@ -1042,6 +1061,11 @@ button.${HINT_CLASS}::after {
     hotkeyDrainRunning = true;
     try {
       while (hotkeyQueue.length) {
+        if (isCfChallengeActive()) {
+          hotkeyQueue.length = 0;
+          toastCfChallengeOnce();
+          return;
+        }
         const action = hotkeyQueue.shift();
         if (!action) continue;
         await waitForIdle(1200);
@@ -1076,52 +1100,55 @@ button.${HINT_CLASS}::after {
         return;
       }
 
-      /** @type {Element|null} */
-      const menu = await waitForValue(() => {
-        const candidate = findMenuForPill(pill);
-        if (candidate && menuHasEffortOptions(candidate)) return candidate;
-        return null;
-      }, 520, 20);
-      if (!menu) {
-        warn('没找到推理强度菜单');
-        return;
-      }
+      try {
+        /** @type {Element|null} */
+        const menu = await waitForValue(() => {
+          const candidate = findMenuForPill(pill);
+          if (candidate && menuHasEffortOptions(candidate)) return candidate;
+          return null;
+        }, 520, 20);
+        if (!menu) {
+          warn('没找到推理强度菜单');
+          return;
+        }
 
-      const { light, standard, extended, heavy } = getEffortItems(menu);
+        const { light, standard, extended, heavy } = getEffortItems(menu);
 
-      if (light && heavy) {
-        const heavyChecked = heavy.getAttribute('aria-checked') === 'true';
-        const target = heavyChecked ? light : heavy;
+        if (light && heavy) {
+          const heavyChecked = heavy.getAttribute('aria-checked') === 'true';
+          const target = heavyChecked ? light : heavy;
+          clickLikeUser(target);
+          const label = heavyChecked ? 'Light' : 'Heavy';
+          info(`检测到thinking模式，切换到${label} thinking`);
+          try {
+            pill.title = label;
+          } catch (_) {
+            // ignore
+          }
+          schedulePulse(pill, !heavyChecked, label);
+          return;
+        }
+
+        if (!standard || !extended) {
+          warn('菜单里没看到 Standard/Extended');
+          return;
+        }
+
+        const extendedChecked = extended.getAttribute('aria-checked') === 'true';
+        const target = extendedChecked ? standard : extended;
         clickLikeUser(target);
-        await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
-        const label = heavyChecked ? 'Light' : 'Heavy';
-        info(`检测到thinking模式，切换到${label} thinking`);
+        const label = extendedChecked ? 'Standard' : 'Extended';
+        info(`检测到pro模式，切换到${label} thinking`);
         try {
           pill.title = label;
         } catch (_) {
           // ignore
         }
-        schedulePulse(pill, !heavyChecked, label);
-        return;
+        schedulePulse(pill, !extendedChecked, label);
+      } finally {
+        // Always collapse on failures as well (missing items / transient menus / CF mitigation)
+        await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
       }
-
-      if (!standard || !extended) {
-        warn('菜单里没看到 Standard/Extended');
-        return;
-      }
-
-      const extendedChecked = extended.getAttribute('aria-checked') === 'true';
-      const target = extendedChecked ? standard : extended;
-      clickLikeUser(target);
-      await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
-      const label = extendedChecked ? 'Standard' : 'Extended';
-      info(`检测到pro模式，切换到${label} thinking`);
-      try {
-        pill.title = label;
-      } catch (_) {
-        // ignore
-      }
-      schedulePulse(pill, !extendedChecked, label);
     } catch (err) {
       log(err);
       error('切换失败', err);
@@ -1147,6 +1174,7 @@ button.${HINT_CLASS}::after {
         const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
         const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
         const findTargetItem = () => findVisibleByTestId(targetTestId) || findVisibleThinkingProItem(targetMode);
+        const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
         // 如果菜单已打开，直接点；否则打开菜单再点
         let targetItem = findTargetItem();
@@ -1162,14 +1190,14 @@ button.${HINT_CLASS}::after {
         }
 
         if (!targetItem) {
+          // Keep UI tidy even when the menu isn't fully populated yet.
+          await ensureMenuCollapsed(trigger, getMenu);
           await sleep(70);
           continue;
         }
 
         clickLikeUser(targetItem);
-        await ensureMenuCollapsed(trigger, () => {
-          return findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
-        });
+        await ensureMenuCollapsed(trigger, getMenu);
 
         const switched = await waitForTruthy(() => {
           const activeTrigger = findGPT52ModelSelectorTrigger();
@@ -1190,6 +1218,15 @@ button.${HINT_CLASS}::after {
         return true;
       }
 
+      if (cachedThinkingProTrigger instanceof HTMLElement) {
+        await ensureMenuCollapsed(cachedThinkingProTrigger, () => {
+          return (
+            findVisibleThinkingProMenu() ||
+            findVisibleThinkingProMenuByContent() ||
+            findMenuForTrigger(cachedThinkingProTrigger)
+          );
+        });
+      }
       info('模型菜单选项未就绪，忽略本次切换');
       return false;
     } catch (err) {
@@ -1214,6 +1251,11 @@ button.${HINT_CLASS}::after {
         event.stopImmediatePropagation();
 
         if (event.repeat) return;
+        if (isCfChallengeActive()) {
+          toastCfChallengeOnce();
+          hotkeyQueue.length = 0;
+          return;
+        }
         enqueueHotkeyAction(action);
       },
       true

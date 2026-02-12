@@ -114,6 +114,13 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :wh
   transition-duration: 0s !important;
 }
 
+/* Radix (used by ChatGPT) relies on animations to hide/unmount some popper content.
+   When we force animation duration to 0, some menus can get stuck visible in `data-state="closed"`.
+   Explicitly hide them in no-anim mode to avoid dropdowns staying on screen. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-menu-content][data-state='closed'] {
+  display: none !important;
+}
+
 /* Mid: disable blur only (less aggressive than extremeLite). */
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noblur='1'] :where(
     body,

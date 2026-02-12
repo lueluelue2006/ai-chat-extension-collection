@@ -23,7 +23,20 @@
       // fetch can be overwritten by other scripts/extensions after we install.
       // Re-install is idempotent and keeps the hub functional.
       try {
-        existing.install?.();
+        // Avoid patching fetch during Cloudflare interstitials (can trigger/extend challenges).
+        const safeInstall = () => {
+          try {
+            const title = String(document.title || '').toLowerCase();
+            if (title.includes('just a moment') || title.includes('verify you are human')) return;
+            if (!document.getElementById('__NEXT_DATA__')) return;
+            existing.install?.();
+          } catch {}
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', safeInstall, { once: true });
+        else safeInstall();
+        setTimeout(safeInstall, 250);
+        setTimeout(safeInstall, 1200);
+        setTimeout(safeInstall, 5000);
       } catch {}
       return;
     }
@@ -568,16 +581,73 @@
     } catch {}
   }
   try {
-    hub.install();
-    const reinstall = () => {
+    const startedAt = now();
+    let installed = false;
+
+    const isCloudflareInterstitial = () => {
       try {
-        hub.install();
+        const title = String(document.title || '').toLowerCase();
+        if (title.includes('just a moment') || title.includes('verify you are human')) return true;
       } catch {}
+      try {
+        if (document.querySelector("script[src*='/cdn-cgi/challenge-platform/']")) return true;
+        if (document.querySelector("script[src*='challenges.cloudflare.com/turnstile/']")) return true;
+      } catch {}
+      return false;
     };
-    setTimeout(reinstall, 0);
-    setTimeout(reinstall, 250);
-    setTimeout(reinstall, 1200);
-    setTimeout(reinstall, 5000);
-    window.addEventListener('load', reinstall, { once: true });
+
+    const isChatGPTAppLikelyReady = () => {
+      try {
+        // ChatGPT app pages are served by Next.js and include __NEXT_DATA__.
+        // Cloudflare interstitials generally do not.
+        return !!document.getElementById('__NEXT_DATA__');
+      } catch {
+        return false;
+      }
+    };
+
+    const scheduleReinstall = () => {
+      const reinstall = () => {
+        try {
+          hub.install();
+        } catch {}
+      };
+      setTimeout(reinstall, 0);
+      setTimeout(reinstall, 250);
+      setTimeout(reinstall, 1200);
+      setTimeout(reinstall, 5000);
+      window.addEventListener('load', reinstall, { once: true });
+    };
+
+    const maybeInstall = () => {
+      if (installed) return;
+      try {
+        // If fetch is already patched (by us or another copy), consider it installed.
+        if (typeof window.fetch === 'function' && window.fetch[FETCH_PATCH_FLAG]) {
+          installed = true;
+          return;
+        }
+      } catch {}
+
+      const elapsed = now() - startedAt;
+      const shouldInstall = !isCloudflareInterstitial() && isChatGPTAppLikelyReady();
+
+      if (shouldInstall) {
+        try {
+          hub.install();
+          installed = true;
+        } catch {}
+        if (installed) scheduleReinstall();
+        return;
+      }
+
+      // Keep polling for the app bootstrap, but do not spin hot.
+      // If we're stuck on an interstitial (403), delaying fetch patching helps avoid extending the block.
+      if (elapsed > 90_000) return;
+      const delay = elapsed < 2500 ? 120 : elapsed < 12_000 ? 320 : 1000;
+      setTimeout(maybeInstall, delay);
+    };
+
+    maybeInstall();
   } catch {}
 })();

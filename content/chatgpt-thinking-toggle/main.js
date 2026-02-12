@@ -802,12 +802,27 @@ button.${HINT_CLASS}::after {
     }
   }
 
+  function findVisibleThinkingProItem(mode) {
+    if (mode !== 'thinking' && mode !== 'pro') return null;
+    const menus = listVisibleMenus();
+    for (const menu of menus) {
+      if (!menuHasThinkingProMode(menu)) continue;
+      const items = getThinkingProModeItems(menu);
+      const item = mode === 'thinking' ? items.thinking : items.pro;
+      if (item instanceof HTMLElement && isVisibleElement(item)) return item;
+    }
+    return null;
+  }
+
   function findGPT52ModelSelectorTrigger() {
-    const byTestId = document.querySelector("button[data-testid='model-switcher-dropdown-button']");
-    if (byTestId instanceof HTMLElement) return byTestId;
+    const byTestIdAll = Array.from(document.querySelectorAll("button[data-testid='model-switcher-dropdown-button']"));
+    const byTestIdVisible = byTestIdAll.find((el) => el instanceof HTMLElement && isVisibleElement(el));
+    if (byTestIdVisible instanceof HTMLElement) return byTestIdVisible;
+    const byTestIdFirst = byTestIdAll.find((el) => el instanceof HTMLElement);
+    if (byTestIdFirst instanceof HTMLElement) return byTestIdFirst;
 
     const byAria = Array.from(document.querySelectorAll('button[aria-label],[role="button"][aria-label]')).find(
-      (el) => normalizeText(el.getAttribute('aria-label') || '').startsWith('model selector')
+      (el) => normalizeText(el.getAttribute('aria-label') || '').startsWith('model selector') && isVisibleElement(el)
     );
     return byAria instanceof HTMLElement ? byAria : null;
   }
@@ -1076,29 +1091,35 @@ button.${HINT_CLASS}::after {
           : findGPT52ModelSelectorTrigger();
       cachedThinkingProTrigger = trigger;
       if (!trigger) {
-        showToast('没找到 GPT-5.2 的模型下拉按钮');
+        info('模型下拉按钮未就绪，忽略本次切换');
         return;
       }
 
       const triggerLabel = normalizeText(trigger.textContent || trigger.getAttribute('aria-label') || '');
       const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
       const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
+      const findTargetItem = () => findVisibleByTestId(targetTestId) || findVisibleThinkingProItem(targetMode);
 
       // 如果菜单已打开，直接点；否则打开菜单再点
-      let targetItem = findVisibleByTestId(targetTestId);
+      let targetItem = findTargetItem();
       if (!targetItem) {
         clickLikeUser(trigger);
-        targetItem = await waitForValue(() => findVisibleByTestId(targetTestId), 360, 20);
+        targetItem = await waitForValue(findTargetItem, 280, 16);
       }
 
       if (!targetItem) {
         // 可能第一次 click 没弹出：再试一次
         clickLikeUser(trigger);
-        targetItem = await waitForValue(() => findVisibleByTestId(targetTestId), 420, 20);
+        targetItem = await waitForValue(findTargetItem, 360, 16);
       }
 
       if (!targetItem) {
-        showToast('没找到 GPT-5.2 的 Thinking/Pro 选项（可能当前模型/页面不支持）');
+        // 快速连击时菜单可能处于重建瞬间；再给一次短重试窗口。
+        targetItem = await waitForValue(findTargetItem, 180, 16);
+      }
+
+      if (!targetItem) {
+        info('模型菜单选项未就绪，忽略本次切换');
         return;
       }
 

@@ -17,6 +17,7 @@
   const DEBUG = false;
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
   const HOTKEY_QUEUE_MAX = 12;
+  const HOTKEY_COALESCE_WINDOW_MS = 180;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
@@ -33,7 +34,7 @@
 
   let busy = false;
   let hotkeyDrainRunning = false;
-  /** @type {('toggle_effort'|'toggle_model')[]} */
+  /** @type {{action:'toggle_effort'|'toggle_model', at:number}[]} */
   let hotkeyQueue = [];
   let preferredModelMode = null; // 'thinking' | 'pro' | null
   let lastModelByMode = { thinking: '', pro: '' };
@@ -792,6 +793,14 @@ button.${HINT_CLASS}::after {
     return any.closest("[role='menu']") || null;
   }
 
+  function findVisibleThinkingProMenuByContent() {
+    const menus = listVisibleMenus();
+    for (const menu of menus) {
+      if (menuHasThinkingProMode(menu)) return menu;
+    }
+    return null;
+  }
+
   function findVisibleByTestId(testId) {
     try {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="${CSS.escape(testId)}"]`));
@@ -1018,7 +1027,7 @@ button.${HINT_CLASS}::after {
   function enqueueHotkeyAction(action) {
     if (action !== 'toggle_effort' && action !== 'toggle_model') return;
     if (hotkeyQueue.length >= HOTKEY_QUEUE_MAX) hotkeyQueue.shift();
-    hotkeyQueue.push(action);
+    hotkeyQueue.push({ action, at: Date.now() });
     void drainHotkeyQueue();
   }
 
@@ -1027,11 +1036,24 @@ button.${HINT_CLASS}::after {
     hotkeyDrainRunning = true;
     try {
       while (hotkeyQueue.length) {
-        const action = hotkeyQueue.shift();
-        if (!action) continue;
+        const job = hotkeyQueue.shift();
+        if (!job) continue;
+
+        // Coalesce very rapid repeated toggles of the same action to avoid jank:
+        // two toggles cancel out, three == one, etc (within a short window).
+        let parity = 1;
+        while (hotkeyQueue.length) {
+          const next = hotkeyQueue[0];
+          if (!next || next.action !== job.action) break;
+          if (Math.abs(next.at - job.at) > HOTKEY_COALESCE_WINDOW_MS) break;
+          hotkeyQueue.shift();
+          parity ^= 1;
+        }
+        if (!parity) continue;
+
         await waitForIdle(1200);
-        if (action === 'toggle_effort') await toggleThinkingTime();
-        else if (action === 'toggle_model') await toggleModelType();
+        if (job.action === 'toggle_effort') await toggleThinkingTime();
+        else if (job.action === 'toggle_model') await toggleModelType();
         await sleep(12);
       }
     } finally {

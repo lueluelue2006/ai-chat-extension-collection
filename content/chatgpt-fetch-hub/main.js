@@ -26,9 +26,11 @@
         // Avoid patching fetch during Cloudflare interstitials (can trigger/extend challenges).
         const safeInstall = () => {
           try {
+            if (document.readyState === 'loading') return;
             const title = String(document.title || '').toLowerCase();
             if (title.includes('just a moment') || title.includes('verify you are human')) return;
-            if (!document.getElementById('__NEXT_DATA__')) return;
+            if (document.querySelector("script[src*='/cdn-cgi/challenge-platform/']")) return;
+            if (document.querySelector("script[src*='challenges.cloudflare.com/turnstile/']")) return;
             existing.install?.();
           } catch {}
         };
@@ -583,6 +585,7 @@
   try {
     const startedAt = now();
     let installed = false;
+    const MIN_DELAY_MS = 600;
 
     const isCloudflareInterstitial = () => {
       try {
@@ -594,16 +597,6 @@
         if (document.querySelector("script[src*='challenges.cloudflare.com/turnstile/']")) return true;
       } catch {}
       return false;
-    };
-
-    const isChatGPTAppLikelyReady = () => {
-      try {
-        // ChatGPT app pages are served by Next.js and include __NEXT_DATA__.
-        // Cloudflare interstitials generally do not.
-        return !!document.getElementById('__NEXT_DATA__');
-      } catch {
-        return false;
-      }
     };
 
     const scheduleReinstall = () => {
@@ -630,7 +623,18 @@
       } catch {}
 
       const elapsed = now() - startedAt;
-      const shouldInstall = !isCloudflareInterstitial() && isChatGPTAppLikelyReady();
+      if (document.readyState === 'loading') {
+        setTimeout(maybeInstall, 120);
+        return;
+      }
+
+      // Keep fetch native through the earliest boot phase; Cloudflare checks are most likely there.
+      if (elapsed < MIN_DELAY_MS) {
+        setTimeout(maybeInstall, MIN_DELAY_MS - elapsed);
+        return;
+      }
+
+      const shouldInstall = !isCloudflareInterstitial();
 
       if (shouldInstall) {
         try {

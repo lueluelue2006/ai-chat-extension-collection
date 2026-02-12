@@ -16,7 +16,7 @@
 
   const DEBUG = false;
   const LOG_PREFIX = '[AIChat][ThinkingToggle]';
-  const HOTKEY_COOLDOWN_MS = 100;
+  const HOTKEY_QUEUE_MAX = 12;
   const FETCH_SNIFF_FLAG = '__tm_thinking_toggle_fetch_sniffed__';
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
@@ -32,7 +32,9 @@
   const PULSE_RGB_HIGH = '239,68,68'; // red
 
   let busy = false;
-  let lastHotkeyAt = 0;
+  let hotkeyDrainRunning = false;
+  /** @type {('toggle_effort'|'toggle_model')[]} */
+  let hotkeyQueue = [];
   let preferredModelMode = null; // 'thinking' | 'pro' | null
   let lastModelByMode = { thinking: '', pro: '' };
   let lastEffortByMode = { thinking: '', pro: '' };
@@ -1005,6 +1007,39 @@ button.${HINT_CLASS}::after {
     return !isStillOpen();
   }
 
+  async function waitForIdle(timeoutMs = 1200) {
+    const startAt = Date.now();
+    while (busy && Date.now() - startAt <= timeoutMs) {
+      await sleep(16);
+    }
+    return !busy;
+  }
+
+  function enqueueHotkeyAction(action) {
+    if (action !== 'toggle_effort' && action !== 'toggle_model') return;
+    if (hotkeyQueue.length >= HOTKEY_QUEUE_MAX) hotkeyQueue.shift();
+    hotkeyQueue.push(action);
+    void drainHotkeyQueue();
+  }
+
+  async function drainHotkeyQueue() {
+    if (hotkeyDrainRunning) return;
+    hotkeyDrainRunning = true;
+    try {
+      while (hotkeyQueue.length) {
+        const action = hotkeyQueue.shift();
+        if (!action) continue;
+        await waitForIdle(1200);
+        if (action === 'toggle_effort') await toggleThinkingTime();
+        else if (action === 'toggle_model') await toggleModelType();
+        await sleep(12);
+      }
+    } finally {
+      hotkeyDrainRunning = false;
+      if (hotkeyQueue.length) void drainHotkeyQueue();
+    }
+  }
+
   async function toggleThinkingTime() {
     if (busy) return;
     busy = true;
@@ -1081,57 +1116,69 @@ button.${HINT_CLASS}::after {
   }
 
   async function toggleModelType() {
-    if (busy) return;
+    if (busy) return false;
     busy = true;
 
     try {
-      const trigger =
-        cachedThinkingProTrigger instanceof HTMLElement && document.contains(cachedThinkingProTrigger)
-          ? cachedThinkingProTrigger
-          : findGPT52ModelSelectorTrigger();
-      cachedThinkingProTrigger = trigger;
-      if (!trigger) {
-        info('模型下拉按钮未就绪，忽略本次切换');
-        return;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const trigger = findGPT52ModelSelectorTrigger();
+        cachedThinkingProTrigger = trigger;
+        if (!trigger) {
+          await sleep(80);
+          continue;
+        }
+
+        const triggerLabel = normalizeText(trigger.textContent || trigger.getAttribute('aria-label') || '');
+        const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
+        const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
+        const findTargetItem = () => findVisibleByTestId(targetTestId) || findVisibleThinkingProItem(targetMode);
+
+        // 如果菜单已打开，直接点；否则打开菜单再点
+        let targetItem = findTargetItem();
+        if (!targetItem) {
+          clickLikeUser(trigger);
+          targetItem = await waitForValue(findTargetItem, 260 + attempt * 120, 16);
+        }
+
+        if (!targetItem) {
+          // 可能第一次 click 没弹出：再试一次
+          clickLikeUser(trigger);
+          targetItem = await waitForValue(findTargetItem, 340 + attempt * 120, 16);
+        }
+
+        if (!targetItem) {
+          await sleep(70);
+          continue;
+        }
+
+        clickLikeUser(targetItem);
+        await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu() || findMenuForTrigger(trigger));
+
+        const switched = await waitForTruthy(() => {
+          const activeTrigger = findGPT52ModelSelectorTrigger();
+          if (!(activeTrigger instanceof HTMLElement)) return false;
+          const nextLabel = normalizeText(activeTrigger.textContent || activeTrigger.getAttribute('aria-label') || '');
+          return targetMode === 'pro' ? nextLabel.includes('pro') : nextLabel.includes('thinking');
+        }, 240, 20);
+
+        if (!switched && attempt < 2) {
+          await sleep(80);
+          continue;
+        }
+
+        preferredModelMode = targetMode;
+        savePreferredModelMode(preferredModelMode);
+        const pulseTarget = findGPT52ModelSelectorTrigger();
+        if (pulseTarget) schedulePulse(pulseTarget, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
+        return true;
       }
 
-      const triggerLabel = normalizeText(trigger.textContent || trigger.getAttribute('aria-label') || '');
-      const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
-      const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
-      const findTargetItem = () => findVisibleByTestId(targetTestId) || findVisibleThinkingProItem(targetMode);
-
-      // 如果菜单已打开，直接点；否则打开菜单再点
-      let targetItem = findTargetItem();
-      if (!targetItem) {
-        clickLikeUser(trigger);
-        targetItem = await waitForValue(findTargetItem, 280, 16);
-      }
-
-      if (!targetItem) {
-        // 可能第一次 click 没弹出：再试一次
-        clickLikeUser(trigger);
-        targetItem = await waitForValue(findTargetItem, 360, 16);
-      }
-
-      if (!targetItem) {
-        // 快速连击时菜单可能处于重建瞬间；再给一次短重试窗口。
-        targetItem = await waitForValue(findTargetItem, 180, 16);
-      }
-
-      if (!targetItem) {
-        info('模型菜单选项未就绪，忽略本次切换');
-        return;
-      }
-
-      clickLikeUser(targetItem);
-      await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu() || findMenuForTrigger(trigger));
-      preferredModelMode = targetMode;
-      savePreferredModelMode(preferredModelMode);
-      const pulseTarget = cachedThinkingProTrigger;
-      if (pulseTarget) schedulePulse(pulseTarget, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
+      info('模型菜单选项未就绪，忽略本次切换');
+      return false;
     } catch (err) {
       log(err);
       error('切换模型失败', err);
+      return false;
     } finally {
       busy = false;
     }
@@ -1150,14 +1197,7 @@ button.${HINT_CLASS}::after {
         event.stopImmediatePropagation();
 
         if (event.repeat) return;
-        if (busy) return;
-
-        const now = Date.now();
-        if (now - lastHotkeyAt < HOTKEY_COOLDOWN_MS) return;
-        lastHotkeyAt = now;
-
-        if (action === 'toggle_effort') toggleThinkingTime();
-        else if (action === 'toggle_model') toggleModelType();
+        enqueueHotkeyAction(action);
       },
       true
     );

@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ai chat 扩展合集",
-  "version": "1.3.42",
+  "version": "1.3.43",
   "description": "对话快速导航（紧凑导航 + 实时定位 + 📌标记点 + 收藏夹 + 防自动滚动 + 快捷键）。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "scripting",
     "storage",
@@ -60,7 +66,13 @@
   ],
   "action": {
     "default_title": "ai chat 扩展合集",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "options_ui": {
     "page": "options/options.html",

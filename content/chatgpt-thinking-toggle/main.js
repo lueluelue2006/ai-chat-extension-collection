@@ -579,13 +579,20 @@ button.${HINT_CLASS}::after {
     let pro = null;
 
     for (const item of items) {
-      const t = normalizeText(item.textContent || '');
-      if (!thinking && (t === 'thinking' || t.startsWith('thinking ') || t.startsWith('思考') || t.startsWith('推理'))) {
+      const testId = String(item.getAttribute('data-testid') || '').toLowerCase();
+      const t = normalizeText(item.textContent || item.getAttribute('aria-label') || '');
+
+      // ChatGPT often concatenates label+description with no spaces in textContent (e.g. "ThinkingThinks...").
+      if (
+        !thinking &&
+        (testId.endsWith('thinking') || t === 'thinking' || t.startsWith('thinking') || t.startsWith('思考') || t.startsWith('推理'))
+      ) {
         thinking = item;
       }
-      if (!pro && (t === 'pro' || t.startsWith('pro ') || t.startsWith('专业'))) {
+      if (!pro && (testId.endsWith('-pro') || t === 'pro' || t.startsWith('pro') || t.startsWith('专业'))) {
         pro = item;
       }
+      if (thinking && pro) break;
     }
 
     return { thinking, pro };
@@ -1174,7 +1181,9 @@ button.${HINT_CLASS}::after {
         }
 
         clickLikeUser(targetItem);
-        await ensureMenuCollapsed(trigger, () => findVisibleThinkingProMenu() || findMenuForTrigger(trigger));
+        await ensureMenuCollapsed(trigger, () => {
+          return findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
+        });
 
         const switched = await waitForTruthy(() => {
           const activeTrigger = findGPT52ModelSelectorTrigger();

@@ -966,44 +966,27 @@ button.${HINT_CLASS}::after {
     const isStillOpen = () => isMenuVisible() || isTriggerMenuOpen(trigger);
 
     const waitForMenuHidden = (timeoutMs) => waitForTruthy(() => !isStillOpen(), timeoutMs, 20);
-    const scheduleResidualCleanup = () => {
-      const sweep = () => {
-        if (!isMenuVisible()) return;
-        forceCloseMenuDom(trigger, getMenu);
-      };
-      window.setTimeout(sweep, 80);
-      window.setTimeout(sweep, 180);
-    };
 
-    // Let native menu close animation finish before forcing fallbacks.
-    if (await waitForMenuHidden(220)) {
-      scheduleResidualCleanup();
-      return true;
+    // Keep the grace window short: mode text can switch instantly, so menu close must feel immediate.
+    if (await waitForMenuHidden(70)) return true;
+
+    // Known Radix stuck state: trigger already reports closed, but menu DOM is still visible.
+    if (!isTriggerMenuOpen(trigger) && isMenuVisible()) {
+      forceCloseMenuDom(trigger, getMenu);
+      if (await waitForMenuHidden(50)) return true;
     }
 
-    // First fallback: Escape is the least intrusive close action.
+    // Soft close first.
     dispatchSyntheticEscape(trigger);
-    if (await waitForMenuHidden(180)) {
-      scheduleResidualCleanup();
-      return true;
-    }
+    if (await waitForMenuHidden(90)) return true;
 
-    // Last fallback: some popovers only listen on document/window for Escape.
-    dispatchSyntheticEscape();
-    if (await waitForMenuHidden(220)) {
-      scheduleResidualCleanup();
-      return true;
-    }
-
-    // Radix popover can get stuck "visible but logically closed" after synthetic item click.
-    // Remove the leftover DOM node so hotkey UX matches real click behavior.
+    // If still open, hard-close immediately instead of waiting hundreds of ms.
     forceCloseMenuDom(trigger, getMenu);
-    if (await waitForMenuHidden(60)) {
-      scheduleResidualCleanup();
-      return true;
-    }
+    if (await waitForMenuHidden(50)) return true;
 
-    scheduleResidualCleanup();
+    // Final belt-and-suspenders cleanup.
+    dispatchSyntheticEscape();
+    forceCloseMenuDom(trigger, getMenu);
     return !isStillOpen();
   }
 

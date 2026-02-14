@@ -4,3 +4,5 @@ icons/*.png
 genspark-page.png
 .tmp-screens/
 trace-*.json.gz
+
+_metadata/

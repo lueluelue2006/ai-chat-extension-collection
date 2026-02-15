@@ -41,8 +41,8 @@
   const CGPT_PERF_DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     virtualizeOffscreen: true,
-    // Experimental: keep off by default to avoid unexpected behavior changes.
-    virtualizeMarkdownBlocks: false,
+    // Experimental: enabled by default in current local profile policy.
+    virtualizeMarkdownBlocks: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
     extremeLite: false,
@@ -1288,7 +1288,7 @@
       },
       {
         key: 'virtualizeMarkdownBlocks',
-        label: 'Markdown 分段虚拟化（实验｜默认关）',
+        label: 'Markdown 分段虚拟化（实验｜默认开）',
         title: '针对“单条超长回复”，对 .markdown 的块级节点做 content-visibility，降低 layout/paint。'
       },
       {

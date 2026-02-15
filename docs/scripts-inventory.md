@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 1.3.54
-- Generated: 2026-02-15 02:09
+- Version: 1.3.55
+- Generated: 2026-02-15 02:39
 - Source of truth: `shared/registry.js` (metadata) + `shared/injections.js` (injection defs)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？

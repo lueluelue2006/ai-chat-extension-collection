@@ -290,6 +290,7 @@ Turn 筛选策略（维护重点）：
 - 主入口：三栏布局（站点/模块/设置）+ 模块设置面板路由（`renderModuleSettings(...)`）
 - 设置操作：`QUICKNAV_GET_SETTINGS`、`QUICKNAV_PATCH_SETTINGS`、`QUICKNAV_RESET_DEFAULTS`
 - OpenAI 资源监控：通过 `QUICKNAV_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当资源可访问时会在 `chatgpt.com` 显示页内横幅（不可点击关闭，需删除 URL 才会停止提醒）
+- 横幅“打开配置”动作：内容脚本通过 `QUICKNAV_OPEN_OPTIONS_PAGE` 交给 SW 调扩展 API 打开配置页（优先 `chrome.tabs.create(optionsUrl)`，失败再 fallback `chrome.runtime.openOptionsPage()`），不再 fallback 到页面侧 `chrome-extension://` 跳转，规避 `ERR_BLOCKED_BY_CLIENT` 拦截。
 
 ---
 
@@ -302,6 +303,7 @@ Turn 筛选策略（维护重点）：
 - 注入类（Popup/内容脚本 → SW）：`QUICKNAV_REINJECT_NOW`、`QUICKNAV_ENSURE_SCROLL_GUARD`
 - 菜单类（Popup ↔ 内容脚本）：`QUICKNAV_GET_MENU`、`QUICKNAV_RUN_MENU`
 - 监控类（Options ↔ SW）：`QUICKNAV_GPT53_GET_STATUS` / `SET_URLS` / `RUN` / `MARK_READ` / `ALERT`
+- 横幅跳转类（Banner 内容脚本 → SW）：`QUICKNAV_OPEN_OPTIONS_PAGE`
 
 ---
 

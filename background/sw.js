@@ -845,6 +845,46 @@
     }
   }
 
+  async function openOptionsPageForSender() {
+    const optionsUrl = (() => {
+      try {
+        return chrome.runtime.getURL('options/options.html');
+      } catch {
+        return '';
+      }
+    })();
+
+    if (!optionsUrl) throw new Error('no options url');
+
+    try {
+      await new Promise((resolve, reject) => {
+        try {
+          chrome.tabs.create({ url: optionsUrl, active: true }, () => {
+            const err = chrome.runtime.lastError;
+            if (err) reject(new Error(err.message || String(err)));
+            else resolve();
+          });
+        } catch (e) {
+          reject(e);
+        }
+      });
+      return;
+    } catch {}
+
+    if (typeof chrome?.runtime?.openOptionsPage !== 'function') throw new Error('open options unavailable');
+    await new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.openOptionsPage(() => {
+          const err = chrome.runtime.lastError;
+          if (err) reject(new Error(err.message || String(err)));
+          else resolve();
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   // === OpenAI model icon monitor (configurable) ===
   const GPT53_MONITOR = Object.freeze({
     defaultUrls: Object.freeze(['https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-5.3.png']),
@@ -1615,6 +1655,17 @@
             return settings;
           })
           .then((settings) => sendResponse({ ok: true, settings }))
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_OPEN_OPTIONS_PAGE') {
+        if (!fromExtensionPage && !Number.isFinite(sender?.tab?.id)) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        openOptionsPageForSender()
+          .then(() => sendResponse({ ok: true }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         return true;
       }

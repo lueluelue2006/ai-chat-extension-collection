@@ -44,6 +44,19 @@
     }
   }
 
+  function requestOpenOptionsPage() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'QUICKNAV_OPEN_OPTIONS_PAGE' }, (resp) => {
+          void chrome.runtime.lastError;
+          resolve(Boolean(resp && resp.ok));
+        });
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
   function ensureUi() {
     if (state.wrapper && state.shadow) return;
 
@@ -180,11 +193,21 @@
 
     btnOptions.addEventListener(
       'click',
-      () => {
+      async () => {
         try {
-          const url = chrome?.runtime?.getURL ? chrome.runtime.getURL('options/options.html') : '';
-          if (!url) return;
-          window.open(url, '_blank', 'noopener,noreferrer');
+          const opened = await requestOpenOptionsPage();
+          if (opened) return;
+        } catch {}
+
+        try {
+          chrome.runtime.sendMessage(
+            {
+              type: 'QUICKNAV_NOTIFY',
+              title: 'AI捷径',
+              message: '无法自动打开配置页，请从扩展图标进入“扩展程序选项”。'
+            },
+            () => void chrome.runtime.lastError
+          );
         } catch {}
       },
       true

@@ -1015,6 +1015,19 @@ textarea.codeBox {
   box-shadow: var(--accentShadow);
 }
 
+.btn.danger {
+  border-color: transparent;
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
+  box-shadow: 0 10px 30px rgba(239, 68, 68, 0.22);
+}
+
+.btn.danger:hover {
+  background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  border-color: color-mix(in srgb, #ef4444 60%, var(--border) 40%);
+}
+
 .status {
   margin-top: 12px;
   min-height: 18px;

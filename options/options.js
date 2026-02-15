@@ -7,6 +7,7 @@
   const elStatus = document.getElementById('status');
   const elEnabled = document.getElementById('enabled');
   const btnRestoreDefault = document.getElementById('restoreDefault');
+  const btnFactoryReset = document.getElementById('factoryReset');
   const btnReinjectNow = document.getElementById('reinjectNow');
   const btnOpenRepo = document.getElementById('openRepo');
   const btnGpt53Save = document.getElementById('gpt53Save');
@@ -466,6 +467,12 @@
     const resp = await sendMessage({ type: 'QUICKNAV_RESET_DEFAULTS' });
     if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to reset defaults');
     return resp.settings;
+  }
+
+  async function factoryReset() {
+    const resp = await sendMessage({ type: 'QUICKNAV_FACTORY_RESET' });
+    if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Failed to factory reset');
+    return resp;
   }
 
   async function reinjectNow() {
@@ -3179,6 +3186,31 @@
         setStatus(`恢复默认失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         if (btnRestoreDefault) btnRestoreDefault.disabled = false;
+      }
+    };
+    void run();
+  });
+
+  btnFactoryReset?.addEventListener('click', () => {
+    const run = async () => {
+      const ok = window.confirm(
+        '将清空扩展的所有设置与缓存（storage/local/sync/session、已注册内容脚本等），并自动重新加载扩展。\n\n确定要恢复出厂吗？',
+      );
+      if (!ok) return;
+
+      setStatus('正在清空所有数据（恢复出厂）…');
+      if (btnFactoryReset) btnFactoryReset.disabled = true;
+      if (btnRestoreDefault) btnRestoreDefault.disabled = true;
+      if (btnReinjectNow) btnReinjectNow.disabled = true;
+
+      try {
+        await factoryReset();
+        setStatus('已触发恢复出厂：扩展即将重新加载。完成后请刷新已打开的页面。', 'ok');
+      } catch (e) {
+        setStatus(`恢复出厂失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        if (btnFactoryReset) btnFactoryReset.disabled = false;
+        if (btnRestoreDefault) btnRestoreDefault.disabled = false;
+        if (btnReinjectNow) btnReinjectNow.disabled = false;
       }
     };
     void run();

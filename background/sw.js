@@ -232,6 +232,120 @@
     return normalized;
   }
 
+  let factoryResetRunning = false;
+
+  async function clearDnrDynamicAndSessionRules() {
+    const api = chrome?.declarativeNetRequest;
+    if (!api || typeof api.getDynamicRules !== 'function' || typeof api.updateDynamicRules !== 'function') return;
+
+    const dynamic = await new Promise((resolve) => {
+      try {
+        api.getDynamicRules((rules) => resolve(Array.isArray(rules) ? rules : []));
+      } catch {
+        resolve([]);
+      }
+    });
+    if (dynamic.length) {
+      await new Promise((resolve) => {
+        try {
+          api.updateDynamicRules({ removeRuleIds: dynamic.map((r) => r.id) }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+
+    if (typeof api.getSessionRules !== 'function' || typeof api.updateSessionRules !== 'function') return;
+    const session = await new Promise((resolve) => {
+      try {
+        api.getSessionRules((rules) => resolve(Array.isArray(rules) ? rules : []));
+      } catch {
+        resolve([]);
+      }
+    });
+    if (session.length) {
+      await new Promise((resolve) => {
+        try {
+          api.updateSessionRules({ removeRuleIds: session.map((r) => r.id) }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+  }
+
+  async function unregisterAllContentScripts() {
+    if (!chrome?.scripting?.unregisterContentScripts) return;
+    await new Promise((resolve) => {
+      try {
+        chrome.scripting.unregisterContentScripts({}, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  async function clearStorageArea(area) {
+    if (!area || typeof area.clear !== 'function') return;
+    await new Promise((resolve) => {
+      try {
+        area.clear(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  async function clearExtensionCaches() {
+    try {
+      if (!globalThis.caches || typeof globalThis.caches.keys !== 'function') return;
+      const keys = await globalThis.caches.keys();
+      await Promise.all(keys.map((k) => globalThis.caches.delete(k)));
+    } catch {}
+  }
+
+  async function clearExtensionIndexedDb() {
+    try {
+      if (!globalThis.indexedDB || typeof globalThis.indexedDB.databases !== 'function') return;
+      const dbs = await globalThis.indexedDB.databases();
+      const names = Array.isArray(dbs) ? dbs.map((d) => d?.name).filter(Boolean) : [];
+      await Promise.all(
+        names.map(
+          (name) =>
+            new Promise((resolve) => {
+              try {
+                const req = globalThis.indexedDB.deleteDatabase(name);
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => resolve(false);
+                req.onblocked = () => resolve(false);
+              } catch {
+                resolve(false);
+              }
+            }),
+        ),
+      );
+    } catch {}
+  }
+
+  async function factoryResetAllData() {
+    // Order matters: unregister first to stop any persisted content scripts.
+    await unregisterAllContentScripts();
+    await clearDnrDynamicAndSessionRules();
+
+    // Best-effort cleanup for extension origin caches/DBs.
+    await clearExtensionCaches();
+    await clearExtensionIndexedDb();
+
+    // Storage: clear everything so the extension starts like a fresh profile.
+    await clearStorageArea(chrome?.storage?.session);
+    await clearStorageArea(chrome?.storage?.local);
+    await clearStorageArea(chrome?.storage?.sync);
+
+    try {
+      chrome.alarms.clearAll(() => void chrome.runtime.lastError);
+    } catch {}
+  }
+
   const KNOWN_SITE_IDS = (() => {
     try {
       const out = new Set();
@@ -1454,6 +1568,33 @@
         })
           .then((settings) => sendResponse({ ok: true, settings }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+
+      if (msg.type === 'QUICKNAV_FACTORY_RESET') {
+        if (!fromExtensionPage) {
+          sendResponse({ ok: false, error: 'forbidden' });
+          return true;
+        }
+        if (factoryResetRunning) {
+          sendResponse({ ok: false, error: 'busy' });
+          return true;
+        }
+
+        factoryResetRunning = true;
+        (async () => {
+          await factoryResetAllData();
+          sendResponse({ ok: true });
+          setTimeout(() => {
+            try {
+              chrome.runtime.reload();
+            } catch {}
+          }, 120);
+        })()
+          .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+          .finally(() => {
+            factoryResetRunning = false;
+          });
         return true;
       }
 

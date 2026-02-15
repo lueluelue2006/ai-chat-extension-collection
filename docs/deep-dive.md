@@ -394,6 +394,19 @@ Turn 筛选策略（维护重点）：
 
 - 跑 `node dev/sync-manifest.js` → `node dev/gen-scripts-inventory.js` → `node dev/check.js`
 
+### 9.1 恢复出厂（全量清空扩展数据）
+
+当出现“升级后行为异常 / 老版本缓存冲突 / 注入表注册状态异常”等问题时，优先做一次恢复出厂，让扩展回到“新浏览器刚加载”的状态，再继续排查。
+
+- 入口：`options/options.html` 底部按钮 **恢复出厂（清空所有数据）**
+- 行为（后台 `QUICKNAV_FACTORY_RESET`）：
+  - 清空 `chrome.storage`：`local/sync/session`
+  - 注销所有已注册的 content scripts（`chrome.scripting.unregisterContentScripts({})`）
+  - 清空 DNR `dynamic/session rules`（如有）
+  - best-effort 清空 extension origin 的 `caches` / `indexedDB`
+  - 清空 `chrome.alarms`，并 `chrome.runtime.reload()` 重新加载扩展
+- 做完后：**刷新**已打开的目标网站标签页（例如 `chatgpt.com`），让内容脚本重新按最新定义注入
+
 ## 10) 近期维护记录（手工更新）
 
 - **2026-02-14：修复 ChatGPT QuickNav 偶发慢显示 / 切页延迟隐藏**

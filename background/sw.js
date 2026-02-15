@@ -1708,7 +1708,9 @@
       }
 
       if (msg.type === 'QUICKNAV_GPT53_MARK_READ') {
-        if (!fromExtensionPage) {
+        // Allow content scripts to mark-read (used by in-page banners), while keeping other write operations
+        // restricted to extension pages.
+        if (!fromExtensionPage && !Number.isFinite(sender?.tab?.id)) {
           sendResponse({ ok: false, error: 'forbidden' });
           return true;
         }

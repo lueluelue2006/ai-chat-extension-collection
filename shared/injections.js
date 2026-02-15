@@ -241,6 +241,15 @@
     });
 
     defs.push({
+      id: 'quicknav_chatgpt_openai_new_model_banner',
+      siteId: 'chatgpt',
+      moduleId: 'openai_new_model_banner',
+      matches: chatgpt,
+      js: [ISOLATED_BRIDGE_FILE, 'content/openai-new-model-banner/main.js'],
+      runAt: 'document_end'
+    });
+
+    defs.push({
       id: 'quicknav_chatgpt_thinking_toggle_config',
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',

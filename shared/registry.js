@@ -14,6 +14,7 @@
       matchPatterns: ['https://chatgpt.com/*'],
       modules: [
         'quicknav',
+        'openai_new_model_banner',
         'chatgpt_perf',
         'chatgpt_thinking_toggle',
         'chatgpt_cmdenter_send',
@@ -109,6 +110,15 @@
       id: 'chatgpt_perf',
       name: 'ChatGPT 性能优化',
       sub: '离屏虚拟化 + CSS contain',
+      hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    openai_new_model_banner: {
+      id: 'openai_new_model_banner',
+      name: 'OpenAI 新模型横幅提示',
+      sub: '监控到资源可访问时，在网页内显示大横幅（避免系统通知被屏蔽）',
+      defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

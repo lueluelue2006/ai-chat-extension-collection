@@ -22,8 +22,8 @@
 当前规模（由 `shared/registry.js` + `shared/injections.js` 实际计算得到；可跑 `node dev/stats.js` 复现）：
 
 - 站点：11（含 `common`）
-- 模块：26
-- 注入定义：56（MAIN 23 / ISOLATED 33）
+- 模块：27
+- 注入定义：57（MAIN 23 / ISOLATED 34）
 
 代码热点（`wc -l` 口径，仅用于“哪里复杂/容易出问题”，会随提交变化）：
 

@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 1.3.56
-- Generated: 2026-02-15 02:47
+- Version: 1.3.58
+- Generated: 2026-02-15 10:51
 - Source of truth: `shared/registry.js` (metadata) + `shared/injections.js` (injection defs)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -31,6 +31,10 @@
   - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
   - 注入: document_start / ISOLATED: `content/quicknav-bridge.js`, `content/chatgpt-core.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/chatgpt-quicknav.js`
   - 注入: document_start / MAIN: `content/quicknav-bridge-main.js`, `content/scroll-guard-main.js`
+- `openai_new_model_banner`: OpenAI 新模型横幅提示 — 监控到资源可访问时，在网页内显示大横幅（避免系统通知被屏蔽）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_end / ISOLATED: `content/quicknav-bridge.js`, `content/openai-new-model-banner/main.js`
 - `chatgpt_perf`: ChatGPT 性能优化 — 离屏虚拟化 + CSS contain
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）

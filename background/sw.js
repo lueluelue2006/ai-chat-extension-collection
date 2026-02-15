@@ -1660,10 +1660,6 @@
       }
 
       if (msg.type === 'QUICKNAV_OPEN_OPTIONS_PAGE') {
-        if (!fromExtensionPage && !Number.isFinite(sender?.tab?.id)) {
-          sendResponse({ ok: false, error: 'forbidden' });
-          return true;
-        }
         openOptionsPageForSender()
           .then(() => sendResponse({ ok: true }))
           .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));

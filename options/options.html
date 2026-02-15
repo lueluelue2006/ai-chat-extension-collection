@@ -50,13 +50,13 @@
       <section class="card" aria-label="OpenAI 新模型监控">
         <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
         <div class="hint">
-          每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；只要检测到可用资源（非 404）就会弹出系统通知（每次检测都会提醒，直到你删除该 URL）。
+          每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；只要检测到可用资源（非 404）就会提醒你（系统通知 + 扩展角标 + ChatGPT 页内横幅）。要停止提醒请删除该 URL（横幅不会被点击关闭）。
         </div>
         <div class="alertBox" id="gpt53AlertBox" hidden>
           <div class="alertTitle">OpenAI 新模型提示</div>
           <div class="alertText" id="gpt53AlertText"></div>
           <div class="actions">
-            <button class="btn secondary" id="gpt53MarkRead" type="button">知道了（清除角标）</button>
+            <button class="btn secondary" id="gpt53MarkRead" type="button">清除角标（不停止提醒）</button>
           </div>
         </div>
         <textarea class="codeBox" id="gpt53Urls" rows="3" spellcheck="false" placeholder="每行一个：https://cdn.openai.com/..."></textarea>

@@ -1083,10 +1083,15 @@
     return 0;
   }
 
-  async function runGpt53Probe() {
+  async function runGpt53Probe(options = {}) {
+    const silent = !!options?.silent;
     try {
       const settings = await getSettings();
-      if (settings && settings.enabled === false) return;
+      if (settings && settings.enabled === false) {
+        await setGpt53Alerts({ unread: 0, events: [] });
+        setActionBadge(0);
+        return;
+      }
     } catch {}
 
     const urls = await getGpt53Urls();
@@ -1132,6 +1137,7 @@
       // System notification (best-effort).
       // NOTE: intentionally notify every probe while resources remain available so users won't miss it.
       try {
+        if (silent) return;
         chrome.notifications.create(`${GPT53_MONITOR.notifyId}_${checkedAt}`, {
           type: 'basic',
           iconUrl: chrome.runtime.getURL('icons/icon128.png'),
@@ -1145,7 +1151,7 @@
       } catch {}
 
       // In-extension alert (Options / Popup).
-      broadcastGpt53Alert({ title, message: msg, unread, checkedAt });
+      if (!silent) broadcastGpt53Alert({ title, message: msg, unread, checkedAt });
     } catch {}
   }
 
@@ -1652,6 +1658,8 @@
         (async () => {
           const urls = await setGpt53Urls(msg?.urlsText ?? msg?.urls ?? null);
           const alarm = await ensureGpt53Alarm();
+          // Re-run probe (silently) so alerts/badge reflect the new URL list immediately.
+          await runGpt53Probe({ silent: true });
           const state = await getGpt53State();
           const alerts = await getGpt53Alerts();
           let enabled = true;

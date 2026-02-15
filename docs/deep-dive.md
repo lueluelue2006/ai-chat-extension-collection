@@ -289,7 +289,7 @@ Turn 筛选策略（维护重点）：
 
 - 主入口：三栏布局（站点/模块/设置）+ 模块设置面板路由（`renderModuleSettings(...)`）
 - 设置操作：`QUICKNAV_GET_SETTINGS`、`QUICKNAV_PATCH_SETTINGS`、`QUICKNAV_RESET_DEFAULTS`
-- OpenAI 资源监控：通过 `QUICKNAV_GPT53_*` 与 SW 交互（探测/通知/标记已读）
+- OpenAI 资源监控：通过 `QUICKNAV_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当资源可访问时会在 `chatgpt.com` 显示页内横幅（不可点击关闭，需删除 URL 才会停止提醒）
 
 ---
 

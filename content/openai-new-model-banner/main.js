@@ -3,7 +3,6 @@
 
   const STATE_KEY = '__aichat_openai_new_model_banner_state_v1__';
   const ALERTS_KEY = 'quicknav_gpt53_probe_alerts_v1';
-  const MSG_MARK_READ = Object.freeze({ type: 'QUICKNAV_GPT53_MARK_READ' });
 
   const isTopFrame = (() => {
     try {
@@ -32,9 +31,9 @@
     titleEl: null,
     msgEl: null,
     metaEl: null,
-    btnDismiss: null,
     btnOptions: null,
-    onMsg: null
+    onMsg: null,
+    onStorage: null
   };
 
   function safeNow() {
@@ -61,25 +60,17 @@
 
       .wrap {
         position: fixed;
-        inset: 0;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(980px, calc(100vw - 24px));
         display: none;
         pointer-events: none;
       }
       .wrap[data-open='1'] { display: block; }
 
-      .backdrop {
-        position: absolute;
-        inset: 0;
-        background: rgba(0,0,0,0.42);
-        pointer-events: auto;
-      }
-
       .card {
-        position: absolute;
-        top: 18px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: min(980px, calc(100vw - 24px));
+        position: relative;
         border-radius: 18px;
         background: rgba(15, 23, 42, 0.96);
         border: 1px solid rgba(255,255,255,0.12);
@@ -137,9 +128,6 @@
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
 
-    const backdrop = document.createElement('div');
-    backdrop.className = 'backdrop';
-
     const card = document.createElement('div');
     card.className = 'card';
 
@@ -158,16 +146,10 @@
     const actions = document.createElement('div');
     actions.className = 'actions';
 
-    const btnDismiss = document.createElement('button');
-    btnDismiss.className = 'primary';
-    btnDismiss.type = 'button';
-    btnDismiss.textContent = '知道了（清除角标）';
-
     const btnOptions = document.createElement('button');
+    btnOptions.className = 'primary';
     btnOptions.type = 'button';
-    btnOptions.textContent = '打开配置';
-
-    actions.appendChild(btnDismiss);
+    btnOptions.textContent = '打开配置（删除该 URL 才会停止提醒）';
     actions.appendChild(btnOptions);
 
     card.appendChild(title);
@@ -175,7 +157,6 @@
     card.appendChild(meta);
     card.appendChild(actions);
 
-    wrap.appendChild(backdrop);
     wrap.appendChild(card);
 
     shadow.appendChild(style);
@@ -187,7 +168,6 @@
     state.titleEl = title;
     state.msgEl = msg;
     state.metaEl = meta;
-    state.btnDismiss = btnDismiss;
     state.btnOptions = btnOptions;
 
     try {
@@ -198,10 +178,6 @@
       } catch {}
     }
 
-    const close = () => hide();
-
-    backdrop.addEventListener('click', close, true);
-
     btnOptions.addEventListener(
       'click',
       () => {
@@ -210,23 +186,6 @@
           if (!url) return;
           window.open(url, '_blank', 'noopener,noreferrer');
         } catch {}
-      },
-      true
-    );
-
-    btnDismiss.addEventListener(
-      'click',
-      async () => {
-        // Clear badge + alerts (best-effort).
-        try {
-          await new Promise((resolve) => {
-            chrome.runtime.sendMessage(MSG_MARK_READ, () => {
-              void chrome.runtime.lastError;
-              resolve();
-            });
-          });
-        } catch {}
-        close();
       },
       true
     );
@@ -256,6 +215,25 @@
     try {
       if (state.wrapper) delete state.wrapper.dataset.open;
     } catch {}
+  }
+
+  function normalizeAlerts(raw) {
+    try {
+      if (!raw || typeof raw !== 'object') return { unread: 0, events: [] };
+      const unread = Math.max(0, Math.min(99, Number(raw.unread) || 0));
+      const rawEvents = Array.isArray(raw.events) ? raw.events : [];
+      const events = rawEvents
+        .filter((x) => x && typeof x === 'object')
+        .map((e) => ({
+          at: Number(e.at) || 0,
+          url: String(e.url || ''),
+          status: Number(e.status) || 0
+        }))
+        .filter((e) => e.at && e.url);
+      return { unread, events };
+    } catch {
+      return { unread: 0, events: [] };
+    }
   }
 
   function formatAlertLine(ev) {
@@ -297,34 +275,36 @@
     });
   }
 
-  async function maybeShowFromStorage() {
-    const raw = await readStoredAlerts();
-    if (!raw || typeof raw !== 'object') return;
-    const unread = Number(raw.unread) || 0;
-    const msg = buildAlertMessage(raw);
-    if (!unread || !msg) return;
+  function renderFromAlerts(raw, checkedAt) {
+    const alerts = normalizeAlerts(raw);
+    const msg = buildAlertMessage(alerts);
+    const count = Math.max(Number(alerts.unread) || 0, Array.isArray(alerts.events) ? alerts.events.length : 0);
+    if (!count || !msg) return hide();
+    const lastAt = (() => {
+      try {
+        const ev = Array.isArray(alerts.events) && alerts.events.length ? alerts.events[alerts.events.length - 1] : null;
+        return Number(ev?.at) || 0;
+      } catch {
+        return 0;
+      }
+    })();
     show({
       title: 'OpenAI 新模型提示',
-      message: `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`,
-      checkedAt: safeNow()
+      message: `检测到 ${count} 条资源可访问（每次检测都会提醒）：${msg}\n\n要关闭此提示：打开配置并删除对应 URL。`,
+      checkedAt: lastAt || Number(checkedAt) || safeNow()
     });
+  }
+
+  async function maybeShowFromStorage() {
+    const raw = await readStoredAlerts();
+    renderFromAlerts(raw, safeNow());
   }
 
   function onRuntimeMessage(msg) {
     try {
       if (!msg || typeof msg !== 'object') return;
       if (msg.type !== 'QUICKNAV_GPT53_ALERT') return;
-      const payload = msg.payload && typeof msg.payload === 'object' ? msg.payload : {};
-      const title = typeof payload.title === 'string' && payload.title ? payload.title : 'OpenAI 新模型提示';
-      const message = typeof payload.message === 'string' ? payload.message : '';
-      const unread = Number(payload.unread) || 0;
-      const checkedAt = Number(payload.checkedAt) || 0;
-      if (!unread || !message) return;
-      show({
-        title,
-        message: `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${message}`,
-        checkedAt
-      });
+      void maybeShowFromStorage();
     } catch {}
   }
 
@@ -334,12 +314,27 @@
   } catch {}
 
   try {
+    state.onStorage = (changes, areaName) => {
+      try {
+        if (areaName !== 'local') return;
+        const change = changes?.[ALERTS_KEY];
+        if (!change || typeof change !== 'object') return;
+        renderFromAlerts(change.newValue, safeNow());
+      } catch {}
+    };
+    chrome.storage.onChanged.addListener(state.onStorage);
+  } catch {}
+
+  try {
     maybeShowFromStorage();
   } catch {}
 
   state.destroy = () => {
     try {
       if (typeof state.onMsg === 'function') chrome.runtime.onMessage.removeListener(state.onMsg);
+    } catch {}
+    try {
+      if (typeof state.onStorage === 'function') chrome.storage.onChanged.removeListener(state.onStorage);
     } catch {}
     try {
       state.host?.remove?.();

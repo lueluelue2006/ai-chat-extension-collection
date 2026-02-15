@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
-- Name: ai chat 扩展合集
-- Version: 1.3.29
-- Generated: 2026-02-06 08:26
+- Name: AI捷径 (AI Shortcuts)
+- Version: 1.3.51
+- Generated: 2026-02-15 01:29
 - Source of truth: `shared/registry.js` (metadata) + `shared/injections.js` (injection defs)
 
 ## Popup “菜单按钮/选项按钮” 来自哪里？
@@ -171,6 +171,10 @@
   - 作者: lueluelue2006（原始脚本 / MV3 集成）
   - 许可证: 未标注（内部脚本）
   - 注入: document_idle / MAIN: `content/quicknav-bridge-main.js`, `content/genspark-inline-upload-fix/main.js`
+- `genspark_force_sonnet45_thinking`: Genspark Sonnet 4.5 Thinking — 自动将 claude-sonnet-4-5 改为 claude-sonnet-4-5-thinking，并显示可折叠思考块
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / MAIN: `content/quicknav-bridge-main.js`, `content/genspark-force-sonnet45-thinking/main.js`
 
 ### Grok (grok.com)
 
@@ -244,3 +248,4 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/quicknav-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+

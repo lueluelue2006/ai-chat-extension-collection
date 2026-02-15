@@ -15,12 +15,12 @@
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     virtualizeOffscreen: true,
-    // Experimental: keep off by default to avoid unexpected behavior changes.
-    virtualizeMarkdownBlocks: false,
+    // Experimental path: enabled by default in local test build.
+    virtualizeMarkdownBlocks: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
-    disableBackdropFilters: false,
-    extremeLite: false,
+    disableBackdropFilters: true,
+    extremeLite: true,
     boostDuringInput: true,
     unfreezeOnFind: true,
     showOverlay: false,
@@ -848,11 +848,11 @@
 
     const perfBtn = mkBtn('enabled', '性能：开', '切换性能优化总开关');
     const offBtn = mkBtn('virtualizeOffscreen', '离屏虚拟化：开', '切换离屏虚拟化（长对话更流畅）');
-    const blocksBtn = mkBtn('virtualizeMarkdownBlocks', '分段虚拟化：关', '对超长单条消息按段落虚拟化（实验）');
+    const blocksBtn = mkBtn('virtualizeMarkdownBlocks', '分段虚拟化：开', '对超长单条消息按段落虚拟化（实验）');
     const heavyBtn = mkBtn('optimizeHeavyBlocks', '重内容优化：开', '切换重内容优化（pre/table/公式等）');
     const animBtn = mkBtn('disableAnimations', '动画：开', '切换动画/过渡（关闭可减少卡顿）');
-    const blurBtn = mkBtn('disableBackdropFilters', '毛玻璃：开', '禁用 backdrop-filter（通常能明显减轻滚动/弹层卡顿）');
-    const extremeBtn = mkBtn('extremeLite', '极限轻量：关', '全站强制禁用 blur/filter/阴影/过渡/动画（更快但更丑）');
+    const blurBtn = mkBtn('disableBackdropFilters', '毛玻璃：关', '禁用 backdrop-filter（通常能明显减轻滚动/弹层卡顿）');
+    const extremeBtn = mkBtn('extremeLite', '极限轻量：开', '全站强制禁用 blur/filter/阴影/过渡/动画（更快但更丑）');
     const boostBtn = mkBtn('boostDuringInput', '交互加速：开', '输入/编辑时临时收紧预加载，减少点击/发送卡顿');
 
     const marginRow = document.createElement('div');

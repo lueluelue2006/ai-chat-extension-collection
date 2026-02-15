@@ -1,8 +1,14 @@
-# ai chat 扩展合集
+# AI捷径 (AI Shortcuts)
 
 # 🚨 测试阶段（重要）
 
 ## ChatGPT 网站当前存在严重内存泄露，暂未测出具体根因，求大佬们 PR。
+
+## 文档（建议先看）
+
+- 架构/核心链路（手工维护）：`docs/deep-dive.md`
+- 站点/模块/注入清单（自动生成）：`docs/scripts-inventory.md`
+- ChatGPT 站点研究/备忘：`docs/chatgpt-site-research.md`
 
 ## 按网站分组：脚本与作者
 

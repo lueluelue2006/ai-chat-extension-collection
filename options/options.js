@@ -41,12 +41,12 @@
   const CGPT_PERF_DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     virtualizeOffscreen: true,
-    // Experimental: keep off by default to avoid unexpected behavior changes.
-    virtualizeMarkdownBlocks: false,
+    // Experimental path: enabled by default in local test build.
+    virtualizeMarkdownBlocks: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
-    disableBackdropFilters: false,
-    extremeLite: false,
+    disableBackdropFilters: true,
+    extremeLite: true,
     boostDuringInput: true,
     unfreezeOnFind: true,
     showOverlay: false,
@@ -1291,7 +1291,7 @@
       },
       {
         key: 'virtualizeMarkdownBlocks',
-        label: 'Markdown 分段虚拟化（实验｜默认关）',
+        label: 'Markdown 分段虚拟化（实验｜默认开）',
         title: '针对“单条超长回复”，对 .markdown 的块级节点做 content-visibility，降低 layout/paint。'
       },
       {
@@ -1306,12 +1306,12 @@
       },
       {
         key: 'disableBackdropFilters',
-        label: '禁用毛玻璃（默认关）',
+        label: '禁用毛玻璃（默认开）',
         title: '全站禁用 backdrop-filter（毛玻璃），通常可明显减轻弹层/侧边栏/滚动卡顿，但观感会变化。'
       },
       {
         key: 'extremeLite',
-        label: '极限轻量（默认关）',
+        label: '极限轻量（默认开）',
         title: '更激进：强制禁用 blur/filter/阴影/动画/过渡等，性能更好但会明显变丑，可能影响部分 UI。'
       },
       {

@@ -19,7 +19,6 @@
     virtualizeMarkdownBlocks: false,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
-    disableBackdropFilters: false,
     extremeLite: false,
     boostDuringInput: true,
     unfreezeOnFind: true,
@@ -34,7 +33,6 @@
   const ROOT_BLOCKS_ATTR = 'data-cgptperf-blocks';
   const ROOT_HEAVY_ATTR = 'data-cgptperf-heavy';
   const ROOT_NOANIM_ATTR = 'data-cgptperf-noanim';
-  const ROOT_NOBLUR_ATTR = 'data-cgptperf-noblur';
   const ROOT_EXTREME_ATTR = 'data-cgptperf-extreme';
   const ROOT_FIND_ATTR = 'data-cgptperf-find';
 
@@ -136,8 +134,6 @@
         typeof s.optimizeHeavyBlocks === 'boolean' ? s.optimizeHeavyBlocks : DEFAULT_SETTINGS.optimizeHeavyBlocks,
       disableAnimations:
         typeof s.disableAnimations === 'boolean' ? s.disableAnimations : DEFAULT_SETTINGS.disableAnimations,
-      disableBackdropFilters:
-        typeof s.disableBackdropFilters === 'boolean' ? s.disableBackdropFilters : DEFAULT_SETTINGS.disableBackdropFilters,
       extremeLite: typeof s.extremeLite === 'boolean' ? s.extremeLite : DEFAULT_SETTINGS.extremeLite,
       boostDuringInput: typeof s.boostDuringInput === 'boolean' ? s.boostDuringInput : DEFAULT_SETTINGS.boostDuringInput,
       unfreezeOnFind: typeof s.unfreezeOnFind === 'boolean' ? s.unfreezeOnFind : DEFAULT_SETTINGS.unfreezeOnFind,
@@ -171,7 +167,6 @@
     toggleRootAttr(ROOT_BLOCKS_ATTR, s.enabled && s.virtualizeMarkdownBlocks, '1');
     toggleRootAttr(ROOT_HEAVY_ATTR, s.enabled && s.optimizeHeavyBlocks, '1');
     toggleRootAttr(ROOT_NOANIM_ATTR, s.enabled && s.disableAnimations, '1');
-    toggleRootAttr(ROOT_NOBLUR_ATTR, s.enabled && s.disableBackdropFilters, '1');
     toggleRootAttr(ROOT_EXTREME_ATTR, s.enabled && s.extremeLite, '1');
   }
 
@@ -202,7 +197,6 @@
           ROOT_BLOCKS_ATTR,
           ROOT_HEAVY_ATTR,
           ROOT_NOANIM_ATTR,
-          ROOT_NOBLUR_ATTR,
           ROOT_EXTREME_ATTR,
         ],
       });
@@ -234,7 +228,6 @@
       ROOT_BLOCKS_ATTR,
       ROOT_HEAVY_ATTR,
       ROOT_NOANIM_ATTR,
-      ROOT_NOBLUR_ATTR,
       ROOT_EXTREME_ATTR,
       ROOT_FIND_ATTR,
     ]) {
@@ -851,8 +844,7 @@
     const blocksBtn = mkBtn('virtualizeMarkdownBlocks', '分段虚拟化：关', '对超长单条消息按段落虚拟化（实验）');
     const heavyBtn = mkBtn('optimizeHeavyBlocks', '重内容优化：开', '切换重内容优化（pre/table/公式等）');
     const animBtn = mkBtn('disableAnimations', '动画：开', '切换动画/过渡（关闭可减少卡顿）');
-    const blurBtn = mkBtn('disableBackdropFilters', '毛玻璃：开', '禁用 backdrop-filter（通常能明显减轻滚动/弹层卡顿）');
-    const extremeBtn = mkBtn('extremeLite', '极限轻量：关', '全站强制禁用 blur/filter/阴影/过渡/动画（更快但更丑）');
+    const extremeBtn = mkBtn('extremeLite', '极限轻量：关', '全站强制禁用 filter/阴影/过渡/动画（更快但更丑）');
     const boostBtn = mkBtn('boostDuringInput', '交互加速：开', '输入/编辑时临时收紧预加载，减少点击/发送卡顿');
 
     const marginRow = document.createElement('div');
@@ -883,7 +875,7 @@
     benchBtn.textContent = '测量下一次交互卡顿';
     benchBtn.title = '点我后：回到页面点击“编辑/重试/停止/发送”或在输入框按 Enter，会弹出耗时（ms）';
 
-    panel.append(perfBtn, offBtn, blocksBtn, heavyBtn, animBtn, blurBtn, extremeBtn, boostBtn, marginRow, benchBtn, optsBtn);
+    panel.append(perfBtn, offBtn, blocksBtn, heavyBtn, animBtn, extremeBtn, boostBtn, marginRow, benchBtn, optsBtn);
     wrap.append(toggle, panel);
     (document.documentElement || document.body).appendChild(wrap);
 
@@ -960,7 +952,6 @@
       if (key === 'virtualizeMarkdownBlocks') b.textContent = on ? '分段虚拟化：开' : '分段虚拟化：关';
       if (key === 'optimizeHeavyBlocks') b.textContent = on ? '重内容优化：开' : '重内容优化：关';
       if (key === 'disableAnimations') b.textContent = on ? '动画：关' : '动画：开';
-      if (key === 'disableBackdropFilters') b.textContent = on ? '毛玻璃：关' : '毛玻璃：开';
       if (key === 'extremeLite') b.textContent = on ? '极限轻量：开' : '极限轻量：关';
       if (key === 'boostDuringInput') b.textContent = on ? '交互加速：开' : '交互加速：关';
     }

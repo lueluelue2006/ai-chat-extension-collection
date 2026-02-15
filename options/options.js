@@ -45,7 +45,6 @@
     virtualizeMarkdownBlocks: false,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
-    disableBackdropFilters: false,
     extremeLite: false,
     boostDuringInput: true,
     unfreezeOnFind: true,
@@ -489,8 +488,6 @@
         typeof s.optimizeHeavyBlocks === 'boolean' ? s.optimizeHeavyBlocks : CGPT_PERF_DEFAULT_SETTINGS.optimizeHeavyBlocks,
       disableAnimations:
         typeof s.disableAnimations === 'boolean' ? s.disableAnimations : CGPT_PERF_DEFAULT_SETTINGS.disableAnimations,
-      disableBackdropFilters:
-        typeof s.disableBackdropFilters === 'boolean' ? s.disableBackdropFilters : CGPT_PERF_DEFAULT_SETTINGS.disableBackdropFilters,
       extremeLite: typeof s.extremeLite === 'boolean' ? s.extremeLite : CGPT_PERF_DEFAULT_SETTINGS.extremeLite,
       boostDuringInput:
         typeof s.boostDuringInput === 'boolean' ? s.boostDuringInput : CGPT_PERF_DEFAULT_SETTINGS.boostDuringInput,
@@ -1305,14 +1302,9 @@
         title: '将动画/过渡 duration 置 0，减少合成与重绘开销；外观变化较小。'
       },
       {
-        key: 'disableBackdropFilters',
-        label: '禁用毛玻璃（默认关）',
-        title: '全站禁用 backdrop-filter（毛玻璃），通常可明显减轻弹层/侧边栏/滚动卡顿，但观感会变化。'
-      },
-      {
         key: 'extremeLite',
         label: '极限轻量（默认关）',
-        title: '更激进：强制禁用 blur/filter/阴影/动画/过渡等，性能更好但会明显变丑，可能影响部分 UI。'
+        title: '更激进：强制禁用 filter/阴影/动画/过渡等，性能更好但会明显变丑，可能影响部分 UI。'
       },
       {
         key: 'boostDuringInput',

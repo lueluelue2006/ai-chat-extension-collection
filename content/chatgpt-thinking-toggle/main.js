@@ -568,7 +568,7 @@ button.${HINT_CLASS}::after {
   }
 
   function getEffortItems(menu) {
-    const items = Array.from(menu.querySelectorAll("[role='menuitemradio']"));
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio']")).filter((el) => el instanceof Element);
     /** @type {Element|null} */
     let light = null;
     /** @type {Element|null} */
@@ -578,15 +578,45 @@ button.${HINT_CLASS}::after {
     /** @type {Element|null} */
     let heavy = null;
 
+    // Prefer semantic detection when labels are stable (e.g. light/standard/extended/heavy),
+    // then gracefully fallback to structure/order for i18n UIs.
     for (const item of items) {
-      const t = (item.textContent || '').trim().toLowerCase();
+      const t = normalizeText(item.textContent || item.getAttribute('aria-label') || '');
       if (!light && /\blight\b/.test(t)) light = item;
       if (!standard && /\bstandard\b/.test(t)) standard = item;
       if (!extended && /\bextended\b/.test(t)) extended = item;
       if (!heavy && /\bheavy\b/.test(t)) heavy = item;
     }
 
-    return { light, standard, extended, heavy };
+    /** @type {Element|null} */
+    let low = light;
+    /** @type {Element|null} */
+    let high = heavy;
+    /** @type {Element|null} */
+    let proLow = standard;
+    /** @type {Element|null} */
+    let proHigh = extended;
+
+    if ((!low || !high) && items.length >= 2) {
+      low = items[0];
+      high = items[items.length - 1];
+    }
+
+    if ((!proLow || !proHigh) && items.length >= 4) {
+      proLow = items[1];
+      proHigh = items[items.length - 2];
+    }
+
+    let checkedIndex = items.findIndex((item) => item.getAttribute('aria-checked') === 'true');
+    if (checkedIndex < 0 && items.length) checkedIndex = 0;
+
+    return { items, checkedIndex, light, standard, extended, heavy, low, high, proLow, proHigh };
+  }
+
+  function getMenuItemLabel(item, fallback = '') {
+    if (!(item instanceof Element)) return fallback;
+    const text = String(item.textContent || item.getAttribute('aria-label') || '').trim();
+    return text || fallback;
   }
 
   function getThinkingProModeItems(menu) {
@@ -623,10 +653,11 @@ button.${HINT_CLASS}::after {
   }
 
   function menuHasEffortOptions(menu) {
-    const { light, standard, extended, heavy } = getEffortItems(menu);
-    const hasTwo = !!standard && !!extended;
-    const hasFourExtremes = !!light && !!heavy;
-    return hasTwo || hasFourExtremes;
+    if (!(menu instanceof Element)) return false;
+    if (menuHasThinkingProMode(menu)) return false;
+    const { items, low, high } = getEffortItems(menu);
+    if (items.length < 2 || items.length > 4) return false;
+    return !!(low && high);
   }
 
   function findMenuForPill(pill) {
@@ -1112,39 +1143,57 @@ button.${HINT_CLASS}::after {
           return;
         }
 
-        const { light, standard, extended, heavy } = getEffortItems(menu);
-
-        if (light && heavy) {
-          const heavyChecked = heavy.getAttribute('aria-checked') === 'true';
-          const target = heavyChecked ? light : heavy;
-          clickLikeUser(target);
-          const label = heavyChecked ? 'Light' : 'Heavy';
-          info(`检测到thinking模式，切换到${label} thinking`);
-          try {
-            pill.title = label;
-          } catch (_) {
-            // ignore
-          }
-          schedulePulse(pill, !heavyChecked, label);
+        const effort = getEffortItems(menu);
+        const items = effort.items;
+        if (!items.length) {
+          warn('推理强度菜单里没有可切换项');
           return;
         }
 
-        if (!standard || !extended) {
-          warn('菜单里没看到 Standard/Extended');
+        const checkedIndex = effort.checkedIndex >= 0 ? effort.checkedIndex : 0;
+        const lowIdx = items.indexOf(effort.low);
+        const highIdx = items.indexOf(effort.high);
+        const proLowIdx = items.indexOf(effort.proLow);
+        const proHighIdx = items.indexOf(effort.proHigh);
+
+        let targetIdx = -1;
+        let route = 'generic';
+
+        if (proLowIdx >= 0 && proHighIdx >= 0 && (checkedIndex === proLowIdx || checkedIndex === proHighIdx)) {
+          targetIdx = checkedIndex === proHighIdx ? proLowIdx : proHighIdx;
+          route = 'mid-pair';
+        } else if (lowIdx >= 0 && highIdx >= 0 && (checkedIndex === lowIdx || checkedIndex === highIdx)) {
+          targetIdx = checkedIndex === highIdx ? lowIdx : highIdx;
+          route = 'extreme-pair';
+        } else if (lowIdx >= 0 && highIdx >= 0) {
+          targetIdx = highIdx;
+          route = 'extreme-fallback';
+        } else if (proLowIdx >= 0 && proHighIdx >= 0) {
+          targetIdx = proHighIdx;
+          route = 'mid-fallback';
+        } else if (items.length >= 2) {
+          const first = 0;
+          const last = items.length - 1;
+          targetIdx = checkedIndex === last ? first : last;
+          route = 'edge-fallback';
+        }
+
+        const target = targetIdx >= 0 ? items[targetIdx] : null;
+        if (!(target instanceof Element)) {
+          warn('无法确定推理强度目标项');
           return;
         }
 
-        const extendedChecked = extended.getAttribute('aria-checked') === 'true';
-        const target = extendedChecked ? standard : extended;
         clickLikeUser(target);
-        const label = extendedChecked ? 'Standard' : 'Extended';
-        info(`检测到pro模式，切换到${label} thinking`);
+        const label = getMenuItemLabel(target, `L${targetIdx + 1}`);
+        const isHigh = targetIdx === highIdx || targetIdx === proHighIdx || targetIdx === items.length - 1;
+        info(`推理强度切换成功（${route} -> ${label}）`);
         try {
           pill.title = label;
         } catch (_) {
           // ignore
         }
-        schedulePulse(pill, !extendedChecked, label);
+        schedulePulse(pill, isHigh, label);
       } finally {
         // Always collapse on failures as well (missing items / transient menus / CF mitigation)
         await ensureMenuCollapsed(pill, () => findMenuForPill(pill));

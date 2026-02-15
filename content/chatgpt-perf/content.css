@@ -121,14 +121,19 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [da
   display: none !important;
 }
 
-/* Mid: disable blur only (less aggressive than extremeLite). */
+/* Mid: disable blur only (less aggressive than extremeLite).
+   Important: keep selector narrow. Applying to `body *` can trigger broad style invalidation
+   on very large chats and increase renderer memory pressure. */
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noblur='1'] :where(
-    body,
-    body::before,
-    body::after,
-    body *,
-    body *::before,
-    body *::after
+    [style*='backdrop-filter'],
+    [style*='-webkit-backdrop-filter'],
+    [class*='backdrop-blur'],
+    [class*='backdrop_filter'],
+    [class*='backdrop-filter'],
+    [data-radix-popper-content-wrapper],
+    [data-radix-menu-content],
+    [data-radix-dialog-content],
+    [data-radix-select-content]
   ) {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;

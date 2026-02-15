@@ -254,6 +254,7 @@ Turn 筛选策略（维护重点）：
 - 入口 guard：模块会避免“重复安装”造成热键 double-trigger
 - 热键队列：`enqueueHotkeyAction()` + `drainHotkeyQueue()`（串行执行）
 - 配置桥：`config-bridge.js` 把扩展设置同步到 `document.documentElement.dataset`（MAIN world 可读）
+- 推理强度识别：`⌘O` 优先按菜单结构（`menuitemradio` 顺序 + `aria-checked`）判定切换对，不依赖具体界面语言；英文关键词仅作为可选增强。
 
 ### 6.5 usage monitor（`content/chatgpt-usage-monitor/main.js` + `content/chatgpt-usage-monitor/bridge.js`）
 
@@ -264,6 +265,16 @@ Turn 筛选策略（维护重点）：
 - 共享组配额：`sharedQuotaGroups`（多模型共享配额统计）
 - SPA 导航重建与自愈：订阅 bridge `routeChange`，并有低频自愈逻辑避免 React 重挂导致失效
 - options 同步桥：`bridge.js` 负责 localStorage ↔ `chrome.storage.local` 双向同步（含版本号/修订号）
+
+### 6.6 ChatGPT Perf（`content/chatgpt-perf/content.js` + `content/chatgpt-perf/content.css`）
+
+定位：渲染性能调优层（离屏虚拟化 + 重内容优化 + 可选视觉降级）。
+
+- 核心策略：默认开启离屏虚拟化/重内容优化，默认关闭实验或高侵入项（分段虚拟化、极限轻量）
+- 毛玻璃禁用（`disableBackdropFilters`）已做选择器收敛：
+  - 不再对 `body *` 全量命中
+  - 改为只命中真实毛玻璃承载节点（inline style / backdrop class / Radix 弹层）
+- 维护原则：涉及全局样式开关时，优先“窄选择器 + 可回滚默认值”，避免在长对话中触发大范围样式失效与内存压力。
 
 ---
 

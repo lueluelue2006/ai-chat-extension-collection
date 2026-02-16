@@ -1,7 +1,7 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 1.3.79
+- Version: 1.3.80
 - Generated: 2026-02-16 17:53
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
@@ -117,4 +117,3 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/quicknav-bridge.js`, `content/qwen-thinking-toggle/main.js`
-

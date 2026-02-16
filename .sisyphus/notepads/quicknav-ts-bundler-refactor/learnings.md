@@ -313,3 +313,9 @@
 
 - [2026-02-16][task-qwen-thinking-toggle-antd-open-click]
   - Qwen AntD mode dropdown does not open from `.ant-select` root `.click()`; dispatching pointerdown/up plus mouse down/up/click on `.ant-select-selector` (combobox fallback) opens the popup reliably for Cmd+O mode toggles.
+
+- [2026-02-16][task-milestone-commit-policy-check]
+  - Git worktree status check: clean on `refactor/ts-bundler` (no staged, unstaged, or untracked files).
+  - Version baseline check (pre-bump): `manifest.json` and `docs/scripts-inventory.md` both reported `1.3.79` before this patch bump update.
+  - Milestone update: patch version is now `1.3.80` in both `manifest.json` and `docs/scripts-inventory.md`.
+  - Suggested milestone commit title (for next change set): `chore: plan milestone commits with patch bump policy`.

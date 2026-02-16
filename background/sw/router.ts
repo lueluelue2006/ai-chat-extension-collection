@@ -156,7 +156,7 @@
         }
 
         if (msg.type === 'QUICKNAV_NOTIFY') {
-          if (!requireAllowedSender(sendResponse, sender)) return true;
+          if (!requireAllowedSender(sendResponse, sender, { allowTabSender: true })) return true;
           const title = typeof msg.title === 'string' ? msg.title : '';
           const message = typeof msg.message === 'string' ? msg.message : '';
           if (!title || !message) {

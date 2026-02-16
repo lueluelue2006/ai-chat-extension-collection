@@ -17,7 +17,8 @@ const TS_LOADERS = new Map([
 const CHECK_EXTENSIONS = new Set(['.js', ...TS_LOADERS.keys()]);
 const DEV_SELF_TESTS = Object.freeze([
   'dev/test-usage-monitor-utils.js',
-  'dev/test-usage-monitor-bridge.js'
+  'dev/test-usage-monitor-bridge.js',
+  'dev/test-quicknav-bridge-nonce.js'
 ]);
 
 function readText(relPath) {

@@ -187,9 +187,19 @@
     const scripts = await ns.chrome.scriptingGetRegisteredContentScripts();
     const out: any[] = [];
     const prefix = ns.storage.getQuicknavContentScriptIdPrefix();
+    const legacyIds = new Set<string>();
+
+    try {
+      for (const id of ns.storage.getQuicknavLegacyContentScriptIds() || []) {
+        if (typeof id !== 'string' || !id) continue;
+        legacyIds.add(id);
+      }
+    } catch {}
+
     for (const s of scripts || []) {
       const id = s && typeof s.id === 'string' ? s.id : '';
-      if (id && id.startsWith(prefix)) out.push(s);
+      if (!id) continue;
+      if (id.startsWith(prefix) || legacyIds.has(id)) out.push(s);
     }
     return out;
   }
@@ -292,10 +302,12 @@
       }
     }
 
-    const result = { registeredIds: registerItems.map((d: any) => d.id), unregisteredIds: Array.from(unregisterIds) };
+    const registeredIdSet = new Set<string>(Array.from(registered.keys()));
+    const safeUnregisterIds = Array.from(unregisterIds).filter((id) => registeredIdSet.has(id));
+    const result = { registeredIds: registerItems.map((d: any) => d.id), unregisteredIds: safeUnregisterIds };
 
-    if (unregisterIds.size) {
-      await ns.chrome.scriptingUnregisterContentScripts({ ids: Array.from(unregisterIds) });
+    if (safeUnregisterIds.length) {
+      await ns.chrome.scriptingUnregisterContentScripts({ ids: safeUnregisterIds });
     }
 
     if (!registerItems.length) return result;

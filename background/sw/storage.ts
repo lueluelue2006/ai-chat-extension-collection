@@ -11,6 +11,7 @@
   let DEFAULT_SETTINGS: any = { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
   let MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
   let CONTENT_SCRIPT_DEFS: any[] = [];
+  let LEGACY_CONTENT_SCRIPT_IDS: string[] = [];
 
   let KNOWN_SITE_IDS = new Set<string>();
   let KNOWN_SITE_MODULE_KEYS = new Map<string, Set<string>>();
@@ -121,6 +122,7 @@
     DEFAULT_SETTINGS = { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
     MAIN_GUARD_FILE = 'content/scroll-guard-main.js';
     CONTENT_SCRIPT_DEFS = [];
+    LEGACY_CONTENT_SCRIPT_IDS = [];
 
     try {
       if (injections && typeof injections.buildDefaultSettings === 'function') {
@@ -150,6 +152,22 @@
     } catch {
       SHARED_CONFIG_LOADED = false;
       CONTENT_SCRIPT_DEFS = [];
+    }
+
+    try {
+      const rawLegacyIds = injections?.LEGACY_CONTENT_SCRIPT_IDS;
+      if (!Array.isArray(rawLegacyIds)) {
+        LEGACY_CONTENT_SCRIPT_IDS = [];
+      } else {
+        const deduped = new Set<string>();
+        for (const id of rawLegacyIds) {
+          if (typeof id !== 'string' || !id) continue;
+          deduped.add(id);
+        }
+        LEGACY_CONTENT_SCRIPT_IDS = Array.from(deduped);
+      }
+    } catch {
+      LEGACY_CONTENT_SCRIPT_IDS = [];
     }
 
     rebuildKnownKeys();
@@ -247,6 +265,10 @@
     return QUICKNAV_CONTENT_SCRIPT_ID_PREFIX;
   }
 
+  function getQuicknavLegacyContentScriptIds() {
+    return Array.isArray(LEGACY_CONTENT_SCRIPT_IDS) ? [...LEGACY_CONTENT_SCRIPT_IDS] : [];
+  }
+
   function isSharedConfigLoaded() {
     return SHARED_CONFIG_LOADED;
   }
@@ -264,6 +286,7 @@
     getContentScriptDefs,
     getMainGuardFile,
     getQuicknavContentScriptIdPrefix,
+    getQuicknavLegacyContentScriptIds,
     isSharedConfigLoaded
   });
 })();

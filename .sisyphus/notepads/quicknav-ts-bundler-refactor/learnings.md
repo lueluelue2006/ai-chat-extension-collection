@@ -73,3 +73,95 @@
 - [2026-02-16][task-13-dev-gate-self-tests]
   - `dev/check.js` now runs `dev/test-usage-monitor-utils.js` and `dev/test-usage-monitor-bridge.js` after registry consistency checks.
   - Any self-test failure reports the failing script and exits with a non-zero code.
+
+
+- [2026-02-16][task-6-dynamic-reconciliation-validation]
+  - Exact plan item: `- [ ] Validate plan task 6: Dynamic content script reconciliation removes stale QuickNav registered IDs safely.`
+  - Namespace prefix source: `background/sw/storage.ts` defines `QUICKNAV_CONTENT_SCRIPT_ID_PREFIX = 'quicknav_'` and exposes `getQuicknavContentScriptIdPrefix()`.
+  - Discovery path: `background/sw/registration.ts::getRegisteredQuickNavContentScripts()` calls `ns.chrome.scriptingGetRegisteredContentScripts()` and then keeps every script whose `id` starts with the prefix. Discovery starts from the full registered list (not allowlist-only).
+  - Reconciliation path: `background/sw/registration.ts::applyContentScriptRegistration(settings)` builds `desired` from enabled defs and `registered` from discovered QuickNav-prefixed IDs; stale QuickNav IDs (`registered - desired`) are collected into `unregisterIds`.
+  - Safety scope: unregister uses `ns.chrome.scriptingUnregisterContentScripts({ ids: Array.from(unregisterIds) })`; because `unregisterIds` is derived from QuickNav-prefixed discovery, non-QuickNav registered scripts are not targeted.
+  - Verification commands run:
+    - `rg -n "getRegisteredQuickNavContentScripts|applyContentScriptRegistration|getQuicknavContentScriptIdPrefix|scriptingUnregisterContentScripts" background/sw/registration.ts background/sw/storage.ts background/sw/chrome.ts`
+    - `node dev/check.js` (expected: `Registry consistency: OK`, `Dev self-tests: OK`)
+    - Inline mocked runtime check via `node` + `esbuild` evaluating `background/sw/registration.ts`: with registered IDs `quicknav_keep`, `quicknav_stale`, `unrelated_id` and desired IDs `quicknav_keep`, `quicknav_new`, the observed result unregistered only `quicknav_stale`, registered `quicknav_new`, and left `unrelated_id` untouched.
+
+
+- [2026-02-16][plan-4-14-current-state-audit]
+  - Scope: audited plan tasks 4-14 against current repo state (static code/doc evidence + command checks).
+  - Command evidence actually executed:
+    - `node dev/check.js` => `Script syntax check: OK`, `docs/scripts-inventory.md version check: OK (v1.3.75)`, `Registry consistency: OK`, `Dev self-tests: OK (2 scripts)`.
+    - `npm run -s typecheck && node -e "console.log('typecheck OK')"` => `typecheck OK`.
+  - Task 4 (`shared/registry` + `shared/injections` TS migration):
+    - `"UI still lists modules/sites correctly"` => DONE (static evidence).
+      - Evidence: `shared/registry.ts` defines typed canonical `SITES`/`MODULES`; `options/options.js` reads `globalThis.QUICKNAV_REGISTRY` (`REGISTRY`/`SITES`/`MODULES`) for rendering.
+    - `"Injection defs build and register without errors"` => DONE (static + gate evidence).
+      - Evidence: `shared/injections.ts` exports `buildContentScriptDefs`; `background/sw/storage.ts` `initConfig()` consumes shared builders; `background/sw/registration.ts` `applyContentScriptRegistration()` does deterministic register/unregister diff.
+  - Task 5 (SW modularization + error-aware wrappers + sender gating):
+    - `"Settings read/write failures propagate {ok:false, error} to callers"` => DONE.
+      - Evidence: `background/sw/chrome.ts` `callbackToPromise()` rejects on `chrome.runtime.lastError`; `background/sw/router.ts` central `respondError()` and per-message `.catch(...sendResponse({ok:false,error}))` for settings mutations.
+    - `"QUICKNAV_NOTIFY is sender-gated like other mutating messages"` => DONE.
+      - Evidence: `background/sw/router.ts` `QUICKNAV_NOTIFY` path calls `requireAllowedSender(..., { allowTabSender: true })`; `background/sw/chrome.ts` `senderGate()` enforces sender policy.
+  - Task 6 (dynamic content script reconciliation):
+    - `"After rebuild + reload, only current QuickNav scripts remain registered"` => PARTIAL.
+      - Evidence (implemented part): `background/sw/registration.ts` reads all registered scripts via `scriptingGetRegisteredContentScripts()` and removes stale `quicknav_` IDs not in desired set.
+      - Evidence (missing part): `shared/injections.ts` exposes `LEGACY_CONTENT_SCRIPT_IDS`, but current codebase has no consumer of this list (no migration-specific cleanup path wired).
+  - Task 7 (cross-world bridge hardening):
+    - `"Spoofed window.postMessage({__quicknav:1,...}) without nonce does nothing"` => DONE for runtime guard, PARTIAL for explicit negative-test artifact.
+      - Evidence (runtime guard): `content/quicknav-bridge.js`, `content/quicknav-bridge-main.js`, `content/scroll-guard-main.js`, `content/chatgpt-message-tree/main.js`, `content/chatgpt-quicknav.js` all enforce `__quicknav + channel + v + nonce` plus type allowlists.
+      - Evidence (gap): no `dev/` automated negative test for spoofed bridge messages found.
+  - Task 8 (message tree token isolation):
+    - `"window.__aichat_chatgpt_message_tree_state__ does not contain token values"` => DONE.
+      - Evidence: `content/chatgpt-message-tree/main.js` keeps token in closure `authCache`; window state object fields do not include token/account/device cache.
+    - `"Tree summary/navigate still works"` => DONE (code-path + evidence artifact).
+      - Evidence: `content/chatgpt-message-tree/main.js` bridge handlers for summary/navigate (`BRIDGE_REQ_SUMMARY`, `BRIDGE_NAVIGATE_TO`); screenshots under `.sisyphus/evidence/qa-chatgpt-message-tree-open.png` and `.sisyphus/evidence/qa-chatgpt-message-tree-after-reload.png`.
+  - Task 9 (scroll guard consolidation):
+    - `"Only one layer patches scroll APIs"` => DONE.
+      - Evidence: `content/scroll-guard-main.js` owns prototype patching; `content/chatgpt-quicknav.js` comment says no global prototype patch and `installScrollGuards()` is now no-op.
+    - `"Scroll-lock works on ChatGPT without regressions"` => PARTIAL (implementation present; no fresh full regression run logged in this audit).
+  - Task 10 (usage monitor data + forced-silent behavior):
+    - `"No unintended clearing of shared quota request arrays"` => DONE.
+      - Evidence: `content/chatgpt-usage-monitor/main.js` preserves `existingGroupRequestsById` during `applyPlanConfig()` rebuild; `Storage.get()` keeps normalized `group.requests` instead of wiping.
+    - `"In forced silent mode, UI bootstrap does not run"` => DONE.
+      - Evidence: `main()` only installs scrambler/styles when `!startsSilent`; silent early-return path exits before UI scheduling/bootstrapping.
+  - Task 11 (options routing + GPT53 semantics):
+    - `"No registry module falls into “unknown module” panel"` => DONE for current in-scope modules.
+      - Evidence: `options/options.js` has explicit branches for `openai_new_model_banner` and `chatgpt_sidebar_header_fix`; fallback remains only as generic safeguard for future unknown IDs.
+    - `"GPT53 monitor stop semantics are consistent and documented"` => DONE.
+      - Evidence: `options/options.html` copy explicitly says empty saved URL list stops detection/reminders; `background/sw/monitors.ts` stores explicit empty list (`[]`) and probe loop then has no URLs to alert on.
+  - Task 12 (docs + inventory + drift gate):
+    - `"Docs inventory version equals manifest version"` => DONE.
+      - Evidence: `manifest.json` version `1.3.75` equals `docs/scripts-inventory.md` version `1.3.75`.
+    - `"Drift check fails on mismatch"` => DONE.
+      - Evidence: `dev/check.js` hard-fails when inventory version differs from manifest version and instructs regeneration via `node dev/gen-scripts-inventory.js`.
+  - Task 13 (dev tooling gate improvements):
+    - `"node dev/check.js fails when docs/version drift exists"` => DONE (implemented and observable in checker logic).
+      - Evidence: `dev/check.js` version mismatch branch sets non-zero exit and prints FAIL diagnostics.
+    - `"node dev/check.js runs the dev self-tests and fails on error"` => DONE.
+      - Evidence: `DEV_SELF_TESTS` list + `runDevSelfTests()` in `dev/check.js`; command run shows `Dev self-tests: OK (2 scripts)`.
+  - Task 14 (full manual QA sweep + memory protocol):
+    - `"No fatal console errors in SW and in ChatGPT page"` => MISSING evidence in current audit.
+    - `"Feature contract checks all pass"` => NOT DONE (`.sisyphus/qa/chatgpt-feature-contract.md` checkboxes remain unchecked).
+    - `"Evidence screenshots/notes captured under .sisyphus/evidence/"` => DONE (multiple screenshots already present).
+  - Task 4-14 summary:
+    - DONE: 4, 5, 8, 10, 11, 12, 13.
+    - PARTIAL: 6, 7, 9.
+    - NOT DONE: 14.
+  - Quick reproduce commands (for future re-check):
+    - `node dev/check.js`
+    - `npm run -s typecheck`
+    - `rg -n "LEGACY_CONTENT_SCRIPT_IDS|getRegisteredQuickNavContentScripts|applyContentScriptRegistration" shared/injections.ts background/sw/registration.ts`
+    - `rg -n "readBridgeMessage|msg\.nonce|ALLOWED_" content/quicknav-bridge.js content/quicknav-bridge-main.js content/scroll-guard-main.js content/chatgpt-message-tree/main.js content/chatgpt-quicknav.js`
+    - `rg -n "sharedQuotaGroups|existingGroupRequestsById|startsSilent|isSilent\(\)" content/chatgpt-usage-monitor/main.js`
+    - `rg -n "openai_new_model_banner|chatgpt_sidebar_header_fix|unknown module|empty.*URL|停用检测" options/options.js options/options.html background/sw/monitors.ts`
+
+- [2026-02-16][task-6-legacy-script-cleanup-scope]
+  - `background/sw/storage.ts` now snapshots `QUICKNAV_INJECTIONS.LEGACY_CONTENT_SCRIPT_IDS` during `initConfig()` and exposes `getQuicknavLegacyContentScriptIds()`.
+  - `background/sw/registration.ts::getRegisteredQuickNavContentScripts()` now treats IDs as QuickNav-managed when `(id startsWith 'quicknav_') OR (id in legacy list)`; prefix discovery behavior is preserved.
+  - Cleanup safety tightened: `applyContentScriptRegistration()` computes `safeUnregisterIds = unregisterIds ∩ currentlyRegisteredManagedIds` before calling `scriptingUnregisterContentScripts`, preventing unregister calls for non-registered IDs.
+  - Verify by running `node dev/check.js`, then in SW console run a snippet that seeds one stale legacy ID + one unrelated ID and confirms only the stale legacy ID is removed.
+
+- [2026-02-16][task-7-bridge-nonce-guard-test]
+  - Added `dev/test-quicknav-bridge-nonce.js` to lock bridge behavior: spoofed `window.postMessage` payloads with marker/channel/version but missing or wrong nonce must not emit `routeChange`.
+  - The same test asserts that a valid envelope (`__quicknav + channel + v + nonce`) emits exactly one `routeChange` with the expected `href`.
+  - `dev/check.js` now includes this self-test in `DEV_SELF_TESTS` so nonce-regression breaks the gate.

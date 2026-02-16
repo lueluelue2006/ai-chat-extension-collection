@@ -19,6 +19,15 @@ function readText(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 }
 
+function readScriptsInventoryVersion() {
+  const doc = readText('docs/scripts-inventory.md');
+  const m = doc.match(/^- Version:\s*(\S+)\s*$/m);
+  if (!m) {
+    throw new Error('docs/scripts-inventory.md is missing "- Version: <version>" (run: node dev/gen-scripts-inventory.js)');
+  }
+  return String(m[1] || '').trim();
+}
+
 function listSourceFiles(dirRel) {
   const out = [];
   const stack = [path.join(ROOT, dirRel)];
@@ -294,6 +303,32 @@ function main() {
     return;
   }
   console.log('manifest.json parse: OK');
+
+  const manifestVersion = String(manifest?.version || '').trim();
+  if (!manifestVersion) {
+    console.error('manifest.json version check: FAIL (manifest.json version is missing)');
+    process.exitCode = 1;
+    return;
+  }
+
+  let inventoryVersion;
+  try {
+    inventoryVersion = readScriptsInventoryVersion();
+  } catch (e) {
+    console.error(`docs/scripts-inventory.md version check: FAIL (${e instanceof Error ? e.message : String(e)})`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (inventoryVersion !== manifestVersion) {
+    console.error('docs/scripts-inventory.md version check: FAIL');
+    console.error(`- manifest.json version: ${manifestVersion}`);
+    console.error(`- docs/scripts-inventory.md version: ${inventoryVersion}`);
+    console.error('- Run: node dev/gen-scripts-inventory.js');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`docs/scripts-inventory.md version check: OK (v${inventoryVersion})`);
 
   let reg;
   try {

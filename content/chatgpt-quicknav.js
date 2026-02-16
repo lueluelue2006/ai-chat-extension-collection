@@ -4513,50 +4513,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function installScrollGuards() {
     if (window.__cgptScrollGuardsInstalled) return;
     window.__cgptScrollGuardsInstalled = true;
-    if (!ORIGINAL_SCROLL_INTO_VIEW) ORIGINAL_SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
-    if (!ORIGINAL_SCROLL_TO) ORIGINAL_SCROLL_TO = window.scrollTo;
-    if (!ORIGINAL_SCROLL_BY) ORIGINAL_SCROLL_BY = window.scrollBy;
-    if (!ORIGINAL_ELEM_SCROLL_TO) ORIGINAL_ELEM_SCROLL_TO = Element.prototype.scrollTo;
-    if (!ORIGINAL_ELEM_SCROLL_BY) ORIGINAL_ELEM_SCROLL_BY = Element.prototype.scrollBy;
-
-    Element.prototype.scrollIntoView = function(options) {
-      if (shouldBlockScrollFor(this)) return;
-      return ORIGINAL_SCROLL_INTO_VIEW.call(this, options);
-    };
-
-    window.scrollTo = function(...args) {
-      const targetTop = getScrollTopFromArgs(args, getScrollPos(getChatScrollContainer()));
-      if (shouldBlockWindowScroll(targetTop)) return;
-      return ORIGINAL_SCROLL_TO.apply(window, args);
-    };
-
-    window.scrollBy = function(...args) {
-      if (scrollLockEnabled && !isNavAllowScroll()) {
-        // 只关心向下滚
-        const dy = getScrollDeltaFromArgs(args);
-        if (dy > SCROLL_LOCK_DRIFT) return;
-      }
-      return ORIGINAL_SCROLL_BY.apply(window, args);
-    };
-
-    if (ORIGINAL_ELEM_SCROLL_TO) {
-      Element.prototype.scrollTo = function(...args) {
-        const current = getScrollPos(this);
-        const targetTop = getScrollTopFromArgs(args, current);
-        if (shouldBlockElementScroll(this, targetTop)) return;
-        return ORIGINAL_ELEM_SCROLL_TO.apply(this, args);
-      };
-    }
-
-    if (ORIGINAL_ELEM_SCROLL_BY) {
-      Element.prototype.scrollBy = function(...args) {
-        if (scrollLockEnabled && !isNavAllowScroll()) {
-          const dy = getScrollDeltaFromArgs(args);
-          if (dy > SCROLL_LOCK_DRIFT && shouldBlockElementScroll(this, getScrollPos(this) + dy)) return;
-        }
-        return ORIGINAL_ELEM_SCROLL_BY.apply(this, args);
-      };
-    }
   }
 
   function updateLockBtnState(nav) {

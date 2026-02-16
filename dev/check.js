@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -14,6 +15,10 @@ const TS_LOADERS = new Map([
   ['.cts', 'ts']
 ]);
 const CHECK_EXTENSIONS = new Set(['.js', ...TS_LOADERS.keys()]);
+const DEV_SELF_TESTS = Object.freeze([
+  'dev/test-usage-monitor-utils.js',
+  'dev/test-usage-monitor-bridge.js'
+]);
 
 function readText(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
@@ -284,6 +289,38 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
   return { errors, warnings };
 }
 
+function runDevSelfTests() {
+  console.log(`Dev self-tests: START (${DEV_SELF_TESTS.length} scripts)`);
+  for (const scriptRel of DEV_SELF_TESTS) {
+    const absPath = path.join(ROOT, scriptRel);
+    const run = spawnSync(process.execPath, [absPath], { stdio: 'inherit' });
+    if (run.error) {
+      return {
+        ok: false,
+        script: scriptRel,
+        exitCode: 1,
+        error: run.error
+      };
+    }
+    if (typeof run.status === 'number' && run.status !== 0) {
+      return {
+        ok: false,
+        script: scriptRel,
+        exitCode: run.status
+      };
+    }
+    if (run.signal) {
+      return {
+        ok: false,
+        script: scriptRel,
+        exitCode: 1,
+        signal: run.signal
+      };
+    }
+  }
+  return { ok: true };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -359,6 +396,20 @@ function main() {
     return;
   }
   console.log('Registry consistency: OK');
+
+  const selfTests = runDevSelfTests();
+  if (!selfTests.ok) {
+    console.error(`Dev self-tests: FAIL (${selfTests.script})`);
+    if (selfTests.error) {
+      console.error(`- ${selfTests.error instanceof Error ? selfTests.error.message : String(selfTests.error)}`);
+    }
+    if (selfTests.signal) {
+      console.error(`- terminated by signal: ${selfTests.signal}`);
+    }
+    process.exitCode = selfTests.exitCode || 1;
+    return;
+  }
+  console.log(`Dev self-tests: OK (${DEV_SELF_TESTS.length} scripts)`);
 }
 
 main();

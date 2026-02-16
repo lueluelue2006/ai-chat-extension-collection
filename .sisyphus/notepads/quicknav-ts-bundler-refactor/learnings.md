@@ -69,3 +69,7 @@
 - [2026-02-16][task-12-docs-inventory-drift-gate]
   - `dev/check.js` now compares `manifest.json` version with the `- Version:` line in `docs/scripts-inventory.md` and fails fast on mismatch.
   - Drift fix path is explicit in output: run `node dev/gen-scripts-inventory.js`; patch bumps must regenerate inventory in the same change.
+
+- [2026-02-16][task-13-dev-gate-self-tests]
+  - `dev/check.js` now runs `dev/test-usage-monitor-utils.js` and `dev/test-usage-monitor-bridge.js` after registry consistency checks.
+  - Any self-test failure reports the failing script and exits with a non-zero code.

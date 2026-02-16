@@ -32,7 +32,13 @@
         'chatgpt_sidebar_header_fix'
       ]
     },
-    { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', matchPatterns: ['https://chat.qwen.ai/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] }
+    {
+      id: 'qwen',
+      name: 'Qwen',
+      sub: 'chat.qwen.ai',
+      matchPatterns: ['https://chat.qwen.ai/*'],
+      modules: ['quicknav', 'chatgpt_cmdenter_send', 'qwen_thinking_toggle']
+    }
   ];
 
   const MODULES = {
@@ -88,6 +94,15 @@
       sub: 'Enter/Shift+Enter 换行（强制）',
       defaultEnabled: true,
       hotkeys: ['⌘Enter', 'Ctrl+Enter'],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    qwen_thinking_toggle: {
+      id: 'qwen_thinking_toggle',
+      name: 'Qwen 模型/推理 快捷切换',
+      sub: '⌘O Thinking/Fast / ⌘J 模型切换',
+      defaultEnabled: true,
+      hotkeys: ['⌘O', '⌘J'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

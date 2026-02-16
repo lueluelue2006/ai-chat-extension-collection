@@ -3103,6 +3103,7 @@
     if (moduleId === 'chatgpt_perf') return void renderChatGPTPerfModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
     if (moduleId === 'chatgpt_cmdenter_send') return renderChatGPTCmdEnterSendModuleSettings(siteId);
+    if (moduleId === 'qwen_thinking_toggle') return renderBasicToggleModuleSettings(siteId, moduleId);
     if (moduleId === 'chatgpt_readaloud_speed_controller') return void renderChatGPTReadaloudSpeedControllerModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_usage_monitor') return void renderChatGPTUsageMonitorModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_reply_timer') return renderChatGPTReplyTimerModuleSettings(siteId);

@@ -423,13 +423,95 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
+  function getTurnsScanRoot(root = document) {
+    if (root !== document) return root;
+    try {
+      const qwenTurn = document.querySelector('.qwen-chat-message');
+      if (qwenTurn) {
+        const listRoot = qwenTurn.closest('[data-testid="conversation-turns"], main, [role="main"]') || qwenTurn.parentElement;
+        if (listRoot && listRoot.querySelector('.qwen-chat-message')) return listRoot;
+      }
+      const stable = document.querySelector('[data-testid="conversation-turns"]');
+      if (
+        stable &&
+        stable.querySelector?.(
+          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id], [data-message-author-role]'
+        )
+      ) {
+        return stable;
+      }
+    } catch {}
+    return root;
+  }
+
+  function getTurnSelectorQuality(els) {
+    if (!els || !els.length) {
+      return { suspicious: true, ratio: 0, sampled: 0, turnLike: 0 };
+    }
+    const SAMPLE_LIMIT = 24;
+    const sampled = Math.min(els.length, SAMPLE_LIMIT);
+    let turnLike = 0;
+    for (let i = 0; i < sampled; i++) {
+      const el = els[i];
+      if (!el || el.nodeType !== 1) continue;
+      const testId = el.getAttribute('data-testid') || '';
+      if (
+        (el.classList && (
+          el.classList.contains('qwen-chat-message') ||
+          el.classList.contains('qwen-chat-message-user') ||
+          el.classList.contains('qwen-chat-message-assistant')
+        )) ||
+        !!el.getAttribute('data-message-id') ||
+        !!el.getAttribute('data-message-author-role') ||
+        testId.startsWith('conversation-turn-') ||
+        testId.includes('conversation-turn') ||
+        testId.includes('message-') ||
+        el.querySelector('[data-message-author-role], [data-message-id], .text-message[data-author], .user-message-content, .response-message-content')
+      ) {
+        turnLike++;
+      }
+    }
+    const ratio = sampled ? (turnLike / sampled) : 0;
+    return {
+      suspicious: turnLike === 0 || (sampled >= 4 && ratio < 0.45),
+      ratio,
+      sampled,
+      turnLike
+    };
+  }
+
   function qsTurns(root = document) {
+    root = getTurnsScanRoot(root);
+
+    try {
+      const qwenTurns = root.querySelectorAll('.qwen-chat-message');
+      if (qwenTurns.length) {
+        TURN_SELECTOR = '.qwen-chat-message';
+        return Array.from(qwenTurns);
+      }
+    } catch {}
+
     if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
-      // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
+      let hit = null;
+      try { hit = root.querySelector(TURN_SELECTOR); } catch {}
+      if (hit) {
+        const els = root.querySelectorAll(TURN_SELECTOR);
+        const quality = getTurnSelectorQuality(els);
+        if (!quality.suspicious) return Array.from(els);
+        if (DEBUG || window.DEBUG_TEMP) {
+          console.log(`ChatGPT Navigation: 缓存选择器可疑，已重选 ${TURN_SELECTOR} (ratio=${quality.ratio.toFixed(2)}, sample=${quality.sampled})`);
+        }
+      }
       TURN_SELECTOR = null;
     }
+
+    try {
+      const hasAnyTurn = !!root.querySelector(
+        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"], div[data-message-id], [data-message-author-role]'
+      );
+      if (!hasAnyTurn) return [];
+    } catch {}
+
     const selectors = [
       // Qwen
       '.qwen-chat-message',
@@ -463,12 +545,21 @@
     }
 
     for (const selector of selectors) {
+      let hit = null;
+      try { hit = root.querySelector(selector); } catch {}
+      if (!hit) continue;
       const els = root.querySelectorAll(selector);
-      if (els.length) {
-        TURN_SELECTOR = selector;
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
+      if (!els.length) continue;
+      const quality = getTurnSelectorQuality(els);
+      if (quality.suspicious) {
+        if (DEBUG || window.DEBUG_TEMP) {
+          console.log(`ChatGPT Navigation: 跳过可疑选择器 ${selector} (ratio=${quality.ratio.toFixed(2)}, sample=${quality.sampled}, matched=${els.length})`);
+        }
+        continue;
       }
+      TURN_SELECTOR = selector;
+      if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
+      return Array.from(els);
     }
 
     if (DEBUG || window.DEBUG_TEMP) {

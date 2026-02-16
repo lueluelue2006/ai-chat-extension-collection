@@ -300,3 +300,16 @@
   - Prepared docs/meta-only commit by staging plan/QA/notepad markdown files for the ts-bundler refactor stream.
   - Added `.gitignore` ignores for local/generated artifacts: `.sisyphus/evidence/`, `.sisyphus/tmp/`, `.sisyphus/boulder.json`, and `bun.lock`.
   - Explicitly kept local artifact outputs out of commit scope (evidence screenshots/notes, tmp JSON, and machine-local boulder state).
+
+- [2026-02-16][task-qwen-quicknav-turn-selector-hardening]
+  - `content/qwen-quicknav.js::qsTurns()` now hard-prefers `.qwen-chat-message` when present and rewrites `TURN_SELECTOR` to that selector, so early broad cache picks cannot stick.
+  - Added selector-quality gating via `getTurnSelectorQuality()`: cached/probed selectors with low turn-like signal are rejected and trigger automatic re-selection.
+  - Added an early-boot marker probe (`conversation-turn` / `data-message-id` / `data-message-author-role`) to avoid caching broad fallbacks while Qwen is still hydrating.
+
+- [2026-02-16][task-qwen-thinking-toggle-auto-fast-fallback]
+  - Cmd+O mode matching now treats `Auto|自动` as the non-thinking counterpart for `Thinking|思考|推理`, while still preferring real `Fast|快速|极速` when that option exists.
+  - Mode-option lookup now scopes to the popup/listbox opened by the active mode select (`aria-controls/aria-owns` first, then newly opened popup fallback) and only uses a safe 2-3 option "other" fallback when direct label matching fails.
+  - Hotkey async execution is wrapped in `catch` + toast so failures surface to the user without `Uncaught (in promise)`.
+
+- [2026-02-16][task-qwen-thinking-toggle-antd-open-click]
+  - Qwen AntD mode dropdown does not open from `.ant-select` root `.click()`; dispatching pointerdown/up plus mouse down/up/click on `.ant-select-selector` (combobox fallback) opens the popup reliably for Cmd+O mode toggles.

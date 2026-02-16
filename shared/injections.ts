@@ -266,6 +266,18 @@
       });
     }
 
+    const qwen = uniq(siteMatchPatterns(registry, 'qwen'));
+    if (qwen.length) {
+      defs.push({
+        id: 'quicknav_qwen_thinking_toggle',
+        siteId: 'qwen',
+        moduleId: 'qwen_thinking_toggle',
+        matches: qwen,
+        js: [ISOLATED_BRIDGE_FILE, 'content/qwen-thinking-toggle/main.js'],
+        runAt: 'document_start'
+      });
+    }
+
     // ChatGPT readaloud
     defs.push({
       id: 'quicknav_chatgpt_readaloud_speed_controller',

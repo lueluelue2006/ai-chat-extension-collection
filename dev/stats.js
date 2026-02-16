@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -15,23 +16,59 @@ function readJson(relPath) {
   return JSON.parse(fs.readFileSync(path.join(ROOT, relPath), 'utf8'));
 }
 
+function transpileTypeScript(source, filename) {
+  return transformSync(source, {
+    loader: 'ts',
+    target: 'chrome96',
+    format: 'esm',
+    sourcemap: false,
+    minify: false,
+    legalComments: 'none',
+    sourcefile: filename
+  }).code;
+}
+
+function readSharedConfigScript(tsPath, jsFallbackPath) {
+  const tsAbs = path.join(ROOT, tsPath);
+  if (fs.existsSync(tsAbs)) {
+    return {
+      code: transpileTypeScript(readText(tsPath), tsPath),
+      filename: tsPath
+    };
+  }
+
+  const jsAbs = path.join(ROOT, jsFallbackPath);
+  if (fs.existsSync(jsAbs)) {
+    return {
+      code: readText(jsFallbackPath),
+      filename: jsFallbackPath
+    };
+  }
+
+  throw new Error(`Missing shared config source: ${tsPath} (fallback: ${jsFallbackPath})`);
+}
+
 function loadRegistry() {
-  const code = readText('shared/registry.js');
+  const script = readSharedConfigScript('shared/registry.ts', 'shared/registry.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/registry.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const reg = sandbox.globalThis.QUICKNAV_REGISTRY;
-  if (!reg || typeof reg !== 'object') throw new Error('QUICKNAV_REGISTRY not found after evaluating shared/registry.js');
+  if (!reg || typeof reg !== 'object') {
+    throw new Error(`QUICKNAV_REGISTRY not found after evaluating ${script.filename}`);
+  }
   return reg;
 }
 
 function loadInjections() {
-  const code = readText('shared/injections.js');
+  const script = readSharedConfigScript('shared/injections.ts', 'shared/injections.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
-  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  if (!inj || typeof inj !== 'object') {
+    throw new Error(`QUICKNAV_INJECTIONS not found after evaluating ${script.filename}`);
+  }
   if (typeof inj.buildContentScriptDefs !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildContentScriptDefs is missing');
   return inj;
 }

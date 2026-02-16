@@ -4,14 +4,22 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const TS_LOADERS = new Map([
+  ['.ts', 'ts'],
+  ['.tsx', 'tsx'],
+  ['.mts', 'ts'],
+  ['.cts', 'ts']
+]);
+const CHECK_EXTENSIONS = new Set(['.js', ...TS_LOADERS.keys()]);
 
 function readText(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 }
 
-function listJsFiles(dirRel) {
+function listSourceFiles(dirRel) {
   const out = [];
   const stack = [path.join(ROOT, dirRel)];
   while (stack.length) {
@@ -30,7 +38,9 @@ function listJsFiles(dirRel) {
         stack.push(p);
         continue;
       }
-      if (ent.isFile() && ent.name.endsWith('.js')) out.push(p);
+      if (!ent.isFile()) continue;
+      const ext = path.extname(ent.name).toLowerCase();
+      if (CHECK_EXTENSIONS.has(ext)) out.push(p);
     }
   }
   out.sort();
@@ -41,16 +51,57 @@ function rel(abs) {
   return path.relative(ROOT, abs).replace(/\\/g, '/');
 }
 
-function checkJsSyntax() {
+function transpileScriptForVm(source, filename, loader) {
+  return transformSync(source, {
+    loader,
+    target: 'chrome96',
+    format: 'esm',
+    sourcemap: false,
+    minify: false,
+    legalComments: 'none',
+    sourcefile: filename
+  }).code;
+}
+
+function readScriptForVm(absPath) {
+  const filename = rel(absPath);
+  const source = fs.readFileSync(absPath, 'utf8');
+  const ext = path.extname(absPath).toLowerCase();
+  const loader = TS_LOADERS.get(ext);
+  if (!loader) return { code: source, filename };
+  return { code: transpileScriptForVm(source, filename, loader), filename };
+}
+
+function readSharedConfigScript(tsPath, jsFallbackPath) {
+  const tsAbs = path.join(ROOT, tsPath);
+  if (fs.existsSync(tsAbs)) {
+    const tsSource = readText(tsPath);
+    return {
+      code: transpileScriptForVm(tsSource, tsPath, 'ts'),
+      filename: tsPath
+    };
+  }
+
+  const jsAbs = path.join(ROOT, jsFallbackPath);
+  if (fs.existsSync(jsAbs)) {
+    return {
+      code: readText(jsFallbackPath),
+      filename: jsFallbackPath
+    };
+  }
+
+  throw new Error(`Missing shared config source: ${tsPath} (fallback: ${jsFallbackPath})`);
+}
+
+function checkScriptSyntax() {
   const roots = ['background', 'content', 'options', 'popup', 'shared'];
-  const files = roots.flatMap((d) => listJsFiles(d));
+  const files = roots.flatMap((d) => listSourceFiles(d));
   const failures = [];
   for (const abs of files) {
-    const src = fs.readFileSync(abs, 'utf8');
     try {
       // vm.Script parses in "script" mode and throws on syntax errors.
-      // This catches typos without needing a full bundler/linter.
-      new vm.Script(src, { filename: rel(abs) });
+      const script = readScriptForVm(abs);
+      new vm.Script(script.code, { filename: script.filename });
     } catch (e) {
       failures.push({ file: rel(abs), error: e instanceof Error ? e.message : String(e) });
     }
@@ -59,22 +110,26 @@ function checkJsSyntax() {
 }
 
 function loadRegistry() {
-  const code = readText('shared/registry.js');
+  const script = readSharedConfigScript('shared/registry.ts', 'shared/registry.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/registry.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const reg = sandbox.globalThis.QUICKNAV_REGISTRY;
-  if (!reg || typeof reg !== 'object') throw new Error('QUICKNAV_REGISTRY not found after evaluating shared/registry.js');
+  if (!reg || typeof reg !== 'object') {
+    throw new Error(`QUICKNAV_REGISTRY not found after evaluating ${script.filename}`);
+  }
   return reg;
 }
 
 function loadInjections() {
-  const code = readText('shared/injections.js');
+  const script = readSharedConfigScript('shared/injections.ts', 'shared/injections.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
-  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  if (!inj || typeof inj !== 'object') {
+    throw new Error(`QUICKNAV_INJECTIONS not found after evaluating ${script.filename}`);
+  }
   if (typeof inj.buildDefaultSettings !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildDefaultSettings is missing');
   if (typeof inj.buildContentScriptDefs !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildContentScriptDefs is missing');
   return inj;
@@ -221,14 +276,14 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
 }
 
 function main() {
-  const syntax = checkJsSyntax();
+  const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
-    console.error('JS syntax check: FAIL');
+    console.error('Script syntax check: FAIL');
     for (const f of syntax.failures) console.error(`- ${f.file}: ${f.error}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`JS syntax check: OK (${syntax.files.length} files)`);
+  console.log(`Script syntax check: OK (${syntax.files.length} files)`);
 
   let manifest;
   try {

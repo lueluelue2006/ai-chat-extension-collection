@@ -8,6 +8,26 @@
   // No chrome APIs here.
 
   const INJECTIONS_VERSION = 1;
+  type RegistryLike = { sites?: unknown; modules?: unknown } | null | undefined;
+  type RegistryEntry = Record<string, unknown>;
+  type DefaultSettings = {
+    enabled: boolean;
+    sites: Record<string, boolean>;
+    scrollLockDefaults: Record<string, boolean>;
+    siteModules: Record<string, Record<string, boolean>>;
+  };
+  type ContentScriptDef = {
+    id: string;
+    siteId: string;
+    moduleId: string;
+    matches: string[];
+    js: string[];
+    css?: string[];
+    runAt: string;
+    world?: string;
+    allFrames?: boolean;
+  };
+
   const ISOLATED_BRIDGE_FILE = 'content/quicknav-bridge.js';
   const MAIN_BRIDGE_FILE = 'content/quicknav-bridge-main.js';
   const CHATGPT_CORE_FILE = 'content/chatgpt-core.js';
@@ -19,21 +39,21 @@
 
   // Extra boolean flags stored under `settings.siteModules[siteId]` that are NOT "modules"
   // (i.e. no separate content script injection), but need defaults and should be patchable.
-  const EXTRA_SITE_MODULE_FLAGS = Object.freeze({
+  const EXTRA_SITE_MODULE_FLAGS: Readonly<Record<string, Readonly<Record<string, boolean>>>> = Object.freeze({
     chatgpt: Object.freeze({
       chatgpt_thinking_toggle_hotkey_effort: true,
       chatgpt_thinking_toggle_hotkey_model: true
     })
   });
 
-  function normalizeStringArray(input) {
+  function normalizeStringArray(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
     return input.map((x) => String(x || '').trim()).filter(Boolean);
   }
 
-  function uniq(arr) {
-    const out = [];
-    const seen = new Set();
+  function uniq(arr: unknown[] | null | undefined): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
     for (const v of arr || []) {
       const s = String(v || '');
       if (!s || seen.has(s)) continue;
@@ -43,36 +63,36 @@
     return out;
   }
 
-  function getRegistrySites(registry) {
+  function getRegistrySites(registry: RegistryLike): RegistryEntry[] {
     const sites = registry && typeof registry === 'object' ? registry.sites : null;
-    return Array.isArray(sites) ? sites : [];
+    return Array.isArray(sites) ? (sites as RegistryEntry[]) : [];
   }
 
-  function getRegistryModules(registry) {
+  function getRegistryModules(registry: RegistryLike): Record<string, RegistryEntry> {
     const mods = registry && typeof registry === 'object' ? registry.modules : null;
-    return mods && typeof mods === 'object' ? mods : {};
+    return mods && typeof mods === 'object' ? (mods as Record<string, RegistryEntry>) : {};
   }
 
-  function findSite(registry, siteId) {
+  function findSite(registry: RegistryLike, siteId: unknown): RegistryEntry | null {
     const id = String(siteId || '');
     if (!id) return null;
     return getRegistrySites(registry).find((s) => s && typeof s === 'object' && s.id === id) || null;
   }
 
-  function siteMatchPatterns(registry, siteId) {
+  function siteMatchPatterns(registry: RegistryLike, siteId: unknown): string[] {
     const site = findSite(registry, siteId);
     return normalizeStringArray(site?.matchPatterns);
   }
 
-  function siteQuickNavPatterns(registry, siteId) {
+  function siteQuickNavPatterns(registry: RegistryLike, siteId: unknown): string[] {
     const site = findSite(registry, siteId);
     const q = normalizeStringArray(site?.quicknavPatterns);
     if (q.length) return q;
     return siteMatchPatterns(registry, siteId);
   }
 
-  function allNonCommonMatchPatterns(registry) {
-    const patterns = [];
+  function allNonCommonMatchPatterns(registry: RegistryLike): string[] {
+    const patterns: string[] = [];
     for (const s of getRegistrySites(registry)) {
       const siteId = String(s?.id || '');
       if (!siteId || siteId === 'common') continue;
@@ -81,17 +101,17 @@
     return uniq(patterns);
   }
 
-  function moduleDefaultEnabled(registry, moduleId) {
+  function moduleDefaultEnabled(registry: RegistryLike, moduleId: string): boolean {
     const mods = getRegistryModules(registry);
     const def = mods?.[moduleId];
     if (def && typeof def === 'object' && typeof def.defaultEnabled === 'boolean') return def.defaultEnabled;
     return true;
   }
 
-  function buildDefaultSettings(registry) {
-    const sites = {};
-    const scrollLockDefaults = {};
-    const siteModules = {};
+  function buildDefaultSettings(registry: RegistryLike): DefaultSettings {
+    const sites: Record<string, boolean> = {};
+    const scrollLockDefaults: Record<string, boolean> = {};
+    const siteModules: Record<string, Record<string, boolean>> = {};
 
     for (const s of getRegistrySites(registry)) {
       const siteId = String(s?.id || '');
@@ -123,8 +143,8 @@
     };
   }
 
-  function buildContentScriptDefs(registry) {
-    const defs = [];
+  function buildContentScriptDefs(registry: RegistryLike): ContentScriptDef[] {
+    const defs: ContentScriptDef[] = [];
 
     const allPatterns = allNonCommonMatchPatterns(registry);
 
@@ -139,9 +159,9 @@
     });
 
     // === QuickNav per site ===
-    const QUICKNAV_SITES = [
-      { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_start', matches: (r) => siteMatchPatterns(r, 'chatgpt') },
-      { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'qwen') }
+    const QUICKNAV_SITES: Array<{ siteId: string; js: string; runAt: string; matches: (r: RegistryLike) => string[] }> = [
+      { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_start', matches: (r) => siteQuickNavPatterns(r, 'chatgpt') },
+      { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'qwen') }
     ];
 
     for (const s of QUICKNAV_SITES) {
@@ -231,7 +251,7 @@
     });
 
     // Cmd+Enter send (multi-site)
-    const CMDENTER_SITES = [
+    const CMDENTER_SITES: Array<{ siteId: string; id: string; matches: (r: RegistryLike) => string[] }> = [
       { siteId: 'qwen', id: 'quicknav_qwen_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'qwen') }
     ];
 
@@ -383,7 +403,9 @@
   });
 
   try {
-    const prev = globalThis.QUICKNAV_INJECTIONS;
+    const prev = (globalThis as typeof globalThis & {
+      QUICKNAV_INJECTIONS?: { version?: unknown };
+    }).QUICKNAV_INJECTIONS;
     if (prev && typeof prev === 'object' && Number(prev.version || 0) >= INJECTIONS_VERSION) return;
   } catch {}
 
@@ -396,7 +418,7 @@
     });
   } catch {
     try {
-      globalThis.QUICKNAV_INJECTIONS = API;
+      (globalThis as typeof globalThis & { QUICKNAV_INJECTIONS?: unknown }).QUICKNAV_INJECTIONS = API;
     } catch {}
   }
 })();

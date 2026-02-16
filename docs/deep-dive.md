@@ -8,8 +8,8 @@
 > - `manifest.json`（MV3 入口：静态只挂 bootstrap）  
 > - `content/bootstrap.js`（document_start 唤醒后台 SW + 兜底注入）  
 > - `background/sw.js`（动态注册 content scripts + 设置读写 + reinject）  
-> - `shared/registry.js`（站点/模块元数据；Popup/Options 的“单一真相”）  
-> - `shared/injections.js`（注入定义；SW 的“单一真相”）
+> - `shared/registry.ts`（站点/模块元数据；Popup/Options 的“单一真相”）  
+> - `shared/injections.ts`（注入定义；SW 的“单一真相”）
 
 本文以 `manifest.json` 当前内容为准，假设读者了解 Chrome Extension MV3（Service Worker / content scripts / MAIN vs ISOLATED world）。
 
@@ -19,7 +19,7 @@
 
 ## 规模与热点（可复现）
 
-当前规模（由 `shared/registry.js` + `shared/injections.js` 实际计算得到；可跑 `node dev/stats.js` 复现）：
+当前规模（由 `shared/registry.ts` + `shared/injections.ts` 实际计算得到；可跑 `node dev/stats.js` 复现）：
 
 - 站点：3（含 `common`）
 - 模块：27
@@ -45,9 +45,11 @@
 
 ---
 
-## 2) 单一真相：`shared/registry.js` + `shared/injections.js`
+## 2) 单一真相：`shared/registry.ts` + `shared/injections.ts`
 
-### `shared/registry.js`（站点/模块元数据：给 UI/文档/维护脚本）
+运行时仍加载 `dist/shared/registry.js` 与 `dist/shared/injections.js`；两者由 mirror build 从上述 TS 源一对一转译得到。
+
+### `shared/registry.ts`（站点/模块元数据：给 UI/文档/维护脚本）
 
 - `SITES`：每个站点 `{id, name, sub, matchPatterns, quicknavPatterns?, modules[]}`
   - `matchPatterns`：站点总体可注入的 URL patterns
@@ -56,7 +58,7 @@
 
 这份表是 Popup/Options 的“展示与默认值来源”，也是 `docs/scripts-inventory.md` 的生成来源。
 
-### `shared/injections.js`（注入定义：给后台 SW 动态注册 content scripts）
+### `shared/injections.ts`（注入定义：给后台 SW 动态注册 content scripts）
 
 核心导出：`globalThis.QUICKNAV_INJECTIONS`：
 
@@ -67,7 +69,7 @@
   - `EXTRA_HOST_PERMISSIONS`（后台任务额外需要的 host 权限）
   - `EXTRA_SITE_MODULE_FLAGS`（不是模块但要进入 `settings.siteModules` 的布尔开关）
 
-结论：**新增/改站点或模块**，大概率只需要改 `shared/registry.js` + `shared/injections.js`，再跑维护脚本同步 `manifest.json` 与文档（见第 9 节）。
+结论：**新增/改站点或模块**，大概率只需要改 `shared/registry.ts` + `shared/injections.ts`，再跑维护脚本同步 `manifest.json` 与文档（见第 9 节）。
 
 ---
 
@@ -91,7 +93,7 @@
 
 启动时（或每次 SW 被唤醒时）：
 
-1) 读入两份“真相表”：`importScripts('../shared/registry.js', '../shared/injections.js')`
+1) 读入两份“真相表”（运行时读取 dist 里的 JS 产物）：`importScripts('../shared/registry.js', '../shared/injections.js')`
 2) 由注入表推导默认设置：`INJECTIONS.buildDefaultSettings(REGISTRY)`
 3) 由注入表生成注册定义：`INJECTIONS.buildContentScriptDefs(REGISTRY)`
 
@@ -171,7 +173,7 @@ MV3 的 content scripts 会落在两个世界：
 - composer：`getEditorEl()` / `findSendButton()` / `findStopButton()` / `isGenerating()` / `clickSendButton()` / `clickStopButton()`
 - turns：`getTurnsRoot()` / `getTurnArticles(root?)` + turns root 观察与健康检查（MAIN 侧有低频 health check）
 
-注入顺序（重要）：在 `shared/injections.js` 的 ChatGPT 相关 defs 中，`chatgpt-core*.js` 会排在各模块脚本之前，保证“后来的脚本可以直接用 core”。
+注入顺序（重要）：在 `shared/injections.ts` 的 ChatGPT 相关 defs 中，`chatgpt-core*.js` 会排在各模块脚本之前，保证“后来的脚本可以直接用 core”。
 
 ### 5.3 Menu Bridge：把 GM 菜单变成 Popup 按钮
 
@@ -318,7 +320,7 @@ Turn 筛选策略（维护重点）：
 - `content/bootstrap.js:41`：发送 `QUICKNAV_BOOTSTRAP_ENSURE`
 - `content/bootstrap.js:54`：发送 `QUICKNAV_BOOTSTRAP_PING`
 - `content/bootstrap.js:69`：快速/延迟多轮 `scheduleEnsure(...)`
-- `background/sw.js:10`：`importScripts('../shared/registry.js', '../shared/injections.js')`
+- `background/sw.js:10`：`importScripts('../shared/registry.js', '../shared/injections.js')`（运行时读取 dist 产物）
 - `background/sw.js:17`：默认设置由注入表推导（`buildDefaultSettings`）
 - `background/sw.js:28`：注入定义由注入表生成（`buildContentScriptDefs`）
 - `background/sw.js:592`：动态注册“差异更新”主函数 `applyContentScriptRegistration(settings)`
@@ -329,10 +331,10 @@ Turn 筛选策略（维护重点）：
 
 ### 配置与状态
 
-- `shared/registry.js:8`：站点表 `SITES`
-- `shared/registry.js:87`：模块表 `MODULES`
-- `shared/injections.js:91`：`buildDefaultSettings(registry)`
-- `shared/injections.js:126`：`buildContentScriptDefs(registry)`
+- `shared/registry.ts:11`：站点表 `SITES`
+- `shared/registry.ts:41`：模块表 `MODULES`
+- `shared/injections.ts:114`：`buildDefaultSettings(registry)`
+- `shared/injections.ts:149`：`buildContentScriptDefs(registry)`
 - `background/sw.js:262`：SW 端 patch 白名单校验 `applySettingsPatchOps(current, patch)`
 - `background/sw.js:668`：设置写入串行化 `runSettingsMutation(fn)`
 - `popup/popup.js:191`：读取设置 `QUICKNAV_GET_SETTINGS`
@@ -392,7 +394,7 @@ Turn 筛选策略（维护重点）：
 4) `node dev/stats.js`  
    - 打印站点/模块/注入规模统计（用于更新本文的“规模与热点”）
 
-推荐改动后顺序（尤其是改了 `shared/registry.js` / `shared/injections.js` 时）：
+推荐改动后顺序（尤其是改了 `shared/registry.ts` / `shared/injections.ts` 时）：
 
 - 跑 `node dev/sync-manifest.js` → `node dev/gen-scripts-inventory.js` → `node dev/check.js`
 

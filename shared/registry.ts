@@ -266,27 +266,29 @@
     }
   };
 
-  const freezeArrayShallow = (arr) => {
+  const freezeArrayShallow = (arr: unknown): ReadonlyArray<unknown> => {
     if (!Array.isArray(arr)) return Object.freeze([]);
     for (const v of arr) {
+      const item = v as Record<string, unknown>;
       try {
-        if (v && typeof v === 'object' && Array.isArray(v.modules)) Object.freeze(v.modules);
+        if (item && typeof item === 'object' && Array.isArray(item.modules)) Object.freeze(item.modules);
       } catch {}
       try {
-        if (v && typeof v === 'object' && Array.isArray(v.matchPatterns)) Object.freeze(v.matchPatterns);
+        if (item && typeof item === 'object' && Array.isArray(item.matchPatterns)) Object.freeze(item.matchPatterns);
       } catch {}
       try {
-        if (v && typeof v === 'object' && Array.isArray(v.quicknavPatterns)) Object.freeze(v.quicknavPatterns);
+        if (item && typeof item === 'object' && Array.isArray(item.quicknavPatterns)) Object.freeze(item.quicknavPatterns);
       } catch {}
       try { Object.freeze(v); } catch {}
     }
     return Object.freeze(arr);
   };
 
-  const freezeRecordShallow = (obj) => {
+  const freezeRecordShallow = (obj: unknown): Readonly<Record<string, unknown>> => {
     if (!obj || typeof obj !== 'object') return Object.freeze({});
-    for (const k of Object.keys(obj)) {
-      const v = obj[k];
+    const record = obj as Record<string, unknown>;
+    for (const k of Object.keys(record)) {
+      const v = record[k] as Record<string, unknown> | undefined;
       try {
         if (v && typeof v === 'object') {
           if (Array.isArray(v.hotkeys)) Object.freeze(v.hotkeys);
@@ -296,7 +298,7 @@
       } catch {}
       try { Object.freeze(v); } catch {}
     }
-    return Object.freeze(obj);
+    return Object.freeze(record);
   };
 
   const REGISTRY = Object.freeze({
@@ -306,7 +308,9 @@
   });
 
   try {
-    const prev = globalThis.QUICKNAV_REGISTRY;
+    const prev = (globalThis as typeof globalThis & {
+      QUICKNAV_REGISTRY?: { version?: unknown };
+    }).QUICKNAV_REGISTRY;
     if (prev && typeof prev === 'object' && Number(prev.version || 0) >= REGISTRY_VERSION) return;
   } catch {}
 
@@ -319,7 +323,7 @@
     });
   } catch {
     try {
-      globalThis.QUICKNAV_REGISTRY = REGISTRY;
+      (globalThis as typeof globalThis & { QUICKNAV_REGISTRY?: unknown }).QUICKNAV_REGISTRY = REGISTRY;
     } catch {}
   }
 })();

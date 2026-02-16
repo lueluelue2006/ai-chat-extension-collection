@@ -2,14 +2,15 @@
 'use strict';
 
 // Generates docs/scripts-inventory.md from:
-// - shared/registry.js (user-facing module metadata, incl. authors/license)
-// - shared/injections.js (MV3 injection defs: matches/js/css/runAt/world)
+// - shared/registry.ts (user-facing module metadata, incl. authors/license)
+// - shared/injections.ts (MV3 injection defs: matches/js/css/runAt/world)
 //
 // This keeps the inventory in sync without relying on legacy userscript headers.
 
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -21,23 +22,59 @@ function writeText(relPath, text) {
   fs.writeFileSync(path.join(ROOT, relPath), text, 'utf8');
 }
 
+function transpileTypeScript(source, filename) {
+  return transformSync(source, {
+    loader: 'ts',
+    target: 'chrome96',
+    format: 'esm',
+    sourcemap: false,
+    minify: false,
+    legalComments: 'none',
+    sourcefile: filename
+  }).code;
+}
+
+function readSharedConfigScript(tsPath, jsFallbackPath) {
+  const tsAbs = path.join(ROOT, tsPath);
+  if (fs.existsSync(tsAbs)) {
+    return {
+      code: transpileTypeScript(readText(tsPath), tsPath),
+      filename: tsPath
+    };
+  }
+
+  const jsAbs = path.join(ROOT, jsFallbackPath);
+  if (fs.existsSync(jsAbs)) {
+    return {
+      code: readText(jsFallbackPath),
+      filename: jsFallbackPath
+    };
+  }
+
+  throw new Error(`Missing shared config source: ${tsPath} (fallback: ${jsFallbackPath})`);
+}
+
 function loadRegistry() {
-  const code = readText('shared/registry.js');
+  const script = readSharedConfigScript('shared/registry.ts', 'shared/registry.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/registry.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const reg = sandbox.globalThis.QUICKNAV_REGISTRY;
-  if (!reg || typeof reg !== 'object') throw new Error('QUICKNAV_REGISTRY not found after evaluating shared/registry.js');
+  if (!reg || typeof reg !== 'object') {
+    throw new Error(`QUICKNAV_REGISTRY not found after evaluating ${script.filename}`);
+  }
   return reg;
 }
 
 function loadInjections() {
-  const code = readText('shared/injections.js');
+  const script = readSharedConfigScript('shared/injections.ts', 'shared/injections.js');
   const sandbox = { globalThis: {} };
   vm.createContext(sandbox);
-  vm.runInContext(code, sandbox, { filename: 'shared/injections.js' });
+  vm.runInContext(script.code, sandbox, { filename: script.filename });
   const inj = sandbox.globalThis.QUICKNAV_INJECTIONS;
-  if (!inj || typeof inj !== 'object') throw new Error('QUICKNAV_INJECTIONS not found after evaluating shared/injections.js');
+  if (!inj || typeof inj !== 'object') {
+    throw new Error(`QUICKNAV_INJECTIONS not found after evaluating ${script.filename}`);
+  }
   if (typeof inj.buildContentScriptDefs !== 'function') throw new Error('QUICKNAV_INJECTIONS.buildContentScriptDefs is missing');
   return inj;
 }
@@ -108,7 +145,8 @@ function main() {
   out += `- Name: ${fmtOneLine(manifest?.name)}\n`;
   out += `- Version: ${fmtOneLine(manifest?.version)}\n`;
   out += `- Generated: ${stamp}\n`;
-  out += `- Source of truth: \`shared/registry.js\` (metadata) + \`shared/injections.js\` (injection defs)\n\n`;
+  out += `- Source of truth: \`shared/registry.ts\` (metadata) + \`shared/injections.ts\` (injection defs)\n`;
+  out += `- Runtime output: mirror build transpiles them to \`dist/shared/registry.js\` + \`dist/shared/injections.js\`\n\n`;
   out += `## Popup “菜单按钮/选项按钮” 来自哪里？\n\n`;
   out += `扩展弹窗里显示的“菜单按钮/选项按钮”，来自页面里调用 \`window.__quicknavRegisterMenuCommand(name, fn)\` 注册的命令。\n\n`;
   out += `当前 registry 标注了菜单预览（menuPreview）的模块：\n\n`;

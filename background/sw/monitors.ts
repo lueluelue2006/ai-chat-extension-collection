@@ -199,6 +199,8 @@
   }
 
   function normalizeGpt53ProbeUrls(input: any) {
+    if (input == null) return [...GPT53_MONITOR.defaultUrls];
+
     const rawLines = (() => {
       if (Array.isArray(input)) return input;
       if (typeof input === 'string') return input.split(/\r?\n/);
@@ -226,7 +228,7 @@
       out.push(url);
       if (out.length >= 20) break;
     }
-    return out.length ? out : [...GPT53_MONITOR.defaultUrls];
+    return out;
   }
 
   async function getGpt53Urls() {

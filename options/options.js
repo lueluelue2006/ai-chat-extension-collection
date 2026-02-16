@@ -209,7 +209,7 @@
     try {
       if (elGpt53Urls && document.activeElement !== elGpt53Urls) {
         const next = urls.join('\n');
-        if (next && elGpt53Urls.value.trim() !== next.trim()) elGpt53Urls.value = next;
+        if (elGpt53Urls.value !== next) elGpt53Urls.value = next;
       }
     } catch {}
 
@@ -3094,6 +3094,12 @@
 
     if (moduleId === 'quicknav') return renderQuickNavModuleSettings(siteId);
     if (moduleId === 'hide_disclaimer') return renderBasicToggleModuleSettings(siteId, moduleId);
+    if (moduleId === 'openai_new_model_banner')
+      return renderBasicToggleModuleSettings(
+        siteId,
+        moduleId,
+        '说明：URL 列表请在下方“OpenAI 新模型监控”卡片维护；清空并保存空列表会停止检测/提醒。'
+      );
     if (moduleId === 'chatgpt_perf') return void renderChatGPTPerfModuleSettings(siteId, token);
     if (moduleId === 'chatgpt_thinking_toggle') return renderChatGPTThinkingToggleModuleSettings(siteId);
     if (moduleId === 'chatgpt_cmdenter_send') return renderChatGPTCmdEnterSendModuleSettings(siteId);
@@ -3108,6 +3114,7 @@
     if (moduleId === 'chatgpt_export_conversation') return renderChatGPTExportConversationModuleSettings(siteId);
     if (moduleId === 'chatgpt_image_message_edit') return renderChatGPTImageMessageEditModuleSettings(siteId);
     if (moduleId === 'chatgpt_message_tree') return renderChatGPTMessageTreeModuleSettings(siteId);
+    if (moduleId === 'chatgpt_sidebar_header_fix') return renderBasicToggleModuleSettings(siteId, moduleId);
     if (moduleId === 'gemini_math_fix') return renderGeminiMathFixModuleSettings(siteId);
     if (moduleId === 'gemini_auto_3_pro') return renderBasicToggleModuleSettings(siteId, moduleId);
     if (moduleId === 'genspark_moa_image_autosettings') return renderGensparkMoaImageAutosettingsModuleSettings(siteId);

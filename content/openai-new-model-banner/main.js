@@ -162,7 +162,7 @@
     const btnOptions = document.createElement('button');
     btnOptions.className = 'primary';
     btnOptions.type = 'button';
-    btnOptions.textContent = '打开配置（删除该 URL 才会停止提醒）';
+    btnOptions.textContent = '打开配置（清空 URL 列表可停止提醒）';
     actions.appendChild(btnOptions);
 
     card.appendChild(title);
@@ -313,7 +313,7 @@
     })();
     show({
       title: 'OpenAI 新模型提示',
-      message: `检测到 ${count} 条资源可访问（每次检测都会提醒）：${msg}\n\n要关闭此提示：打开配置并删除对应 URL。`,
+      message: `检测到 ${count} 条资源可访问（每次检测都会提醒）：${msg}\n\n要关闭此提示：打开配置并清空 URL 列表（删除全部 URL 后保存）。`,
       checkedAt: lastAt || Number(checkedAt) || safeNow()
     });
   }

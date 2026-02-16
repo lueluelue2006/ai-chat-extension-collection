@@ -61,3 +61,7 @@
   - Fixes: keep normalized group requests in `Storage.get()` and preserve existing `sharedQuotaGroups[groupId].requests` when rebuilding plan groups.
   - Silent-mode gating: `main()` now performs headless setup first, skips text scrambler/style install when silent, and returns before route-fallback interval + ensure timers/observers are installed; external plan sync listener still applies plan/cleanup and only schedules UI init when not silent.
   - Browser sanity-check later: import usage JSON from Options, refresh, and export again to confirm shared group request arrays persist; in forced silent mode confirm no `#chatUsageMonitor` floating UI is injected.
+
+- [2026-02-16][task-11-options-routing-gpt53-stop-semantics]
+  - Added explicit Options module routes for `openai_new_model_banner` and `chatgpt_sidebar_header_fix`; both now render deterministic settings panels instead of falling into the unknown-module fallback.
+  - GPT53 URL normalization now treats `null`/`undefined` as “use defaults”, but preserves explicit empty user input as `[]`; an empty saved list means no probe URLs and therefore stops probe/reminder behavior.

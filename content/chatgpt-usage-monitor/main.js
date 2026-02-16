@@ -1041,12 +1041,14 @@
                 const t = tsOf(r);
                 if (typeof r.modelId === "string") return { t, modelId: r.modelId };
                 const copy = { ...r };
-                if (t && typeof copy.t !== "number") copy.t = t;
+                if (typeof t === "number" && !Number.isNaN(t) && typeof copy.t !== "number") copy.t = t;
                 return copy;
               }
               return r;
+            }).filter((req) => {
+              const t = tsOf(req);
+              return typeof t === "number" && !Number.isNaN(t);
             });
-            group.requests = [];
           }
         });
       }
@@ -1922,6 +1924,12 @@
       Object.entries(data.models || {}).forEach(([modelKey, model]) => {
         if (model?.requests?.length) existingUsageByModel[modelKey] = [...model.requests];
       });
+      const existingGroupRequestsById = {};
+      Object.entries(data.sharedQuotaGroups || {}).forEach(([groupId, group]) => {
+        if (Array.isArray(group?.requests)) {
+          existingGroupRequestsById[groupId] = [...group.requests];
+        }
+      });
       data.sharedQuotaGroups = {};
       if (planConfig.sharedQuotaGroups) {
         Object.entries(planConfig.sharedQuotaGroups).forEach(([groupId, groupConfig]) => {
@@ -1930,7 +1938,7 @@
             windowType: groupConfig.windowType,
             models: groupConfig.models,
             displayName: groupConfig.displayName,
-            requests: []
+            requests: existingGroupRequestsById[groupId] ? [...existingGroupRequestsById[groupId]] : []
           };
         });
       }
@@ -4382,12 +4390,14 @@
 		    // while still keeping Options as a secondary place for viewing/import/export/clear.
 		    const UI_ENABLED = true;
 
-	    if (UI_ENABLED) {
+	    refreshUsageData();
+	    const startsSilent = isSilent();
+
+	    if (UI_ENABLED && !startsSilent) {
 	      installTextScrambler();
 	      injectStyles();
 	    }
 
-	    refreshUsageData();
 	    installFetchInterceptor();
 
 	    // Ensure plan structure is applied at least once (even without UI).
@@ -4483,6 +4493,13 @@
 	        );
 	      }
     } catch {}
+
+    if (UI_ENABLED && isSilent()) {
+      const existingMonitor = document.getElementById("chatUsageMonitor");
+      if (existingMonitor) existingMonitor.remove();
+      console.log("🚀 ChatGPT Usage Monitor loaded (silent headless)");
+      return;
+    }
 
     function initialize() {
       if (!document?.body) {

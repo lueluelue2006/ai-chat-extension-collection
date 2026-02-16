@@ -54,3 +54,10 @@
 - [2026-02-16][task-9-scroll-guard-consolidation] Disabled ISOLATED monkey-patch installation by turning `content/chatgpt-quicknav.js::installScrollGuards` into a no-op, so only MAIN `content/scroll-guard-main.js` patches scroll APIs.
   - Kept the cross-world publisher contract unchanged: dataset keys `quicknavScrollLockEnabled` / `quicknavScrollLockBaseline` / `quicknavAllowScrollUntil`, message types `QUICKNAV_SCROLLLOCK_STATE` / `QUICKNAV_SCROLLLOCK_BASELINE` / `QUICKNAV_SCROLLLOCK_ALLOW`, and ensure/ready handshake `QUICKNAV_ENSURE_SCROLL_GUARD` + `QUICKNAV_SCROLL_GUARD_READY`.
   - Manual QA later (plan task 14): verify ChatGPT scroll-lock still blocks reply-driven autoscroll without regressions for user/nav-initiated jumps, and remains stable across SPA route changes + hot reinject.
+
+- [2026-02-16][task-10-usage-monitor-silent-preserve]
+  - `Storage.get()` was normalizing `sharedQuotaGroups[*].requests` and then immediately replacing each array with `[]`, so every read could durably wipe shared group history via the normalization writeback.
+  - `applyPlanConfig()` rebuilt `data.sharedQuotaGroups` with `requests: []`, which dropped existing per-group usage arrays whenever plan structure reapplied.
+  - Fixes: keep normalized group requests in `Storage.get()` and preserve existing `sharedQuotaGroups[groupId].requests` when rebuilding plan groups.
+  - Silent-mode gating: `main()` now performs headless setup first, skips text scrambler/style install when silent, and returns before route-fallback interval + ensure timers/observers are installed; external plan sync listener still applies plan/cleanup and only schedules UI init when not silent.
+  - Browser sanity-check later: import usage JSON from Options, refresh, and export again to confirm shared group request arrays persist; in forced silent mode confirm no `#chatUsageMonitor` floating UI is injected.

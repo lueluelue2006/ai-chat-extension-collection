@@ -76,7 +76,7 @@
 
 
 - [2026-02-16][task-6-dynamic-reconciliation-validation]
-  - Exact plan item: `- [ ] Validate plan task 6: Dynamic content script reconciliation removes stale QuickNav registered IDs safely.`
+  - Exact plan item (historical unchecked text): "Validate plan task 6: Dynamic content script reconciliation removes stale QuickNav registered IDs safely."
   - Namespace prefix source: `background/sw/storage.ts` defines `QUICKNAV_CONTENT_SCRIPT_ID_PREFIX = 'quicknav_'` and exposes `getQuicknavContentScriptIdPrefix()`.
   - Discovery path: `background/sw/registration.ts::getRegisteredQuickNavContentScripts()` calls `ns.chrome.scriptingGetRegisteredContentScripts()` and then keeps every script whose `id` starts with the prefix. Discovery starts from the full registered list (not allowlist-only).
   - Reconciliation path: `background/sw/registration.ts::applyContentScriptRegistration(settings)` builds `desired` from enabled defs and `registered` from discovered QuickNav-prefixed IDs; stale QuickNav IDs (`registered - desired`) are collected into `unregisterIds`.
@@ -167,7 +167,7 @@
   - `dev/check.js` now includes this self-test in `DEV_SELF_TESTS` so nonce-regression breaks the gate.
 
 - [2026-02-16][task-14-qa-contract-checklist-update]
-  - Updated `.sisyphus/qa/chatgpt-feature-contract.md` with QA-run `[x]/[ ]` status based on captured evidence and observed checks.
+  - Updated `.sisyphus/qa/chatgpt-feature-contract.md` with QA-run checked/unchecked status based on captured evidence and observed checks.
   - QA session stamp: `2026-02-16 09:11:34 +0100`; extension version from `manifest.json` is `1.3.76`.
   - Verified in this pass: reload protocol, QuickNav visible/no duplicate in SPA switching, `chatgpt_cmdenter_send` key behavior, `chatgpt_thinking_toggle` (`Cmd+O`/`Cmd+J`), message-tree panel visibility, and section-6 duplicate-init smoke checks.
   - Evidence set used: `qa-chatgpt-post-reload-ui.png`, `qa-chatgpt-quicknav-present-after-reload.png`, `qa-chatgpt-quicknav-ui-after-reload.png`, `qa-chatgpt-cmd-o.png`, `qa-chatgpt-cmd-j.png`, `qa-chatgpt-cmd-o-cmd-j-after-reload.png`, `qa-chatgpt-message-tree-open-after-reload.png`, `qa-chatgpt-message-tree-after-reload.png`, `qa-options-modules-list-after-reload.png`, `qa-options-openai-new-model-banner-route.png`, `qa-options-sidebar-header-fix-route.png`, `qa-options-usage-monitor-panel.png`, `qa-extensions-reload-sw-surface.png`, `qa-extensions-sw-link-valid-no-error-count.png`.
@@ -277,3 +277,20 @@
   - Duplicate-check should use structural counters across SPA hop/return: `hostCount` stays `1` and `openCount` stays `0` after dismissal; this is stronger than visual-only checks.
   - Evidence note: `.sisyphus/evidence/qa-chatgpt-openai-new-model-banner-pass2.md`.
   - Evidence files: `qa-chatgpt-openai-new-model-banner-visible-pass2.png`, `qa-chatgpt-openai-new-model-banner-dismissed-pass2.png`, `qa-chatgpt-openai-new-model-banner-no-duplicate-after-spa-pass2.png`, `qa-options-openai-new-model-monitor-clear-pass2.png`.
+
+- [2026-02-16][task-14-spa-duplicate-init-mini-pass-7]
+  - For a fast section-6 sanity pass, use two stable chat URLs and verify SPA switch-return by checking `performance.timeOrigin` stays constant across baseline, switch, and return probes.
+  - Minimal deterministic duplicate-init probe set is enough for this mini-pass: `#cgpt-compact-nav`, `#__aichat_chatgpt_message_tree_toggle_v1__`, and `#__aichat_chatgpt_message_tree_panel_v1__` should all remain `1`.
+  - Pair singleton checks with hidden-state guards (`#thread-bottom-container [class*="vt-disclaimer"]` and feedback buttons visible count) to detect unintended re-exposure side effects during SPA navigation.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-spa-duplicate-init-mini-pass7.md`.
+
+- [2026-02-16][task-14-spa-duplicate-init-five-chat-pass-8]
+  - For section-6 full-sweep closure, run reload subset first (`chrome://extensions` reload + one hard refresh), then do sidebar-only SPA route order `A -> B -> C -> D -> E -> A` to prove behavior across at least five chats.
+  - Keep one deterministic probe schema across all hops (`href`, `title`, `timeOrigin`, singleton guards, disclaimer visibility, feedback visibility) so cross-chat diffs are direct and machine-comparable.
+  - Use `performance.timeOrigin` as the no-full-reload invariant and pair it with singleton guard counts to separate real duplicate-init from cosmetic DOM variance on long threads.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-spa-duplicate-init-five-chat-pass8.md`.
+
+- [2026-02-16][task-worktree-hygiene-docs-meta-commit]
+  - Prepared docs/meta-only commit by staging plan/QA/notepad markdown files for the ts-bundler refactor stream.
+  - Added `.gitignore` ignores for local/generated artifacts: `.sisyphus/evidence/`, `.sisyphus/tmp/`, `.sisyphus/boulder.json`, and `bun.lock`.
+  - Explicitly kept local artifact outputs out of commit scope (evidence screenshots/notes, tmp JSON, and machine-local boulder state).

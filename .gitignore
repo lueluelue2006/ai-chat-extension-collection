@@ -8,3 +8,8 @@ trace-*.json.gz
 _metadata/
 dist/
 node_modules/
+
+.sisyphus/evidence/
+.sisyphus/tmp/
+.sisyphus/boulder.json
+bun.lock

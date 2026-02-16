@@ -1,5 +1,18 @@
 # ChatGPT Feature Contract Checklist
 
+## QA session (2026-02-16 15:23:56 +0100)
+
+- Extension version: `1.3.77` (from `manifest.json`).
+- Evidence files: `qa-chatgpt-spa-keypress-reconciliation-pass9.md`.
+- Retest scope: section `6` key-shortcut one-action clause reconciliation (`Cmd+Enter`, `Cmd+O`, quick-search shortcuts) using existing runtime artifacts plus current static guard checks.
+- Result:
+  - Reconciled quick-search shortcut path from pass1 artifacts: ordered activation logs for `Ctrl+S`/`Ctrl+T`/`Ctrl+Y` and one flow-send pair (`ultra think and deeper websearch` -> `FLOW-OK`).
+  - Screenshot re-check for `Cmd+O`/`Cmd+J` artifacts showed single visible instances of quicknav list and message-tree panel (no stacked duplicate surface observed in-frame).
+  - Static hotkey guard verification confirms singleton install plus anti-repeat/anti-reentry protections in `chatgpt_cmdenter_send`, `chatgpt_thinking_toggle`, and `chatgpt_quick_deep_search`.
+- Local validation gates: `node dev/check.js`, `npm run -s typecheck`, and `npm run build` passed after this docs writeback.
+- Tooling note: markdown diagnostics are still unavailable in this environment (`No LSP server configured for extension: .md`).
+- Unchecked items in this file are either not exercised in this pass, only partially evidenced, or blocked as noted.
+
 ## QA session (2026-02-16 15:12:09 +0100)
 
 - Extension version: `1.3.77` (from `manifest.json`).

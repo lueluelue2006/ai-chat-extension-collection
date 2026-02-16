@@ -290,6 +290,12 @@
   - Use `performance.timeOrigin` as the no-full-reload invariant and pair it with singleton guard counts to separate real duplicate-init from cosmetic DOM variance on long threads.
   - Evidence note: `.sisyphus/evidence/qa-chatgpt-spa-duplicate-init-five-chat-pass8.md`.
 
+- [2026-02-16][task-14-spa-keypress-reconciliation-pass-9]
+  - Section-6 keypress clause can be strengthened without runtime edits by reconciling existing runtime artifacts with static hotkey-guard checks in the three hotkey-heavy modules (`chatgpt_cmdenter_send`, `chatgpt_thinking_toggle`, `chatgpt_quick_deep_search`).
+  - For quick-search shortcuts, keep both views in one evidence note: (a) raw ordered toast/log sequence from the runtime probe, and (b) screenshot-level counts/cues, so one-action behavior is auditable even when direct key-event hooks are unavailable.
+  - Treat `Cmd+O`/`Cmd+J` screenshots as structural non-duplication evidence (single panel/list instance), and explicitly mark them as non-event logs to avoid over-claiming.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-spa-keypress-reconciliation-pass9.md`.
+
 - [2026-02-16][task-worktree-hygiene-docs-meta-commit]
   - Prepared docs/meta-only commit by staging plan/QA/notepad markdown files for the ts-bundler refactor stream.
   - Added `.gitignore` ignores for local/generated artifacts: `.sisyphus/evidence/`, `.sisyphus/tmp/`, `.sisyphus/boulder.json`, and `bun.lock`.

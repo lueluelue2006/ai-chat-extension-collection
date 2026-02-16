@@ -146,6 +146,21 @@
 
   const now = () => Date.now();
 
+  function createEmptyAuthCache() {
+    return {
+      fetchedAt: 0,
+      token: '',
+      accountId: '',
+      deviceId: ''
+    };
+  }
+
+  let authCache = createEmptyAuthCache();
+
+  function clearAuthCache() {
+    authCache = createEmptyAuthCache();
+  }
+
   const state = {
     version: STATE_VERSION,
     disposed: false,
@@ -175,12 +190,6 @@
     turnsUnsub: null,
     hrefUnsub: null,
     escCloseInstalled: false,
-    authCache: {
-      fetchedAt: 0,
-      token: '',
-      accountId: '',
-      deviceId: ''
-    },
     bridgeInstalled: false,
     bridgeHandler: null,
     escHandler: null,
@@ -269,9 +278,8 @@
   }
 
   async function getAuthContext() {
-    const cached = state.authCache;
-    const age = now() - (Number(cached.fetchedAt) || 0);
-    if (cached.token && cached.accountId && cached.deviceId && age < 5 * 60 * 1000) return cached;
+    const age = now() - (Number(authCache.fetchedAt) || 0);
+    if (authCache.token && authCache.accountId && authCache.deviceId && age < 5 * 60 * 1000) return authCache;
 
     let token = '';
     let accountId = '';
@@ -286,13 +294,13 @@
 
     const deviceId = getCookie('oai-did');
 
-    state.authCache = {
+    authCache = {
       fetchedAt: now(),
       token,
       accountId,
       deviceId
     };
-    return state.authCache;
+    return authCache;
   }
 
   async function fetchConversation(conversationId) {
@@ -2257,6 +2265,7 @@
     state.statsEl = null;
 
     clearRepresentativeMsgCache();
+    clearAuthCache();
   }
 
   state.cleanup = cleanup;

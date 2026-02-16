@@ -2,6 +2,45 @@
 (() => {
   'use strict';
 
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
+
+  function getOrCreateBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      const stored = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      return stored || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const BRIDGE_NONCE = getOrCreateBridgeNonce();
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: BRIDGE_NONCE
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      if (!msg.type) return;
+      window.postMessage(msg, '*');
+    } catch {}
+  }
+
   try {
     const GUARD_VERSION = 6;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
@@ -92,7 +131,7 @@
           postTimer = window.setTimeout(() => {
             postTimer = 0;
             try {
-              window.postMessage({ __quicknav: 1, type: 'QUICKNAV_ROUTE_CHANGE', href, reason: String(reason || '') }, '*');
+              postBridgeMessage('QUICKNAV_ROUTE_CHANGE', { href, reason: String(reason || '') });
             } catch {}
           }, 0);
         } catch {}
@@ -128,6 +167,11 @@
   const MAX_ALLOW_MS = 8000;
   const SCROLLER_ATTR = 'data-quicknav-scrolllock-scroller';
   const ANCHOR_STYLE_ID = '__quicknav_scrolllock_anchor_style__';
+  const ALLOWED_SCROLLLOCK_TYPES = new Set([
+    'QUICKNAV_SCROLLLOCK_STATE',
+    'QUICKNAV_SCROLLLOCK_BASELINE',
+    'QUICKNAV_SCROLLLOCK_ALLOW'
+  ]);
   let __lastMarkedScroller = null;
 
   const now = () => Date.now();
@@ -221,9 +265,15 @@
       try {
         if (!e || e.source !== window) return;
         const msg = e.data;
-        if (!msg || typeof msg !== 'object' || msg.__quicknav !== 1) return;
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.__quicknav !== 1) return;
+        if (msg.channel !== BRIDGE_CHANNEL) return;
+        if (msg.v !== BRIDGE_V) return;
+        if (msg.nonce !== BRIDGE_NONCE) return;
+        const type = typeof msg.type === 'string' ? msg.type : '';
+        if (!ALLOWED_SCROLLLOCK_TYPES.has(type)) return;
 
-        if (msg.type === 'QUICKNAV_SCROLLLOCK_STATE') {
+        if (type === 'QUICKNAV_SCROLLLOCK_STATE') {
           STATE.enabled = !!msg.enabled;
           __enabledDatasetCached = STATE.enabled;
           __enabledDatasetSyncAt = now();
@@ -234,13 +284,13 @@
           return;
         }
 
-        if (msg.type === 'QUICKNAV_SCROLLLOCK_BASELINE') {
+        if (type === 'QUICKNAV_SCROLLLOCK_BASELINE') {
           const top = Number(msg.top);
           if (Number.isFinite(top)) STATE.baselineTop = Math.max(0, Math.round(top));
           return;
         }
 
-        if (msg.type === 'QUICKNAV_SCROLLLOCK_ALLOW') {
+        if (type === 'QUICKNAV_SCROLLLOCK_ALLOW') {
           const ms = clampAllow(msg.ms);
           if (!ms) return;
           STATE.allowUntil = Math.max(STATE.allowUntil || 0, now() + ms);
@@ -696,6 +746,6 @@
 
   // Notify isolated-world content scripts that the main-world guard is ready.
   try {
-    window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLL_GUARD_READY' }, '*');
+    postBridgeMessage('QUICKNAV_SCROLL_GUARD_READY');
   } catch {}
 })();

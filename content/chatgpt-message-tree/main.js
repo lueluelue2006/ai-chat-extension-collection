@@ -24,6 +24,69 @@
   const BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
   const BRIDGE_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO';
   const BRIDGE_RES_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
+  const BRIDGE_COMMAND_TYPES = new Set([
+    BRIDGE_REQ_SUMMARY,
+    BRIDGE_NAVIGATE_TO,
+    BRIDGE_TOGGLE_PANEL,
+    BRIDGE_OPEN_PANEL,
+    BRIDGE_CLOSE_PANEL,
+    BRIDGE_REFRESH
+  ]);
+
+  function getOrCreateBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      const stored = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      return stored || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const BRIDGE_NONCE = getOrCreateBridgeNonce();
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: BRIDGE_NONCE
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      if (!msg.type) return;
+      window.postMessage(msg, '*');
+    } catch {}
+  }
+
+  function readBridgeMessage(event, allowedTypes) {
+    try {
+      if (!event || event.source !== window) return null;
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return null;
+      if (msg.__quicknav !== 1) return null;
+      if (msg.channel !== BRIDGE_CHANNEL) return null;
+      if (msg.v !== BRIDGE_V) return null;
+      if (msg.nonce !== BRIDGE_NONCE) return null;
+      if (typeof msg.type !== 'string' || !msg.type) return null;
+      if (allowedTypes && !allowedTypes.has(msg.type)) return null;
+      return msg;
+    } catch {
+      return null;
+    }
+  }
 
   const DEFAULT_PREFS = Object.freeze({
     simpleMode: true,
@@ -642,7 +705,7 @@
     } catch {}
     // Main-world scroll guard (when installed) uses window.postMessage.
     try {
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_ALLOW', ms: clamped }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_ALLOW', { ms: clamped });
     } catch {}
   }
 
@@ -1290,31 +1353,23 @@
     state.bridgeHandler = (event) => {
       try {
         if (state.disposed) return;
-        if (!event || event.source !== window) return;
-        const data = event.data;
-        if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
+        const data = readBridgeMessage(event, BRIDGE_COMMAND_TYPES);
+        if (!data) return;
 
-        const type = String(data.type || '');
-        if (type.startsWith('QUICKNAV_CHATGPT_TREE_')) {
-          try {
-            event.stopImmediatePropagation();
-          } catch {}
-        }
+        const type = data.type;
+        try {
+          event.stopImmediatePropagation();
+        } catch {}
 
         if (type === BRIDGE_REQ_SUMMARY) {
           const reqId = typeof data.reqId === 'string' ? data.reqId : '';
           const reply = (summary) => {
             try {
-              window.postMessage(
-                {
-                  __quicknav: 1,
-                  type: BRIDGE_RES_SUMMARY,
-                  reqId,
-                  ok: !!summary,
-                  summary: summary || null
-                },
-                '*'
-              );
+              postBridgeMessage(BRIDGE_RES_SUMMARY, {
+                reqId,
+                ok: !!summary,
+                summary: summary || null
+              });
             } catch {}
           };
 
@@ -1373,7 +1428,7 @@
           const targetMsgId = typeof data.msgId === 'string' ? data.msgId : '';
           const reply = (ok) => {
             try {
-              window.postMessage({ __quicknav: 1, type: BRIDGE_RES_NAVIGATE_TO, reqId, ok: !!ok }, '*');
+              postBridgeMessage(BRIDGE_RES_NAVIGATE_TO, { reqId, ok: !!ok });
             } catch {}
           };
 

@@ -67,6 +67,62 @@
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
 
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
+
+  function getOrCreateBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      const stored = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      return stored || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const BRIDGE_NONCE = getOrCreateBridgeNonce();
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: BRIDGE_NONCE
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      if (!msg.type) return;
+      window.postMessage(msg, '*');
+    } catch {}
+  }
+
+  function readBridgeMessage(event, allowedTypes) {
+    try {
+      if (!event || event.source !== window) return null;
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return null;
+      if (msg.__quicknav !== 1) return null;
+      if (msg.channel !== BRIDGE_CHANNEL) return null;
+      if (msg.v !== BRIDGE_V) return null;
+      if (msg.nonce !== BRIDGE_NONCE) return null;
+      if (typeof msg.type !== 'string' || !msg.type) return null;
+      if (allowedTypes && !allowedTypes.has(msg.type)) return null;
+      return msg;
+    } catch {
+      return null;
+    }
+  }
+
   // Conversation Tree (bridge to MAIN-world chatgpt-message-tree)
   const TREE_BRIDGE_REQ_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_REQUEST';
   const TREE_BRIDGE_RES_SUMMARY = 'QUICKNAV_CHATGPT_TREE_SUMMARY_RESPONSE';
@@ -76,6 +132,8 @@
   const TREE_BRIDGE_REFRESH = 'QUICKNAV_CHATGPT_TREE_REFRESH';
   const TREE_BRIDGE_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO';
   const TREE_BRIDGE_RES_NAVIGATE_TO = 'QUICKNAV_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
+  const TREE_BRIDGE_RESPONSE_TYPES = new Set([TREE_BRIDGE_RES_SUMMARY, TREE_BRIDGE_RES_NAVIGATE_TO]);
+  const SCROLL_GUARD_READY_TYPES = new Set(['QUICKNAV_SCROLL_GUARD_READY']);
   const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
 
   let treeSummary = null;
@@ -306,7 +364,7 @@
     // Fallback: perform minimal direct cleanup steps.
     try {
       // Message Tree runs in MAIN world; close it via bridge.
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_CHATGPT_TREE_CLOSE' }, '*');
+      postBridgeMessage('QUICKNAV_CHATGPT_TREE_CLOSE');
     } catch {}
     try {
       window.chatGptNavDebug?.checkOverlap?.();
@@ -384,10 +442,9 @@
 
     window.addEventListener('message', (event) => {
       try {
-        if (!event || event.source !== window) return;
-        const data = event.data;
-        if (!data || typeof data !== 'object' || data.__quicknav !== 1) return;
-        const type = String(data.type || '');
+        const data = readBridgeMessage(event, TREE_BRIDGE_RESPONSE_TYPES);
+        if (!data) return;
+        const type = data.type;
 
         if (type === TREE_BRIDGE_RES_SUMMARY) {
           if (typeof data.reqId !== 'string' || !data.reqId) return;
@@ -431,7 +488,7 @@
       if (!getConversationIdFromUrl()) return;
       const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
       treeSummaryPendingReqId = reqId;
-      window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REQ_SUMMARY, reqId }, '*');
+      postBridgeMessage(TREE_BRIDGE_REQ_SUMMARY, { reqId });
       try {
         const ui = document.getElementById('cgpt-compact-nav')?._ui;
         if (ui) updateTreeBtnState(ui);
@@ -463,7 +520,7 @@
       treeNavigatePending.set(reqId, { resolve, timer });
 
       try {
-        window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_NAVIGATE_TO, reqId, msgId: id }, '*');
+        postBridgeMessage(TREE_BRIDGE_NAVIGATE_TO, { reqId, msgId: id });
       } catch {
         try { clearTimeout(timer); } catch {}
         treeNavigatePending.delete(reqId);
@@ -2832,7 +2889,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         tip.addEventListener('click', (e) => {
           const action = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
           if (action && action.getAttribute('data-action') === 'open-tree') {
-            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+            try { postBridgeMessage(TREE_BRIDGE_OPEN_PANEL); } catch {}
             scheduleHide();
             return;
           }
@@ -2841,7 +2898,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           const targetId = String(row.getAttribute('data-branch-msg-id') || '');
           if (!targetId) return;
           if (targetId === '__open_tree__') {
-            try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+            try { postBridgeMessage(TREE_BRIDGE_OPEN_PANEL); } catch {}
             scheduleHide();
             return;
           }
@@ -2850,7 +2907,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           void (async () => {
             const ok = await requestTreeNavigateToMessageId(targetId);
             if (!ok) {
-              try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+              try { postBridgeMessage(TREE_BRIDGE_OPEN_PANEL); } catch {}
             }
           })();
         });
@@ -3028,7 +3085,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const branchBadge = e.target.closest('.branch-badge');
         if (branchBadge) {
           e.stopPropagation();
-          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_OPEN_PANEL }, '*'); } catch {}
+          try { postBridgeMessage(TREE_BRIDGE_OPEN_PANEL); } catch {}
           return;
         }
         const item = e.target.closest('.compact-item');
@@ -3557,11 +3614,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (treeBtn) {
       treeBtn.addEventListener('click', (e) => {
         if (e && e.altKey) {
-          try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_REFRESH }, '*'); } catch {}
+          try { postBridgeMessage(TREE_BRIDGE_REFRESH); } catch {}
           scheduleTreeSummaryRequest(240);
           return;
         }
-        try { window.postMessage({ __quicknav: 1, type: TREE_BRIDGE_TOGGLE_PANEL }, '*'); } catch {}
+        try { postBridgeMessage(TREE_BRIDGE_TOGGLE_PANEL); } catch {}
         // Lazy load: only request tree summary after user interacts with the tree button.
         scheduleTreeSummaryRequest(420);
       });
@@ -3915,7 +3972,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       // Cross-world sync: MAIN-world guard reads this synchronously from DOM dataset.
       try { document.documentElement.dataset.quicknavScrollLockEnabled = scrollLockEnabled ? '1' : '0'; } catch {}
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_STATE', enabled: !!scrollLockEnabled }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_STATE', { enabled: !!scrollLockEnabled });
     } catch {}
   }
 
@@ -3936,13 +3993,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
       __quicknavBaselineTop = px;
       __quicknavBaselinePostAt = now;
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_BASELINE', top: px }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_BASELINE', { top: px });
     } catch {}
   }
 
   function postScrollLockAllowToMainWorld(ms) {
     try {
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_ALLOW', ms: Number(ms) || 0 }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_ALLOW', { ms: Number(ms) || 0 });
     } catch {}
   }
 
@@ -3984,18 +4041,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     window.__quicknavScrollGuardHandshakeBound = true;
     window.addEventListener('message', (e) => {
       try {
-        if (!e || e.source !== window) return;
-        const msg = e.data;
-        if (!msg || typeof msg !== 'object' || msg.__quicknav !== 1) return;
-        if (msg.type === 'QUICKNAV_SCROLL_GUARD_READY') {
-          __quicknavMainGuardReady = true;
-          if (__quicknavMainGuardRetryTimer) {
-            clearTimeout(__quicknavMainGuardRetryTimer);
-            __quicknavMainGuardRetryTimer = 0;
-          }
-          postScrollLockStateToMainWorld();
-          if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
+        const msg = readBridgeMessage(e, SCROLL_GUARD_READY_TYPES);
+        if (!msg) return;
+        __quicknavMainGuardReady = true;
+        if (__quicknavMainGuardRetryTimer) {
+          clearTimeout(__quicknavMainGuardRetryTimer);
+          __quicknavMainGuardRetryTimer = 0;
         }
+        postScrollLockStateToMainWorld();
+        if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
       } catch {}
     }, true);
   }

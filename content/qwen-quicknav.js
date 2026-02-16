@@ -49,6 +49,63 @@
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
 
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
+  const SCROLL_GUARD_READY_TYPES = new Set(['QUICKNAV_SCROLL_GUARD_READY']);
+
+  function getOrCreateBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      const stored = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      return stored || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const BRIDGE_NONCE = getOrCreateBridgeNonce();
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: BRIDGE_NONCE
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      if (!msg.type) return;
+      window.postMessage(msg, '*');
+    } catch {}
+  }
+
+  function readBridgeMessage(event, allowedTypes) {
+    try {
+      if (!event || event.source !== window) return null;
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return null;
+      if (msg.__quicknav !== 1) return null;
+      if (msg.channel !== BRIDGE_CHANNEL) return null;
+      if (msg.v !== BRIDGE_V) return null;
+      if (msg.nonce !== BRIDGE_NONCE) return null;
+      if (typeof msg.type !== 'string' || !msg.type) return null;
+      if (allowedTypes && !allowedTypes.has(msg.type)) return null;
+      return msg;
+    } catch {
+      return null;
+    }
+  }
+
   // 全局调试函数，用户可在控制台调用
   window.chatGptNavDebug = {
     forceRefresh: () => {
@@ -2296,7 +2353,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   // 防自动滚动（不改全局原型，避免与其他脚本冲突）
   function postScrollLockStateToMainWorld() {
     try {
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_STATE', enabled: !!scrollLockEnabled }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_STATE', { enabled: !!scrollLockEnabled });
     } catch {}
   }
 
@@ -2314,13 +2371,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
       __quicknavBaselineTop = px;
       __quicknavBaselinePostAt = now;
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_BASELINE', top: px }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_BASELINE', { top: px });
     } catch {}
   }
 
   function postScrollLockAllowToMainWorld(ms) {
     try {
-      window.postMessage({ __quicknav: 1, type: 'QUICKNAV_SCROLLLOCK_ALLOW', ms: Number(ms) || 0 }, '*');
+      postBridgeMessage('QUICKNAV_SCROLLLOCK_ALLOW', { ms: Number(ms) || 0 });
     } catch {}
   }
 
@@ -2342,13 +2399,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     window.__quicknavScrollGuardHandshakeBound = true;
     window.addEventListener('message', (e) => {
       try {
-        if (!e || e.source !== window) return;
-        const msg = e.data;
-        if (!msg || typeof msg !== 'object' || msg.__quicknav !== 1) return;
-        if (msg.type === 'QUICKNAV_SCROLL_GUARD_READY') {
-          postScrollLockStateToMainWorld();
-          if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
-        }
+        const msg = readBridgeMessage(e, SCROLL_GUARD_READY_TYPES);
+        if (!msg) return;
+        postScrollLockStateToMainWorld();
+        if (scrollLockEnabled) postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
       } catch {}
     }, true);
   }

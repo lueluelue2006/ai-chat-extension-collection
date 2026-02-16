@@ -6,6 +6,9 @@
 
   const API_KEY = '__aichat_chatgpt_core_v1__';
   const API_VERSION = 5;
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
 
   // Avoid installing timers/listeners inside iframes.
   const isAllowedFrame = (() => {
@@ -24,6 +27,41 @@
     const prev = globalThis[API_KEY];
     if (prev && typeof prev === 'object' && Number(prev.version || 0) >= API_VERSION) return;
   } catch {}
+
+  function getOrCreateBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      const stored = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      return stored || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const BRIDGE_NONCE = getOrCreateBridgeNonce();
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: BRIDGE_NONCE
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      if (!msg.type) return;
+      window.postMessage(msg, '*');
+    } catch {}
+  }
 
   function now() {
     return Date.now();
@@ -706,7 +744,7 @@
 
       try {
         // Message Tree runs in MAIN world; close it via the existing QuickNav bridge message.
-        window.postMessage({ __quicknav: 1, type: 'QUICKNAV_CHATGPT_TREE_CLOSE' }, '*');
+        postBridgeMessage('QUICKNAV_CHATGPT_TREE_CLOSE');
       } catch {}
 
       try {

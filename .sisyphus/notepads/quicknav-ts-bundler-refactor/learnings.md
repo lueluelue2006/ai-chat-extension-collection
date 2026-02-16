@@ -165,3 +165,115 @@
   - Added `dev/test-quicknav-bridge-nonce.js` to lock bridge behavior: spoofed `window.postMessage` payloads with marker/channel/version but missing or wrong nonce must not emit `routeChange`.
   - The same test asserts that a valid envelope (`__quicknav + channel + v + nonce`) emits exactly one `routeChange` with the expected `href`.
   - `dev/check.js` now includes this self-test in `DEV_SELF_TESTS` so nonce-regression breaks the gate.
+
+- [2026-02-16][task-14-qa-contract-checklist-update]
+  - Updated `.sisyphus/qa/chatgpt-feature-contract.md` with QA-run `[x]/[ ]` status based on captured evidence and observed checks.
+  - QA session stamp: `2026-02-16 09:11:34 +0100`; extension version from `manifest.json` is `1.3.76`.
+  - Verified in this pass: reload protocol, QuickNav visible/no duplicate in SPA switching, `chatgpt_cmdenter_send` key behavior, `chatgpt_thinking_toggle` (`Cmd+O`/`Cmd+J`), message-tree panel visibility, and section-6 duplicate-init smoke checks.
+  - Evidence set used: `qa-chatgpt-post-reload-ui.png`, `qa-chatgpt-quicknav-present-after-reload.png`, `qa-chatgpt-quicknav-ui-after-reload.png`, `qa-chatgpt-cmd-o.png`, `qa-chatgpt-cmd-j.png`, `qa-chatgpt-cmd-o-cmd-j-after-reload.png`, `qa-chatgpt-message-tree-open-after-reload.png`, `qa-chatgpt-message-tree-after-reload.png`, `qa-options-modules-list-after-reload.png`, `qa-options-openai-new-model-banner-route.png`, `qa-options-sidebar-header-fix-route.png`, `qa-options-usage-monitor-panel.png`, `qa-extensions-reload-sw-surface.png`, `qa-extensions-sw-link-valid-no-error-count.png`.
+  - Console/SW: no console errors observed on ChatGPT/options/popup pages; extensions SW surface showed no visible error count.
+  - Blocker: memory protocol could not be completed because `chrome://taskmanager` and `chrome://task-manager` both returned `net::ERR_INVALID_URL` via `chrome-devtools-attached`.
+
+- [2026-02-16][task-14-qa-contract-checklist-update-pass-2]
+  - Added second QA pass updates for `chatgpt_message_tree` and `chatgpt_sidebar_header_fix` runtime checks: message-tree node click jump works and tree panel remains read-only; sidebar collapse/expand action stays correct across SPA chat switch.
+  - Usage monitor partial E2E completed: sent `qa-usage-monitor-e2e-1` prompt on `chatgpt.com`, options counters updated, and JSON export confirmed in `chrome://downloads`.
+  - QuickNav persistence issue repro added: favorite-only entry visible before reload but missing after reload in one chat despite retained `localStorage` favorite key.
+  - Evidence files: `qa-chatgpt-quicknav-favorites-before-reload.png`, `qa-chatgpt-quicknav-favorite-only-before-reload-2.png`, `qa-chatgpt-quicknav-favorite-missing-after-reload.png`, `qa-chatgpt-message-tree-node-jump-readonly.png`, `qa-chatgpt-sidebar-header-fix-runtime-spa.png`, `qa-chatgpt-usage-monitor-prompt-sent.png`, `qa-options-usage-monitor-export-downloads-confirmed.png`.
+  - Blockers: (1) `chrome://taskmanager`/`chrome://task-manager` still not accessible via devtools-attached; (2) after usage-monitor import trigger, `chrome-devtools-attached` started timing out, blocking import verification and remaining browser checks in this pass.
+
+- [2026-02-16][task-14-qa-contract-checklist-update-pass-3]
+  - Usage-monitor import path is now reproducibly verifiable: importing exported JSON shows confirm dialog (`17` models, `50` request records) and then success toast `已导入并合并用量数据（下次打开 chatgpt.com 会自动同步）`; evidence `qa-options-usage-monitor-import-merged-success.png`.
+  - Task-manager URLs remain inaccessible via `chrome-devtools-attached` (`chrome://taskmanager` and `chrome://task-manager` both return `net::ERR_INVALID_URL`), so section-7 memory validation used fallback `performance.memory` JS-heap readings.
+  - Fallback memory data captured: baseline `usedJSHeapSize=78048009`, stress-loop samples roughly `93MB`, `145MB`, `162MB`, `168MB`, `110MB`, `132MB`.
+  - Final 2 to 3 minute post-stress idle re-check timed out in MCP, so section 7 remains intentionally incomplete and documented as such.
+
+- [2026-02-16][task-14-qa-contract-checklist-update-pass-4]
+  - Follow-up fallback idle retry succeeded: immediate sample `usedJSHeapSize=98996864`, then `95333505` after about 130 seconds idle.
+  - Result stayed above baseline (`78048009`), so memory protocol near-baseline criterion remains unmet and section 7 stays open.
+
+- [2026-02-16][task-14-quicknav-favorite-persistence-retest]
+  - After extension reload from `chrome://extensions`, `4.1 quicknav` persistence retest on `https://chatgpt.com/c/6992a878-db08-8393-b3df-18ed4d3ae41c` passed: one favorite remained visible in favorites-only mode after hard reload.
+  - Evidence files: `qa-chatgpt-quicknav-favorite-persist-before-reload-pass4.png`, `qa-chatgpt-quicknav-favorite-persist-after-reload-pass4.png`.
+
+- [2026-02-16][task-14-quicknav-favorite-persistence-retest-pass-5]
+  - Continuation retest on the same ChatGPT conversation passed again: added one more favorite in all-items view (`1` -> `2`), then favorites-only still showed `2` items after hard reload.
+  - Evidence files: `qa-chatgpt-quicknav-favorite-persist-before-reload-pass5.png`, `qa-chatgpt-quicknav-favorite-persist-after-reload-pass5.png`.
+
+- [2026-02-16][task-14-qa-contract-checklist-writeback-pass-6]
+  - Attempted: writeback of the latest QA evidence set into `.sisyphus/qa/chatgpt-feature-contract.md` focused on `5.4 chatgpt_readaloud_speed_controller`, `5.6 chatgpt_reply_timer`, and `5.7 chatgpt_download_file_fix`.
+  - Proven: read-aloud menu/control is available before and after reload; options panel can set read-aloud speed to `1.5x` and `0.75x`; downloads history shows at least two successful files from `chatgpt.com`.
+  - Still missing: deterministic runtime speed verification (for example `audio.playbackRate` during active playback), timer counting/reset sequence proof (only one timer screenshot), and file-open integrity or explicit cross-chat repeat proof for download fix.
+  - Checklist decisions: kept section-2 module inventory checkboxes unchanged; checked only justified bullets in sections `5.4` and `5.7`; kept unproven bullets in `5.4`/`5.6`/`5.7` unchecked.
+
+- [2026-02-16][task-14-readaloud-playbackrate-deterministic-pass-1]
+  - Deterministic read-aloud speed verification completed on ChatGPT by sampling active `audio` state while menu showed `Stop`.
+  - Measured values while active playback was running:
+    - `1.5x`: `playbackRate=1.5`, `paused=false`, `deltaCurrentTime=1.796` (`2026-02-16T10:54:27.770Z`)
+    - `0.75x`: `playbackRate=0.75`, `paused=false`, `deltaCurrentTime=0.903` (`2026-02-16T10:55:02.593Z`)
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-readaloud-playbackrate-pass1.md`.
+  - Active-state screenshots: `qa-chatgpt-readaloud-active-stop-long-pass1.png`, `qa-chatgpt-readaloud-active-stop-pass1.png`.
+
+- [2026-02-16][task-14-reply-timer-deterministic-pass-1]
+  - Reply-timer proof must include multi-sample running increments, completion stop-state, and second-prompt reset; one screenshot is not enough.
+  - Run 1 (prompt B): running `25.9 -> 29.1` in about `3.2s` with `count=1`; completion `text=37.0`, `status=done`, `hasStopControl=false`.
+  - Run 2 (prompt C reset): previous done value `37.0`, then second-run values `7.9` and `21.5` with `count=1`, proving reset without duplicate widget.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-reply-timer-pass1.md`.
+  - Screenshots: `qa-chatgpt-reply-timer-running-pass1.png`, `qa-chatgpt-reply-timer-complete-pass1.png`, `qa-chatgpt-reply-timer-second-reset-pass1.png`.
+
+- [2026-02-16][task-14-download-file-fix-deterministic-pass-2]
+  - Closed remaining `5.7 chatgpt_download_file_fix` gaps by proving file-open integrity and cross-chat repeat in one pass.
+  - Cross-chat runtime proof: downloaded files in chat `69925a78-4868-838a-9eb2-43b445d3c555` and separate chat `6992fe06-7754-8394-9206-03a66e080268`; `chrome://downloads` shows both successful entries from `chatgpt.com`.
+  - File-integrity proof: local files are non-empty and content matches expected payloads (`download-fix-second-chat`, `download-fix-cross-chat`), including fresh duplicate `second-download-check (1).txt` created by re-download.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-download-file-fix-pass2.md`.
+  - Screenshot: `qa-chatgpt-download-file-fix-downloads-pass2.png`.
+- [2026-02-16][task-14-strong-highlight-lite-deterministic-pass-1]
+  - Completed deterministic close-out for `5.8 chatgpt_strong_highlight_lite` on ChatGPT with extension reload + hard refresh at session start.
+  - Prompted a structured markdown response with many bold phrases; probe confirmed highlight style applied (`styleTagCount=1`, `strongCount=14`, sample computed color `rgb(0, 255, 127)`).
+  - Scroll persistence stayed stable in the same chat scroller (`scrollTop` changed and returned; highlight color stayed `rgb(0, 255, 127)` with no duplicate style injection).
+  - Disclaimer hiding remained active (`#thread-bottom-container [class*="vt-disclaimer"]`: `total=1`, `visibleCount=0`, `display=none`), and SPA chat switch/return kept single style injection (`styleTagCount=1`).
+  - Console health check during this module pass: `error/warn` list returned empty.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-strong-highlight-lite-pass1.md`.
+  - Evidence files: `qa-chatgpt-strong-highlight-lite-bold-highlight-pass1.png`, `qa-chatgpt-strong-highlight-lite-scroll-persist-pass1.png`, `qa-chatgpt-strong-highlight-lite-disclaimer-hidden-pass1.png`, `qa-chatgpt-strong-highlight-lite-spa-return-pass1.png`.
+
+- [2026-02-16][task-14-tex-copy-quote-deterministic-pass-1]
+  - `5.11 chatgpt_tex_copy_quote` can be deterministically closed out by combining: (a) range-selection copy probe (`document.execCommand('copy')` + `selection.toString()`), and (b) module copy-affordance probe (double-click `.katex` + capture `navigator.clipboard.writeText` payload).
+  - In MCP context, direct `navigator.clipboard.readText()` may time out when `clipboard-read` permission is `prompt`; fallback capture through module handler payload is stable and preserves exact copied LaTeX text.
+  - Rendered formula verification should include KaTeX annotation extraction from the latest assistant turn (`annotation[encoding="application/x-tex"]`) to prove rendered math, not plain text only.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-tex-copy-quote-pass1.md`.
+  - Evidence files: `qa-chatgpt-tex-copy-quote-rendered-math-pass1.png`, `qa-chatgpt-tex-copy-quote-dblclick-toast-pass1.png`.
+
+- [2026-02-16][task-14-export-conversation-contract-writeback-pass-2]
+  - `5.12 chatgpt_export_conversation` close-out should record both Markdown and HTML outputs for at least two conversation IDs, with deterministic filename + byte-size facts.
+  - Markdown acceptance checks should stay content-light but strict: files must be non-empty, include both `User` and `Assistant` markers, and record line counts for reproducibility (`167` and `38` in this pass).
+  - Longer-thread proof is stronger when captured as the larger export pair from the same day (`6992a878-...`: `.md` `6519` bytes, `.html` `16247` bytes).
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-export-conversation-pass1.md`.
+  - Evidence files: `qa-options-export-conversation-actions-pass1.png`, `qa-chatgpt-export-conversation-downloads-pass1.png`, `qa-chatgpt-export-conversation-html-render-pass1.png`.
+
+- [2026-02-16][task-14-export-conversation-deterministic-pass-1]
+  - `5.12 chatgpt_export_conversation` close-out should run from options-page `菜单操作` (`导出为 Markdown` / `导出为 HTML`) and then validate both outputs in `chrome://downloads`.
+  - If repeated exports appear to succeed (`已执行`) but files do not land, check Chrome automatic-download policy and add `[*.]chatgpt.com` under `chrome://settings/content/automaticDownloads` allowlist.
+  - Deterministic proof set for this module: file-size checks (`.md` + `.html` > 0), markdown user/assistant heading counts, and rendered exported-HTML probe (`title`, `h1`, `msgCount/userCount/assistantCount`).
+  - Long-thread criterion can be evidenced with a fast post-export responsiveness probe (batched turn queries + measured duration) on the source ChatGPT tab.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-export-conversation-pass1.md`.
+  - Evidence files: `qa-chatgpt-export-conversation-options-actions-pass1.png`, `qa-chatgpt-export-conversation-downloads-pass1.png`, `qa-chatgpt-export-conversation-html-render-long-thread-pass1.png`.
+
+- [2026-02-16][task-14-image-message-edit-deterministic-pass-1]
+  - `5.13 chatgpt_image_message_edit` is deterministically provable by combining message-level assertions with conversation-tree structure: edited branch user turn (`[img]` + edited text) and original baseline node must coexist.
+  - Upload automation path is stable when clicking `Add files and more` first, then using `upload_file` on menu item `Add photos & files`; direct upload to the top-level add button is unreliable.
+  - Branch-preservation acceptance should record tree-side facts (`U IMGE pass1 baseline`, `U [img] IMGE pass1 edited branch`, root `branches:2`) plus runtime turn render facts (image preview button + edited user text).
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-image-message-edit-pass1.md`.
+  - Evidence files: `qa-chatgpt-image-message-edit-control-pass1.png`, `qa-chatgpt-image-message-edit-edited-branch-pass1.png`, `qa-chatgpt-image-message-edit-branch-preserved-pass1.png`.
+
+- [2026-02-16][task-14-image-message-edit-contract-writeback-pass-2]
+  - Close-out writeback for checklist `5.13` should reference artifact-only facts: baseline `IMGE pass1 baseline`, edited branch `[img] IMGE pass1 edited branch`, and preserved sibling branches under one root.
+  - When URL is not captured in the selected artifact set, record `URL not captured` explicitly instead of inferring context from unrelated notes.
+  - Attachment evidence can be anchored by a run marker file (`qa-chatgpt-image-message-edit-attachment-pass1.txt`, `IMG-EDIT-ATTACH-PASS1`) even when filename text is not visible in screenshots.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-image-message-edit-pass1.md`.
+  - Evidence files: `qa-chatgpt-image-message-edit-control-pass1.png`, `qa-chatgpt-image-message-edit-edited-branch-pass1.png`, `qa-chatgpt-image-message-edit-branch-preserved-pass1.png`, `qa-chatgpt-image-message-edit-attachment-pass1.txt`.
+
+- [2026-02-16][task-14-openai-new-model-banner-deterministic-pass-2]
+  - For deterministic `5.1 openai_new_model_banner` verification, set monitor URL to `https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-5.png` and save; this URL returned `200` and reliably produced banner alert state.
+  - Banner "dismiss" behavior is config-driven (not direct close): click banner action `打开配置（清空 URL 列表可停止提醒）`, clear URL list in options, and save to stop reminders/hide open banner (`openCount=0`).
+  - Duplicate-check should use structural counters across SPA hop/return: `hostCount` stays `1` and `openCount` stays `0` after dismissal; this is stronger than visual-only checks.
+  - Evidence note: `.sisyphus/evidence/qa-chatgpt-openai-new-model-banner-pass2.md`.
+  - Evidence files: `qa-chatgpt-openai-new-model-banner-visible-pass2.png`, `qa-chatgpt-openai-new-model-banner-dismissed-pass2.png`, `qa-chatgpt-openai-new-model-banner-no-duplicate-after-spa-pass2.png`, `qa-options-openai-new-model-monitor-clear-pass2.png`.

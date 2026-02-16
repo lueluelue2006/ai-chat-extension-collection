@@ -2934,7 +2934,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 清理已失效的收藏（不再存在的消息或图钉）
     const nextFull = cacheIndex;
     const validKeys = new Set(nextFull.map(i => i.key));
-    const favRemoved = runFavoritesGC(false, validKeys);
+    // Early boot can render before the message index is ready; avoid clearing persisted favorites on an empty snapshot.
+    const favRemoved = validKeys.size > 0 ? runFavoritesGC(false, validKeys) : 0;
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {

@@ -96,7 +96,14 @@
   const SIMPLE_HIDE_ROLES = new Set(['system', 'tool']);
   // Treat internal assistant payloads as non-renderable (and hidden in simple mode),
   // otherwise branch navigation may mistakenly target them.
-  const SIMPLE_HIDE_ASSISTANT_TYPES = new Set(['thoughts', 'execution_output', 'reasoning_recap', 'reasoning', 'code']);
+  const SIMPLE_HIDE_ASSISTANT_TYPES = new Set([
+    'thoughts',
+    'execution_output',
+    'reasoning_recap',
+    'reasoning',
+    'code',
+    'model_editable_context'
+  ]);
   const SNIPPET_MAX_LEN = 32;
 
   const GUIDE_COLORS = Object.freeze([

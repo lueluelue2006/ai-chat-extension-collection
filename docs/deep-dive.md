@@ -7,7 +7,7 @@
 > 重点文件入口（建议从这里开始读）：  
 > - `manifest.json`（MV3 入口：静态只挂 bootstrap）  
 > - `content/bootstrap.js`（document_start 唤醒后台 SW + 兜底注入）  
-> - `background/sw.js`（动态注册 content scripts + 设置读写 + reinject）  
+> - `background/sw.js` + `background/sw/*.ts`（`sw.js` 只做装配；模块负责注册/设置/监控/重置/路由）  
 > - `shared/registry.ts`（站点/模块元数据；Popup/Options 的“单一真相”）  
 > - `shared/injections.ts`（注入定义；SW 的“单一真相”）
 
@@ -30,7 +30,7 @@
 - `content/chatgpt-quicknav.js`（约 5231 行）
 - `content/chatgpt-usage-monitor/main.js`（约 4681 行）
 - `content/chatgpt-message-tree/main.js`（约 2218 行）
-- `background/sw.js`（约 1612 行）
+- `background/sw/router.ts`（约 411 行）
 - `options/options.js`（约 3316 行）
 
 ---
@@ -89,15 +89,15 @@
   - 判断依据：如果页面里没出现 `__aichat_quicknav_bridge_v1__`（桥不存在），就让 SW 对当前 tab 做一次 best-effort 注入
   - 触发源：定时补偿 + `pageshow` + `visibilitychange`
 
-### 3.2 SW 负责动态注册/差异更新：`background/sw.js`
+### 3.2 SW 负责动态注册/差异更新：`background/sw.js` + `background/sw/*.ts`
 
 启动时（或每次 SW 被唤醒时）：
 
-1) 读入两份“真相表”（运行时读取 dist 里的 JS 产物）：`importScripts('../shared/registry.js', '../shared/injections.js')`
-2) 由注入表推导默认设置：`INJECTIONS.buildDefaultSettings(REGISTRY)`
-3) 由注入表生成注册定义：`INJECTIONS.buildContentScriptDefs(REGISTRY)`
+1) `background/sw.js` 读入两份“真相表”（运行时读取 dist 里的 JS 产物）：`importScripts('../shared/registry.js', '../shared/injections.js')`
+2) `background/sw.js` 再按顺序加载 `./sw/chrome.js`、`storage.js`、`registration.js`、`monitors.js`、`reset.js`、`router.js`
+3) 由 `storage.initConfig(...)` 完成默认设置/注入定义初始化，再由 `router.init()` 注册消息与生命周期监听器
 
-动态注册是“差异更新”（diff update）而不是全量重灌：
+动态注册仍是“差异更新”（diff update）而不是全量重灌（实现在 `background/sw/registration.ts`）：
 
 - `applyContentScriptRegistration(settings)` 会把“已注册内容脚本”与“当前启用的 defs”做比较：  
   - 不再需要的：`unregisterContentScripts({ids})`  
@@ -115,7 +115,7 @@
 
 ## 4) 配置与状态模型（核心）
 
-Settings 存储在 `chrome.storage.local` 的 `quicknav_settings`（键名在 `background/sw.js` 的 `SETTINGS_KEY`）。
+Settings 存储在 `chrome.storage.local` 的 `quicknav_settings`（键名在 `background/sw/storage.ts` 的 `SETTINGS_KEY`）。
 
 ### 4.1 默认设置结构：由 `buildDefaultSettings()` 统一生成
 
@@ -320,14 +320,14 @@ Turn 筛选策略（维护重点）：
 - `content/bootstrap.js:41`：发送 `QUICKNAV_BOOTSTRAP_ENSURE`
 - `content/bootstrap.js:54`：发送 `QUICKNAV_BOOTSTRAP_PING`
 - `content/bootstrap.js:69`：快速/延迟多轮 `scheduleEnsure(...)`
-- `background/sw.js:10`：`importScripts('../shared/registry.js', '../shared/injections.js')`（运行时读取 dist 产物）
-- `background/sw.js:17`：默认设置由注入表推导（`buildDefaultSettings`）
-- `background/sw.js:28`：注入定义由注入表生成（`buildContentScriptDefs`）
-- `background/sw.js:592`：动态注册“差异更新”主函数 `applyContentScriptRegistration(settings)`
-- `background/sw.js:1315`：处理 `QUICKNAV_BOOTSTRAP_PING`
-- `background/sw.js:1355`：处理 `QUICKNAV_BOOTSTRAP_ENSURE`
-- `background/sw.js:1596`：`onInstalled` → 注册 + reinject
-- `background/sw.js:1601`：`onStartup` → 仅保持注册（避免 session restore 双重注入）
+- `background/sw.js:9`：`importScripts('../shared/registry.js', '../shared/injections.js')`（运行时读取 dist 产物）
+- `background/sw.js:20`：加载 SW 模块脚本（`./sw/*.js`）
+- `background/sw/storage.ts:117`：配置初始化入口 `initConfig(...)`
+- `background/sw/registration.ts:271`：动态注册“差异更新”主函数 `applyContentScriptRegistration(settings)`
+- `background/sw/router.ts:97`：处理 `QUICKNAV_BOOTSTRAP_PING`
+- `background/sw/router.ts:133`：处理 `QUICKNAV_BOOTSTRAP_ENSURE`
+- `background/sw/router.ts:372`：`onInstalled` → 注册 + reinject
+- `background/sw/router.ts:381`：`onStartup` → 仅保持注册（避免 session restore 双重注入）
 
 ### 配置与状态
 
@@ -335,8 +335,8 @@ Turn 筛选策略（维护重点）：
 - `shared/registry.ts:41`：模块表 `MODULES`
 - `shared/injections.ts:114`：`buildDefaultSettings(registry)`
 - `shared/injections.ts:149`：`buildContentScriptDefs(registry)`
-- `background/sw.js:262`：SW 端 patch 白名单校验 `applySettingsPatchOps(current, patch)`
-- `background/sw.js:668`：设置写入串行化 `runSettingsMutation(fn)`
+- `background/sw/storage.ts:176`：SW 端 patch 白名单校验 `applySettingsPatchOps(current, patch)`
+- `background/sw/storage.ts:227`：设置写入串行化 `runSettingsMutation(fn)`
 - `popup/popup.js:191`：读取设置 `QUICKNAV_GET_SETTINGS`
 - `popup/popup.js:203`：增量 patch `QUICKNAV_PATCH_SETTINGS`
 - `options/options.js:449`：读取设置 `QUICKNAV_GET_SETTINGS`

@@ -65,3 +65,7 @@
 - [2026-02-16][task-11-options-routing-gpt53-stop-semantics]
   - Added explicit Options module routes for `openai_new_model_banner` and `chatgpt_sidebar_header_fix`; both now render deterministic settings panels instead of falling into the unknown-module fallback.
   - GPT53 URL normalization now treats `null`/`undefined` as “use defaults”, but preserves explicit empty user input as `[]`; an empty saved list means no probe URLs and therefore stops probe/reminder behavior.
+
+- [2026-02-16][task-12-docs-inventory-drift-gate]
+  - `dev/check.js` now compares `manifest.json` version with the `- Version:` line in `docs/scripts-inventory.md` and fails fast on mismatch.
+  - Drift fix path is explicit in output: run `node dev/gen-scripts-inventory.js`; patch bumps must regenerate inventory in the same change.

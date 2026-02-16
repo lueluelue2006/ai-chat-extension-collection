@@ -191,6 +191,7 @@ MAIN world 菜单桥（关键）：MAIN world 不能把函数引用交给 ISOLAT
 `content/scroll-guard-main.js` 运行在 MAIN world：
 
 - patch `scrollIntoView/scrollTo/scrollBy/scrollTop setter` 等，结合 dataset 的 allow-window 做拦截（防 autoscroll）
+- 当前 scroll API patch 仅在 MAIN world 生效；ISOLATED 侧（`chatgpt-quicknav.js`）只发布 dataset/postMessage 状态，不再 monkey patch 滚动 API
 - hook `history.pushState/replaceState + popstate/hashchange` 广播 SPA 路由变化：`postMessage({type:'QUICKNAV_ROUTE_CHANGE'})`
 - ready 信号：`postMessage({type:'QUICKNAV_SCROLL_GUARD_READY'})`
 
@@ -248,6 +249,7 @@ Turn 筛选策略（维护重点）：
 - 大对话内存保护：设置 JSON 上限（6MB 解压后），超限直接拒载以保稳定性
 - QuickNav 桥协议：`QUICKNAV_CHATGPT_TREE_*`（summary/toggle/open/close/refresh/navigate）
 - 缓存回收：关闭时主动丢弃大 mapping（避免常驻占用）
+- 凭据边界：auth/session 缓存放在闭包内 `authCache`，`window.__aichat_chatgpt_message_tree_state__` 不再暴露 `token/accountId/deviceId`
 
 ### 6.4 thinking toggle（`content/chatgpt-thinking-toggle/main.js` + `content/chatgpt-thinking-toggle/config-bridge.js`）
 
@@ -267,6 +269,7 @@ Turn 筛选策略（维护重点）：
 - 共享组配额：`sharedQuotaGroups`（多模型共享配额统计）
 - SPA 导航重建与自愈：订阅 bridge `routeChange`，并有低频自愈逻辑避免 React 重挂导致失效
 - options 同步桥：`bridge.js` 负责 localStorage ↔ `chrome.storage.local` 双向同步（含版本号/修订号）
+- 强制 silent 模式：主链路先做 headless 统计与同步，不注入页面悬浮 UI；主要查看/导入/导出入口在 Options
 
 ### 6.6 ChatGPT Perf（`content/chatgpt-perf/content.js` + `content/chatgpt-perf/content.css`）
 
@@ -291,7 +294,7 @@ Turn 筛选策略（维护重点）：
 
 - 主入口：三栏布局（站点/模块/设置）+ 模块设置面板路由（`renderModuleSettings(...)`）
 - 设置操作：`QUICKNAV_GET_SETTINGS`、`QUICKNAV_PATCH_SETTINGS`、`QUICKNAV_RESET_DEFAULTS`
-- OpenAI 资源监控：通过 `QUICKNAV_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当资源可访问时会在 `chatgpt.com` 显示页内横幅（不可点击关闭，需删除 URL 才会停止提醒）
+- OpenAI 资源监控：通过 `QUICKNAV_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当资源可访问时会在 `chatgpt.com` 显示页内横幅。若需停止提醒，清空 URL 列表并保存即可（`MARK_READ` 只清未读标记）
 - 横幅“打开配置”动作：内容脚本通过 `QUICKNAV_OPEN_OPTIONS_PAGE` 交给 SW 调扩展 API 打开配置页（优先 `chrome.tabs.create(optionsUrl)`，失败再 fallback `chrome.runtime.openOptionsPage()`）；该消息为低风险动作，SW 端不再对 sender 做额外拦截，避免不同实例字段差异导致误判。
 
 ---

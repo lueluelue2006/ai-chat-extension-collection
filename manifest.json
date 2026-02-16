@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI捷径 (AI Shortcuts)",
   "short_name": "AI捷径",
-  "version": "1.3.64",
+  "version": "1.3.65",
   "description": "多AI站点脚本合集",
   "icons": {
     "16": "icons/icon16.png",
@@ -19,18 +19,9 @@
     "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
-    "https://business.gemini.google/*",
     "https://cdn.openai.com/*",
-    "https://chat.deepseek.com/*",
     "https://chat.qwen.ai/*",
-    "https://chat.z.ai/*",
-    "https://chatgpt.com/*",
-    "https://ernie.baidu.com/*",
-    "https://gemini.google.com/app*",
-    "https://grok.com/*",
-    "https://kimi.com/*",
-    "https://www.genspark.ai/*",
-    "https://www.kimi.com/*"
+    "https://chatgpt.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -47,17 +38,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://business.gemini.google/*",
-        "https://chat.deepseek.com/*",
         "https://chat.qwen.ai/*",
-        "https://chat.z.ai/*",
-        "https://chatgpt.com/*",
-        "https://ernie.baidu.com/*",
-        "https://gemini.google.com/app*",
-        "https://grok.com/*",
-        "https://kimi.com/*",
-        "https://www.genspark.ai/*",
-        "https://www.kimi.com/*"
+        "https://chatgpt.com/*"
       ],
       "js": [
         "content/bootstrap.js"

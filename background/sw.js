@@ -34,6 +34,7 @@
   const LEGACY_CONTENT_SCRIPT_IDS = Array.isArray(INJECTIONS?.LEGACY_CONTENT_SCRIPT_IDS)
     ? INJECTIONS.LEGACY_CONTENT_SCRIPT_IDS
     : ['quicknav_grok_model_selector'];
+  const QUICKNAV_CONTENT_SCRIPT_ID_PREFIX = 'quicknav_';
   const QUICKNAV_CONTENT_SCRIPT_IDS = [...new Set([...CONTENT_SCRIPT_DEFS.map((d) => d.id), ...LEGACY_CONTENT_SCRIPT_IDS])];
 
   let reinjectScheduled = false;
@@ -621,7 +622,7 @@
       const out = [];
       for (const s of scripts || []) {
         const id = s && typeof s.id === 'string' ? s.id : '';
-        if (id && QUICKNAV_CONTENT_SCRIPT_IDS.includes(id)) out.push(s);
+        if (id && id.startsWith(QUICKNAV_CONTENT_SCRIPT_ID_PREFIX)) out.push(s);
       }
       return out;
     } catch {
@@ -1260,15 +1261,7 @@
   // === Dev-only smoke tests (not exposed in UI) ===
   const DEV_SMOKE_TARGETS = [
     { id: 'chatgpt', url: 'https://chatgpt.com/' },
-    { id: 'kimi', url: 'https://kimi.com/' },
-    { id: 'gemini_app', url: 'https://gemini.google.com/app' },
-    { id: 'gemini_business', url: 'https://business.gemini.google/' },
-    { id: 'grok', url: 'https://grok.com/' },
-    { id: 'deepseek', url: 'https://chat.deepseek.com/' },
-    { id: 'zai', url: 'https://chat.z.ai/' },
-    { id: 'qwen', url: 'https://chat.qwen.ai/' },
-    { id: 'ernie', url: 'https://ernie.baidu.com/' },
-    { id: 'genspark', url: 'https://www.genspark.ai/' }
+    { id: 'qwen', url: 'https://chat.qwen.ai/' }
   ];
 
   function normalizeDevSmokeTargetIds(value) {
@@ -1422,8 +1415,10 @@
   }
 
   try {
-    // For service-worker DevTools console: `__quicknavDevSmoke.run()`
-    globalThis.__quicknavDevSmoke = { run: (opts) => runDevSmokeTests(opts) };
+    globalThis.__quicknavDevSmoke = {
+      run: (opts) => runDevSmokeTests(opts),
+      registeredContentScripts: () => getRegisteredQuickNavContentScripts()
+    };
   } catch {}
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

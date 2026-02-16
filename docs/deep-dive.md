@@ -15,15 +15,15 @@
 
 ## TL;DR（一句话）
 
-这是一个 **MV3 多站点脚本平台**（不是“单脚本扩展”）：核心是 **注册表驱动 + 动态注入 + 跨 world 桥接 + 可视化配置（Popup/Options）**。
+这是一个 **MV3 脚本平台（当前范围 ChatGPT-first）**：核心是 **注册表驱动 + 动态注入 + 跨 world 桥接 + 可视化配置（Popup/Options）**。
 
 ## 规模与热点（可复现）
 
 当前规模（由 `shared/registry.js` + `shared/injections.js` 实际计算得到；可跑 `node dev/stats.js` 复现）：
 
-- 站点：11（含 `common`）
+- 站点：3（含 `common`）
 - 模块：27
-- 注入定义：57（MAIN 23 / ISOLATED 34）
+- 注入定义：24（MAIN 10 / ISOLATED 14）
 
 代码热点（`wc -l` 口径，仅用于“哪里复杂/容易出问题”，会随提交变化）：
 
@@ -35,12 +35,12 @@
 
 ---
 
-## 1) 项目定位：一个 MV3 多站点脚本平台
+## 1) 项目定位：ChatGPT-first 的 MV3 脚本平台
 
-这不是“单一脚本 + 一个站点”的扩展，而是一个“脚本平台”：
+当前交付策略不是“多站点并行铺开”，而是“ChatGPT 优先 + 可扩展骨架保留”的脚本平台：
 
-- **多站点**：ChatGPT / Gemini / DeepSeek / Qwen / Z.ai / Grok / Genspark / 文心一言等。
-- **多模块**：每个站点有一组模块（QuickNav、用量统计、导出对话、UI 修复、快捷键等），并能在 Popup/Options 里配置启用/禁用。
+- **当前范围**：生产支持聚焦 `chatgpt.com`；`chat.qwen.ai` 仅保留 smoke-test surface（不承诺产品行为/兼容性）。
+- **多模块**：当前主要模块集中在 ChatGPT 站点（QuickNav、用量统计、导出对话、UI 修复、快捷键等），并可在 Popup/Options 里配置启用/禁用。
 - **工程化目标**：尽量减少静态注入与重复 patch（尤其是 fetch、MutationObserver、滚动相关），通过“单一真相 + 桥接层 + 动态注入”把复杂度收敛到少数核心文件。
 
 ---
@@ -347,7 +347,7 @@ Turn 筛选策略（维护重点）：
 - `content/menu-bridge.js:10`：`window.__quicknavRegisterMenuCommand`（菜单注册入口）
 - `content/menu-bridge.js:183`：处理 `QUICKNAV_GET_MENU`
 - `content/menu-bridge.js:199`：处理 `QUICKNAV_RUN_MENU`
-- `content/scroll-guard-main.js:591`：scrollTop setter patch（Gemini/ChatGPT autoscroll 关键路径）
+- `content/scroll-guard-main.js:591`：scrollTop setter patch（ChatGPT/Qwen autoscroll 关键路径）
 - `content/scroll-guard-main.js:95`：广播 `QUICKNAV_ROUTE_CHANGE`
 - `content/scroll-guard-main.js:699`：广播 `QUICKNAV_SCROLL_GUARD_READY`
 - `content/chatgpt-core.js:87`：`getRoute()`

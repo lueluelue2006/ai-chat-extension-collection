@@ -32,56 +32,6 @@
         'chatgpt_sidebar_header_fix'
       ]
     },
-    {
-      id: 'kimi',
-      name: 'Kimi',
-      sub: 'kimi.com',
-      matchPatterns: ['https://www.kimi.com/*', 'https://kimi.com/*'],
-      // Kimi is an SPA: users often start at `/` then pushState to `/chat/<id>` without reloading.
-      // Include `/` so content scripts are present before the first navigation happens.
-      quicknavPatterns: ['https://www.kimi.com/', 'https://www.kimi.com/chat*', 'https://kimi.com/', 'https://kimi.com/chat*'],
-      modules: ['quicknav', 'chatgpt_cmdenter_send']
-    },
-    {
-      id: 'gemini_business',
-      name: 'Gemini Business',
-      sub: 'business.gemini.google',
-      matchPatterns: ['https://business.gemini.google/*'],
-      modules: ['quicknav', 'chatgpt_cmdenter_send', 'gemini_math_fix', 'gemini_auto_3_pro']
-    },
-    {
-      id: 'gemini_app',
-      name: 'Gemini App',
-      sub: 'gemini.google.com/app',
-      matchPatterns: ['https://gemini.google.com/app*'],
-      modules: ['quicknav', 'chatgpt_cmdenter_send']
-    },
-    {
-      id: 'genspark',
-      name: 'Genspark',
-      sub: 'genspark.ai/agents',
-      matchPatterns: ['https://www.genspark.ai/*'],
-      quicknavPatterns: ['https://www.genspark.ai/agents*'],
-      modules: [
-        'quicknav',
-        'chatgpt_cmdenter_send',
-        'genspark_moa_image_autosettings',
-        'genspark_credit_balance',
-        'genspark_codeblock_fold',
-        'genspark_inline_upload_fix',
-        'genspark_force_sonnet45_thinking'
-      ]
-    },
-    {
-      id: 'grok',
-      name: 'Grok',
-      sub: 'grok.com',
-      matchPatterns: ['https://grok.com/*'],
-      modules: ['quicknav', 'chatgpt_cmdenter_send', 'grok_fast_unlock', 'grok_rate_limit_display']
-    },
-    { id: 'deepseek', name: 'DeepSeek', sub: 'chat.deepseek.com', matchPatterns: ['https://chat.deepseek.com/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
-    { id: 'zai', name: 'GLM', sub: 'chat.z.ai', matchPatterns: ['https://chat.z.ai/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
-    { id: 'ernie', name: '文心一言', sub: 'ernie.baidu.com', matchPatterns: ['https://ernie.baidu.com/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] },
     { id: 'qwen', name: 'Qwen', sub: 'chat.qwen.ai', matchPatterns: ['https://chat.qwen.ai/*'], modules: ['quicknav', 'chatgpt_cmdenter_send'] }
   ];
 

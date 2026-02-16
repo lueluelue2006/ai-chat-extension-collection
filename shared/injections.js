@@ -141,15 +141,7 @@
     // === QuickNav per site ===
     const QUICKNAV_SITES = [
       { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_start', matches: (r) => siteMatchPatterns(r, 'chatgpt') },
-      { siteId: 'ernie', js: 'content/ernie-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'ernie') },
-      { siteId: 'deepseek', js: 'content/deepseek-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'deepseek') },
-      { siteId: 'kimi', js: 'content/kimi-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'kimi') },
-      { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'qwen') },
-      { siteId: 'zai', js: 'content/zai-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'zai') },
-      { siteId: 'grok', js: 'content/grok-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'grok') },
-      { siteId: 'gemini_app', js: 'content/gemini-app-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'gemini_app') },
-      { siteId: 'gemini_business', js: 'content/gemini-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'gemini_business') },
-      { siteId: 'genspark', js: 'content/genspark-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'genspark') }
+      { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'qwen') }
     ];
 
     for (const s of QUICKNAV_SITES) {
@@ -178,54 +170,6 @@
         world: 'MAIN'
       });
     }
-
-    // === Genspark extras ===
-    const gensparkAll = siteMatchPatterns(registry, 'genspark');
-    const gensparkChat = siteQuickNavPatterns(registry, 'genspark');
-
-    defs.push({
-      id: 'quicknav_genspark_moa_image_autosettings',
-      siteId: 'genspark',
-      moduleId: 'genspark_moa_image_autosettings',
-      matches: gensparkAll,
-      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-moa-image-autosettings/main.js'],
-      runAt: 'document_start',
-      allFrames: true
-    });
-    defs.push({
-      id: 'quicknav_genspark_credit_balance',
-      siteId: 'genspark',
-      moduleId: 'genspark_credit_balance',
-      matches: gensparkAll,
-      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-credit-balance/main.js'],
-      runAt: 'document_end'
-    });
-    defs.push({
-      id: 'quicknav_genspark_codeblock_fold',
-      siteId: 'genspark',
-      moduleId: 'genspark_codeblock_fold',
-      matches: gensparkChat,
-      js: [ISOLATED_BRIDGE_FILE, 'content/genspark-codeblock-fold/main.js'],
-      runAt: 'document_end'
-    });
-    defs.push({
-      id: 'quicknav_genspark_inline_upload_fix',
-      siteId: 'genspark',
-      moduleId: 'genspark_inline_upload_fix',
-      matches: gensparkChat,
-      js: [MAIN_BRIDGE_FILE, 'content/genspark-inline-upload-fix/main.js'],
-      runAt: 'document_idle',
-      world: 'MAIN'
-    });
-    defs.push({
-      id: 'quicknav_genspark_force_sonnet45_thinking',
-      siteId: 'genspark',
-      moduleId: 'genspark_force_sonnet45_thinking',
-      matches: gensparkChat,
-      js: [MAIN_BRIDGE_FILE, 'content/genspark-force-sonnet45-thinking/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    });
 
     // === ChatGPT extras ===
     const chatgpt = siteMatchPatterns(registry, 'chatgpt');
@@ -288,15 +232,7 @@
 
     // Cmd+Enter send (multi-site)
     const CMDENTER_SITES = [
-      { siteId: 'ernie', id: 'quicknav_ernie_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'ernie') },
-      { siteId: 'deepseek', id: 'quicknav_deepseek_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'deepseek') },
-      { siteId: 'qwen', id: 'quicknav_qwen_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'qwen') },
-      { siteId: 'kimi', id: 'quicknav_kimi_cmdenter_send', matches: (r) => siteQuickNavPatterns(r, 'kimi') },
-      { siteId: 'zai', id: 'quicknav_zai_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'zai') },
-      { siteId: 'grok', id: 'quicknav_grok_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'grok') },
-      { siteId: 'gemini_app', id: 'quicknav_gemini_app_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'gemini_app') },
-      { siteId: 'gemini_business', id: 'quicknav_gemini_business_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'gemini_business') },
-      { siteId: 'genspark', id: 'quicknav_genspark_cmdenter_send', matches: (r) => siteQuickNavPatterns(r, 'genspark') }
+      { siteId: 'qwen', id: 'quicknav_qwen_cmdenter_send', matches: (r) => siteMatchPatterns(r, 'qwen') }
     ];
 
     for (const s of CMDENTER_SITES) {
@@ -309,27 +245,6 @@
         runAt: 'document_start'
       });
     }
-
-    // Grok extras
-    const grok = siteMatchPatterns(registry, 'grok');
-    defs.push({
-      id: 'quicknav_grok_fast_unlock',
-      siteId: 'grok',
-      moduleId: 'grok_fast_unlock',
-      matches: grok,
-      js: [MAIN_BRIDGE_FILE, 'content/grok-fast-unlock/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    });
-    defs.push({
-      id: 'quicknav_grok_rate_limit_display',
-      siteId: 'grok',
-      moduleId: 'grok_rate_limit_display',
-      matches: grok,
-      js: [MAIN_BRIDGE_FILE, 'content/grok-rate-limit-display/main.js'],
-      runAt: 'document_end',
-      world: 'MAIN'
-    });
 
     // ChatGPT readaloud
     defs.push({
@@ -452,26 +367,6 @@
       js: [MAIN_BRIDGE_FILE, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
-    });
-
-    // Gemini enterprise extras
-    const geminiBusiness = siteMatchPatterns(registry, 'gemini_business');
-    defs.push({
-      id: 'quicknav_gemini_math_fix',
-      siteId: 'gemini_business',
-      moduleId: 'gemini_math_fix',
-      matches: geminiBusiness,
-      js: [MAIN_BRIDGE_FILE, 'content/gemini-enterprise-math-fix/main.js'],
-      runAt: 'document_start',
-      world: 'MAIN'
-    });
-    defs.push({
-      id: 'quicknav_gemini_auto_3_pro',
-      siteId: 'gemini_business',
-      moduleId: 'gemini_auto_3_pro',
-      matches: geminiBusiness,
-      js: [ISOLATED_BRIDGE_FILE, 'content/gemini-enterprise-auto-gemini-3-pro/main.js'],
-      runAt: 'document_end'
     });
 
     return defs;

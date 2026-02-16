@@ -1,0 +1,15 @@
+{
+  "name": "quicknav-mv3",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node dev/check.js",
+    "test": "node dev/test-usage-monitor-utils.js && node dev/test-usage-monitor-bridge.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

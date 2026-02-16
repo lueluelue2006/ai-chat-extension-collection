@@ -328,16 +328,8 @@
     // Fallback for safety if registry is missing.
     try {
       const host = String(u.hostname || '').toLowerCase();
-      const path = String(u.pathname || '');
       if (host === 'chatgpt.com') return 'chatgpt';
-      if (host === 'ernie.baidu.com') return 'ernie';
-      if (host === 'chat.deepseek.com') return 'deepseek';
       if (host === 'chat.qwen.ai') return 'qwen';
-      if (host === 'chat.z.ai') return 'zai';
-      if (host === 'grok.com') return 'grok';
-      if (host === 'gemini.google.com' && path.startsWith('/app')) return 'gemini_app';
-      if (host === 'business.gemini.google') return 'gemini_business';
-      if (host === 'www.genspark.ai') return 'genspark';
     } catch {}
     return null;
   }

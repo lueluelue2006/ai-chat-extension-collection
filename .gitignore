@@ -6,3 +6,5 @@ genspark-page.png
 trace-*.json.gz
 
 _metadata/
+dist/
+node_modules/

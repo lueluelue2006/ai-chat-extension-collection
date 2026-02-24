@@ -622,6 +622,25 @@
   let moduleSettingsRegistryPromise = null;
   let moduleSettingsRegistryMap = null;
   const moduleSettingsScriptLoaders = new Map();
+  const CHATGPT_MODULE_ORDER = Object.freeze([
+    'quicknav',
+    'cmdenter_send',
+    'chatgpt_thinking_toggle',
+    'chatgpt_reply_timer',
+    'chatgpt_usage_monitor',
+    'chatgpt_quick_deep_search',
+    'chatgpt_export_conversation',
+    'chatgpt_readaloud_speed_controller',
+    'chatgpt_tex_copy_quote',
+    'chatgpt_strong_highlight_lite',
+    'chatgpt_image_message_edit',
+    'chatgpt_message_tree',
+    'chatgpt_download_file_fix',
+    'chatgpt_sidebar_header_fix',
+    'chatgpt_hide_feedback_buttons',
+    'chatgpt_perf',
+    'openai_new_model_banner'
+  ]);
 
   function normalizeSearchText(s) {
     return String(s || '').trim().toLowerCase();
@@ -647,12 +666,33 @@
     return hay.includes(t);
   }
 
-  function moduleMatchesSearch(moduleId, term) {
+  function shortenChatGPTModuleName(name) {
+    return String(name || '').replace(/^ChatGPT\s+/i, '').trim();
+  }
+
+  function getModuleDisplayMeta(siteId, moduleId) {
+    const def = MODULES?.[moduleId];
+    let name = String(def?.name || moduleId || '').trim();
+    const sub = String(def?.sub || '').trim();
+    if (siteId === 'chatgpt') name = shortenChatGPTModuleName(name);
+    return { name, sub };
+  }
+
+  function moduleMatchesSearch(siteId, moduleId, term) {
     const t = normalizeSearchText(term);
     if (!t) return true;
+    const display = getModuleDisplayMeta(siteId, moduleId);
     const def = MODULES?.[moduleId];
-    const hay = `${def?.name || ''} ${def?.sub || ''} ${moduleId || ''}`.toLowerCase();
+    const hay = `${display.name || ''} ${display.sub || ''} ${def?.name || ''} ${def?.sub || ''} ${moduleId || ''}`.toLowerCase();
     return hay.includes(t);
+  }
+
+  function getModuleSortWeight(siteId, item) {
+    if (siteId === 'chatgpt') {
+      const orderIdx = CHATGPT_MODULE_ORDER.indexOf(item.id);
+      return orderIdx >= 0 ? orderIdx : 1000 + item.idx;
+    }
+    return item.hasMenu ? -1000 + item.idx : item.idx;
   }
 
   function getSite(id) {
@@ -799,11 +839,13 @@
         hasMenu: !!(MODULES[id]?.menuPreview && MODULES[id].menuPreview.length)
       }))
       .sort((a, b) => {
-        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
+        const wa = getModuleSortWeight(siteId, a);
+        const wb = getModuleSortWeight(siteId, b);
+        if (wa !== wb) return wa - wb;
         return a.idx - b.idx;
       })
       .map((x) => x.id)
-      .filter((id) => moduleMatchesSearch(id, moduleSearchText));
+      .filter((id) => moduleMatchesSearch(siteId, id, moduleSearchText));
     return mods;
   }
 
@@ -979,6 +1021,7 @@
     for (const moduleId of mods) {
       const def = MODULES[moduleId];
       if (!def) continue;
+      const display = getModuleDisplayMeta(siteId, moduleId);
 
       const row = document.createElement('div');
       row.className = 'triRow' + (moduleId === activeModuleId ? ' selected' : '');
@@ -989,11 +1032,11 @@
 
       const name = document.createElement('div');
       name.className = 'triName';
-      name.textContent = def.name;
+      name.textContent = display.name || def.name;
 
       const sub = document.createElement('div');
       sub.className = 'triSub';
-      sub.textContent = def.sub || '';
+      sub.textContent = display.sub || '';
 
       const hotkeysText = formatHotkeys(def.hotkeys);
       const hotkeys = document.createElement('div');
@@ -1105,7 +1148,9 @@
   }
 
   function addModuleHeader(moduleId, title, subtitle) {
-    addPanelTitle(title, subtitle);
+    let panelTitle = String(title || '').trim();
+    if (selectedSiteId === 'chatgpt') panelTitle = shortenChatGPTModuleName(panelTitle);
+    addPanelTitle(panelTitle || title, subtitle);
     addPanelHotkeys(moduleId);
     addPanelAttribution(moduleId);
     addPanelDivider();

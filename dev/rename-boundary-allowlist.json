@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "legacyBrand": "QuickNav",
+  "targetBrand": "AI Shortcuts",
+  "auditPathRegex": "^(popup|dev|content|options|shared|background)/",
+  "auditExcludes": [
+    "^dev/rename-boundary-allowlist\\.json$",
+    "^dev/assert-brand-boundaries\\.js$"
+  ],
+  "policy": {
+    "deepRename": true,
+    "allowAliasBridge": false,
+    "allowLegacyProductDataPurgeAfterCutover": true,
+    "moduleQuickNavDefault": "keep-unless-reclassified"
+  },
+  "productSignals": [
+    "<title>\\s*QuickNav\\b",
+    "<h[1-6][^>]*>\\s*QuickNav\\b",
+    "\\bQuickNav\\s+Dev\\b",
+    "\\bQuickNav\\s+MV3\\b",
+    "\\bQuickNav\\s+UI\\b"
+  ],
+  "mustRename": [
+    {
+      "id": "mr-popup-title",
+      "path": "popup/popup.html",
+      "lineRegex": "<title>AI Shortcuts</title>",
+      "reason": "Product title in popup."
+    },
+    {
+      "id": "mr-popup-header-title",
+      "path": "popup/popup.html",
+      "lineRegex": "<div class=\\\"title\\\">AI Shortcuts</div>",
+      "reason": "Product heading in popup brand area."
+    },
+    {
+      "id": "mr-memtest-title",
+      "path": "dev/memtest.html",
+      "lineRegex": "<title>AI Shortcuts Dev \\u00b7 ChatGPT Memory Test</title>",
+      "reason": "Product dev page title."
+    },
+    {
+      "id": "mr-memtest-h1",
+      "path": "dev/memtest.html",
+      "lineRegex": "<h1>AI Shortcuts Dev \\u00b7 ChatGPT Memory Test</h1>",
+      "reason": "Product dev page heading."
+    },
+    {
+      "id": "mr-dev-scrolltest-qwen-prefix",
+      "path": "dev/scroll-tests/qwen-conversation-switch-smoke.js",
+      "lineRegex": "\\[AI Shortcuts Dev\\]\\[Qwen Switch Smoke\\]",
+      "reason": "Product-level dev smoke log prefix."
+    },
+    {
+      "id": "mr-dev-scrolltest-chatgpt-prefix",
+      "path": "dev/scroll-tests/chatgpt-scroll-lock-smoke.js",
+      "lineRegex": "\\[AI Shortcuts Dev\\] ChatGPT scroll-lock smoke",
+      "reason": "Product-level dev smoke group label."
+    },
+    {
+      "id": "mr-stats-banner",
+      "path": "dev/stats.js",
+      "lineRegex": "AI Shortcuts MV3 stats",
+      "reason": "Product-level dev stats banner."
+    },
+    {
+      "id": "mr-bootstrap-header-comment",
+      "path": "content/bootstrap.js",
+      "lineRegex": "AI Shortcuts MV3 bootstrap content script",
+      "reason": "Product-level bootstrap header comment."
+    },
+    {
+      "id": "mr-bootstrap-ui-comment",
+      "path": "content/bootstrap.js",
+      "lineRegex": "QuickNav UI is missing",
+      "reason": "Product-level UI naming in bootstrap comment."
+    },
+    {
+      "id": "mr-reclassified-bridge-paths",
+      "pathRegex": "^content/aishortcuts-bridge(?:-main)?\\.js$",
+      "reason": "Cross-module infra path naming reclassified as product-level."
+    },
+    {
+      "id": "mr-reclassified-scope-paths",
+      "pathRegex": "^content/aishortcuts-scope(?:-main)?\\.js$",
+      "reason": "Cross-module infra path naming reclassified as product-level."
+    },
+    {
+      "id": "mr-reclassified-kernel-paths",
+      "pathRegex": "^content/aishortcuts-kernel/.+\\.js$",
+      "reason": "Kernel infra path naming reclassified as product-level."
+    }
+  ],
+  "mustKeep": [
+    {
+      "id": "mk-module-id-quicknav",
+      "pathRegex": "^(shared/injections\\.ts|options/module-settings/core\\.js|content/.+-quicknav\\.js)$",
+      "lineRegex": "moduleId\\s*:\\s*['\\\"]quicknav['\\\"]",
+      "reason": "QuickNav module id semantic contract."
+    },
+    {
+      "id": "mk-options-quicknav-toggle-label",
+      "path": "options/options.js",
+      "lineRegex": "\\u542f\\u7528 QuickNav \\u6a21\\u5757",
+      "reason": "QuickNav module toggle label in module settings."
+    },
+    {
+      "id": "mk-per-site-quicknav-files",
+      "pathRegex": "^content/.+-quicknav\\.js$",
+      "reason": "Per-site module script file naming semantics."
+    },
+    {
+      "id": "mk-shared-menu-api",
+      "path": "content/menu-bridge.js",
+      "lineRegex": "__quicknavRegisterMenuCommand",
+      "reason": "Cross-module shared API tied to QuickNav module semantics."
+    }
+  ]
+}

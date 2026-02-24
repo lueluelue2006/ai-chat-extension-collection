@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI捷径 设置</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="title">AI捷径 设置</div>
+      <div class="subtitle">在这里控制各网站与各模块的启用状态。</div>
+      <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
+        <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">☀︎</button>
+        <button class="themeToggleBtn" id="themeDark" type="button" aria-label="暗色">☾</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="card">
+        <div class="cardTitle">总开关</div>
+        <label class="toggle">
+          <input type="checkbox" id="enabled" />
+          <span>启用扩展（所有模块）</span>
+        </label>
+        <div class="hint">关闭后需要刷新页面，才能完全移除已注入的内容。</div>
+      </section>
+
+      <section class="card">
+        <div class="cardTitle">配置</div>
+        <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
+          <div class="triCol" aria-label="页面">
+            <div class="triTitle">页面</div>
+            <input class="triSearch" id="siteSearch" type="search" placeholder="搜索页面…" />
+            <div class="triList" id="siteList"></div>
+          </div>
+          <div class="triCol" aria-label="脚本">
+            <div class="triTitle">脚本</div>
+            <input class="triSearch" id="moduleSearch" type="search" placeholder="搜索脚本…" />
+            <div class="triList" id="moduleList"></div>
+          </div>
+          <div class="triCol" aria-label="脚本设置">
+            <div class="triTitle">设置</div>
+            <div class="triPanel" id="moduleSettings"></div>
+          </div>
+        </div>
+        <div class="hint">提示：关闭某个模块后，已打开页面一般需要刷新才会完全停用。</div>
+      </section>
+
+      <section class="card" aria-label="OpenAI 新模型监控">
+        <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
+        <div class="hint">
+          每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；只要检测到可用资源（非 404）就会提醒你（系统通知 + 扩展角标 + ChatGPT 页内横幅）。要停止提醒，请删除全部 URL 并保存（空列表会停用检测/提醒；横幅不会被点击关闭）。
+        </div>
+        <div class="alertBox" id="gpt53AlertBox" hidden>
+          <div class="alertTitle">OpenAI 新模型提示</div>
+          <div class="alertText" id="gpt53AlertText"></div>
+          <div class="actions">
+            <button class="btn secondary" id="gpt53MarkRead" type="button">清除角标（不停止提醒）</button>
+          </div>
+        </div>
+        <textarea class="codeBox" id="gpt53Urls" rows="3" spellcheck="false" placeholder="每行一个：https://cdn.openai.com/..."></textarea>
+        <div class="actions">
+          <button class="btn secondary" id="gpt53Save" type="button">保存列表</button>
+          <button class="btn secondary" id="gpt53Refresh" type="button">查看状态</button>
+          <button class="btn" id="gpt53Run" type="button">立即检测</button>
+        </div>
+        <div class="gpt53Status" id="gpt53Status">（未检测）</div>
+      </section>
+
+      <section class="actions">
+        <button class="btn secondary" id="restoreDefault" type="button">恢复默认</button>
+        <button class="btn danger" id="factoryReset" type="button">恢复出厂（清空所有数据）</button>
+        <button class="btn" id="reinjectNow" type="button">重新注入已打开页面</button>
+        <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
+      </section>
+
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="../shared/registry.js"></script>
+    <script src="../shared/chatgpt-usage-monitor-utils.js"></script>
+    <script src="./options.js"></script>
+  </body>
+</html>

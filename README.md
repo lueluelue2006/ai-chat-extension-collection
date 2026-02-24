@@ -1,83 +1,83 @@
 # AI捷径 (AI Shortcuts)
 
-# 🚨 测试阶段（重要）
+多 AI 站点脚本合集（Chrome Manifest V3 扩展）。
 
-## ChatGPT 网站当前存在严重内存泄露，暂未测出具体根因，求大佬们 PR。
+> 当前仓库已开源维护。旧版 README 中“ChatGPT 严重内存泄露待排查”的测试阶段提示已移除。
 
-## 文档（建议先看）
+## 你会得到什么
 
-- 架构/核心链路（手工维护）：`docs/deep-dive.md`
-- 站点/模块/注入清单（自动生成）：`docs/scripts-inventory.md`
-- ChatGPT 站点研究/备忘：`docs/chatgpt-site-research.md`
+- 一个扩展主体，按站点启用多模块脚本
+- 统一的弹窗开关 / 配置页管理
+- 多站点快捷键与体验增强（QuickNav、⌘Enter、配额/计时/导出等）
+- 可持续维护的模块注册表与注入清单
 
-## 按网站分组：脚本与作者
+## 快速开始（本地运行）
 
-### 通用（common）
+### 1) 安装依赖
 
-- 隐藏免责声明/提示条（`hide_disclaimer`）— 作者：`lueluelue2006`
+```bash
+npm ci
+```
 
-### ChatGPT（chatgpt）
+### 2) 构建运行包
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ChatGPT 性能优化（`chatgpt_perf`）— 作者：`lueluelue2006`
-- ChatGPT 推理强度/模型 快捷切换（`chatgpt_thinking_toggle`）— 作者：`lueluelue2006`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
-- ChatGPT 朗读速度控制器（`chatgpt_readaloud_speed_controller`）— 作者：`lueluelue2006`
-- ChatGPT 用量统计（`chatgpt_usage_monitor`）— 作者：`lueluelue2006（基于 tizee@Github 的实现移植）`
-- ChatGPT 回复计时器（`chatgpt_reply_timer`）— 作者：`lueluelue2006`
-- ChatGPT 下载修复（`chatgpt_download_file_fix`）— 作者：`Marx@linux.do`
-- ChatGPT 回复粗体高亮（Lite）（`chatgpt_strong_highlight_lite`）— 作者：`lueluelue2006`
-- 快捷深度搜索（译/搜/思）（`chatgpt_quick_deep_search`）— 作者：`lueluelue2006`
-- ChatGPT 隐藏点赞/点踩（`chatgpt_hide_feedback_buttons`）— 作者：`lueluelue2006`
-- ChatGPT TeX Copy & Quote（`chatgpt_tex_copy_quote`）— 作者：`lueluelue2006`
-- ChatGPT 对话导出（新版 UI）（`chatgpt_export_conversation`）— 作者：`马老师@Linux.do（原始脚本）`、`lueluelue2006（在原脚本基础上改造）`
-- ChatGPT 消息分叉编辑（可加图）（`chatgpt_image_message_edit`）— 作者：`lueluelue2006`
-- ChatGPT 消息树（只读）（`chatgpt_message_tree`）— 作者：`lueluelue2006`
-- ChatGPT 侧边栏顶部按钮修复（`chatgpt_sidebar_header_fix`）— 作者：`lueluelue2006`
+```bash
+npm run build
+```
 
-### Kimi（kimi）
+### 3) 在 Chrome 加载扩展
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+打开 `chrome://extensions` → 开启「开发者模式」→ 「加载已解压的扩展程序」→ 选择：
 
-### Gemini App（gemini_app）
+```text
+dist
+```
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+> 说明：源码根目录用于开发；Chrome 实际加载目录是 `dist/`。
 
-### Genspark（genspark）
+## 开发工作流
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
-- Genspark 绘图默认设置（`genspark_moa_image_autosettings`）— 作者：`lueluelue2006`
-- Genspark 积分余量（`genspark_credit_balance`）— 作者：`LinuxDo 悟空（原始脚本）`、`lueluelue2006（MV3 集成）`
-- Genspark 长代码块折叠（`genspark_codeblock_fold`）— 作者：`lueluelue2006`
-- Genspark 消息编辑上传修复（`genspark_inline_upload_fix`）— 作者：`lueluelue2006（原始脚本 / MV3 集成）`
-- Genspark Sonnet 4.5 Thinking（`genspark_force_sonnet45_thinking`）— 作者：`lueluelue2006`
+- 修改源码后执行：`npm run build`
+- 本地质量检查：`npm run check`
+- 类型检查：`npm run typecheck`
+- 在 `chrome://extensions` 点击该扩展「重新加载」
 
-### Grok（grok）
+## 功能与站点
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
-- Grok 剩余额度显示（`grok_rate_limit_display`）— 作者：`Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展）`、`lueluelue2006（MV3 集成）`
-- Grok 废纸篓一键清空（`grok_trash_cleanup`）— 作者：`lueluelue2006`
+当前支持并持续维护的站点包括：
 
-### DeepSeek（deepseek）
+- ChatGPT
+- Grok
+- Kimi
+- Qwen
+- Gemini App
+- Genspark
+- DeepSeek
+- 文心一言
+- GLM（z.ai）
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+完整模块清单、注入时机、作者与上游信息请看：
 
-### GLM（zai）
+- `docs/scripts-inventory.md`（自动生成，推荐作为功能清单真相源）
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+## 文档导航
 
-### 文心一言（ernie）
+- 架构与核心链路：`docs/deep-dive.md`
+- 脚本清单与注入定义：`docs/scripts-inventory.md`
+- ChatGPT 站点研究：`docs/chatgpt-site-research.md`
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+## 目录结构（简版）
 
-### Qwen（qwen）
+- `background/`：Service Worker 与路由处理
+- `content/`：各站点模块与内核桥接
+- `options/`：配置页
+- `popup/`：扩展弹窗
+- `shared/`：模块注册表与注入定义（source of truth）
+- `scripts/build.mjs`：镜像构建到 `dist/`
 
-- QuickNav（`quicknav`）— 作者：`lueluelue2006（原始脚本 / MV3 扩展封装/改造）`、`loongphy（暗色模式+回弹补丁）`
-- ⌘Enter 发送（Enter 换行）（`cmdenter_send`）— 作者：`lueluelue2006`
+## 反馈与贡献
+
+欢迎 Issue / PR：
+
+- Bug 报告请附：站点、触发步骤、预期结果、实际结果、浏览器版本
+- PR 请尽量保持单一目标，并附验证步骤

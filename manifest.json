@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI捷径 (AI Shortcuts)",
   "short_name": "AI捷径",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "多AI站点脚本合集",
   "icons": {
     "16": "icons/icon16.png",

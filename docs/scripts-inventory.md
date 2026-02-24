@@ -1,7 +1,7 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.0.5
+- Version: 2.0.6
 - Generated: 2026-02-24 22:30
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
@@ -228,7 +228,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-- `grok_rate_limit_display`: Grok 剩余额度显示 — 显示积分余量 + 关键模型剩余次数（发送后更新）
+- `grok_rate_limit_display`: Grok 剩余额度显示 — 仅显示 all 积分余量（发送后更新）
   - 作者: Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展） / lueluelue2006（MV3 集成）
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/grok-rate-limit-display/main.js`

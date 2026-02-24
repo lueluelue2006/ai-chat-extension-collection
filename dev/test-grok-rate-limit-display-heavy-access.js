@@ -16,81 +16,39 @@ function expectRegex(source, regex, message) {
   assert.ok(regex.test(source), message);
 }
 
-function testHeavyRowMarked(source) {
+function testAllOnlyTarget(source) {
+  expectRegex(source, /const\s+TARGET_MODEL_NAME\s*=\s*'grok-4'/, 'all-only mode should keep Grok all pool target');
   expectRegex(
     source,
-    /\{\s*key:\s*'heavy'[\s\S]*?requiresHeavyAccess:\s*true[\s\S]*?\}/,
-    'heavy quota row should be explicitly marked as requiring heavy access'
+    /body:\s*JSON\.stringify\(\{[\s\S]*requestKind:\s*REQUEST_KIND,[\s\S]*modelName:\s*TARGET_MODEL_NAME[\s\S]*\}\)/,
+    'all-only request payload should send TARGET_MODEL_NAME'
   );
 }
 
-function testMenuInference(source) {
-  expectRegex(
-    source,
-    /function\s+inferHeavyAccessFromModelMenu\(/,
-    'should infer heavy access from model menu state when available'
-  );
-
-  expectRegex(
-    source,
-    /opacity-75\\b\|\\btext-secondary/,
-    'menu-based heavy access inference should detect visually-disabled heavy option'
-  );
+function testDeprecatedEndpointsRemoved(source) {
+  assert.ok(!/grok-4-heavy/.test(source), 'should remove deprecated Grok 4 heavy endpoint');
+  assert.ok(!/grok-420/.test(source), 'should remove deprecated Grok 4.2 endpoint');
+  assert.ok(!/key:\s*'heavy'/.test(source), 'should remove heavy quota row key');
+  assert.ok(!/key:\s*'g420'/.test(source), 'should remove 4.2 quota row key');
 }
 
-function testCounterInference(source) {
-  expectRegex(
-    source,
-    /function\s+inferHeavyAccessFromCounters\(/,
-    'should infer heavy access from quota totals as fallback'
-  );
-
-  expectRegex(
-    source,
-    /poolTotal\s*>=\s*300/,
-    'counter inference should treat high pool total as heavy-capable'
-  );
-
-  expectRegex(
-    source,
-    /poolTotal\s*>\s*0\s*&&\s*poolTotal\s*<=\s*220/,
-    'counter inference should treat low pool total as non-heavy'
-  );
-
-  assert.ok(!/g41Total/.test(source), 'counter inference should no longer depend on Grok 4.1 totals');
+function testDeprecatedInferenceRemoved(source) {
+  assert.ok(!/inferHeavyAccessFromModelMenu\(/.test(source), 'all-only mode should remove menu-based heavy inference');
+  assert.ok(!/inferHeavyAccessFromCounters\(/.test(source), 'all-only mode should remove counter-based heavy inference');
+  assert.ok(!/filterRowsByCapabilities\(/.test(source), 'all-only mode should remove heavy row filtering');
 }
 
-function testQuotaRowsSimplified(source) {
-  expectRegex(
-    source,
-    /\{\s*key:\s*'g420'[\s\S]*?modelName:\s*'grok-420'[\s\S]*?\}/,
-    'quota rows should keep Grok 4.20'
-  );
-  assert.ok(!/key:\s*'g41'/.test(source), 'quota rows should remove Grok 4.1 line');
-  assert.ok(!/key:\s*'mini'/.test(source), 'quota rows should remove Grok 3 line');
-}
-
-function testFiltering(source) {
-  expectRegex(
-    source,
-    /function\s+filterRowsByCapabilities\(/,
-    'should filter rows by capability before rendering'
-  );
-
-  expectRegex(
-    source,
-    /rows\.filter\(\(row\)\s*=>\s*row\.key\s*!==\s*'heavy'\)/,
-    'non-heavy accounts should hide heavy row from quota panel'
-  );
+function testValueOnlyRender(source) {
+  expectRegex(source, /const\s+PANEL_VALUE_ID\s*=\s*'aichat-grok-quota-value'/, 'should render a single value node');
+  expectRegex(source, /renderCounter\(formatCounter\(counter\),\s*'ready'\)/, 'should render all-only counter value');
 }
 
 function main() {
   const source = readSource();
-  testHeavyRowMarked(source);
-  testMenuInference(source);
-  testCounterInference(source);
-  testQuotaRowsSimplified(source);
-  testFiltering(source);
+  testAllOnlyTarget(source);
+  testDeprecatedEndpointsRemoved(source);
+  testDeprecatedInferenceRemoved(source);
+  testValueOnlyRender(source);
   console.log('PASS dev/test-grok-rate-limit-display-heavy-access.js');
 }
 

@@ -169,7 +169,7 @@
     grok_rate_limit_display: {
       id: 'grok_rate_limit_display',
       name: 'Grok 剩余额度显示',
-      sub: '显示积分余量 + 关键模型剩余次数（发送后更新）',
+      sub: '仅显示 all 积分余量（发送后更新）',
       hotkeys: [],
       authors: ["Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展）", 'lueluelue2006（MV3 集成）'],
       license: '未标注（内部脚本）'

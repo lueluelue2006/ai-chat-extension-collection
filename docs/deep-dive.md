@@ -693,7 +693,7 @@ Turn 筛选策略（维护重点）：
 - QuickNav 注入：`content/grok-quicknav.js`（ISOLATED, document_end）+ `content/scroll-guard-main.js`（MAIN, document_start）协作。
 - 废纸篓清理模块：`grok_trash_cleanup` 独立注入 `content/grok-trash-cleanup/main.js`，仅在 `https://grok.com/deleted-conversations` 页将“**一键清空废纸篓**”挂在 `Deleted Conversations` 标题右侧（避免顶栏遮挡）；点击后通过 `GET /rest/app-chat/conversations/deleted` 拉取列表并逐条执行 `DELETE /rest/app-chat/conversations/{conversationId}`。
 - Cmd/Ctrl+Enter：由 `cmdenter_send` 模块的 `SITE === 'grok'` 分支处理；默认语义为 Enter/Shift+Enter 换行、Cmd/Ctrl+Enter 发送，并保留发送前“空输入/生成中”保护。
-- 剩余额度面板：`grok_rate_limit_display` 采用**右下角常驻微卡片**（固定 `right:0/bottom:0`，无展开/收起切换），显示极简标签 `Q / all / heavy / 4.2`。对 `Grok 4 Heavy` 行做能力门控：若账户未开通 Heavy（模型菜单禁用态/额度阈值回退推断）则直接隐藏，避免“显示有额度但实际不可用”的误导。刷新策略仍为“发送后延迟刷新 + 手动点击刷新”（不做常驻轮询）；检测到历史版额度面板 DOM 时会直接重建新卡片，避免遗留折叠节点导致双层 UI。
+- 剩余额度面板：`grok_rate_limit_display` 采用**右下角常驻极简卡片**（固定 `right:0/bottom:0`，无展开/收起、无菜单、不可拖拽），仅显示 `all` 积分值（例如 `400/400`）。2026-02-25 起移除 `4.2 / 4.2 heavy` 展示（对应接口失效）。刷新策略为“发送后延迟刷新”（不做常驻轮询）；检测到历史版额度面板 DOM 时会直接重建新卡片，避免遗留节点导致双层 UI。
 - Scroll-lock 协议：与 ChatGPT/Qwen/Kimi 保持一致，统一使用 `channel/v/nonce` bridge 信封；`AISHORTCUTS_SCROLLLOCK_STATE/BASELINE/ALLOW` 与 `QUICKNAV_SCROLL_GUARD_READY` 均做同 nonce 校验。
 - 路由监听：优先复用 shared bridge（`__aichat_quicknav_bridge_v1__`）的 `routeChange` 信号；保留 polling fallback 兜底，不再本地 patch `history.pushState/replaceState`。
 - 调试烟测脚本（DevTools Console）：`dev/scroll-tests/grok-scroll-lock-smoke.js`。

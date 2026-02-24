@@ -3022,7 +3022,7 @@
   }
 
   function renderGrokRateLimitDisplayModuleSettings(siteId) {
-    addModuleHeader('grok_rate_limit_display', 'Grok 剩余额度显示', '显示积分余量 + 各模型剩余次数（发送后更新）。');
+    addModuleHeader('grok_rate_limit_display', 'Grok 剩余额度显示', '仅显示 all 积分余量（发送后更新）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -3045,7 +3045,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'smallHint';
-    hint.textContent = '说明：该模块仅在 Grok 对话页（/c/...）请求 https://grok.com/rest/rate-limits，以可拖拽悬浮卡片显示“积分余量 + 各模型剩余次数”；展开/收起共用同一按钮，附带一个简洁下拉菜单（刷新、左/右停靠、重置位置）。';
+    hint.textContent = '说明：该模块仅在 Grok 对话页（/c/...）请求 https://grok.com/rest/rate-limits，在最右下角显示常驻极简卡片（仅 all 积分，例如 400/400）。2026-02-25 发现 4.2 与 4.2 heavy 次数接口失效，已不再展示这两项。';
     elModuleSettings.appendChild(hint);
   }
 

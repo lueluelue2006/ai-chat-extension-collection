@@ -94,21 +94,21 @@ AI捷径
 |
 |____ ChatGPT
 |    |____ QuickNav
-|    |____ OpenAI 新模型横幅提示
-|    |____ ChatGPT 性能优化
-|    |____ ChatGPT 推理强度/模型 快捷切换
+|    |____ OpenAI 新模型横幅提示（默认添加了 GPT-5.3）
+|    |____ ChatGPT 性能优化（默认全启动）
+|    |____ ChatGPT 推理强度/模型 快捷切换（⌘O）
 |    |____ ⌘Enter 发送（Enter 换行）
-|    |____ ChatGPT 朗读速度控制器
-|    |____ ChatGPT 用量统计
-|    |____ ChatGPT 回复计时器
-|    |____ ChatGPT 下载修复
+|    |____ ChatGPT 朗读速度控制器（默认 1.8x）
+|    |____ ChatGPT 用量统计（仅在配置页面显示）
+|    |____ ChatGPT 回复计时器（右下角极小的一个计时器）
+|    |____ ChatGPT 下载修复（by @pengzhile）
 |    |____ ChatGPT 回复粗体高亮（Lite）
 |    |____ 快捷深度搜索（译/搜/思）
-|    |____ ChatGPT 隐藏点赞/点踩
-|    |____ ChatGPT TeX Copy & Quote
-|    |____ ChatGPT 对话导出（新版 UI）
+|    |____ ChatGPT 隐藏点赞/点踩（by @zhong_little）
+|    |____ ChatGPT TeX Copy & Quote（公式复制+修复引用）
+|    |____ ChatGPT 对话导出
 |    |____ ChatGPT 消息分叉编辑（可加图）
-|    |____ ChatGPT 消息树（只读）
+|    |____ ChatGPT 消息树
 |    |____ ChatGPT 侧边栏顶部按钮修复
 |
 |____ Qwen

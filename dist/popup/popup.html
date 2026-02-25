@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Shortcuts</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        <div class="brandMark" aria-hidden="true">QN</div>
+        <div class="brandText">
+          <div class="title">AI Shortcuts</div>
+          <div class="subtitle">脚本菜单</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="row"><span class="k">作者</span><span class="v" id="author"></span></div>
+        <div class="row"><span class="k">版本</span><span class="v" id="version"></span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="toolbar" aria-label="快捷操作">
+        <div class="actions actionsPrimary">
+          <button class="btn" id="checkUpdate" type="button">检查更新</button>
+          <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
+        </div>
+        <div class="actions actionsSingle">
+          <button class="btn secondary" id="openOptions" type="button">配置</button>
+        </div>
+      </section>
+
+      <section class="card" id="gpt53AlertCard" aria-label="OpenAI 新模型提示" hidden>
+        <div class="cardTitle">OpenAI 新模型提示</div>
+        <div class="hint" id="gpt53AlertText"></div>
+        <div class="actions">
+          <button class="btn" id="gpt53AlertOpenOptions" type="button">打开配置</button>
+          <button class="btn secondary" id="gpt53AlertMarkRead" type="button">知道了</button>
+        </div>
+      </section>
+
+      <section class="card" id="siteCard" aria-label="当前页面脚本">
+        <div class="cardTitle">当前页面</div>
+        <div class="siteMeta">
+          <div class="siteName" id="siteName">未检测</div>
+          <div class="siteUrl" id="siteUrl"></div>
+        </div>
+        <div class="toggleList" id="toggleList"></div>
+      </section>
+
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="../shared/registry.js"></script>
+    <script src="./popup.js"></script>
+  </body>
+</html>

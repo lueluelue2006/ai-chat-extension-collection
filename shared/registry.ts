@@ -238,8 +238,7 @@
       name: 'ChatGPT 隐藏点赞/点踩',
       sub: '隐藏回复下方反馈按钮（👍/👎）',
       hotkeys: [],
-      authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      authors: ['zhong_little(linux.do)']
     },
     chatgpt_tex_copy_quote: {
       id: 'chatgpt_tex_copy_quote',

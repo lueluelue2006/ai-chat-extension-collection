@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.1.2
-- Generated: 2026-02-25 03:34
+- Version: 2.1.3
+- Generated: 2026-02-25 04:53
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -76,8 +76,7 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-quick-deep-search/main.js`
 - `chatgpt_hide_feedback_buttons`: ChatGPT 隐藏点赞/点踩 — 隐藏回复下方反馈按钮（👍/👎）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
+  - 作者: zhong_little(linux.do)
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-hide-feedback-buttons/main.js`
 - `chatgpt_tex_copy_quote`: ChatGPT TeX Copy & Quote — 复制/引用含 KaTeX 的选区时优先还原 LaTeX，并支持悬停提示/双击复制
   - 作者: lueluelue2006
@@ -236,3 +235,4 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/grok-trash-cleanup/main.js`
+

@@ -268,7 +268,7 @@
     },
     chatgpt_message_tree: {
       id: 'chatgpt_message_tree',
-      name: 'ChatGPT 消息树（只读）',
+      name: 'ChatGPT 消息树',
       sub: '显示当前对话的完整消息树/分支结构（右侧面板）',
       hotkeys: [],
       authors: ['lueluelue2006'],

@@ -289,7 +289,7 @@ Turn 筛选策略（维护重点）：
 
 ### 6.3 message tree（`content/chatgpt-message-tree/main.js`，MAIN）
 
-定位：对话“完整消息树/分支结构”的侧边面板（只读），并与 QuickNav 协作导航到某个分支节点。
+定位：对话“完整消息树/分支结构”的侧边面板，并与 QuickNav 协作导航到某个分支节点。
 
 - 对话拉取：`GET /backend-api/conversation/:id`
 - 大对话内存保护：设置 JSON 上限（6MB 解压后），超限直接拒载以保稳定性

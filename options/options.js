@@ -2933,7 +2933,7 @@
   }
 
   function renderChatGPTMessageTreeModuleSettings(siteId) {
-    addModuleHeader('chatgpt_message_tree', 'ChatGPT 消息树（只读）', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
+    addModuleHeader('chatgpt_message_tree', 'ChatGPT 消息树', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';

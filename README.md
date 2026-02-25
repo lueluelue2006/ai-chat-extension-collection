@@ -86,55 +86,68 @@ npm run build
 
 ## 站点脚本树（仅名称）
 
-- 通用
-  - 隐藏免责声明/提示条
-- ChatGPT
-  - QuickNav
-  - OpenAI 新模型横幅提示
-  - ChatGPT 性能优化
-  - ChatGPT 推理强度/模型 快捷切换
-  - ⌘Enter 发送（Enter 换行）
-  - ChatGPT 朗读速度控制器
-  - ChatGPT 用量统计
-  - ChatGPT 回复计时器
-  - ChatGPT 下载修复
-  - ChatGPT 回复粗体高亮（Lite）
-  - 快捷深度搜索（译/搜/思）
-  - ChatGPT 隐藏点赞/点踩
-  - ChatGPT TeX Copy & Quote
-  - ChatGPT 对话导出（新版 UI）
-  - ChatGPT 消息分叉编辑（可加图）
-  - ChatGPT 消息树（只读）
-  - ChatGPT 侧边栏顶部按钮修复
-- Qwen
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-  - Qwen 模型/推理 快捷切换
-- Kimi
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-- DeepSeek
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-- Gemini App
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-- 文心一言
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-- GLM（z.ai）
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-- Genspark
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-  - Genspark 绘图默认设置
-  - Genspark 积分余量
-  - Genspark 长代码块折叠
-  - Genspark 消息编辑上传修复
-  - Genspark Claude Thinking 强制切换
-- Grok
-  - QuickNav
-  - ⌘Enter 发送（Enter 换行）
-  - Grok 剩余额度显示
-  - Grok 废纸篓一键清空
+```text
+AI捷径
+|
+|____ 通用
+|    |____ 隐藏免责声明/提示条
+|
+|____ ChatGPT
+|    |____ QuickNav
+|    |____ OpenAI 新模型横幅提示
+|    |____ ChatGPT 性能优化
+|    |____ ChatGPT 推理强度/模型 快捷切换
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ ChatGPT 朗读速度控制器
+|    |____ ChatGPT 用量统计
+|    |____ ChatGPT 回复计时器
+|    |____ ChatGPT 下载修复
+|    |____ ChatGPT 回复粗体高亮（Lite）
+|    |____ 快捷深度搜索（译/搜/思）
+|    |____ ChatGPT 隐藏点赞/点踩
+|    |____ ChatGPT TeX Copy & Quote
+|    |____ ChatGPT 对话导出（新版 UI）
+|    |____ ChatGPT 消息分叉编辑（可加图）
+|    |____ ChatGPT 消息树（只读）
+|    |____ ChatGPT 侧边栏顶部按钮修复
+|
+|____ Qwen
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ Qwen 模型/推理 快捷切换
+|
+|____ Kimi
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ DeepSeek
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ Gemini App
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ 文心一言
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ GLM（z.ai）
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ Genspark
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ Genspark 绘图默认设置
+|    |____ Genspark 积分余量
+|    |____ Genspark 长代码块折叠
+|    |____ Genspark 消息编辑上传修复
+|    |____ Genspark Claude Thinking 强制切换
+|
+|____ Grok
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ Grok 剩余额度显示
+|    |____ Grok 废纸篓一键清空
+```

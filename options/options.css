@@ -23,8 +23,10 @@
   --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow: var(--shadow-md);
   --accentShadow: 0 12px 28px rgba(237, 82, 132, 0.25);
   --focusRing: 0 0 0 4px rgba(237, 82, 132, 0.2);
+  --btnSecondaryTextShadow: 0 1px 0 rgba(0, 0, 0, 0.22);
   --card-radius: 20px;
   --btn-radius: 12px;
   --trans-spring: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -59,9 +61,11 @@
     --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow: var(--shadow-md);
     --accentShadow: 0 12px 28px rgba(89, 216, 234, 0.35);
     --focusRing: 0 0 0 4px rgba(89, 216, 234, 0.3);
     --btnSecondaryText: rgba(15, 23, 42, 0.92);
+    --btnSecondaryTextShadow: 0 1px 0 rgba(255, 255, 255, 0.22);
   }
 }
 
@@ -93,9 +97,11 @@
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow: var(--shadow-md);
   --accentShadow: 0 12px 28px rgba(89, 216, 234, 0.35);
   --focusRing: 0 0 0 4px rgba(89, 216, 234, 0.3);
   --btnSecondaryText: rgba(15, 23, 42, 0.92);
+  --btnSecondaryTextShadow: 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 * {

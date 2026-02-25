@@ -44,11 +44,11 @@ npm run build
 当前支持并持续维护的站点包括：
 
 - ChatGPT
+- Genspark
 - Grok
+- Gemini App
 - Kimi
 - Qwen
-- Gemini App
-- Genspark
 - DeepSeek
 - 文心一言
 - GLM（z.ai）
@@ -111,31 +111,6 @@ AI捷径
 |    |____ ChatGPT 消息树
 |    |____ ChatGPT 侧边栏顶部按钮修复
 |
-|____ Qwen
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|    |____ Qwen 模型/推理 快捷切换
-|
-|____ Kimi
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|
-|____ DeepSeek
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|
-|____ Gemini App
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|
-|____ 文心一言
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|
-|____ GLM（z.ai）
-|    |____ QuickNav
-|    |____ ⌘Enter 发送（Enter 换行）
-|
 |____ Genspark
 |    |____ QuickNav
 |    |____ ⌘Enter 发送（Enter 换行）
@@ -150,4 +125,29 @@ AI捷径
 |    |____ ⌘Enter 发送（Enter 换行）
 |    |____ Grok 剩余额度显示
 |    |____ Grok 废纸篓一键清空
+|
+|____ Gemini App
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ Kimi
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ Qwen
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ Qwen 模型/推理 快捷切换
+|
+|____ DeepSeek
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ 文心一言
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
+|
+|____ GLM（z.ai）
+|    |____ QuickNav
+|    |____ ⌘Enter 发送（Enter 换行）
 ```

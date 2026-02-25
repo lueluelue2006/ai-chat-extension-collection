@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.1.4
-- Generated: 2026-02-25 04:58
+- Version: 2.1.5
+- Generated: 2026-02-25 05:01
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -100,88 +100,6 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-sidebar-header-fix/main.js`
 
-### Qwen (chat.qwen.ai)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/qwen-quicknav-active-lock.js`, `content/qwen-quicknav-route-gate.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/qwen-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-- `qwen_thinking_toggle`: Qwen 模型/推理 快捷切换 — ⌘O Thinking/Fast / ⌘J 模型切换
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/qwen-thinking-toggle/main.js`
-
-### Kimi (kimi.com)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/kimi-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-
-### DeepSeek (chat.deepseek.com)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/deepseek-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-
-### Gemini App (gemini.google.com/app)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/gemini-app-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-
-### 文心一言 (ernie.baidu.com)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/ernie-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-
-### GLM (chat.z.ai)
-
-- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
-  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
-  - 许可证: MIT（上游脚本声明）
-  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/zai-quicknav.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: 未标注（内部脚本）
-  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-
 ### Genspark (genspark.ai/agents)
 
 - `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
@@ -235,4 +153,86 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/grok-trash-cleanup/main.js`
+
+### Gemini App (gemini.google.com/app)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/gemini-app-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+
+### Kimi (kimi.com)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/kimi-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+
+### Qwen (chat.qwen.ai)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/qwen-quicknav-active-lock.js`, `content/qwen-quicknav-route-gate.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/qwen-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+- `qwen_thinking_toggle`: Qwen 模型/推理 快捷切换 — ⌘O Thinking/Fast / ⌘J 模型切换
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/qwen-thinking-toggle/main.js`
+
+### DeepSeek (chat.deepseek.com)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/deepseek-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+
+### 文心一言 (ernie.baidu.com)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/ernie-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+
+### GLM (chat.z.ai)
+
+- `quicknav`: QuickNav — 对话导航 / 📌 标记 / 收藏 / 防自动滚动
+  - 作者: lueluelue2006（原始脚本 / MV3 扩展封装/改造） / loongphy（暗色模式+回弹补丁）
+  - 许可证: MIT（上游脚本声明）
+  - 上游: `https://github.com/lueluelue2006/ChatGPT-QuickNav`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/scroll-guard-main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/ui-pos-drag.js`, `content/menu-bridge.js`, `content/aishortcuts-kernel/runtime-guards.js`, `content/aishortcuts-kernel/route-watch.js`, `content/aishortcuts-kernel/scrolllock-bridge.js`, `content/aishortcuts-kernel/observer-refresh.js`, `content/zai-quicknav.js`
+- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
 

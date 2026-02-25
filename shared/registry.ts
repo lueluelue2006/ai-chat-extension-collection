@@ -33,49 +33,6 @@
       ]
     },
     {
-      id: 'qwen',
-      name: 'Qwen',
-      sub: 'chat.qwen.ai',
-      matchPatterns: ['https://chat.qwen.ai/*'],
-      modules: ['quicknav', 'cmdenter_send', 'qwen_thinking_toggle']
-    },
-    {
-      id: 'kimi',
-      name: 'Kimi',
-      sub: 'kimi.com',
-      matchPatterns: ['https://kimi.com/*', 'https://www.kimi.com/*'],
-      modules: ['quicknav', 'cmdenter_send']
-    },
-    {
-      id: 'deepseek',
-      name: 'DeepSeek',
-      sub: 'chat.deepseek.com',
-      matchPatterns: ['https://chat.deepseek.com/*'],
-      modules: ['quicknav', 'cmdenter_send']
-    },
-    {
-      id: 'gemini_app',
-      name: 'Gemini App',
-      sub: 'gemini.google.com/app',
-      matchPatterns: ['https://gemini.google.com/*'],
-      quicknavPatterns: ['https://gemini.google.com/app*'],
-      modules: ['quicknav', 'cmdenter_send']
-    },
-    {
-      id: 'ernie',
-      name: '文心一言',
-      sub: 'ernie.baidu.com',
-      matchPatterns: ['https://ernie.baidu.com/*'],
-      modules: ['quicknav', 'cmdenter_send']
-    },
-    {
-      id: 'zai',
-      name: 'GLM',
-      sub: 'chat.z.ai',
-      matchPatterns: ['https://chat.z.ai/*'],
-      modules: ['quicknav', 'cmdenter_send']
-    },
-    {
       id: 'genspark',
       name: 'Genspark',
       sub: 'genspark.ai/agents',
@@ -98,6 +55,49 @@
       matchPatterns: ['https://grok.com/*'],
       quicknavPatterns: ['https://grok.com/c/*'],
       modules: ['quicknav', 'cmdenter_send', 'grok_rate_limit_display', 'grok_trash_cleanup']
+    },
+    {
+      id: 'gemini_app',
+      name: 'Gemini App',
+      sub: 'gemini.google.com/app',
+      matchPatterns: ['https://gemini.google.com/*'],
+      quicknavPatterns: ['https://gemini.google.com/app*'],
+      modules: ['quicknav', 'cmdenter_send']
+    },
+    {
+      id: 'kimi',
+      name: 'Kimi',
+      sub: 'kimi.com',
+      matchPatterns: ['https://kimi.com/*', 'https://www.kimi.com/*'],
+      modules: ['quicknav', 'cmdenter_send']
+    },
+    {
+      id: 'qwen',
+      name: 'Qwen',
+      sub: 'chat.qwen.ai',
+      matchPatterns: ['https://chat.qwen.ai/*'],
+      modules: ['quicknav', 'cmdenter_send', 'qwen_thinking_toggle']
+    },
+    {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      sub: 'chat.deepseek.com',
+      matchPatterns: ['https://chat.deepseek.com/*'],
+      modules: ['quicknav', 'cmdenter_send']
+    },
+    {
+      id: 'ernie',
+      name: '文心一言',
+      sub: 'ernie.baidu.com',
+      matchPatterns: ['https://ernie.baidu.com/*'],
+      modules: ['quicknav', 'cmdenter_send']
+    },
+    {
+      id: 'zai',
+      name: 'GLM',
+      sub: 'chat.z.ai',
+      matchPatterns: ['https://chat.z.ai/*'],
+      modules: ['quicknav', 'cmdenter_send']
     }
   ];
 

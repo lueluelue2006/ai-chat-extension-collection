@@ -44,6 +44,25 @@
   const SITE_DEFS = Array.isArray(REGISTRY?.sites) ? REGISTRY.sites : [];
   const MODULE_DEFS = REGISTRY?.modules && typeof REGISTRY.modules === 'object' ? REGISTRY.modules : {};
   const MODULE_ALIASES = REGISTRY?.moduleAliases && typeof REGISTRY.moduleAliases === 'object' ? REGISTRY.moduleAliases : {};
+  const CHATGPT_MODULE_ORDER = Object.freeze([
+    'quicknav',
+    'cmdenter_send',
+    'chatgpt_thinking_toggle',
+    'chatgpt_reply_timer',
+    'chatgpt_usage_monitor',
+    'chatgpt_quick_deep_search',
+    'chatgpt_export_conversation',
+    'chatgpt_readaloud_speed_controller',
+    'chatgpt_tex_copy_quote',
+    'chatgpt_strong_highlight_lite',
+    'chatgpt_image_message_edit',
+    'chatgpt_message_tree',
+    'chatgpt_download_file_fix',
+    'chatgpt_sidebar_header_fix',
+    'chatgpt_hide_feedback_buttons',
+    'chatgpt_perf',
+    'openai_new_model_banner'
+  ]);
   const REGISTRY_OK = !!(SITE_DEFS.length && Object.keys(MODULE_DEFS).length);
 
   function setStatus(text, kind = '') {
@@ -356,6 +375,26 @@
     return MODULE_DEFS[moduleId] || { name: moduleId, sub: '' };
   }
 
+  function shortenChatGPTModuleName(name) {
+    return String(name || '').replace(/^ChatGPT\s+/i, '').trim();
+  }
+
+  function getModuleDisplayMeta(siteId, moduleId) {
+    const def = getModuleDef(moduleId);
+    let name = String(def?.name || moduleId || '').trim();
+    const sub = String(def?.sub || '').trim();
+    if (siteId === 'chatgpt') name = shortenChatGPTModuleName(name);
+    return { name, sub };
+  }
+
+  function getModuleSortWeight(siteId, item) {
+    if (siteId === 'chatgpt') {
+      const orderIdx = CHATGPT_MODULE_ORDER.indexOf(item.id);
+      return orderIdx >= 0 ? orderIdx : 1000 + item.idx;
+    }
+    return item.hasMenu ? -1000 + item.idx : item.idx;
+  }
+
   function tabsQueryActive() {
     return new Promise((resolve, reject) => {
       try {
@@ -544,10 +583,11 @@
       );
       for (const moduleId of commonDef.modules) {
         const def = getModuleDef(moduleId);
+        const display = getModuleDisplayMeta('common', moduleId);
         group.appendChild(
           createToggleRow({
-            main: def.name,
-            sub: def.sub,
+            main: display.name || def.name,
+            sub: display.sub || def.sub,
             checked: settings?.siteModules?.common?.[moduleId] !== false,
             disabled: !settings?.enabled || settings?.sites?.common === false,
             onChange: (v) => onMutate((draft) => { draft.siteModules.common[moduleId] = !!v; }),
@@ -587,16 +627,19 @@
         hasMenu: !!(menuByModule && Array.isArray(menuByModule[id]) && menuByModule[id].length)
       }))
       .sort((a, b) => {
-        if (a.hasMenu !== b.hasMenu) return a.hasMenu ? -1 : 1;
+        const wa = getModuleSortWeight(activeSiteId, a);
+        const wb = getModuleSortWeight(activeSiteId, b);
+        if (wa !== wb) return wa - wb;
         return a.idx - b.idx;
       })
       .map((x) => x.id);
 
     for (const moduleId of orderedModules) {
       const def = getModuleDef(moduleId);
+      const display = getModuleDisplayMeta(activeSiteId, moduleId);
       const row = createToggleRow({
-        main: def.name,
-        sub: def.sub,
+        main: display.name || def.name,
+        sub: display.sub || def.sub,
         checked: settings?.siteModules?.[activeSiteId]?.[moduleId] !== false,
         disabled: !settings?.enabled || settings?.sites?.[activeSiteId] === false,
         onChange: (v) => onMutate((draft) => { draft.siteModules[activeSiteId][moduleId] = !!v; }),

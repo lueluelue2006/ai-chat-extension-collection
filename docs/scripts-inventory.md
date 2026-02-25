@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.1.8
-- Generated: 2026-02-25 05:23
+- Version: 2.1.9
+- Generated: 2026-02-25 05:25
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -64,7 +64,7 @@
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-reply-timer/main.js`
 - `chatgpt_download_file_fix`: ChatGPT 下载修复 — 修复文件下载失败（sandbox_path 解码）
-  - 作者: Marx@linux.do
+  - 作者: pengzhile(linux.do)
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-download-file-fix/main.js`
 - `chatgpt_strong_highlight_lite`: ChatGPT 回复粗体高亮（Lite） — 高亮粗体 + 隐藏免责声明

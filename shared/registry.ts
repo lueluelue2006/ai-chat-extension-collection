@@ -213,7 +213,7 @@
       name: 'ChatGPT 下载修复',
       sub: '修复文件下载失败（sandbox_path 解码）',
       hotkeys: [],
-      authors: ['Marx@linux.do'],
+      authors: ['pengzhile(linux.do)'],
       license: '未标注（内部脚本）'
     },
     chatgpt_strong_highlight_lite: {

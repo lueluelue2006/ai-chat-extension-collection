@@ -83,3 +83,58 @@ npm run build
 欢迎 Issue / PR：
 
 - Bug 报告请附：站点、触发步骤、预期结果、实际结果、浏览器版本
+
+## 站点脚本树（仅名称）
+
+- 通用
+  - 隐藏免责声明/提示条
+- ChatGPT
+  - QuickNav
+  - OpenAI 新模型横幅提示
+  - ChatGPT 性能优化
+  - ChatGPT 推理强度/模型 快捷切换
+  - ⌘Enter 发送（Enter 换行）
+  - ChatGPT 朗读速度控制器
+  - ChatGPT 用量统计
+  - ChatGPT 回复计时器
+  - ChatGPT 下载修复
+  - ChatGPT 回复粗体高亮（Lite）
+  - 快捷深度搜索（译/搜/思）
+  - ChatGPT 隐藏点赞/点踩
+  - ChatGPT TeX Copy & Quote
+  - ChatGPT 对话导出（新版 UI）
+  - ChatGPT 消息分叉编辑（可加图）
+  - ChatGPT 消息树（只读）
+  - ChatGPT 侧边栏顶部按钮修复
+- Qwen
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+  - Qwen 模型/推理 快捷切换
+- Kimi
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+- DeepSeek
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+- Gemini App
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+- 文心一言
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+- GLM（z.ai）
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+- Genspark
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+  - Genspark 绘图默认设置
+  - Genspark 积分余量
+  - Genspark 长代码块折叠
+  - Genspark 消息编辑上传修复
+  - Genspark Claude Thinking 强制切换
+- Grok
+  - QuickNav
+  - ⌘Enter 发送（Enter 换行）
+  - Grok 剩余额度显示
+  - Grok 废纸篓一键清空

@@ -24,6 +24,7 @@ const DEV_SELF_TESTS = Object.freeze([
   'dev/test-chatgpt-cmdenter-send.js',
   'dev/test-chatgpt-scroll-lock-send-guard.js',
   'dev/test-chatgpt-perf-defaults.js',
+  'dev/test-chatgpt-thinking-toggle-effort-cycle.js',
   'dev/test-qwen-thinking-toggle.js',
   'dev/test-qwen-quicknav-route-watcher.js',
   'dev/test-qwen-quicknav-route-gate.js',

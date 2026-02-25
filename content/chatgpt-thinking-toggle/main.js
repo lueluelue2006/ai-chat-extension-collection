@@ -1166,15 +1166,12 @@ button.${HINT_CLASS}::after {
         let targetIdx = -1;
         let route = 'generic';
 
-        if (proLowIdx >= 0 && proHighIdx >= 0 && (checkedIndex === proLowIdx || checkedIndex === proHighIdx)) {
+        if (lowIdx >= 0 && highIdx >= 0) {
+          targetIdx = checkedIndex === highIdx ? lowIdx : highIdx;
+          route = items.length >= 4 ? 'extreme-pair-4lvl' : 'extreme-pair';
+        } else if (proLowIdx >= 0 && proHighIdx >= 0 && (checkedIndex === proLowIdx || checkedIndex === proHighIdx)) {
           targetIdx = checkedIndex === proHighIdx ? proLowIdx : proHighIdx;
           route = 'mid-pair';
-        } else if (lowIdx >= 0 && highIdx >= 0 && (checkedIndex === lowIdx || checkedIndex === highIdx)) {
-          targetIdx = checkedIndex === highIdx ? lowIdx : highIdx;
-          route = 'extreme-pair';
-        } else if (lowIdx >= 0 && highIdx >= 0) {
-          targetIdx = highIdx;
-          route = 'extreme-fallback';
         } else if (proLowIdx >= 0 && proHighIdx >= 0) {
           targetIdx = proHighIdx;
           route = 'mid-fallback';

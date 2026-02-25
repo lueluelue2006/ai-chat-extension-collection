@@ -5,6 +5,15 @@
   if (!root.__aiShortcutsSw || typeof root.__aiShortcutsSw !== 'object') root.__aiShortcutsSw = {};
   const ns = root.__aiShortcutsSw;
 
+  async function applySettingsChange(settings: any, msg: any) {
+    if (msg && msg.noInject) {
+      await ns.registration.applySettingsAndRegister(settings);
+      return;
+    }
+    // 默认策略：保存后立即对已打开页面做静默重注入，减少手动刷新/重载提示打断。
+    await ns.registration.applySettingsAndReinject(settings);
+  }
+
   function handleSettingsMessage(context: any) {
     const { msg, sender, sendResponse, requireAllowedSender, respondError } = context || {};
     if (!msg || typeof msg !== 'object') return false;
@@ -22,8 +31,7 @@
       ns.storage
         .runSettingsMutation(async () => {
           const settings = await ns.storage.setSettings(msg.settings);
-          if (msg && msg.noInject) await ns.registration.applySettingsAndRegister(settings);
-          else await ns.registration.applySettingsAndInjectRegistered(settings);
+          await applySettingsChange(settings, msg);
           return settings;
         })
         .then((settings: any) => sendResponse({ ok: true, settings }))
@@ -38,8 +46,7 @@
           const current = await ns.storage.getSettings();
           const patched = ns.storage.applySettingsPatchOps(current, msg.patch);
           const settings = await ns.storage.setSettings(patched);
-          if (msg && msg.noInject) await ns.registration.applySettingsAndRegister(settings);
-          else await ns.registration.applySettingsAndInjectRegistered(settings);
+          await applySettingsChange(settings, msg);
           return settings;
         })
         .then((settings: any) => sendResponse({ ok: true, settings }))
@@ -52,8 +59,7 @@
       ns.storage
         .runSettingsMutation(async () => {
           const settings = await ns.storage.setSettings(ns.storage.getDefaultSettingsClone());
-          if (msg && msg.noInject) await ns.registration.applySettingsAndRegister(settings);
-          else await ns.registration.applySettingsAndInjectRegistered(settings);
+          await applySettingsChange(settings, msg);
           return settings;
         })
         .then((settings: any) => sendResponse({ ok: true, settings }))

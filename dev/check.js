@@ -8,6 +8,7 @@ const vm = require('vm');
 const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const SOURCE_MANIFEST_PATH = 'manifest.source.json';
 const TS_LOADERS = new Map([
   ['.ts', 'ts'],
   ['.tsx', 'tsx'],
@@ -270,7 +271,7 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
   const actualHostPerms = normalizePatterns(hostPerms);
   if (expectedHostPerms.join('\n') !== actualHostPerms.join('\n')) {
     errors.push(
-      `manifest.json host_permissions mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${actualHostPerms.join('\n- ')}`
+      `${SOURCE_MANIFEST_PATH} host_permissions mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedHostPerms.join('\n- ')}\nactual:\n- ${actualHostPerms.join('\n- ')}`
     );
   }
 
@@ -278,13 +279,13 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
   const expectedBootstrapMatches = normalizePatterns(registryAllMatchPatterns(reg));
   if (expectedBootstrapMatches.join('\n') !== bootstrapMatches.join('\n')) {
     errors.push(
-      `manifest.json bootstrap matches mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedBootstrapMatches.join('\n- ')}\nactual:\n- ${bootstrapMatches.join('\n- ')}`
+      `${SOURCE_MANIFEST_PATH} bootstrap matches mismatch (run: node dev/sync-manifest.js)\nexpected:\n- ${expectedBootstrapMatches.join('\n- ')}\nactual:\n- ${bootstrapMatches.join('\n- ')}`
     );
   }
 
   for (const m of Array.from(matchPatterns.values()).filter(Boolean)) {
     const ok = hostPerms.some((p) => coversHostPermission(p, m));
-    if (!ok) errors.push(`manifest.json host_permissions does not cover match pattern used by injections: ${m}`);
+    if (!ok) errors.push(`${SOURCE_MANIFEST_PATH} host_permissions does not cover match pattern used by injections: ${m}`);
   }
 
   for (const s of regSites) {
@@ -368,17 +369,17 @@ function main() {
 
   let manifest;
   try {
-    manifest = JSON.parse(readText('manifest.json'));
+    manifest = JSON.parse(readText(SOURCE_MANIFEST_PATH));
   } catch (e) {
-    console.error(`manifest.json parse: FAIL (${e instanceof Error ? e.message : String(e)})`);
+    console.error(`${SOURCE_MANIFEST_PATH} parse: FAIL (${e instanceof Error ? e.message : String(e)})`);
     process.exitCode = 1;
     return;
   }
-  console.log('manifest.json parse: OK');
+  console.log(`${SOURCE_MANIFEST_PATH} parse: OK`);
 
   const manifestVersion = String(manifest?.version || '').trim();
   if (!manifestVersion) {
-    console.error('manifest.json version check: FAIL (manifest.json version is missing)');
+    console.error(`${SOURCE_MANIFEST_PATH} version check: FAIL (${SOURCE_MANIFEST_PATH} version is missing)`);
     process.exitCode = 1;
     return;
   }
@@ -394,7 +395,7 @@ function main() {
 
   if (inventoryVersion !== manifestVersion) {
     console.error('docs/scripts-inventory.md version check: FAIL');
-    console.error(`- manifest.json version: ${manifestVersion}`);
+    console.error(`- ${SOURCE_MANIFEST_PATH} version: ${manifestVersion}`);
     console.error(`- docs/scripts-inventory.md version: ${inventoryVersion}`);
     console.error('- Run: node dev/gen-scripts-inventory.js');
     process.exitCode = 1;

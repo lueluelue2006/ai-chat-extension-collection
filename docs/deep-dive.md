@@ -6,13 +6,13 @@
 > - Grok QuickNav 锁协议对齐：`docs/grok-scroll-lock-parity.md`
 >
 > 重点文件入口（建议从这里开始读）：  
-> - `manifest.json`（MV3 入口：静态只挂 bootstrap）  
+> - `manifest.source.json`（源码侧 Manifest 模板，build 后输出到 `dist/manifest.json`）  
 > - `content/bootstrap.js`（document_start 唤醒后台 SW + 兜底注入）  
 > - `background/sw.js` + `background/sw/*.ts`（`sw.js` 只做装配；模块负责注册/设置/监控/重置/路由）  
 > - `shared/registry.ts`（站点/模块元数据；Popup/Options 的“单一真相”）  
 > - `shared/injections.ts`（注入定义；SW 的“单一真相”）
 
-本文以 `manifest.json` 当前内容为准，假设读者了解 Chrome Extension MV3（Service Worker / content scripts / MAIN vs ISOLATED world）。
+本文以 `manifest.source.json`（以及构建产物 `dist/manifest.json`）当前内容为准，假设读者了解 Chrome Extension MV3（Service Worker / content scripts / MAIN vs ISOLATED world）。
 
 ## TL;DR（一句话）
 
@@ -79,15 +79,15 @@ QuickNav 当前注入顺序（核心口径）：
 - ISOLATED：`aishortcuts-scope.js` -> `aishortcuts-bridge.js` ->（站点前置文件）-> `aishortcuts-kernel/*` -> 站点 `*-quicknav.js`
 - MAIN（scroll guard）：`aishortcuts-scope-main.js` -> `aishortcuts-bridge-main.js` -> `scroll-guard-main.js`
 
-结论：**新增/改站点或模块**，大概率只需要改 `shared/registry.ts` + `shared/injections.ts`，再跑维护脚本同步 `manifest.json` 与文档（见第 9 节）。
+结论：**新增/改站点或模块**，大概率只需要改 `shared/registry.ts` + `shared/injections.ts`，再跑维护脚本同步 `manifest.source.json` 与文档（见第 9 节）。
 
 ---
 
 ## 3) 启动与注入主链路（MV3）
 
-### 3.1 静态入口极简：`manifest.json` → `content/bootstrap.js`
+### 3.1 静态入口极简：`manifest.source.json`（构建后为 `dist/manifest.json`）→ `content/bootstrap.js`
 
-设计目标：让 `manifest.json` 的 `content_scripts` 只负责“叫醒 SW + 兜底”，把所有真实功能都交给 SW 动态注册，降低静态注入成本与维护成本。
+设计目标：让 Manifest 的 `content_scripts` 只负责“叫醒 SW + 兜底”，把所有真实功能都交给 SW 动态注册，降低静态注入成本与维护成本。
 
 `content/bootstrap.js` 的职责有两条线：
 
@@ -335,7 +335,7 @@ Turn 筛选策略（维护重点）：
 
 - 读取/修改设置：`AISHORTCUTS_GET_SETTINGS`、`AISHORTCUTS_PATCH_SETTINGS`
 - 菜单发现/执行：向当前 tab 发 `AISHORTCUTS_GET_MENU`、`AISHORTCUTS_RUN_MENU`
-- 更新检查：拉取远端 `manifest.json` version 做对比（仅提示，不自动更新）
+- 更新检查：拉取远端 `dist/manifest.json` version 做对比（仅提示，不自动更新）
 
 ### Options（`options/options.js`）
 
@@ -367,7 +367,7 @@ Turn 筛选策略（维护重点）：
 
 ### 启动与注入
 
-- `manifest.json`：静态只注入 `content/bootstrap.js`（其余脚本由 SW 动态注册）
+- `manifest.source.json`（构建到 `dist/manifest.json`）：静态只注入 `content/bootstrap.js`（其余脚本由 SW 动态注册）
 - `content/bootstrap.js:24`：`ensureInjected(reason)`（兜底注入入口）
 - `content/bootstrap.js:41`：发送 `QUICKNAV_BOOTSTRAP_ENSURE`
 - `content/bootstrap.js:54`：发送 `QUICKNAV_BOOTSTRAP_PING`
@@ -438,7 +438,7 @@ Turn 筛选策略（维护重点）：
 项目自带的维护脚本（Node 直接运行，无需打包器）：
 
 1) `node dev/sync-manifest.js`  
-   - 从 `registry/injections` 同步 `manifest.json.host_permissions` 与 bootstrap 的 `matches`
+   - 从 `registry/injections` 同步 `manifest.source.json` 的 `host_permissions` 与 bootstrap 的 `matches`
 2) `node dev/gen-scripts-inventory.js`  
    - 根据 `registry/injections` 生成 `docs/scripts-inventory.md`（站点/模块/注入细节清单）
 3) `node dev/check.js`  
@@ -482,8 +482,8 @@ Turn 筛选策略（维护重点）：
 
 以下入口用于开发与排障，消息网关默认只允许扩展页 sender（`background/sw/chrome.ts` 的 `senderGate`）：
 
-- Memtest 页面（打包产物）：`scripts/build.mjs` 会把 `dev/memtest.html` 与 `dev/memtest.js` 一并拷到 `dist/dev/*`
-- Memtest 入口：`chrome-extension://<EXTENSION_ID>/dev/memtest.html`
+- Memtest 页面（仅源码开发态）：`dev/memtest.html` + `dev/memtest.js`，**不会打包到 `dist/` 给普通用户**
+- Memtest 入口（仅开发态可用）：`chrome-extension://<EXTENSION_ID>/dev/memtest.html`
 - Memtest 调试面：`window.__qnMemtestDev`（`getState()`、`getReport()`、`start()`、`stop()`、`save()`、`discardTestTab()`）
 - URL 开关：`?autorun=1`（自动启动）、`?memguard=1`（请求后台仅关闭当前测试 tab）、`?memguard_abort=1`（请求后台中止矩阵并关闭 tab）
 - Memtest 页面 -> SW：`AISHORTCUTS_MEMTEST_STATUS`（状态心跳）、`AISHORTCUTS_MEMTEST_GUARD`（仅关测试 tab）、`AISHORTCUTS_MEMTEST_ABORT`（广播中止 + 关测试 tab）
@@ -554,7 +554,7 @@ Turn 筛选策略（维护重点）：
     - `content/gemini-app-quicknav.js`：对齐最新 quicknav 内核约束（bridge envelope、canonical+legacy runtime flag helper、debug API 安装器、bridge routeChange + polling fallback），移除本地 `history.pushState/replaceState` monkey patch。
     - `content/grok-quicknav.js`：移除全局 `.thinking-container { display:none !important; }`，避免误伤真实回复内容。
     - 回归测试：新增 `dev/test-multi-site-injection-routing.js`、`dev/test-gemini-app-quicknav-kernel.js`、`dev/test-grok-quicknav-visibility-safety.js` 并纳入 `dev/check.js` self-tests。
-    - 文档与清单：同步 `manifest.json`（host/matches + patch 版本）、`docs/scripts-inventory.md`。
+    - 文档与清单：同步 `manifest.source.json`（host/matches + patch 版本）、`docs/scripts-inventory.md`。
   - 验证：`npm run check` / `npm test` / `npm run typecheck` / `npm run build` 全通过；浏览器侧确认扩展重载后 Gemini App `/app` 与 Grok 页面注入路径正常。
 
 - **2026-02-14：修复 ChatGPT QuickNav 偶发慢显示 / 切页延迟隐藏**
@@ -571,7 +571,7 @@ Turn 筛选策略（维护重点）：
 - **2026-02-17：Qwen QuickNav 流式点击高亮锁定**：为防止流式输出期间自动 active 跟踪覆盖手动选择，新增“manual active/highlight lock”；流式结束后按 debounce + grace 自动释放，并在 SPA route change 时重置。
 
 - **2026-02-19：Kimi 接入 Cmd/Ctrl+Enter + QuickNav**
-  - 站点接入：`manifest.json` / `shared/registry.ts` / `shared/injections.ts` 增加 `https://kimi.com/*` 与 `https://www.kimi.com/*`，并启用 `quicknav` + `cmdenter_send` 模块注入。
+  - 站点接入：`manifest.source.json` / `shared/registry.ts` / `shared/injections.ts` 增加 `https://kimi.com/*` 与 `https://www.kimi.com/*`，并启用 `quicknav` + `cmdenter_send` 模块注入。
   - 键盘策略：Kimi 主输入框改为“Enter/Shift+Enter 仅换行，Cmd/Ctrl+Enter 发送”；并在 `isComposing`、`keyCode===229`、`event.repeat`、生成中（stop 态）路径做保护，避免误触发发送或停止。
   - 生成态判定收敛：stop/cancel 检测改为优先限制在 composer 作用域，并显式排除 `#cgpt-compact-nav` 内控件（如“收藏/取消收藏”按钮），避免把 QuickNav UI 误判为“正在生成”导致 Cmd/Ctrl+Enter 被吞掉。
   - QuickNav 协同：Kimi 复用 bridge + scroll guard 机制；发送触发后保留 QuickNav 的刷新链路，减少流式阶段目录状态漂移。
@@ -593,7 +593,7 @@ Turn 筛选策略（维护重点）：
     - `content/grok-quicknav.js` 补齐 `postBridgeMessage/readBridgeMessage`，并将 `STATE/BASELINE/ALLOW` + `READY handshake` 统一到 bridge 契约，同时同步 `dataset.quicknavScrollLockEnabled`。
     - 路由监听改为优先使用 shared bridge route signal（保留 polling fallback），避免 Grok 脚本自行 patch history。
     - `shared/registry.ts` 增加 Grok 站点（`https://grok.com/*`，仅 `quicknav`），`shared/injections.ts` 增加 `quicknav_grok` + `quicknav_scroll_guard_grok`。
-    - `manifest.json` 同步 `host_permissions` 与 bootstrap `matches`，并升级 patch 版本到 `1.3.89`。
+    - `manifest.source.json` 同步 `host_permissions` 与 bootstrap `matches`，并升级 patch 版本到 `1.3.89`。
   - 回归保护：新增 `dev/test-grok-scroll-lock-bridge.js` 与 `dev/test-grok-injection-routing.js`，并纳入 `dev/check.js` self-tests。
 
 - **2026-02-20：Grok 接入 Cmd/Ctrl+Enter 模块（与 Kimi/Qwen/ChatGPT 对齐）**
@@ -650,7 +650,7 @@ Turn 筛选策略（维护重点）：
       `quicknav`、`cmdenter_send`、`genspark_moa_image_autosettings`、`genspark_credit_balance`、`genspark_codeblock_fold`、`genspark_inline_upload_fix`、`genspark_force_sonnet45_thinking`。
     - `shared/injections.ts`：恢复 `quicknav_genspark`、`quicknav_scroll_guard_genspark`、`quicknav_genspark_cmdenter_send` 以及上述 5 个 Genspark 专项脚本的注入定义（含 MAIN/ISOLATED、runAt、allFrames）。
     - `dev/test-genspark-injection-routing.js`：新增 Genspark 路由回归测试（registry/default-settings/content-script defs 全覆盖），并纳入 `dev/check.js` self-tests。
-    - `manifest.json`：同步 host permissions 与 bootstrap matches，并升级 patch 版本到 `1.3.93`。
+    - `manifest.source.json`：同步 host permissions 与 bootstrap matches，并升级 patch 版本到 `1.3.93`。
   - 验证：`npm run check` / `npm test` / `npm run typecheck` / `npm run build` 全通过；扩展重载后可见 Genspark 相关 content script 已注册。
 
 - **2026-02-20：Genspark QuickNav 迁移到新风格（协议/路由/命名对齐）**

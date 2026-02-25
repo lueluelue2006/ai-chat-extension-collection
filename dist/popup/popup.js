@@ -4,7 +4,7 @@
   const REPO = 'lueluelue2006/ai-chat-extension-collection';
   const AUTHOR = 'lueluelue2006';
   const REPO_URL = `https://github.com/${REPO}`;
-  const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/manifest.json`;
+  const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/dist/manifest.json`;
   const SHOW_DESCRIPTIONS = false;
 
   const UI_THEME_OVERRIDE_KEY = 'aichat_ai_shortcuts_ui_theme_override_v1';
@@ -677,7 +677,7 @@
     btnCheck.disabled = true;
     try {
       const remoteVersion = await fetchRemoteManifestVersion();
-      if (!remoteVersion) throw new Error('远端 manifest.json 没有 version 字段');
+      if (!remoteVersion) throw new Error('远端 dist/manifest.json 没有 version 字段');
 
       const cmp = cmpSemver(remoteVersion, localVersion);
       if (cmp > 0) {

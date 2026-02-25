@@ -13,6 +13,7 @@ const vm = require('vm');
 const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const SOURCE_MANIFEST_PATH = 'manifest.source.json';
 
 function readText(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
@@ -80,7 +81,7 @@ function loadInjections() {
 }
 
 function loadManifest() {
-  const raw = readText('manifest.json');
+  const raw = readText(SOURCE_MANIFEST_PATH);
   return JSON.parse(raw);
 }
 

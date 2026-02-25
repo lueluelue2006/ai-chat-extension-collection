@@ -7,6 +7,7 @@ const vm = require('vm');
 const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const SOURCE_MANIFEST_PATH = 'manifest.source.json';
 
 function readText(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
@@ -89,7 +90,7 @@ function fmtSiteId(siteId) {
 }
 
 function main() {
-  const manifest = readJson('manifest.json');
+  const manifest = readJson(SOURCE_MANIFEST_PATH);
   const reg = loadRegistry();
   const inj = loadInjections();
 

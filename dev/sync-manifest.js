@@ -7,6 +7,7 @@ const vm = require('vm');
 const { transformSync } = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const SOURCE_MANIFEST_PATH = 'manifest.source.json';
 
 function readJson(relPath) {
   return JSON.parse(fs.readFileSync(path.join(ROOT, relPath), 'utf8'));
@@ -106,7 +107,7 @@ function main() {
   const extraHostPerms = uniq(inj?.EXTRA_HOST_PERMISSIONS || []);
   if (!patterns.length) throw new Error('No matchPatterns found in registry sites');
 
-  const manifest = readJson('manifest.json');
+  const manifest = readJson(SOURCE_MANIFEST_PATH);
   manifest.host_permissions = uniq([...patterns, ...extraHostPerms]).sort();
 
   const contentScripts = Array.isArray(manifest.content_scripts) ? manifest.content_scripts : [];
@@ -118,9 +119,9 @@ function main() {
   }
   bootstrap.matches = patterns;
 
-  writeJson('manifest.json', manifest);
+  writeJson(SOURCE_MANIFEST_PATH, manifest);
   // eslint-disable-next-line no-console
-  console.log(`Updated manifest.json host_permissions + bootstrap matches (${patterns.length} patterns)`);
+  console.log(`Updated ${SOURCE_MANIFEST_PATH} host_permissions + bootstrap matches (${patterns.length} patterns)`);
 }
 
 try {

@@ -8,10 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
+const SOURCE_MANIFEST = 'manifest.source.json';
 
 // Keep this explicit to avoid copying dev/tooling artifacts into dist.
 const RUNTIME_ROOT_ENTRIES = [
-  'manifest.json',
   'background',
   'content',
   'options',
@@ -21,9 +21,6 @@ const RUNTIME_ROOT_ENTRIES = [
   'icons',
   'third_party'
 ];
-
-// Dev-only artifacts explicitly shipped for extension-page diagnostics.
-const RUNTIME_EXTRA_FILES = ['dev/memtest.html', 'dev/memtest.js'];
 
 const IGNORE_NAMES = new Set(['.DS_Store']);
 const TS_LOADERS = new Map([
@@ -121,19 +118,16 @@ async function transpileTypeScript(srcAbs, dstAbs, loader) {
 async function buildMirrorDist() {
   await ensureCleanDist();
 
+  const sourceManifestAbs = path.join(ROOT, SOURCE_MANIFEST);
+  if (!(await exists(sourceManifestAbs))) {
+    throw new Error(`Missing source manifest: ${SOURCE_MANIFEST}`);
+  }
+  await copyFile(sourceManifestAbs, path.join(DIST, 'manifest.json'));
+
   for (const relPath of RUNTIME_ROOT_ENTRIES) {
     const srcAbs = path.join(ROOT, relPath);
     if (!(await exists(srcAbs))) {
       console.warn(`[build] Skipped missing runtime entry: ${relPath}`);
-      continue;
-    }
-    await copyRuntimeEntry(relPath);
-  }
-
-  for (const relPath of RUNTIME_EXTRA_FILES) {
-    const srcAbs = path.join(ROOT, relPath);
-    if (!(await exists(srcAbs))) {
-      console.warn(`[build] Skipped missing runtime file: ${relPath}`);
       continue;
     }
     await copyRuntimeEntry(relPath);

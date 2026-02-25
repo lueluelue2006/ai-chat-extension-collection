@@ -96,7 +96,7 @@ AI捷径
 |    |____ QuickNav
 |    |____ OpenAI 新模型横幅提示（默认添加了 GPT-5.3）
 |    |____ ChatGPT 性能优化（默认全启动）
-|    |____ ChatGPT 推理强度/模型 快捷切换（⌘O）
+|    |____ ChatGPT 推理强度/模型 快捷切换（⌘O/⌘J）
 |    |____ ⌘Enter 发送（Enter 换行）
 |    |____ ChatGPT 朗读速度控制器（默认 1.8x）
 |    |____ ChatGPT 用量统计（仅在配置页面显示）
@@ -115,15 +115,15 @@ AI捷径
 |    |____ QuickNav
 |    |____ ⌘Enter 发送（Enter 换行）
 |    |____ Genspark 绘图默认设置
-|    |____ Genspark 积分余量
+|    |____ Genspark 积分余量（by @kill）
 |    |____ Genspark 长代码块折叠
 |    |____ Genspark 消息编辑上传修复
-|    |____ Genspark Claude Thinking 强制切换
+|    |____ Genspark Claude Thinking 强制切换（只对sonnet 4.5 有效）
 |
 |____ Grok
 |    |____ QuickNav
 |    |____ ⌘Enter 发送（Enter 换行）
-|    |____ Grok 剩余额度显示
+|    |____ Grok 剩余额度显示（对 Grok 4.20 和 heavy 无效）
 |    |____ Grok 废纸篓一键清空
 |
 |____ Gemini App

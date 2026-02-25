@@ -746,17 +746,20 @@
   // Conversation Tree (bridge to MAIN-world chatgpt-message-tree)
   const TREE_BRIDGE_REQ_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_REQUEST';
   const TREE_BRIDGE_RES_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_RESPONSE';
+  const TREE_BRIDGE_STATE = 'AISHORTCUTS_CHATGPT_TREE_STATE';
   const TREE_BRIDGE_TOGGLE_PANEL = 'AISHORTCUTS_CHATGPT_TREE_TOGGLE';
   const TREE_BRIDGE_OPEN_PANEL = 'AISHORTCUTS_CHATGPT_TREE_OPEN';
   const TREE_BRIDGE_CLOSE_PANEL = 'AISHORTCUTS_CHATGPT_TREE_CLOSE';
   const TREE_BRIDGE_REFRESH = 'AISHORTCUTS_CHATGPT_TREE_REFRESH';
   const TREE_BRIDGE_NAVIGATE_TO = 'AISHORTCUTS_CHATGPT_TREE_NAVIGATE_TO';
   const TREE_BRIDGE_RES_NAVIGATE_TO = 'AISHORTCUTS_CHATGPT_TREE_NAVIGATE_TO_RESPONSE';
-  const TREE_BRIDGE_RESPONSE_TYPES = new Set([TREE_BRIDGE_RES_SUMMARY, TREE_BRIDGE_RES_NAVIGATE_TO]);
+  const TREE_BRIDGE_RESPONSE_TYPES = new Set([TREE_BRIDGE_RES_SUMMARY, TREE_BRIDGE_RES_NAVIGATE_TO, TREE_BRIDGE_STATE]);
   const SCROLL_GUARD_READY_TYPES = new Set(['QUICKNAV_SCROLL_GUARD_READY']);
   const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
 
   let treeSummary = null;
+  let treePanelOpen = false;
+  let treeAutoRestoreQuickNavAfterTreeClose = false;
   let treePathSet = new Set();
   let treeSummaryReqTimer = 0;
   let treeSummaryPendingReqId = '';
@@ -1069,6 +1072,8 @@
     currentActiveId = null;
     TURN_SELECTOR = null;
     treeSummary = null;
+    treePanelOpen = false;
+    treeAutoRestoreQuickNavAfterTreeClose = false;
     setBoundedTreePathSet([]);
     treeSummaryPendingReqId = '';
     clearTreeNavigatePending();
@@ -1277,12 +1282,28 @@
           if (summary && summary.conversationId && currentConv && summary.conversationId !== currentConv) return;
 
           treeSummary = summary;
+          treePanelOpen = !!summary?.isOpen;
           setBoundedTreePathSet(Array.isArray(summary?.pathIds) ? summary.pathIds : []);
 
           const ui = document.getElementById('cgpt-compact-nav')?._ui;
           if (ui) {
             try { updateTreeBtnState(ui); } catch {}
             try { renderList(ui); } catch {}
+          }
+          return;
+        }
+
+        if (type === TREE_BRIDGE_STATE) {
+          const currentConv = getConversationIdFromUrl();
+          const conv = typeof data.conversationId === 'string' ? data.conversationId : '';
+          if (conv && currentConv && conv !== currentConv) return;
+          treePanelOpen = !!data.isOpen;
+          if (treeSummary && typeof treeSummary === 'object') {
+            treeSummary = { ...treeSummary, isOpen: treePanelOpen };
+          }
+          const ui = document.getElementById('cgpt-compact-nav')?._ui;
+          if (ui) {
+            try { syncQuickNavTreeAutoCollapse(ui); } catch {}
           }
           return;
         }
@@ -4397,6 +4418,60 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scheduleActiveUpdateNow();
   }
 
+  function getQuickNavListEl(ui) {
+    try {
+      return ui?.nav?.querySelector?.('.compact-list') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isQuickNavCollapsed(ui) {
+    const list = getQuickNavListEl(ui);
+    if (!list) return true;
+    return list.getAttribute('data-hidden') === '1';
+  }
+
+  function setQuickNavCollapsed(ui, collapsed) {
+    const list = getQuickNavListEl(ui);
+    if (!list) return;
+    const nextHidden = !!collapsed;
+    const isHidden = list.getAttribute('data-hidden') === '1';
+    if (isHidden === nextHidden) return;
+    const toggleText = ui?.nav?.querySelector?.('.compact-toggle .toggle-text') || null;
+    if (nextHidden) {
+      list.style.visibility = 'hidden';
+      list.style.height = '0';
+      list.style.overflow = 'hidden';
+      list.setAttribute('data-hidden', '1');
+      if (toggleText) toggleText.textContent = '+';
+    } else {
+      list.style.visibility = 'visible';
+      list.style.height = '';
+      list.style.overflow = '';
+      list.setAttribute('data-hidden', '0');
+      if (toggleText) toggleText.textContent = '−';
+    }
+  }
+
+  function readTreePanelOpenFromDom() {
+    try {
+      const panel = document.getElementById('__aichat_chatgpt_message_tree_panel_v1__');
+      if (!panel) return null;
+      return panel.getAttribute('data-open') === '1';
+    } catch {
+      return null;
+    }
+  }
+
+  function syncQuickNavTreeAutoCollapse(ui) {
+    if (!ui || !ui.nav) return;
+    if (treePanelOpen) return;
+    if (!treeAutoRestoreQuickNavAfterTreeClose) return;
+    setQuickNavCollapsed(ui, false);
+    treeAutoRestoreQuickNavAfterTreeClose = false;
+  }
+
   function wirePanel(ui) {
     const toggleBtn = ui.nav.querySelector('.compact-toggle');
     const refreshBtn = ui.nav.querySelector('.compact-refresh');
@@ -4405,16 +4480,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
-        const list = ui.nav.querySelector('.compact-list');
-        const toggleText = toggleBtn.querySelector('.toggle-text');
-        const isHidden = list.getAttribute('data-hidden') === '1';
-        if (isHidden) {
-          list.style.visibility = 'visible'; list.style.height = ''; list.style.overflow = '';
-          list.setAttribute('data-hidden', '0'); toggleText.textContent = '−';
-        } else {
-          list.style.visibility = 'hidden'; list.style.height = '0'; list.style.overflow = 'hidden';
-          list.setAttribute('data-hidden', '1'); toggleText.textContent = '+';
-        }
+        setQuickNavCollapsed(ui, !isQuickNavCollapsed(ui));
       });
     }
 
@@ -4474,6 +4540,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           scheduleTreeSummaryRequest(240);
           return;
         }
+        const domTreeOpen = readTreePanelOpenFromDom();
+        const wasTreeOpen = typeof domTreeOpen === 'boolean' ? domTreeOpen : !!treePanelOpen;
+        if (!wasTreeOpen) {
+          const wasNavExpanded = !isQuickNavCollapsed(ui);
+          treeAutoRestoreQuickNavAfterTreeClose = wasNavExpanded;
+          if (wasNavExpanded) setQuickNavCollapsed(ui, true);
+        }
+        treePanelOpen = !wasTreeOpen;
         try { postBridgeMessage(TREE_BRIDGE_TOGGLE_PANEL); } catch {}
         // Lazy load: only request tree summary after user interacts with the tree button.
         scheduleTreeSummaryRequest(420);
@@ -4522,23 +4596,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
         // Alt+/ 面板显隐
         if (e.altKey && e.key === '/') {
-          const list = currentUi.nav.querySelector('.compact-list');
-          if (!list) return;
-          const toggleText = currentUi.nav.querySelector('.compact-toggle .toggle-text');
-          const isHidden = list.getAttribute('data-hidden') === '1';
-          if (isHidden) {
-            list.style.visibility = 'visible';
-            list.style.height = '';
-            list.style.overflow = '';
-            list.setAttribute('data-hidden', '0');
-            if (toggleText) toggleText.textContent = '−';
-          } else {
-            list.style.visibility = 'hidden';
-            list.style.height = '0';
-            list.style.overflow = 'hidden';
-            list.setAttribute('data-hidden', '1');
-            if (toggleText) toggleText.textContent = '+';
-          }
+          setQuickNavCollapsed(currentUi, !isQuickNavCollapsed(currentUi));
           e.preventDefault();
         }
       };

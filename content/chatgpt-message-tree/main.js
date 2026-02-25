@@ -18,6 +18,7 @@
 
   const BRIDGE_REQ_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_REQUEST';
   const BRIDGE_RES_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_RESPONSE';
+  const BRIDGE_STATE = 'AISHORTCUTS_CHATGPT_TREE_STATE';
   const BRIDGE_TOGGLE_PANEL = 'AISHORTCUTS_CHATGPT_TREE_TOGGLE';
   const BRIDGE_OPEN_PANEL = 'AISHORTCUTS_CHATGPT_TREE_OPEN';
   const BRIDGE_CLOSE_PANEL = 'AISHORTCUTS_CHATGPT_TREE_CLOSE';
@@ -1191,8 +1192,18 @@
     } catch {}
   }
 
+  function notifyTreeOpenState() {
+    try {
+      postBridgeMessage(BRIDGE_STATE, {
+        isOpen: !!state.open,
+        conversationId: getConversationIdFromUrl() || ''
+      });
+    } catch {}
+  }
+
   function setOpen(open) {
     const next = !!open;
+    const changed = next !== !!state.open;
     if (!next && state.refreshTimer) {
       try {
         clearTimeout(state.refreshTimer);
@@ -1212,6 +1223,7 @@
       stopGeneratingWatcher();
       dropLastDataIfClosed('close');
     }
+    if (changed) notifyTreeOpenState();
   }
 
   // Expose a tiny API for other modules (e.g. memory-pressure cleanup).
@@ -1394,7 +1406,7 @@
       if (String(summary.conversationId || '') !== cid) return null;
       const age = now() - (Number(state.lastSummaryAt) || 0);
       if (!Number.isFinite(age) || age < 0 || age >= SUMMARY_REUSE_MAX_AGE_MS) return null;
-      return summary;
+      return { ...summary, isOpen: !!state.open };
     } catch {
       return null;
     }
@@ -1420,7 +1432,9 @@
       const key = `${cached.conversationId || ''}|${cached.currentId || ''}|${prefs.simpleMode ? '1' : '0'}`;
 
       const age = now() - (Number(state.lastSummaryAt) || 0);
-      if (state.lastSummary && state.lastSummaryKey === key && age < SUMMARY_FAST_REUSE_MAX_AGE_MS) return state.lastSummary;
+      if (state.lastSummary && state.lastSummaryKey === key && age < SUMMARY_FAST_REUSE_MAX_AGE_MS) {
+        return { ...state.lastSummary, isOpen: !!state.open };
+      }
 
       const mapping = cached.mapping;
       const rootNodeId = cached.rootId;
@@ -1476,6 +1490,7 @@
         v: 1,
         builtAt: now(),
         conversationId: cached.conversationId || '',
+        isOpen: !!state.open,
         rootId: rootMsgId,
         currentId: currentMsgId,
         stats,

@@ -5393,6 +5393,51 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         return false;
       }
     };
+    const isNativeJumpBottom = (t) => {
+      try {
+        if (!t || !t.closest) return false;
+        const btn = t.closest('button');
+        if (!btn || btn.closest('#cgpt-compact-nav')) return false;
+
+        const aria = `${btn.getAttribute('aria-label') || ''} ${btn.getAttribute('title') || ''}`.toLowerCase();
+        if (
+          aria.includes('jump to latest') ||
+          aria.includes('jump to bottom') ||
+          aria.includes('scroll to bottom') ||
+          aria.includes('跳到底部') ||
+          aria.includes('回到底部') ||
+          aria.includes('跳到最新')
+        ) {
+          return true;
+        }
+
+        // ChatGPT 的原生“回到底部”按钮在部分版本没有可访问名称：
+        // 使用位置 + 样式特征做兜底识别，避免被 QuickNav 锁误拦截。
+        const className = String(btn.className || '');
+        const looksFloatingCenterButton =
+          className.includes('translate-x-1/2') &&
+          className.includes('end-1/2') &&
+          className.includes('bottom-[calc(100%+6*var(--spacing))]');
+        if (!looksFloatingCenterButton) return false;
+
+        const useHref = String(btn.querySelector?.('svg use')?.getAttribute('href') || '');
+        if (!useHref || useHref.includes('#ac89a7')) return true;
+      } catch {}
+      return false;
+    };
+    const allowNativeBottomJump = (allowMs = 2600) => {
+      if (!scrollLockEnabled) return;
+      markNavScrollIntent(allowMs);
+      scopeTimeout(conversationScope, () => {
+        if (!scrollLockEnabled) return;
+        const sc = ensureScrollLockBindings();
+        if (!sc) return;
+        const pos = getScrollPos(sc);
+        scrollLockStablePos = pos;
+        scrollLockLastPos = pos;
+        postScrollLockBaselineToMainWorld(pos, true);
+      }, Math.min(1800, Math.max(900, allowMs - 700)));
+    };
     const mark = (e) => {
       if (!scrollLockEnabled) return;
       if (ignoreIfInNav(e?.target)) return;
@@ -5409,6 +5454,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         try {
           if (!scrollLockEnabled) return;
           if (ignoreIfInNav(e?.target)) return;
+          if (isNativeJumpBottom(e?.target)) {
+            allowNativeBottomJump(2600);
+            return;
+          }
           if (isSendAction(e?.target)) return; // never allow send-triggered autoscroll to redefine baseline
           if (isSidebarToggle(e?.target) || isCopyCode(e?.target)) {
             scrollLockLastUserIntentTs = Date.now();
@@ -5425,6 +5474,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       try {
         if (!scrollLockEnabled) return;
         if (ignoreIfInNav(e?.target)) return;
+        if ((e.key === 'Enter' || e.key === ' ') && isNativeJumpBottom(e?.target)) {
+          allowNativeBottomJump(2600);
+          return;
+        }
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
         const k = e.key;

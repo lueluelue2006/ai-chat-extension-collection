@@ -1,5 +1,9 @@
 # AI捷径 (AI Shortcuts)
 
+<p align="center">
+  <img src="./icons/logo.svg" alt="AI捷径 Logo" width="280" />
+</p>
+
 多 AI 站点脚本合集（Chrome Manifest V3 扩展）。
 
 ## 你会得到什么

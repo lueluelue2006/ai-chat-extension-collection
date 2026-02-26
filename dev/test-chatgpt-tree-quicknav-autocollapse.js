@@ -28,6 +28,52 @@ function testQuickNavBridgeState(source) {
 
 function testQuickNavAutoCollapse(source) {
   assert.ok(
+    source.includes('function isWeakTurnKey(key)') &&
+      source.includes('/^conversation-turn-\\d+$/i') &&
+      source.includes('/^cgpt-turn-\\d+$/i'),
+    'quicknav should classify weak turn keys to avoid restoring ambiguous legacy pins'
+  );
+  assert.ok(
+    source.includes('function hasPinSegmentContext(ctx)') &&
+      source.includes("typeof ctx.p === 'string'") &&
+      source.includes("typeof ctx.s === 'string'"),
+    'quicknav should detect whether a pin includes segment context for safe restoration'
+  );
+  assert.ok(
+    /let\s+cpConvKey\s*=\s*'';/.test(source),
+    'quicknav should track which conversation key the pin map is loaded from'
+  );
+  assert.ok(
+    /if\s*\(!cpMap\s*\|\|\s*!\(cpMap\s+instanceof\s+Map\)\s*\|\|\s*cpConvKey\s*!==\s*convKey\)\s*loadCPSet\(\);/.test(
+      source
+    ),
+    'quicknav should reload pin map when conversation key changes to avoid stale pin inheritance'
+  );
+  assert.ok(
+    /if\s*\(!storedConvKey\s*&&\s*!storedMsgId\s*&&\s*isWeakTurnKey\(v\.msgKey\)\s*&&\s*!hasPinSegmentContext\(v\.ctx\)\)\s*\{[\s\S]*droppedLegacy\s*=\s*true;[\s\S]*continue;/.test(
+      source
+    ),
+    'quicknav should drop legacy weak pin records that cannot be safely mapped to a specific message'
+  );
+  assert.ok(
+    /if\s*\(!meta\.convKey\)\s*\{[\s\S]*meta\.convKey\s*=\s*convKey;[\s\S]*needSave\s*=\s*true;[\s\S]*\}\s*else\s*if\s*\(meta\.convKey\s*!==\s*convKey\)\s*\{[\s\S]*cpMap\.delete\(pinId\);[\s\S]*needSave\s*=\s*true;/.test(
+      source
+    ),
+    'quicknav should scope pin rendering to the active conversation key'
+  );
+  assert.ok(
+    /const\s+savedMsgId\s*=\s*\(typeof\s+meta\.msgId\s*===\s*'string'[\s\S]*findTurnByMessageId\(savedMsgId\)[\s\S]*if\s*\(savedMsgId\)\s*return\s+null;/.test(
+      source
+    ),
+    'quicknav should resolve pins by stable message id first and refuse mismatched legacy fallbacks'
+  );
+  assert.ok(
+    /const\s+msgId\s*=\s*getTurnMessageId\(turn,\s*null\)\s*\|\|\s*null;[\s\S]*convKey:\s*getConvKey\(\)/.test(
+      source
+    ),
+    'new pins should persist message id + conversation key metadata'
+  );
+  assert.ok(
     /let\s+treeAutoRestoreQuickNavAfterTreeClose\s*=\s*false;/.test(source),
     'quicknav should track whether tree close needs nav restore'
   );

@@ -515,6 +515,17 @@ Turn 筛选策略（维护重点）：
 
 ## 10) 近期维护记录（手工更新）
 
+- **2026-02-26：ChatGPT QuickNav 图钉“跨对话继承”修复（会话绑定 + 旧弱锚点清理）**
+  - 现象：部分用户在未手动加图钉时，进入新对话后仍出现旧图钉，表现为“像继承了之前对话”。
+  - 根因：
+    1. 图钉内存态在路由切换期间可能短暂沿用旧会话数据；
+    2. 历史图钉若仅依赖弱 `msgKey`（如 `conversation-turn-*`）且缺少段落上下文，恢复时容易误映射到当前对话。
+  - 修复：
+    - `content/chatgpt-quicknav.js`：新增 `cpConvKey` 会话绑定校验，渲染前若会话 key 变化则强制重载图钉存储，阻断旧内存态串用。
+    - 图钉元数据新增 `convKey/msgId`，恢复优先走 `msgId` 精确定位；当 `msgId` 不匹配时拒绝回退到弱匹配。
+    - 对“弱 key + 无上下文 + 无 msgId”的历史遗留图钉做自动清理，避免幽灵图钉持续复现。
+    - 回归保护：`dev/test-chatgpt-tree-quicknav-autocollapse.js` 增加会话绑定与弱锚点治理断言。
+
 - **2026-02-22：ChatGPT scroll-lock 发送瞬间“残留一跳”补丁（baseline 缓存竞态）**
   - 现象：在 🔒 已开启且发送后快速进入流式阶段时，极少数场景仍会出现一次很短的下跳（随后被回弹拉回）。
   - 根因：`content/scroll-guard-main.js` 对 `quicknavScrollLockBaseline` 的 dataset 读取有短时缓存；当 send guard 刚写入新 baseline 时，MAIN guard 仍可能短暂读取到旧缓存值，造成一次放行。

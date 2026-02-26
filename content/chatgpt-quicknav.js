@@ -39,6 +39,7 @@
   const CP_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 检查点保留 30 天
   let cpSet = new Set();          // 仅用于快速 membership（遗留）
   let cpMap = new Map();          // pinId -> meta
+  let cpConvKey = '';             // 当前内存里的图钉所属会话 key
   // 收藏夹（favorites）
   const FAV_KEY_PREFIX = `${STORE_NS}:fav:`;         // + 会话 key
   const FAV_FILTER_PREFIX = `${STORE_NS}:fav-filter:`; // + 会话 key
@@ -1082,6 +1083,7 @@
     treeSummary = null;
     treePanelOpen = false;
     treeAutoRestoreQuickNavAfterTreeClose = false;
+    cpConvKey = '';
     stopTreeAutoRestorePoll();
     disconnectTreePanelOpenObserver();
     treePanelCloseSyncTarget = null;
@@ -3224,15 +3226,35 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   // ===== 检查点与宽度调整 =====
   function getConvKey() { try { return location.pathname || 'root'; } catch { return 'root'; } }
+  function isWeakTurnKey(key) {
+    if (typeof key !== 'string' || !key) return false;
+    return /^conversation-turn-\d+$/i.test(key) || /^cgpt-turn-\d+$/i.test(key);
+  }
+  function hasPinSegmentContext(ctx) {
+    if (!ctx || typeof ctx !== 'object') return false;
+    return typeof ctx.p === 'string' || typeof ctx.s === 'string';
+  }
 
   function loadCPSet() {
     try {
-      const key = CP_KEY_PREFIX + getConvKey();
+      const convKey = getConvKey();
+      const key = CP_KEY_PREFIX + convKey;
       const obj = JSON.parse(window.localStorage.getItem(key) || '{}');
       cpMap = new Map();
+      let droppedLegacy = false;
       for (const k of Object.keys(obj || {})) {
         const v = obj[k];
         if (v && typeof v === 'object' && v.anchorId && v.msgKey) {
+          const storedConvKey = (typeof v.convKey === 'string' && v.convKey) ? v.convKey : '';
+          const storedMsgId = (typeof v.msgId === 'string' && v.msgId) ? v.msgId : null;
+          if (storedConvKey && storedConvKey !== convKey) {
+            droppedLegacy = true;
+            continue;
+          }
+          if (!storedConvKey && !storedMsgId && isWeakTurnKey(v.msgKey) && !hasPinSegmentContext(v.ctx)) {
+            droppedLegacy = true;
+            continue;
+          }
           const relX = (v.rel && typeof v.rel === 'object') ? Number(v.rel.x) : NaN;
           const relY = (v.rel && typeof v.rel === 'object') ? Number(v.rel.y) : NaN;
           const rel = (v.rel && typeof v.rel === 'object')
@@ -3245,6 +3267,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           // 兼容保留：frac 与 ctx（段级锚点 + 相对坐标兜底）
           cpMap.set(k, {
             msgKey: v.msgKey,
+            msgId: storedMsgId,
+            convKey: storedConvKey || convKey,
             anchorId: v.anchorId,
             created: v.created || Date.now(),
             frac: (typeof v.frac === 'number' ? v.frac : undefined),
@@ -3254,20 +3278,25 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         } else {
           // 兼容旧数据：仅时间戳，视为无 anchor 的过期项
           const ts = (typeof v === 'number' && isFinite(v)) ? v : Date.now();
-          cpMap.set(k, { msgKey: k, anchorId: null, created: ts });
+          cpMap.set(k, { msgKey: k, msgId: null, convKey, anchorId: null, created: ts });
         }
       }
+      cpConvKey = convKey;
+      if (droppedLegacy) saveCPSet();
     } catch {
       cpMap = new Map();
+      cpConvKey = '';
     }
   }
 
   function saveCPSet() {
     try {
-      const key = CP_KEY_PREFIX + getConvKey();
+      const convKey = getConvKey();
+      const key = CP_KEY_PREFIX + convKey;
       const obj = {};
       cpMap.forEach((meta, k) => { obj[k] = meta; });
       window.localStorage.setItem(key, JSON.stringify(obj));
+      cpConvKey = convKey;
     } catch {}
   }
 
@@ -4045,19 +4074,40 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   // 将📌插入到对应消息之后
   function composeWithPins(baseList) {
-    try { if (!cpMap || !(cpMap instanceof Map)) loadCPSet(); } catch {}
+    const convKey = getConvKey();
+    try {
+      if (!cpMap || !(cpMap instanceof Map) || cpConvKey !== convKey) loadCPSet();
+    } catch {}
     const pins = [];
     let needSave = false;
     cpMap.forEach((meta, pinId) => {
       if (!meta || typeof meta !== 'object') return;
+      if (!meta.convKey) {
+        meta.convKey = convKey;
+        needSave = true;
+      } else if (meta.convKey !== convKey) {
+        cpMap.delete(pinId);
+        needSave = true;
+        return;
+      }
       const msgKey = meta.msgKey;
-      if (!msgKey) return;
+      if (!msgKey) {
+        cpMap.delete(pinId);
+        needSave = true;
+        return;
+      }
       let anchorId = meta.anchorId;
       if (!anchorId || !document.getElementById(anchorId)) {
         anchorId = resolvePinAnchor(meta);
         if (anchorId) { meta.anchorId = anchorId; needSave = true; }
       }
-      if (!anchorId) return; // 无法解析，跳过
+      if (!anchorId) {
+        if (isWeakTurnKey(msgKey) && !meta.msgId && !hasPinSegmentContext(meta.ctx)) {
+          cpMap.delete(pinId);
+          needSave = true;
+        }
+        return; // 无法解析，跳过
+      }
       try { const ae = document.getElementById(anchorId); if (ae) ae.setAttribute('data-pin-id', pinId); } catch {}
       const created = meta.created || 0;
       pins.push({ pinId, msgKey, anchorId, created });
@@ -4116,8 +4166,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function resolvePinAnchor(meta) {
     try {
       const { msgKey, frac, ctx, rel } = meta;
-      const turn = findTurnByKey(msgKey);
+      const savedMsgId = (typeof meta.msgId === 'string' && meta.msgId) ? meta.msgId : '';
+      let turn = savedMsgId ? findTurnByMessageId(savedMsgId) : null;
+      if (!turn) {
+        if (savedMsgId) return null;
+        turn = findTurnByKey(msgKey);
+      }
       if (!turn) return null;
+      const turnMsgId = getTurnMessageId(turn, null) || '';
+      if (turnMsgId) meta.msgId = turnMsgId;
       const host = ensurePinHost(turn);
       if (!host) return null;
       const id = meta.anchorId || `cgpt-pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`;
@@ -4139,6 +4196,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         rx = segPlacement.x;
         ry = segPlacement.y;
         meta.ctx = { p: segPlacement.p, s: segPlacement.s, y: segPlacement.yInSegment };
+      } else if (!savedMsgId && isWeakTurnKey(msgKey) && hasPinSegmentContext(ctx)) {
+        return null;
       }
 
       if (!Number.isFinite(ry)) ry = Math.max(0, Math.min(1, typeof frac === 'number' ? frac : 0.0));
@@ -4161,6 +4220,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     for (const t of turns) {
       const k = t.getAttribute('data-message-id') || t.getAttribute('data-testid') || t.id;
       if (k === key) return t;
+    }
+    return null;
+  }
+
+  function findTurnByMessageId(msgId) {
+    if (!msgId) return null;
+    const turns = qsTurns();
+    for (const t of turns) {
+      const id = getTurnMessageId(t, null) || '';
+      if (id === msgId) return t;
     }
     return null;
   }
@@ -6030,7 +6099,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
         // 保存📌
         const pinId = `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`;
-        const meta = { msgKey, anchorId: anchor.id, frac: anchor.frac, created: Date.now(), ctx: anchor.ctx || null, rel: anchor.rel || null };
+        const msgId = getTurnMessageId(turn, null) || null;
+        const meta = {
+          msgKey,
+          msgId,
+          convKey: getConvKey(),
+          anchorId: anchor.id,
+          frac: anchor.frac,
+          created: Date.now(),
+          ctx: anchor.ctx || null,
+          rel: anchor.rel || null
+        };
         try { if (!cpMap || !(cpMap instanceof Map)) loadCPSet(); } catch {}
         cpMap.set(pinId, meta);
         try { const ae = document.getElementById(meta.anchorId); if (ae) ae.setAttribute('data-pin-id', pinId); } catch {}

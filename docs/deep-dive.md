@@ -515,6 +515,12 @@ Turn 筛选策略（维护重点）：
 
 ## 10) 近期维护记录（手工更新）
 
+- **2026-02-26：弹窗左上角品牌位切换为正式 Logo**
+  - 需求：popup 左上角不再使用 `QN` 文本方块，统一改为扩展 logo。
+  - 变更：
+    - `popup/popup.html`：品牌位改为 `<img class="brandLogo" src="../icons/icon48.png">`；
+    - `popup/popup.css`：新增 `brandLogo` 样式（保留 32px 尺寸与圆角，移除旧文字徽标样式）。
+
 - **2026-02-26：README 增加居中 Logo 头图**
   - 需求：README 采用更标准的开源项目视觉呈现，在标题下方增加居中大 logo。
   - 变更：`README.md` 新增居中 logo 区块（`./icons/logo.svg`）。

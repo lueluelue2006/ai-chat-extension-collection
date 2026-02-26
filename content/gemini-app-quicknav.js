@@ -144,6 +144,8 @@
   const GEMINI_APP_PIN_BOUND_LEGACY_KEY = '__cgptPinBound';
   const GEMINI_APP_ROUTE_UNSUB_KEY = '__quicknavGeminiAppRouteUnsubV1';
   const GEMINI_APP_ROUTE_POLL_KEY = '__quicknavGeminiAppRoutePollV1';
+  const GEMINI_APP_AUTO_MODE_MAX_ATTEMPTS = 28;
+  const GEMINI_APP_AUTO_MODE_RETRY_MS = 420;
 
   function readRuntimeFlag(primaryKey, legacyKey) {
     try {
@@ -519,6 +521,9 @@
   let lastStopCheckTs = 0;
   let lastHasStop = null;
   let activeScrollEl = null; // Gemini scroller 绑定用
+  let geminiAutoModeTimer = 0;
+  let geminiAutoModeAttempts = 0;
+  let geminiAutoModeDone = false;
 
   // Gemini App 顶栏（header）自动显隐：仅在左侧边栏展开时显示
   let headerAutoHideStarted = false;
@@ -633,7 +638,169 @@
     if (until > manualSelectionHoldUntil) manualSelectionHoldUntil = until;
   }
 
+  function clearGeminiAutoModeTimer() {
+    if (!geminiAutoModeTimer) return;
+    try { clearTimeout(geminiAutoModeTimer); } catch {}
+    geminiAutoModeTimer = 0;
+  }
+
+  function resetGeminiAutoModeState() {
+    clearGeminiAutoModeTimer();
+    geminiAutoModeAttempts = 0;
+    geminiAutoModeDone = false;
+  }
+
+  function normalizeGeminiModeLabel(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isGeminiFastModeLabel(text) {
+    return /(^|\b)fast(\b|$)|快速|极速|快答/i.test(String(text || ''));
+  }
+
+  function isGeminiProModeLabel(text) {
+    return /(^|\b)pro(\b|$)|专业|高级/i.test(String(text || ''));
+  }
+
+  function isGeminiThinkingModeLabel(text) {
+    return /thinking|思考|推理/i.test(String(text || ''));
+  }
+
+  function getGeminiModePickerButton() {
+    const root = getGeminiRoot() || document;
+    if (!root) return null;
+    return (
+      deepQueryFirst(root, 'button[aria-label*="mode picker" i]') ||
+      deepQueryFirst(root, 'button.input-area-switch') ||
+      null
+    );
+  }
+
+  function getGeminiModeOption(type) {
+    const normalizedType = String(type || '').trim().toLowerCase();
+    if (!normalizedType) return null;
+    const escaped = cssEscape(normalizedType);
+    const direct =
+      deepQueryFirst(document, `[role="menuitemradio"][data-testid="bard-mode-option-${escaped}"]`) ||
+      deepQueryFirst(document, `[data-testid="bard-mode-option-${escaped}"]`) ||
+      null;
+    if (direct) return direct;
+    const options = listGeminiModeOptions();
+    if (!options.length) return null;
+    return (
+      options.find((el) => {
+        const label = normalizeGeminiModeLabel(el?.textContent || '');
+        if (!label) return false;
+        if (normalizedType === 'pro') return isGeminiProModeLabel(label);
+        if (normalizedType === 'fast') return isGeminiFastModeLabel(label);
+        if (normalizedType === 'thinking') return isGeminiThinkingModeLabel(label);
+        return label.toLowerCase().includes(normalizedType);
+      }) || null
+    );
+  }
+
+  function listGeminiModeOptions() {
+    const byRole = deepQueryAll(document, '[role="menuitemradio"]');
+    const byTestId = deepQueryAll(document, '[data-testid^="bard-mode-option-"]');
+    const seen = new Set();
+    const out = [];
+    [...byRole, ...byTestId].forEach((el) => {
+      if (!el || !el.isConnected || seen.has(el)) return;
+      seen.add(el);
+      out.push(el);
+    });
+    return out;
+  }
+
+  function closeGeminiModeMenu(picker) {
+    if (!picker) return;
+    const tryClose = () => {
+      try {
+        if (String(picker.getAttribute('aria-expanded') || '').toLowerCase() !== 'true') return;
+        picker.click();
+      } catch {}
+    };
+    tryClose();
+    try { setTimeout(tryClose, 120); } catch {}
+  }
+
+  function attemptGeminiAutoSelectPro() {
+    const picker = getGeminiModePickerButton();
+    if (!picker) return { done: false, reason: 'picker-missing' };
+
+    const modeLabel = normalizeGeminiModeLabel(picker.textContent || '');
+    if (!modeLabel) return { done: false, reason: 'mode-label-empty' };
+    if (isGeminiProModeLabel(modeLabel) || isGeminiThinkingModeLabel(modeLabel)) {
+      return { done: true, reason: 'mode-ready' };
+    }
+    if (!isGeminiFastModeLabel(modeLabel)) {
+      return { done: true, reason: 'mode-unknown' };
+    }
+
+    let proOption = getGeminiModeOption('pro');
+    if (!proOption) {
+      const options = listGeminiModeOptions();
+      if (options.length > 0) {
+        closeGeminiModeMenu(picker);
+        return { done: true, reason: 'pro-unavailable' };
+      }
+      try {
+        picker.click();
+      } catch {}
+      return { done: false, reason: 'picker-opened' };
+    }
+
+    const ariaChecked = String(proOption.getAttribute('aria-checked') || '').toLowerCase();
+    if (ariaChecked === 'true' || proOption.classList.contains('is-selected')) {
+      closeGeminiModeMenu(picker);
+      return { done: true, reason: 'pro-already-selected' };
+    }
+    try {
+      proOption.click();
+      closeGeminiModeMenu(picker);
+      return { done: true, reason: 'pro-selected' };
+    } catch {
+      return { done: false, reason: 'click-failed' };
+    }
+  }
+
+  function scheduleGeminiAutoSelectPro(reason = 'init') {
+    if (geminiAutoModeDone || geminiAutoModeTimer) return;
+    const run = () => {
+      geminiAutoModeTimer = 0;
+      if (geminiAutoModeDone) return;
+      geminiAutoModeAttempts += 1;
+      const result = attemptGeminiAutoSelectPro();
+      if (result && result.done) {
+        geminiAutoModeDone = true;
+        clearGeminiAutoModeTimer();
+        if (DEBUG || window.DEBUG_TEMP) {
+          console.log('Gemini Navigation: auto-select Pro settled', {
+            reason: result.reason,
+            trigger: reason,
+            attempts: geminiAutoModeAttempts
+          });
+        }
+        return;
+      }
+      if (geminiAutoModeAttempts >= GEMINI_APP_AUTO_MODE_MAX_ATTEMPTS) {
+        geminiAutoModeDone = true;
+        clearGeminiAutoModeTimer();
+        if (DEBUG || window.DEBUG_TEMP) {
+          console.log('Gemini Navigation: auto-select Pro timeout', {
+            trigger: reason,
+            attempts: geminiAutoModeAttempts
+          });
+        }
+        return;
+      }
+      geminiAutoModeTimer = setTimeout(run, GEMINI_APP_AUTO_MODE_RETRY_MS);
+    };
+    geminiAutoModeTimer = setTimeout(run, 120);
+  }
+
   function init() {
+    scheduleGeminiAutoSelectPro('init');
     initGeminiHeaderAutoHide();
     const existing = document.getElementById('cgpt-compact-nav');
     if (existing) {
@@ -768,6 +935,7 @@
       lastDomTurnCount = 0;
       currentActiveTurnPos = 0;
       manualSelectionHoldUntil = 0;
+      resetGeminiAutoModeState();
       setTimeout(init, 100);
     }
   }

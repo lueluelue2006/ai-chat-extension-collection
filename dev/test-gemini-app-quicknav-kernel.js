@@ -56,6 +56,14 @@ function main() {
   expectRegex(source, /querySelector\('\.query-text \.query-text-line, \.query-text-line'\)/, 'gemini_app: should prefer query-text-line content for user preview');
   expectRegex(source, /const\s+normalizedQPreview\s*=\s*normalizeGeminiPreview\(qPreview,\s*'user'\);/, 'gemini_app: should normalize cached user preview labels');
   expectRegex(source, /const\s+normalizedAPreview\s*=\s*normalizeGeminiPreview\(aPreview,\s*'assistant'\);/, 'gemini_app: should normalize cached assistant preview labels');
+  expectRegex(source, /const\s+GEMINI_APP_AUTO_MODE_MAX_ATTEMPTS\s*=\s*28;/, 'gemini_app: should define bounded retry budget for auto mode selection');
+  expectRegex(source, /const\s+GEMINI_APP_AUTO_MODE_RETRY_MS\s*=\s*420;/, 'gemini_app: should define retry cadence for auto mode selection');
+  expectRegex(source, /function\s+isGeminiFastModeLabel\(text\)/, 'gemini_app: should detect Fast mode labels before auto switching');
+  expectRegex(source, /function\s+getGeminiModeOption\(type\)[\s\S]*?bard-mode-option-\$\{escaped\}/, 'gemini_app: should target explicit Gemini mode options by data-testid');
+  expectRegex(source, /function\s+attemptGeminiAutoSelectPro\(\)[\s\S]*?isGeminiFastModeLabel\(modeLabel\)/, 'gemini_app: should only auto-switch when current mode is Fast');
+  expectRegex(source, /function\s+scheduleGeminiAutoSelectPro\(reason\s*=\s*'init'\)/, 'gemini_app: should schedule one-shot auto mode selection');
+  expectRegex(source, /function\s+init\(\)\s*\{[\s\S]*?scheduleGeminiAutoSelectPro\('init'\);/, 'gemini_app: should trigger auto mode selection during init');
+  expectRegex(source, /detectUrlChange[\s\S]*?resetGeminiAutoModeState\(\);[\s\S]*?setTimeout\(init,\s*100\);/, 'gemini_app: should reset auto mode state after route change');
 
   assertNoLegacyDirectAssignments(source, 'gemini_app');
 

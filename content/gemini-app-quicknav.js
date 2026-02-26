@@ -724,6 +724,46 @@
     try { setTimeout(tryClose, 120); } catch {}
   }
 
+  function focusGeminiPromptAtEnd() {
+    const root = getGeminiRoot() || document;
+    if (!root) return false;
+    const target = (
+      deepQueryFirst(root, 'div[role="textbox"][contenteditable="true"]') ||
+      deepQueryFirst(root, '[contenteditable="true"][aria-label*="prompt" i]') ||
+      deepQueryFirst(root, 'textarea[aria-label*="prompt" i]') ||
+      deepQueryFirst(root, 'textarea')
+    );
+    if (!target || !target.isConnected) return false;
+    try { target.focus({ preventScroll: true }); } catch { try { target.focus(); } catch {} }
+
+    try {
+      if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+        const value = String(target.value || '');
+        target.setSelectionRange(value.length, value.length);
+        return true;
+      }
+      if (target.isContentEditable) {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        range.collapse(false);
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        return true;
+      }
+    } catch {}
+    return true;
+  }
+
+  function restoreGeminiPromptFocus() {
+    const tryRestore = () => { try { focusGeminiPromptAtEnd(); } catch {} };
+    tryRestore();
+    try { setTimeout(tryRestore, 120); } catch {}
+    try { setTimeout(tryRestore, 320); } catch {}
+  }
+
   function attemptGeminiAutoSelectPro() {
     const picker = getGeminiModePickerButton();
     if (!picker) return { done: false, reason: 'picker-missing' };
@@ -771,6 +811,7 @@
       if (result && result.done) {
         geminiAutoModeDone = true;
         clearGeminiAutoModeTimer();
+        restoreGeminiPromptFocus();
         if (DEBUG || window.DEBUG_TEMP) {
           console.log('Gemini Navigation: auto-select Pro settled', {
             reason: result.reason,

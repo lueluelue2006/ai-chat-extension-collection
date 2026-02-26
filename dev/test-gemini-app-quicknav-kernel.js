@@ -61,6 +61,8 @@ function main() {
   expectRegex(source, /function\s+isGeminiFastModeLabel\(text\)/, 'gemini_app: should detect Fast\/Flash mode labels before auto switching');
   expectRegex(source, /function\s+getGeminiModeOption\(type\)[\s\S]*?bard-mode-option-\$\{escaped\}/, 'gemini_app: should target explicit Gemini mode options by data-testid');
   expectRegex(source, /function\s+attemptGeminiAutoSelectPro\(\)[\s\S]*?mode-ready[\s\S]*?getGeminiModeOption\('pro'\)/, 'gemini_app: should keep trying to select Pro when picker label is not already Pro\/Thinking');
+  expectRegex(source, /function\s+focusGeminiPromptAtEnd\(\)/, 'gemini_app: should expose focus restore helper for Gemini prompt');
+  expectRegex(source, /function\s+scheduleGeminiAutoSelectPro\(reason\s*=\s*'init'\)[\s\S]*?restoreGeminiPromptFocus\(\);/, 'gemini_app: should restore prompt focus after auto mode settle');
   expectRegex(source, /function\s+scheduleGeminiAutoSelectPro\(reason\s*=\s*'init'\)/, 'gemini_app: should schedule one-shot auto mode selection');
   expectRegex(source, /function\s+init\(\)\s*\{[\s\S]*?scheduleGeminiAutoSelectPro\('init'\);/, 'gemini_app: should trigger auto mode selection during init');
   expectRegex(source, /detectUrlChange[\s\S]*?resetGeminiAutoModeState\(\);[\s\S]*?setTimeout\(init,\s*100\);/, 'gemini_app: should reset auto mode state after route change');

@@ -788,7 +788,7 @@ Turn 筛选策略（维护重点）：
 - 站点范围：`https://gemini.google.com/*`；QuickNav 仅在 `https://gemini.google.com/app*` 生效（`gemini enterprise` 不在本轮支持范围）。
 - QuickNav 注入：`content/gemini-app-quicknav.js`（ISOLATED, document_end）+ `content/scroll-guard-main.js`（MAIN, document_start）协作。
 - Cmd/Ctrl+Enter：由 `cmdenter_send` 模块注入 `quicknav_gemini_app_cmdenter_send`，沿用统一发送策略（Enter/Shift+Enter 换行，Cmd/Ctrl+Enter 发送）。
-- 首屏模型预设：Gemini App 首次加载时会在有限重试窗口内检查模式按钮；仅当当前模式为 `Fast` 时，才会通过 mode picker 自动切到 `Pro`。若已是 `Pro/Thinking` 或账号无 `Pro` 选项则立即停止，不做常驻 keepalive（仅刷新/新加载时重新触发）。
+- 首屏模型预设：Gemini App 首次加载时会在有限重试窗口内检查模式按钮；当当前模式不是 `Pro/Thinking` 时，会通过 mode picker 尝试自动切到 `Pro`（兼容 `Flash/Fast` 文案与延迟渲染场景）。若账号无 `Pro` 选项则立即停止，不做常驻 keepalive（仅刷新/新加载时重新触发）。
 - 协议与路由：已切到 `channel/v/nonce` bridge 契约；路由监听优先消费 shared bridge `routeChange`，保留 polling fallback，不再 patch `history.pushState/replaceState`。
 - 运行时命名：canonical 调试入口 `window.geminiNavDebug`（保留 `window.chatGptNavDebug`）；运行时 flag 采用 `__quicknavGeminiApp*` + `__cgpt*` 兼容双写。
 - 流式回复稳定性：新增“手动选择冻结窗口”（`manualSelectionHoldUntil`），在流式中点击导航项/键盘跳转后短暂抑制 `updateActiveFromAnchor()` 自动抢焦点，并在 `renderList()` 重渲染后按 `currentActiveId` 立即恢复 active 样式，降低“点击时导航项被快速刷新抢回/抖动”风险。

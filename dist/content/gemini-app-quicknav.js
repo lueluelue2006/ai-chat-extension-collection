@@ -144,7 +144,7 @@
   const GEMINI_APP_PIN_BOUND_LEGACY_KEY = '__cgptPinBound';
   const GEMINI_APP_ROUTE_UNSUB_KEY = '__quicknavGeminiAppRouteUnsubV1';
   const GEMINI_APP_ROUTE_POLL_KEY = '__quicknavGeminiAppRoutePollV1';
-  const GEMINI_APP_AUTO_MODE_MAX_ATTEMPTS = 28;
+  const GEMINI_APP_AUTO_MODE_MAX_ATTEMPTS = 90;
   const GEMINI_APP_AUTO_MODE_RETRY_MS = 420;
 
   function readRuntimeFlag(primaryKey, legacyKey) {
@@ -655,7 +655,7 @@
   }
 
   function isGeminiFastModeLabel(text) {
-    return /(^|\b)fast(\b|$)|快速|极速|快答/i.test(String(text || ''));
+    return /(^|\b)(fast|flash)(\b|$)|快速|极速|快答|闪电/i.test(String(text || ''));
   }
 
   function isGeminiProModeLabel(text) {
@@ -732,9 +732,6 @@
     if (!modeLabel) return { done: false, reason: 'mode-label-empty' };
     if (isGeminiProModeLabel(modeLabel) || isGeminiThinkingModeLabel(modeLabel)) {
       return { done: true, reason: 'mode-ready' };
-    }
-    if (!isGeminiFastModeLabel(modeLabel)) {
-      return { done: true, reason: 'mode-unknown' };
     }
 
     let proOption = getGeminiModeOption('pro');

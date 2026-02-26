@@ -32,16 +32,36 @@ function testQuickNavAutoCollapse(source) {
     'quicknav should track whether tree close needs nav restore'
   );
   assert.ok(
-    /if\s*\(!wasTreeOpen\)\s*\{\s*const\s+wasNavExpanded\s*=\s*!isQuickNavCollapsed\(ui\);\s*treeAutoRestoreQuickNavAfterTreeClose\s*=\s*wasNavExpanded;\s*if\s*\(wasNavExpanded\)\s*setQuickNavCollapsed\(ui,\s*true\);/s.test(
-      source
-    ),
-    'opening tree should auto-collapse quicknav only when nav was expanded'
+    /let\s+treeAutoRestorePollTimer\s*=\s*0;/.test(source),
+    'quicknav should keep a dedicated poll timer for tree auto-restore fallback'
   );
   assert.ok(
-    /function\s+syncQuickNavTreeAutoCollapse\(ui\)\s*\{[\s\S]*if\s*\(treePanelOpen\)\s*return;[\s\S]*if\s*\(!treeAutoRestoreQuickNavAfterTreeClose\)\s*return;[\s\S]*setQuickNavCollapsed\(ui,\s*false\);[\s\S]*treeAutoRestoreQuickNavAfterTreeClose\s*=\s*false;/s.test(
+    /function\s+scheduleTreeAutoRestorePoll\(ui,\s*delay\s*=\s*0\)\s*\{[\s\S]*syncQuickNavTreeAutoCollapse\(ui\)/.test(source),
+    'quicknav should provide a short poll fallback to recover from delayed/lost tree state messages'
+  );
+  assert.ok(
+    /function\s+ensureTreePanelOpenObserver\(ui\)\s*\{[\s\S]*attributeFilter:\s*\['data-open'\][\s\S]*syncQuickNavTreeAutoCollapse\(/.test(
       source
     ),
-    'closing tree should auto-restore quicknav only when previously auto-collapsed'
+    'quicknav should observe message-tree panel data-open changes and sync restore immediately'
+  );
+  assert.ok(
+    /function\s+bindTreePanelCloseSync\(ui\)\s*\{[\s\S]*closest\('button\.close'\)[\s\S]*setQuickNavCollapsed\(currentUi,\s*false\);[\s\S]*treeAutoRestoreQuickNavAfterTreeClose\s*=\s*false;[\s\S]*stopTreeAutoRestorePoll\(\);/.test(
+      source
+    ),
+    'quicknav should force immediate restore when tree panel close button is clicked'
+  );
+  assert.ok(
+    /if\s*\(!wasTreeOpen\)\s*\{\s*const\s+wasNavExpanded\s*=\s*!isQuickNavCollapsed\(ui\);\s*treeAutoRestoreQuickNavAfterTreeClose\s*=\s*wasNavExpanded;\s*if\s*\(wasNavExpanded\)\s*\{[\s\S]*setQuickNavCollapsed\(ui,\s*true\);[\s\S]*scheduleTreeAutoRestorePoll\(ui,\s*48\);/s.test(
+      source
+    ),
+    'opening tree should auto-collapse quicknav and start fallback polling only when nav was expanded'
+  );
+  assert.ok(
+    /function\s+syncQuickNavTreeAutoCollapse\(ui\)\s*\{[\s\S]*const\s+domTreeOpen\s*=\s*readTreePanelOpenFromDom\(\);[\s\S]*if\s*\(typeof\s+domTreeOpen\s*===\s*'boolean'\)\s*treePanelOpen\s*=\s*domTreeOpen;[\s\S]*if\s*\(treePanelOpen\)\s*return;[\s\S]*if\s*\(!treeAutoRestoreQuickNavAfterTreeClose\)\s*return;[\s\S]*setQuickNavCollapsed\(ui,\s*false\);[\s\S]*treeAutoRestoreQuickNavAfterTreeClose\s*=\s*false;[\s\S]*stopTreeAutoRestorePoll\(\);/s.test(
+      source
+    ),
+    'closing tree should auto-restore quicknav only when previously auto-collapsed, and stop fallback polling'
   );
 }
 

@@ -762,10 +762,16 @@
   let treeSummary = null;
   let treePanelOpen = false;
   let treeAutoRestoreQuickNavAfterTreeClose = false;
+  let treeAutoRestorePollTimer = 0;
+  let treeAutoRestorePollSeq = 0;
+  let treePanelOpenObserver = null;
+  let treePanelOpenObserverTarget = null;
+  let treePanelCloseSyncTarget = null;
   let treePathSet = new Set();
   let treeSummaryReqTimer = 0;
   let treeSummaryPendingReqId = '';
   const treeNavigatePending = new Map(); // reqId -> { resolve, timer }
+  const TREE_AUTO_RESTORE_POLL_MS = 240;
 
   const CHATGPT_NAV_DEBUG_KEY = 'chatgptNavDebug';
   const CHATGPT_NAV_DEBUG_LEGACY_KEY = 'chatGptNavDebug';
@@ -1076,6 +1082,9 @@
     treeSummary = null;
     treePanelOpen = false;
     treeAutoRestoreQuickNavAfterTreeClose = false;
+    stopTreeAutoRestorePoll();
+    disconnectTreePanelOpenObserver();
+    treePanelCloseSyncTarget = null;
     setBoundedTreePathSet([]);
     treeSummaryPendingReqId = '';
     clearTreeNavigatePending();
@@ -1161,6 +1170,7 @@
       if (treeSummaryReqTimer) cancelScopedTimeout(treeSummaryReqTimer);
     } catch {}
     treeSummaryReqTimer = 0;
+    stopTreeAutoRestorePoll();
     try {
       if (scrollLockRestoreTimer) cancelScopedTimeout(scrollLockRestoreTimer);
     } catch {}
@@ -1305,7 +1315,11 @@
           }
           const ui = document.getElementById('cgpt-compact-nav')?._ui;
           if (ui) {
+            try { ensureTreePanelOpenObserver(ui); } catch {}
             try { syncQuickNavTreeAutoCollapse(ui); } catch {}
+            if (treePanelOpen && treeAutoRestoreQuickNavAfterTreeClose) {
+              try { scheduleTreeAutoRestorePoll(ui, 36); } catch {}
+            }
           }
           return;
         }
@@ -4599,12 +4613,103 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
   }
 
+  function stopTreeAutoRestorePoll() {
+    try {
+      if (treeAutoRestorePollTimer) cancelScopedTimeout(treeAutoRestorePollTimer);
+    } catch {}
+    treeAutoRestorePollTimer = 0;
+    treeAutoRestorePollSeq = 0;
+  }
+
+  function disconnectTreePanelOpenObserver() {
+    try {
+      if (treePanelOpenObserver) disconnectScopedObserver(treePanelOpenObserver);
+    } catch {}
+    treePanelOpenObserver = null;
+    treePanelOpenObserverTarget = null;
+  }
+
+  function bindTreePanelCloseSync(ui) {
+    const panel = document.getElementById('__aichat_chatgpt_message_tree_panel_v1__');
+    if (!panel) return;
+    if (treePanelCloseSyncTarget === panel) return;
+    treePanelCloseSyncTarget = panel;
+    scopeOn(conversationScope, panel, 'click', (event) => {
+      let target = null;
+      try { target = event?.target instanceof Element ? event.target : null; } catch {}
+      const closeBtn = target && typeof target.closest === 'function' ? target.closest('button.close') : null;
+      if (!closeBtn) return;
+      if (!treeAutoRestoreQuickNavAfterTreeClose) return;
+      const currentUi = document.getElementById('cgpt-compact-nav')?._ui || ui;
+      if (!currentUi || !currentUi.nav) return;
+      setQuickNavCollapsed(currentUi, false);
+      treeAutoRestoreQuickNavAfterTreeClose = false;
+      treePanelOpen = false;
+      stopTreeAutoRestorePoll();
+    }, { capture: true });
+  }
+
+  function ensureTreePanelOpenObserver(ui) {
+    const panel = document.getElementById('__aichat_chatgpt_message_tree_panel_v1__');
+    if (!panel) return;
+    bindTreePanelCloseSync(ui);
+    if (treePanelOpenObserver && treePanelOpenObserverTarget === panel) return;
+    disconnectTreePanelOpenObserver();
+    treePanelOpenObserverTarget = panel;
+    treePanelOpenObserver = scopeObserver(
+      conversationScope,
+      () => {
+        const domTreeOpen = readTreePanelOpenFromDom();
+        if (typeof domTreeOpen !== 'boolean') return;
+        treePanelOpen = domTreeOpen;
+        const currentUi = document.getElementById('cgpt-compact-nav')?._ui || ui;
+        if (currentUi) syncQuickNavTreeAutoCollapse(currentUi);
+      },
+      panel,
+      {
+        attributes: true,
+        attributeFilter: ['data-open']
+      }
+    );
+  }
+
+  function scheduleTreeAutoRestorePoll(ui, delay = 0) {
+    if (!ui || !ui.nav) return;
+    if (!treeAutoRestoreQuickNavAfterTreeClose) {
+      stopTreeAutoRestorePoll();
+      return;
+    }
+    const seq = ++treeAutoRestorePollSeq;
+    try {
+      if (treeAutoRestorePollTimer) cancelScopedTimeout(treeAutoRestorePollTimer);
+    } catch {}
+    const waitMs = Math.max(0, Number(delay) || 0);
+    const tick = () => {
+      if (seq !== treeAutoRestorePollSeq) return;
+      treeAutoRestorePollTimer = 0;
+      if (!treeAutoRestoreQuickNavAfterTreeClose) {
+        stopTreeAutoRestorePoll();
+        return;
+      }
+      try { syncQuickNavTreeAutoCollapse(ui); } catch {}
+      if (!treeAutoRestoreQuickNavAfterTreeClose) {
+        stopTreeAutoRestorePoll();
+        return;
+      }
+      treeAutoRestorePollTimer = scopeTimeout(conversationScope, tick, TREE_AUTO_RESTORE_POLL_MS);
+    };
+    treeAutoRestorePollTimer = scopeTimeout(conversationScope, tick, waitMs);
+  }
+
   function syncQuickNavTreeAutoCollapse(ui) {
     if (!ui || !ui.nav) return;
+    const domTreeOpen = readTreePanelOpenFromDom();
+    if (typeof domTreeOpen === 'boolean') treePanelOpen = domTreeOpen;
     if (treePanelOpen) return;
     if (!treeAutoRestoreQuickNavAfterTreeClose) return;
     setQuickNavCollapsed(ui, false);
     treeAutoRestoreQuickNavAfterTreeClose = false;
+    stopTreeAutoRestorePoll();
   }
 
   function wirePanel(ui) {
@@ -4670,6 +4775,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     if (treeBtn) {
       treeBtn.addEventListener('click', (e) => {
+        try { ensureTreePanelOpenObserver(ui); } catch {}
         if (e && e.altKey) {
           try { postBridgeMessage(TREE_BRIDGE_REFRESH); } catch {}
           scheduleTreeSummaryRequest(240);
@@ -4680,13 +4786,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (!wasTreeOpen) {
           const wasNavExpanded = !isQuickNavCollapsed(ui);
           treeAutoRestoreQuickNavAfterTreeClose = wasNavExpanded;
-          if (wasNavExpanded) setQuickNavCollapsed(ui, true);
+          if (wasNavExpanded) {
+            setQuickNavCollapsed(ui, true);
+            scheduleTreeAutoRestorePoll(ui, 48);
+          } else {
+            stopTreeAutoRestorePoll();
+          }
+        } else {
+          stopTreeAutoRestorePoll();
         }
         treePanelOpen = !wasTreeOpen;
         try { postBridgeMessage(TREE_BRIDGE_TOGGLE_PANEL); } catch {}
         // Lazy load: only request tree summary after user interacts with the tree button.
         scheduleTreeSummaryRequest(420);
       });
+      try { ensureTreePanelOpenObserver(ui); } catch {}
       updateTreeBtnState(ui);
     }
 

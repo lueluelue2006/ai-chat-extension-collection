@@ -229,9 +229,9 @@ body {
 }
 
 .titleLogo {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   box-shadow: var(--shadow-sm);
   user-select: none;
   -webkit-user-drag: none;
@@ -270,8 +270,8 @@ body {
   }
 
   .titleLogo {
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
     border-radius: 6px;
   }
 }

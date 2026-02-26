@@ -222,6 +222,21 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+.titleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.titleLogo {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  box-shadow: var(--shadow-sm);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .subtitle {
   margin-top: 8px;
   color: var(--muted);
@@ -252,6 +267,12 @@ body {
 
   .title {
     font-size: 26px;
+  }
+
+  .titleLogo {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
   }
 }
 

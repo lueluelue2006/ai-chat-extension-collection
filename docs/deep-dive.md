@@ -276,6 +276,14 @@ Turn 筛选策略（维护重点）：
   - `cgpt-quicknav:scroll-lock`  
   - `cgpt-quicknav:cp:${location.pathname}`（📌检查点）  
   - `cgpt-quicknav:fav:${location.pathname}` / `cgpt-quicknav:fav-filter:${location.pathname}`（收藏与过滤）
+- 📌检查点定位策略（稳定性与体积平衡）：
+  - 主锚点：段级上下文 `ctx = { p, s, y }`
+    - `p`：节点路径（相对当前 turn）
+    - `s`：段落文本前缀（短签名，用于路径失效时回找）
+    - `y`：段内纵向相对位置
+  - 兜底锚点：`rel/frac`（消息容器内相对坐标）
+    - `rel` 读档会做数值归一（兼容字符串数值）并允许单轴恢复，避免历史数据缺轴时直接退化到中心点。
+  - 兼容用户与助手消息，避免仅对 assistant markdown 生效。
 
 ### 6.2 fetch hub（`content/chatgpt-fetch-hub/main.js`，MAIN）
 

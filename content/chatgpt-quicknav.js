@@ -28,6 +28,8 @@
   const CACHED_TURN_IDS_HARD_CAP = 2600;
   const TREE_NAV_PENDING_HARD_CAP = 32;
   const TREE_PATH_HARD_CAP = 4000;
+  const PIN_SEGMENT_TEXT_MAX = 48;
+  const PIN_SEGMENT_TEXT_MIN = 4;
   // 存储键与检查点状态
   const STORE_NS = 'cgpt-quicknav';
   const QUICKNAV_SITE_ID = 'chatgpt';
@@ -3217,13 +3219,23 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       for (const k of Object.keys(obj || {})) {
         const v = obj[k];
         if (v && typeof v === 'object' && v.anchorId && v.msgKey) {
-          // 保留新增字段：frac 和 ctx，用于字符级精确还原
+          const relX = (v.rel && typeof v.rel === 'object') ? Number(v.rel.x) : NaN;
+          const relY = (v.rel && typeof v.rel === 'object') ? Number(v.rel.y) : NaN;
+          const rel = (v.rel && typeof v.rel === 'object')
+            ? {
+              x: Number.isFinite(relX) ? Math.max(0, Math.min(1, relX)) : null,
+              y: Number.isFinite(relY) ? Math.max(0, Math.min(1, relY)) : null
+            }
+            : null;
+          const relValid = rel && (Number.isFinite(rel.x) || Number.isFinite(rel.y));
+          // 兼容保留：frac 与 ctx（段级锚点 + 相对坐标兜底）
           cpMap.set(k, {
             msgKey: v.msgKey,
             anchorId: v.anchorId,
             created: v.created || Date.now(),
             frac: (typeof v.frac === 'number' ? v.frac : undefined),
-            ctx: v.ctx || null
+            ctx: v.ctx || null,
+            rel: relValid ? rel : null
           });
         } else {
           // 兼容旧数据：仅时间戳，视为无 anchor 的过期项
@@ -4099,34 +4111,27 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       span.id = id;
       span.className = 'cgpt-pin-anchor';
 
-      let rx = null, ry = null;
-      if (rel && typeof rel.x === 'number' && typeof rel.y === 'number') {
-        rx = rel.x; ry = rel.y;
+      let rx = null;
+      let ry = null;
+      if (rel && typeof rel === 'object') {
+        const relX = Number(rel.x);
+        const relY = Number(rel.y);
+        if (Number.isFinite(relX)) rx = Math.max(0, Math.min(1, relX));
+        if (Number.isFinite(relY)) ry = Math.max(0, Math.min(1, relY));
       }
-      if (!Number.isFinite(ry)) {
-        const measureEl = getTurnMeasureEl(turn) || host;
-        const mrect = measureEl.getBoundingClientRect();
-        const f = Math.max(0, Math.min(1, typeof frac === 'number' ? frac : 0.0));
-        ry = f;
-        rx = rx ?? 0.5;
-        // 若有 ctx，可尝试从路径找目标元素中心
-        if (ctx && ctx.p != null) {
-          const el = resolveElementPath(turn, ctx.p);
-          if (el) {
-            const r = el.getBoundingClientRect();
-            if (r && r.width && r.height) {
-              const fx = Math.max(0, Math.min(1, (r.left + r.width * 0.5 - mrect.left) / Math.max(1, mrect.width)));
-              const fy = Math.max(0, Math.min(1, (r.top + r.height * 0.5 - mrect.top) / Math.max(1, mrect.height)));
-              rx = rx ?? fx;
-              ry = Number.isFinite(ry) ? ry : fy;
-            }
-          }
-        }
-        meta.frac = ry;
-        meta.rel = { x: rx ?? 0.5, y: ry };
-      } else {
-        meta.rel = { x: rx, y: ry };
+      const measureEl = getTurnMeasureEl(turn) || host;
+      const segPlacement = resolveSegmentAnchorPlacement(turn, measureEl, ctx);
+      if (segPlacement) {
+        rx = segPlacement.x;
+        ry = segPlacement.y;
+        meta.ctx = { p: segPlacement.p, s: segPlacement.s, y: segPlacement.yInSegment };
       }
+
+      if (!Number.isFinite(ry)) ry = Math.max(0, Math.min(1, typeof frac === 'number' ? frac : 0.0));
+      if (!Number.isFinite(rx)) rx = 0.5;
+
+      meta.frac = ry;
+      meta.rel = { x: rx, y: ry };
 
       span.style.left = `${Math.max(0, Math.min(100, (rx ?? 0.5) * 100))}%`;
       span.style.top = `${Math.max(0, Math.min(100, (ry ?? 0) * 100))}%`;
@@ -4158,6 +4163,136 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (d < bestDist) { bestDist = d; best = el; }
     }
     return best;
+  }
+
+  function normalizeSegmentText(raw) {
+    return String(raw || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function toSegmentSnippet(raw) {
+    const text = normalizeSegmentText(raw);
+    if (!text) return '';
+    return text.slice(0, PIN_SEGMENT_TEXT_MAX);
+  }
+
+  function captureSegmentContext(turnEl, x, y) {
+    try {
+      const measureEl = getTurnMeasureEl(turnEl) || turnEl;
+      let segEl = findNodeAtYWithin(measureEl, y);
+      if (!segEl) segEl = deepestDescendantAtPointWithin(turnEl, x, y);
+      if (!segEl || !turnEl.contains(segEl)) segEl = measureEl;
+      if (!segEl || !turnEl.contains(segEl)) return null;
+
+      const block = segEl.closest(
+        '[data-message-content-part], .whitespace-pre-wrap, .text-message, p, li, pre, blockquote, h1, h2, h3, h4, h5, h6'
+      ) || segEl;
+      if (!block || !turnEl.contains(block)) return null;
+
+      const path = buildElementPath(turnEl, block);
+      if (!path) return null;
+
+      const rect = block.getBoundingClientRect();
+      const relY = rect && rect.height > 0 ? Math.max(0, Math.min(1, (y - rect.top) / Math.max(1, rect.height))) : 0.5;
+      const snippet = toSegmentSnippet(block.textContent || '');
+
+      const ctx = { p: path };
+      if (snippet.length >= PIN_SEGMENT_TEXT_MIN) ctx.s = snippet;
+      if (Number.isFinite(relY)) ctx.y = relY;
+      return ctx;
+    } catch {
+      return null;
+    }
+  }
+
+  function collectSegmentCandidates(turnEl) {
+    const out = [];
+    const seen = new Set();
+    const sels = [
+      '[data-message-content-part]',
+      '.whitespace-pre-wrap',
+      '.text-message',
+      '.markdown p, .markdown li, .markdown pre, .markdown blockquote',
+      '.prose p, .prose li, .prose pre, .prose blockquote',
+      'p, li, pre, blockquote, h1, h2, h3, h4, h5, h6'
+    ];
+
+    try {
+      for (const sel of sels) {
+        const list = turnEl.querySelectorAll(sel);
+        for (const el of list) {
+          if (!el || seen.has(el)) continue;
+          seen.add(el);
+          const rect = el.getBoundingClientRect();
+          if (!rect || (!rect.width && !rect.height)) continue;
+          const text = normalizeSegmentText(el.textContent || '');
+          if (!text || text.length < PIN_SEGMENT_TEXT_MIN) continue;
+          out.push({ el, rect, snippet: text.slice(0, PIN_SEGMENT_TEXT_MAX), text });
+          if (out.length >= 200) return out;
+        }
+      }
+    } catch {}
+    return out;
+  }
+
+  function findSegmentBySnippet(turnEl, snippet) {
+    const target = normalizeSegmentText(snippet || '');
+    if (!target || target.length < PIN_SEGMENT_TEXT_MIN) return null;
+
+    const candidates = collectSegmentCandidates(turnEl);
+    if (!candidates.length) return null;
+
+    let best = null;
+    let bestScore = -1;
+    for (const item of candidates) {
+      const text = item.text || '';
+      const seg = item.snippet || '';
+      let score = 0;
+      if (seg === target) score = 400;
+      else if (text.startsWith(target)) score = 320;
+      else if (text.includes(target)) score = 240;
+      else if (target.startsWith(seg)) score = 180;
+      if (score <= 0) continue;
+      score += Math.min(40, Math.max(0, target.length - 8));
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+      }
+    }
+    return best;
+  }
+
+  function resolveSegmentAnchorPlacement(turnEl, measureEl, ctx) {
+    try {
+      if (!ctx || typeof ctx !== 'object') return null;
+      const mrect = measureEl.getBoundingClientRect();
+      if (!mrect || !mrect.width || !mrect.height) return null;
+
+      let match = null;
+      if (ctx.p != null) {
+        const byPath = resolveElementPath(turnEl, ctx.p);
+        if (byPath && turnEl.contains(byPath)) {
+          const rect = byPath.getBoundingClientRect();
+          if (rect && (rect.width || rect.height)) {
+            match = { el: byPath, rect, snippet: toSegmentSnippet(byPath.textContent || '') };
+          }
+        }
+      }
+
+      if (!match && ctx.s) match = findSegmentBySnippet(turnEl, ctx.s);
+      if (!match || !match.rect) return null;
+
+      const segRelY = Number.isFinite(ctx.y) ? Math.max(0, Math.min(1, Number(ctx.y))) : 0.5;
+      const rect = match.rect;
+      const px = rect.left + rect.width * 0.5;
+      const py = rect.top + rect.height * segRelY;
+      const rx = Math.max(0, Math.min(1, (px - mrect.left) / Math.max(1, mrect.width)));
+      const ry = Math.max(0, Math.min(1, (py - mrect.top) / Math.max(1, mrect.height)));
+      const path = match.el ? buildElementPath(turnEl, match.el) : (ctx.p || '');
+      const snippet = match.snippet || toSegmentSnippet(match.el?.textContent || '') || '';
+      return { x: rx, y: ry, p: path, s: snippet, yInSegment: segRelY };
+    } catch {
+      return null;
+    }
   }
 
   function isScrollableY(el) {
@@ -5916,7 +6051,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     span.style.left = `${(rx * 100).toFixed(3)}%`;
     span.style.top = `${(ry * 100).toFixed(3)}%`;
     host.appendChild(span);
-    return { id, frac: ry, ctx: null, rel: { x: rx, y: ry } };
+    const ctx = captureSegmentContext(turnEl, x, y);
+    return { id, frac: ry, ctx, rel: { x: rx, y: ry } };
   }
 
   function getTurnMeasureEl(turnEl) {

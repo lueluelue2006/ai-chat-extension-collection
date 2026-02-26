@@ -515,6 +515,13 @@ Turn 筛选策略（维护重点）：
 
 ## 10) 近期维护记录（手工更新）
 
+- **2026-02-26：统一扩展 Logo 资产（SVG 源文件 + manifest 图标声明）**
+  - 目标：消除旧品牌残留观感，统一扩展图标来源。
+  - 变更：
+    - 新增 `icons/logo.svg` 作为当前 logo 源文件；
+    - 由该 SVG 重新生成 `icons/icon16.png`、`icon32.png`、`icon48.png`、`icon128.png`（构建后同步到 `dist/icons/*`）；
+    - `manifest.source.json` 增加 `icons` 与 `action.default_icon` 声明，确保扩展管理页/工具栏/通知使用同一套图标资产。
+
 - **2026-02-26：清理 Gemini Enterprise 历史残留脚本 + 新增 orphan 防回归检查**
   - 现象：仓库中残留 `content/gemini-quicknav.js`（历史文件），当前注入链路已全面切到 `content/gemini-app-quicknav.js`，旧文件不再被 manifest/injections 引用，容易造成“项目遗产未清理”的认知负担。
   - 修复：

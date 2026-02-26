@@ -124,7 +124,6 @@
     if (p.includes('zai-quicknav')) return 'GLM QuickNav';
     if (p.includes('grok-quicknav')) return 'Grok QuickNav';
     if (p.includes('gemini-app-quicknav')) return 'Gemini App QuickNav';
-    if (p.includes('gemini-quicknav')) return 'Gemini Enterprise QuickNav';
     if (p.includes('genspark-quicknav')) return 'Genspark QuickNav';
     // Fallback to path tail
     const tail = p.split('/').filter(Boolean).slice(-2).join('/');

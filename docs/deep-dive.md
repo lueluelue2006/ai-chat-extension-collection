@@ -515,6 +515,13 @@ Turn 筛选策略（维护重点）：
 
 ## 10) 近期维护记录（手工更新）
 
+- **2026-02-26：清理 Gemini Enterprise 历史残留脚本 + 新增 orphan 防回归检查**
+  - 现象：仓库中残留 `content/gemini-quicknav.js`（历史文件），当前注入链路已全面切到 `content/gemini-app-quicknav.js`，旧文件不再被 manifest/injections 引用，容易造成“项目遗产未清理”的认知负担。
+  - 修复：
+    - 删除 `content/gemini-quicknav.js`（及构建产物）；
+    - `content/menu-bridge.js` 移除 `Gemini Enterprise QuickNav` 分组推断分支；
+    - `dev/check.js` 新增“content runtime 文件覆盖校验”：若 `content/` 下存在未被 `manifest.source.json` 或 `shared/injections.ts` 引用的运行时文件，直接让检查失败，阻断类似残留再次进入主分支。
+
 - **2026-02-26：ChatGPT QuickNav 图钉“跨对话继承”修复（会话绑定 + 旧弱锚点清理）**
   - 现象：部分用户在未手动加图钉时，进入新对话后仍出现旧图钉，表现为“像继承了之前对话”。
   - 根因：

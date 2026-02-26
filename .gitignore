@@ -15,3 +15,5 @@ bun.lock
 
 .omx/
 .sisyphus/
+.omc/
+.claude/

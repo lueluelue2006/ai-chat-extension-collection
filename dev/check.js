@@ -16,6 +16,7 @@ const TS_LOADERS = new Map([
   ['.cts', 'ts']
 ]);
 const CHECK_EXTENSIONS = new Set(['.js', ...TS_LOADERS.keys()]);
+const CONTENT_RUNTIME_EXTENSIONS = new Set(['.css', '.js', ...TS_LOADERS.keys()]);
 const DEV_SELF_TESTS = Object.freeze([
   'dev/test-usage-monitor-utils.js',
   'dev/test-usage-monitor-bridge.js',
@@ -358,6 +359,84 @@ function runDevSelfTests() {
   return { ok: true };
 }
 
+function normalizeRuntimeContentPath(input) {
+  const relPath = String(input || '').trim().replace(/\\/g, '/');
+  if (!relPath.startsWith('content/')) return '';
+  const ext = path.extname(relPath).toLowerCase();
+  if (TS_LOADERS.has(ext)) return relPath.replace(/\.(cts|mts|tsx|ts)$/i, '.js');
+  if (!CONTENT_RUNTIME_EXTENSIONS.has(ext)) return '';
+  return relPath;
+}
+
+function listContentRuntimeFiles() {
+  const out = [];
+  const stack = [path.join(ROOT, 'content')];
+  while (stack.length) {
+    const abs = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent) continue;
+      if (ent.name === '.git' || ent.name === 'node_modules') continue;
+      const p = path.join(abs, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(p);
+        continue;
+      }
+      if (!ent.isFile()) continue;
+      const ext = path.extname(ent.name).toLowerCase();
+      if (!CONTENT_RUNTIME_EXTENSIONS.has(ext)) continue;
+      const runtimeRel = normalizeRuntimeContentPath(rel(p));
+      if (!runtimeRel) continue;
+      out.push(runtimeRel);
+    }
+  }
+  out.sort();
+  return out;
+}
+
+function collectReferencedContentRuntimeFiles(defs, manifest) {
+  const refs = new Set();
+
+  const appendRefs = (value) => {
+    if (!Array.isArray(value)) return;
+    for (const item of value) {
+      const normalized = normalizeRuntimeContentPath(item);
+      if (normalized) refs.add(normalized);
+    }
+  };
+
+  const manifestScripts = Array.isArray(manifest?.content_scripts) ? manifest.content_scripts : [];
+  for (const scriptDef of manifestScripts) {
+    appendRefs(scriptDef?.js);
+    appendRefs(scriptDef?.css);
+  }
+
+  for (const def of Array.isArray(defs) ? defs : []) {
+    appendRefs(def?.js);
+    appendRefs(def?.css);
+  }
+
+  return refs;
+}
+
+function verifyNoOrphanContentRuntimeFiles(defs, manifest) {
+  const sourceRuntimeFiles = listContentRuntimeFiles();
+  const referencedRuntimeFiles = collectReferencedContentRuntimeFiles(defs, manifest);
+  const orphans = sourceRuntimeFiles.filter((file) => !referencedRuntimeFiles.has(file));
+  if (!orphans.length) return { ok: true, sourceCount: sourceRuntimeFiles.length, referencedCount: referencedRuntimeFiles.size };
+  return {
+    ok: false,
+    sourceCount: sourceRuntimeFiles.length,
+    referencedCount: referencedRuntimeFiles.size,
+    orphans
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -425,6 +504,7 @@ function main() {
   console.log(`injections load: OK (v${injections.version || 0})`);
 
   const res = verifyRegistryAgainstInjections(reg, injections, manifest);
+  const runtimeDefs = injections.buildContentScriptDefs(reg);
   for (const w of res.warnings) console.warn(`WARN: ${w}`);
   if (res.errors.length) {
     console.error('Registry consistency: FAIL');
@@ -433,6 +513,17 @@ function main() {
     return;
   }
   console.log('Registry consistency: OK');
+
+  const orphanCheck = verifyNoOrphanContentRuntimeFiles(runtimeDefs, manifest);
+  if (!orphanCheck.ok) {
+    console.error('Content runtime file coverage: FAIL');
+    for (const orphan of orphanCheck.orphans) {
+      console.error(`- Orphan content runtime file (not referenced by manifest/injections): ${orphan}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`Content runtime file coverage: OK (${orphanCheck.referencedCount}/${orphanCheck.sourceCount} referenced)`);
 
   const selfTests = runDevSelfTests();
   if (!selfTests.ok) {

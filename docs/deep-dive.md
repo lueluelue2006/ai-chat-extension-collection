@@ -324,7 +324,7 @@ Turn 筛选策略（维护重点）：
 - 共享组配额：`sharedQuotaGroups`（多模型共享配额统计）
 - SPA 导航重建与自愈：订阅 bridge `routeChange`，并有低频自愈逻辑避免 React 重挂导致失效
 - options 同步桥：`bridge.js` 负责 localStorage ↔ `chrome.storage.local` 双向同步（含版本号/修订号）
-- 强制 silent 模式：主链路先做 headless 统计与同步，不注入页面悬浮 UI；主要查看/导入/导出入口在 Options
+- options-only 模式：主链路做 headless 统计与同步，不注入页面悬浮 UI；主要查看/导入/导出入口在 Options
 
 ### 6.6 ChatGPT Perf（`content/chatgpt-perf/content.js` + `content/chatgpt-perf/content.css`）
 

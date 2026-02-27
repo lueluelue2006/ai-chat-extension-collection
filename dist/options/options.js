@@ -2184,6 +2184,10 @@
     const usagePane = document.createElement('div');
     usagePane.className = 'cgptUsageDashPane';
     dashContent.appendChild(usagePane);
+    const loadingState = document.createElement('div');
+    loadingState.className = 'cgptUsageEmpty';
+    loadingState.textContent = '正在读取本地用量数据…';
+    usagePane.appendChild(loadingState);
 
     const settingsActions = document.createElement('div');
     settingsActions.className = 'cgptUsageActions cgptUsageActionsInline';
@@ -2526,6 +2530,11 @@
         renderUsagePane(latestUsageData);
         if (showStatus) setStatus('已刷新用量数据', 'ok');
       } catch (e) {
+        usagePane.textContent = '';
+        const errState = document.createElement('div');
+        errState.className = 'cgptUsageEmpty';
+        errState.textContent = `读取失败：${e instanceof Error ? e.message : String(e)}`;
+        usagePane.appendChild(errState);
         setStatus(`刷新失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         btnRefresh.disabled = false;

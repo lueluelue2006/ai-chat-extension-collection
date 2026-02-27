@@ -782,8 +782,6 @@
     minimizedPositionV2: null,
     size: { width: 400, height: 500 },
     minimized: false,
-    // MV3: 默认静默（不在页面注入悬浮 UI），仅记录数据并在扩展配置页展示。
-    silentMode: true,
     progressType: "bar",
     planType: "team",
     showWindowResetTime: false,
@@ -1178,23 +1176,15 @@
   // src/state.js
   var usageData = null;
   function isSilent() {
-    return !!(usageData?.silentMode || FORCE_SILENT_MODE);
+    return !IN_PAGE_MONITOR_UI_ENABLED;
   }
   function setUsageData(next) {
     usageData = next;
   }
 
-  // src/userConfig.js
-  // User-controlled silent mode (stored in usageData.silentMode) applies to the top frame.
-  // MV3: 在页面主世界注入悬浮 UI 会显著增加 DOM/定时器负担，且容易与性能优化模块叠加造成不稳定。
-  // 因此在扩展内强制静默：仅记录用量数据，展示放到 options 页面。
-  var FORCE_SILENT_MODE = true;
-  try {
-    if (window !== window.top) FORCE_SILENT_MODE = true;
-  } catch {
-    FORCE_SILENT_MODE = true;
-  }
-  var SILENT_MODE_USER_KEY = "silentModeUserSetV1";
+  // src/runtimeMode.js
+  // 扩展版固定为 options-only：网页端只采集，不渲染悬浮面板。
+  var IN_PAGE_MONITOR_UI_ENABLED = false;
 
   // src/utils.js
   function formatTimeAgo(timestamp) {
@@ -1305,21 +1295,9 @@
       if (data.minimized === void 0) {
         data.minimized = false;
       }
-      if (data.silentMode === void 0) {
-        data.silentMode = false;
-      }
-      // Legacy fix: older builds could accidentally persist silentMode=true from an iframe.
-      // If the user never toggled silent mode explicitly, default to visible in the top frame.
-      if (!FORCE_SILENT_MODE) {
+      if (Object.prototype.hasOwnProperty.call(data, "silentMode")) {
         try {
-          const userSet = !!GM_getValue(SILENT_MODE_USER_KEY, false);
-          if (!userSet && data.silentMode === true) {
-            data.silentMode = false;
-            try {
-              // Best-effort: persist the repair so it doesn't "stick" on refresh.
-              GM_setValue(this.key, data);
-            } catch {}
-          }
+          delete data.silentMode;
         } catch {}
       }
       if (!data.progressType) {
@@ -4815,7 +4793,7 @@
     if (_keyboardShortcutsOff) return;
     const handleShortcut = (e) => {
       if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key && e.key.toLowerCase() === "i") {
-        // In silent mode we do not intercept Cmd+I at all.
+        // Options-only mode: do not intercept Cmd+I.
         if (isSilent()) return;
         const monitor = document.getElementById("chatUsageMonitor");
         if (!monitor) return;
@@ -5123,14 +5101,11 @@
 
 	  // src/main.js
 	  function main() {
-		    // UI mode: show the original in-page floating usage monitor panel (upstream UI),
-		    // while still keeping Options as a secondary place for viewing/import/export/clear.
-		    const UI_ENABLED = true;
+		    // Extension mode: collect in chatgpt.com and render only in options page.
+		    const UI_ENABLED = IN_PAGE_MONITOR_UI_ENABLED;
 
 	    refreshUsageData();
-	    const startsSilent = isSilent();
-
-	    if (UI_ENABLED && !startsSilent) {
+	    if (UI_ENABLED) {
 	      installTextScrambler();
 	      injectStyles();
 	    }
@@ -5287,7 +5262,6 @@
     if (UI_ENABLED && isSilent()) {
       const existingMonitor = document.getElementById("chatUsageMonitor");
       if (existingMonitor) existingMonitor.remove();
-      console.log("🚀 ChatGPT Usage Monitor loaded (silent headless)");
       return;
     }
 
@@ -5363,23 +5337,6 @@
           alert("监视器重置完成。如果没有看到监视器，请刷新页面。");
         }
       }, 500);
-    }
-
-    function toggleSilentMode() {
-      cancelPendingMonitorMinimized();
-      const current = Storage.get();
-      const nextSilent = !current?.silentMode;
-      try { GM_setValue(SILENT_MODE_USER_KEY, Date.now()); } catch {}
-      Storage.update((data) => {
-        data.silentMode = nextSilent;
-        if (nextSilent) data.minimized = false;
-      });
-      const existingMonitor = document.getElementById("chatUsageMonitor");
-      if (existingMonitor) existingMonitor.remove();
-      scheduleInitialize(50);
-      try {
-        console.log(`[monitor] Silent mode: ${nextSilent ? "ON" : "OFF"}`);
-      } catch {}
     }
 
 	    if (!UI_ENABLED) {

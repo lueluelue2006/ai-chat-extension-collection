@@ -4,284 +4,225 @@
 const fs = require('fs');
 const path = require('path');
 
-const EXIT = Object.freeze({
-  OK: 0,
-  USAGE: 10,
-  REQUIRED: 11,
-  NO_SESSION: 20,
-  INPUT_READ: 21,
-  INPUT_PARSE: 22,
-  OUTPUT_WRITE: 30,
-  VALIDATION: 40,
-  TIMEOUT: 50,
-  INTERNAL: 99
-});
+const {
+  EXIT_CODES,
+  ExitError,
+  asExitCode,
+  parseArgs,
+  formatHelp,
+  writeCsv,
+  readJson,
+  safeExit
+} = require('./perf-ab/common');
 
-class CliError extends Error {
-  constructor(exitCode, message) {
-    super(message);
-    this.name = 'CliError';
-    this.exitCode = exitCode;
-  }
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function usage() {
-  return [
-    'Usage:',
-    '  node dev/test-chatgpt-perf-functional-regression.js \\',
-    '    --action-package <name> \\',
-    '    [--source synthetic|path] \\',
-    '    [--input <json-file>] \\',
-    '    [--out-root <dir>] \\',
-    '    [--out-csv functional.csv]',
-    '',
-    'Notes:',
-    '  - source=path: read real action result JSON from --input',
-    '  - source=synthetic: generate synthetic result rows',
-    '',
-    'Exit codes: 0/10/11/20/21/22/30/40/50/99'
-  ].join('\n');
+function roundId(n) {
+  return `r${String(Math.max(1, Number(n) || 1)).padStart(4, '0')}`;
 }
 
-function parseArgv(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = String(argv[i] || '');
-    if (arg === '--help' || arg === '-h') {
-      out.help = true;
-      continue;
-    }
-    if (!arg.startsWith('--')) {
-      throw new CliError(EXIT.USAGE, `Unexpected positional argument: ${arg}`);
-    }
-    const eq = arg.indexOf('=');
-    let key = '';
-    let value = '';
-    if (eq >= 0) {
-      key = arg.slice(2, eq);
-      value = arg.slice(eq + 1);
-    } else {
-      key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next != null && !String(next).startsWith('--')) {
-        value = String(next);
-        i += 1;
-      } else {
-        value = 'true';
-      }
-    }
-    out[key] = value;
-  }
+function normalizeArm(raw) {
+  const arm = String(raw || '').trim().toUpperCase();
+  if (arm !== 'A' && arm !== 'B') throw new ExitError(EXIT_CODES.ARG_ERROR, `Invalid --arm: ${raw}`);
+  return arm;
+}
 
-  const known = new Set(['help', 'action-package', 'source', 'input', 'out-root', 'out-csv']);
-  for (const key of Object.keys(out)) {
-    if (!known.has(key)) throw new CliError(EXIT.USAGE, `Unknown argument: --${key}`);
+function normalizeActionPack(raw) {
+  const list = String(raw || '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+  const allow = new Set(['send', 'edit', 'branch', 'tree', 'quicknav']);
+  const out = [];
+  for (const item of list) {
+    if (!allow.has(item)) throw new ExitError(EXIT_CODES.ARG_ERROR, `Unsupported action in --action-pack: ${item}`);
+    if (!out.includes(item)) out.push(item);
   }
+  if (!out.length) throw new ExitError(EXIT_CODES.ARG_ERROR, '--action-pack is empty');
   return out;
 }
 
-function mustString(opts, key) {
-  const text = String(opts[key] || '').trim();
-  if (!text) throw new CliError(EXIT.REQUIRED, `Missing required argument: --${key}`);
-  return text;
+function normalizeInputRows(input) {
+  if (!Array.isArray(input)) throw new ExitError(EXIT_CODES.SCHEMA_INVALID, 'input must be JSON array');
+  return input
+    .map((row, idx) => {
+      if (!row || typeof row !== 'object') return null;
+      const action = String(row.action || '').trim().toLowerCase();
+      if (!action) return null;
+      const success =
+        typeof row.success === 'boolean'
+          ? row.success
+          : ['1', 'true', 'ok', 'success', 'yes'].includes(String(row.success || '').trim().toLowerCase());
+      const latency = Number(row.latency_ms ?? row.latencyMs);
+      return {
+        round_ord: Number.isFinite(Number(row.round_ord)) ? Number(row.round_ord) : idx + 1,
+        action,
+        success,
+        latency_ms: Number.isFinite(latency) ? Math.max(0, Math.round(latency)) : '',
+        error_code: String(row.error_code || ''),
+        error_msg: String(row.error_msg || ''),
+        ts: String(row.ts || nowIso())
+      };
+    })
+    .filter(Boolean);
 }
 
-function readFileUtf8(file) {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    throw new CliError(EXIT.INPUT_READ, `Failed to read file: ${file} (${error.message})`);
-  }
-}
-
-function readJson(file) {
-  const text = readFileUtf8(file);
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new CliError(EXIT.INPUT_PARSE, `Invalid JSON: ${file} (${error.message})`);
-  }
-}
-
-function ensureDir(dir) {
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-  } catch (error) {
-    throw new CliError(EXIT.OUTPUT_WRITE, `Failed to create directory: ${dir} (${error.message})`);
-  }
-}
-
-function writeFileUtf8(file, content) {
-  try {
-    fs.writeFileSync(file, content, 'utf8');
-  } catch (error) {
-    throw new CliError(EXIT.OUTPUT_WRITE, `Failed to write file: ${file} (${error.message})`);
-  }
-}
-
-function escapeCsv(value) {
-  const text = String(value == null ? '' : value);
-  if (!/[",\n\r]/.test(text)) return text;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function normalizeStatus(status, errorText) {
-  const s = String(status || '').trim().toLowerCase();
-  if (s === 'pass' || s === 'ok') return 'pass';
-  if (s === 'fail' || s === 'error') return 'fail';
-  return errorText ? 'fail' : 'pass';
-}
-
-function pickActionsFromJson(input) {
-  if (Array.isArray(input)) return input;
-  if (input && typeof input === 'object') {
-    if (Array.isArray(input.actions)) return input.actions;
-    if (Array.isArray(input.results)) return input.results;
-    if (Array.isArray(input.data)) return input.data;
-  }
-  throw new CliError(EXIT.INPUT_PARSE, 'Input JSON must be an array or include actions/results/data array');
-}
-
-function normalizeRows(actionPackage, actions, synthetic) {
+function buildSyntheticRows({ runId, blockId, arm, attemptId, actions, intervalRounds, roundsTotal }) {
   const rows = [];
-  for (let i = 0; i < actions.length; i += 1) {
-    const item = actions[i];
-    if (!item || typeof item !== 'object') continue;
-
-    const errorText = String(item.error || item.err || '').trim();
-    rows.push({
-      actionPackage,
-      actionId: String(item.actionId || item.id || `action_${i + 1}`),
-      step: String(item.step || item.name || `step_${i + 1}`),
-      status: normalizeStatus(item.status, errorText),
-      expected: String(item.expected || ''),
-      actual: String(item.actual || ''),
-      latencyMs: Number.isFinite(Number(item.latencyMs)) ? Math.max(0, Number(item.latencyMs)) : '',
-      synthetic: synthetic || item.synthetic === true ? 'true' : 'false',
-      error: errorText,
-      timestamp: String(item.timestamp || item.ts || new Date().toISOString())
-    });
+  const baseTs = Date.now();
+  const every = Math.max(1, Number(intervalRounds) || 1);
+  for (let round = 1; round <= roundsTotal; round += 1) {
+    if (round % every !== 0) continue;
+    const roundLabel = roundId(round);
+    for (const action of actions) {
+      const latency = 70 + ((round * 11 + action.length * 17) % 230);
+      const failureNoise = (round + action.length + (arm === 'B' ? 1 : 0)) % 53 === 0;
+      rows.push({
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        round_id: roundLabel,
+        action,
+        success: failureNoise ? false : true,
+        latency_ms: latency,
+        error_code: failureNoise ? 'SYNTH_FAIL' : '',
+        error_msg: failureNoise ? `synthetic failure at ${action}` : '',
+        ts: new Date(baseTs + round * 1200).toISOString()
+      });
+    }
   }
   return rows;
 }
 
-function buildSyntheticRows(actionPackage) {
-  const now = Date.now();
-  const syntheticActions = [
-    { actionId: 'open_chat', step: 'open chat page', latencyMs: 180 },
-    { actionId: 'switch_model', step: 'switch model preset', latencyMs: 220 },
-    { actionId: 'paste_prompt', step: 'paste prompt text', latencyMs: 95 },
-    { actionId: 'send_prompt', step: 'send prompt', latencyMs: 140 },
-    { actionId: 'receive_reply', step: 'receive first token', latencyMs: 820 }
-  ];
-  return syntheticActions.map((item, idx) => ({
-    actionPackage,
-    actionId: item.actionId,
-    step: item.step,
-    status: 'pass',
-    expected: 'action succeeds',
-    actual: 'synthetic baseline',
-    latencyMs: item.latencyMs,
-    synthetic: 'true',
-    error: '',
-    timestamp: new Date(now + idx * 1000).toISOString()
-  }));
-}
-
-function toCsv(rows) {
-  const header = [
-    'action_package',
-    'action_id',
-    'step',
-    'status',
-    'expected',
-    'actual',
-    'latency_ms',
-    'synthetic',
-    'error',
-    'timestamp'
-  ];
-
-  const lines = [header.join(',')];
-  for (const row of rows) {
-    lines.push(
-      [
-        row.actionPackage,
-        row.actionId,
-        row.step,
-        row.status,
-        row.expected,
-        row.actual,
-        row.latencyMs,
-        row.synthetic,
-        row.error,
-        row.timestamp
-      ]
-        .map(escapeCsv)
-        .join(',')
-    );
-  }
-  return `${lines.join('\n')}\n`;
-}
-
 function main() {
-  const opts = parseArgv(process.argv.slice(2));
-  if (opts.help) {
-    console.log(usage());
-    return EXIT.OK;
+  const spec = {
+    'run-id': { type: 'string', required: true, description: 'Run id' },
+    'block-id': { type: 'string', required: true, description: 'Block id' },
+    arm: { type: 'string', required: true, choices: ['A', 'B'], description: 'AB arm' },
+    'attempt-id': { type: 'string', required: true, description: 'Attempt id' },
+    'action-pack': { type: 'string', required: true, description: 'Comma list: send,edit,branch,tree,quicknav' },
+    'interval-rounds': { type: 'int', default: 5, validate: (v) => v > 0, description: 'Execute action-pack every N rounds' },
+    rounds: { type: 'int', default: 20, validate: (v) => v > 0, description: 'Round count for synthetic generation' },
+    source: { type: 'string', default: 'synthetic', choices: ['synthetic', 'path'], description: 'Data source' },
+    input: { type: 'string', default: '', description: 'Input json path when source=path' },
+    out: { type: 'string', default: '', description: 'Output csv path (optional)' },
+    'out-root': { type: 'string', default: '', description: 'Run root path (optional)' }
+  };
+
+  const { help, args } = parseArgs(process.argv.slice(2), spec);
+  if (help) {
+    process.stdout.write(
+      formatHelp(
+        {
+          usage:
+            'node dev/test-chatgpt-perf-functional-regression.js --run-id <id> --block-id <id> --arm <A|B> --attempt-id <id> --action-pack send,edit,branch,tree,quicknav [--interval-rounds 5] [--rounds 20] [--source synthetic|path] [--input file] [--out path]',
+          description:
+            'Generate/collect functional regression action results and export functional.csv (run_id, block_id, arm, attempt_id, round_id, action, success, latency_ms, error_code, error_msg, ts).',
+          examples: [
+            'node dev/test-chatgpt-perf-functional-regression.js --run-id run-20260227T120000Z-abcd123 --block-id b01-AthenB --arm A --attempt-id att-001 --action-pack send,edit,branch,tree,quicknav --interval-rounds 5 --rounds 20',
+            'node dev/test-chatgpt-perf-functional-regression.js --run-id run-20260227T120000Z-abcd123 --block-id b02-BthenA --arm B --attempt-id att-002 --action-pack send,edit,branch,tree,quicknav --source path --input ./tmp/functional-source.json --out ./.omx/logs/chatgpt-perf-ab/run-.../raw/functional/b02-BthenA/B/att-002/functional.csv'
+          ]
+        },
+        spec
+      )
+    );
+    return;
   }
 
-  const actionPackage = mustString(opts, 'action-package');
-  const source = String(opts.source || 'synthetic').trim().toLowerCase();
-  if (source !== 'synthetic' && source !== 'path') {
-    throw new CliError(EXIT.VALIDATION, `Unsupported --source: ${source}`);
-  }
+  const runId = String(args.runId).trim();
+  const blockId = String(args.blockId).trim();
+  const arm = normalizeArm(args.arm);
+  const attemptId = String(args.attemptId).trim();
+  const actions = normalizeActionPack(args.actionPack);
+  const intervalRounds = Number(args.intervalRounds);
+  const roundsTotal = Number(args.rounds);
+  const source = String(args.source || 'synthetic').trim().toLowerCase();
+  const inputPath = String(args.input || '').trim() ? path.resolve(String(args.input).trim()) : '';
+  const outRoot = String(args.outRoot || '').trim() ? path.resolve(String(args.outRoot).trim()) : '';
 
-  let rows = [];
-  if (source === 'synthetic') {
-    rows = buildSyntheticRows(actionPackage);
+  if (!runId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'run-id is empty');
+  if (!blockId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'block-id is empty');
+  if (!attemptId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'attempt-id is empty');
+
+  let rows;
+  if (source === 'path') {
+    if (!inputPath) throw new ExitError(EXIT_CODES.ARG_ERROR, '--input is required when source=path');
+    if (!fs.existsSync(inputPath)) throw new ExitError(EXIT_CODES.PRECONDITION_FAILED, `input not found: ${inputPath}`);
+    rows = normalizeInputRows(readJson(inputPath)).map((row) => ({
+      run_id: runId,
+      block_id: blockId,
+      arm,
+      attempt_id: attemptId,
+      round_id: roundId(row.round_ord),
+      action: row.action,
+      success: row.success,
+      latency_ms: row.latency_ms,
+      error_code: row.error_code,
+      error_msg: row.error_msg,
+      ts: row.ts
+    }));
   } else {
-    const inputPath = path.resolve(mustString(opts, 'input'));
-    const json = readJson(inputPath);
-    const actions = pickActionsFromJson(json);
-    rows = normalizeRows(actionPackage, actions, false);
+    rows = buildSyntheticRows({
+      runId,
+      blockId,
+      arm,
+      attemptId,
+      actions,
+      intervalRounds,
+      roundsTotal
+    });
   }
+  if (!rows.length) throw new ExitError(EXIT_CODES.DATA_QUALITY_FAILED, 'functional rows empty');
 
-  if (!rows.length) {
-    throw new CliError(EXIT.VALIDATION, 'No action rows available for functional.csv');
-  }
+  const outPath =
+    String(args.out || '').trim()
+      ? path.resolve(String(args.out).trim())
+      : path.join(outRoot || process.cwd(), 'raw', 'functional', blockId, arm, attemptId, 'functional.csv');
 
-  const outRoot = path.resolve(String(opts['out-root'] || process.cwd()));
-  const outName = String(opts['out-csv'] || 'functional.csv').trim();
-  if (!outName) {
-    throw new CliError(EXIT.REQUIRED, 'Argument --out-csv cannot be empty');
-  }
+  writeCsv(outPath, rows, [
+    'run_id',
+    'block_id',
+    'arm',
+    'attempt_id',
+    'round_id',
+    'action',
+    'success',
+    'latency_ms',
+    'error_code',
+    'error_msg',
+    'ts'
+  ]);
 
-  const outCsv = path.isAbsolute(outName) ? outName : path.join(outRoot, outName);
-  ensureDir(path.dirname(outCsv));
-  writeFileUtf8(outCsv, toCsv(rows));
-
-  console.log(
-    JSON.stringify({
-      ok: true,
-      code: EXIT.OK,
-      source,
-      rows: rows.length,
-      output: outCsv
-    })
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        ok: true,
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        source,
+        rows: rows.length,
+        output: outPath
+      },
+      null,
+      2
+    )}\n`
   );
-  return EXIT.OK;
 }
 
 try {
-  const code = main();
-  process.exitCode = Number.isInteger(code) ? code : EXIT.OK;
+  main();
 } catch (error) {
-  const exitCode =
-    error instanceof CliError && Number.isInteger(error.exitCode)
-      ? error.exitCode
-      : EXIT.INTERNAL;
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[FAIL] ${message}`);
-  process.exitCode = exitCode;
+  const code = asExitCode(error);
+  const payload = {
+    ok: false,
+    exit_code: code,
+    message: error instanceof Error ? error.message : String(error)
+  };
+  if (error instanceof ExitError && error.details !== undefined) payload.details = error.details;
+  safeExit(code, payload);
 }

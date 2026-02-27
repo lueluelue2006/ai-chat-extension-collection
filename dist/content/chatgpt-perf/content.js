@@ -83,6 +83,8 @@
     onMessage: null,
     cleanup: null,
     lastHref: '',
+    lastVirtualizeStartAt: 0,
+    lastReconcileAt: 0,
   };
 
   function clampInt(n, min, max) {
@@ -132,6 +134,14 @@
         ? Math.max(0, Number(s.rootMarginPx))
         : DEFAULT_SETTINGS.rootMarginPx,
     };
+  }
+
+  function settingsEqual(a, b) {
+    if (!a || !b) return false;
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (!Object.is(a[key], b[key])) return false;
+    }
+    return true;
   }
 
   function toggleRootAttr(attrName, enabled, value = '1') {
@@ -332,6 +342,7 @@
     clearOffscreen(article);
 
     try {
+      if (article.getAttribute(COPY_UNFREEZE_ATTR) === '1') return;
       article.setAttribute(COPY_UNFREEZE_ATTR, '1');
       // Force style recalc so `content-visibility` overrides apply before ChatGPT reads the DOM.
       article.getBoundingClientRect();
@@ -654,7 +665,7 @@
             }
             const list = n.querySelectorAll?.('article');
             if (!list || !list.length) continue;
-            for (const a of Array.from(list)) {
+            for (const a of list) {
               try {
                 if (a instanceof HTMLElement) state.io.unobserve(a);
                 if (a instanceof HTMLElement) state.observed.delete(a);
@@ -683,6 +694,10 @@
   }
 
   function startVirtualization() {
+    const perfNow = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    if (perfNow - state.lastVirtualizeStartAt < 480) return;
+    state.lastVirtualizeStartAt = perfNow;
+
     detachIo();
     detachContainerObserver();
     state.containerEl = null;
@@ -1124,7 +1139,11 @@
     }
 
     // Reconcile the rest during idle time to keep interactions snappy.
-    scheduleReconcile(articles, first, last);
+    const perfNow = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    if (perfNow - state.lastReconcileAt >= 220) {
+      state.lastReconcileAt = perfNow;
+      scheduleReconcile(articles, first, last);
+    }
   }
 
   function scheduleApplyVirtualizationNow(reason = 'unknown') {
@@ -1221,6 +1240,8 @@
 
     state.onClick = (e) => {
       if (state.disposed) return;
+      // pointerdown already handles normal mouse/touch clicks; keep click only for keyboard-triggered activations.
+      if (e && typeof e.detail === 'number' && e.detail !== 0) return;
       if (isCopyButtonTarget(e.target)) prepareCopyUnfreeze(e.target);
       if (!shouldBoostFromTarget(e.target)) return;
       const now = performance.now();
@@ -1399,7 +1420,8 @@
       state.onStorageChanged = (changes, areaName) => {
         if (state.disposed) return;
         if (areaName === state.storageAreaName && changes?.[STORAGE_KEY]) {
-          applySettings(changes[STORAGE_KEY].newValue);
+          const next = sanitizeSettings(changes[STORAGE_KEY].newValue);
+          if (!settingsEqual(next, state.settings)) applySettings(next);
         }
         if (areaName === 'local' && changes?.[BENCH_KEY]?.newValue) {
           armBench(changes[BENCH_KEY].newValue?.from || '弹窗/选项');

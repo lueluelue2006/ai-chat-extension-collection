@@ -4,110 +4,25 @@
 const fs = require('fs');
 const path = require('path');
 
-const EXIT = Object.freeze({
-  OK: 0,
-  USAGE: 10,
-  REQUIRED: 11,
-  NO_SESSION: 20,
-  INPUT_READ: 21,
-  INPUT_PARSE: 22,
-  OUTPUT_WRITE: 30,
-  VALIDATION: 40,
-  TIMEOUT: 50,
-  INTERNAL: 99
-});
+const {
+  EXIT_CODES,
+  ExitError,
+  asExitCode,
+  parseArgs,
+  formatHelp,
+  writeNdjson,
+  safeExit
+} = require('./perf-ab/common');
 
-class CliError extends Error {
-  constructor(exitCode, message) {
-    super(message);
-    this.name = 'CliError';
-    this.exitCode = exitCode;
-  }
+function normalizeArm(raw) {
+  const arm = String(raw || '').trim().toUpperCase();
+  if (arm !== 'A' && arm !== 'B') throw new ExitError(EXIT_CODES.ARG_ERROR, `Invalid --arm: ${raw}`);
+  return arm;
 }
 
-function usage() {
-  return [
-    'Usage:',
-    '  node dev/test-chatgpt-perf-extract-bench.js --source logfile --input <console.log> [--out-root <dir>] [--out-ndjson bench.ndjson]',
-    '  node dev/test-chatgpt-perf-extract-bench.js --source console   # returns code=20 (no attached browser console)',
-    '',
-    'Extracts lines containing "[cgptperf] bench" and parses first JSON object per matching line.',
-    'Exit codes: 0/10/11/20/21/22/30/40/50/99'
-  ].join('\n');
-}
-
-function parseArgv(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = String(argv[i] || '');
-    if (arg === '--help' || arg === '-h') {
-      out.help = true;
-      continue;
-    }
-    if (!arg.startsWith('--')) {
-      throw new CliError(EXIT.USAGE, `Unexpected positional argument: ${arg}`);
-    }
-
-    const eq = arg.indexOf('=');
-    let key = '';
-    let value = '';
-    if (eq >= 0) {
-      key = arg.slice(2, eq);
-      value = arg.slice(eq + 1);
-    } else {
-      key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next != null && !String(next).startsWith('--')) {
-        value = String(next);
-        i += 1;
-      } else {
-        value = 'true';
-      }
-    }
-    out[key] = value;
-  }
-
-  const known = new Set(['help', 'source', 'input', 'out-root', 'out-ndjson']);
-  for (const key of Object.keys(out)) {
-    if (!known.has(key)) throw new CliError(EXIT.USAGE, `Unknown argument: --${key}`);
-  }
-  return out;
-}
-
-function mustString(opts, key) {
-  const text = String(opts[key] || '').trim();
-  if (!text) throw new CliError(EXIT.REQUIRED, `Missing required argument: --${key}`);
-  return text;
-}
-
-function readFileUtf8(file) {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    throw new CliError(EXIT.INPUT_READ, `Failed to read file: ${file} (${error.message})`);
-  }
-}
-
-function writeText(file, content) {
-  try {
-    fs.writeFileSync(file, content, 'utf8');
-  } catch (error) {
-    throw new CliError(EXIT.OUTPUT_WRITE, `Failed to write file: ${file} (${error.message})`);
-  }
-}
-
-function ensureDir(dir) {
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-  } catch (error) {
-    throw new CliError(EXIT.OUTPUT_WRITE, `Failed to create directory: ${dir} (${error.message})`);
-  }
-}
-
-function findFirstJsonObject(text) {
+function firstJsonObject(text) {
   const start = text.indexOf('{');
   if (start < 0) return '';
-
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -116,128 +31,155 @@ function findFirstJsonObject(text) {
     if (inString) {
       if (escaped) {
         escaped = false;
-        continue;
-      }
-      if (ch === '\\') {
+      } else if (ch === '\\') {
         escaped = true;
-        continue;
+      } else if (ch === '"') {
+        inString = false;
       }
-      if (ch === '"') inString = false;
       continue;
     }
-
     if (ch === '"') {
       inString = true;
       continue;
     }
-    if (ch === '{') {
-      depth += 1;
-      continue;
-    }
+    if (ch === '{') depth += 1;
     if (ch === '}') {
       depth -= 1;
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
+      if (depth === 0) return text.slice(start, i + 1);
     }
   }
   return '';
 }
 
-function extractBenchRecords(logText) {
-  const marker = '[cgptperf] bench';
-  const lines = logText.split(/\r?\n/);
-  const records = [];
-  let parseErrors = 0;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const markerIndex = line.indexOf(marker);
-    if (markerIndex < 0) continue;
-
-    const tail = line.slice(markerIndex + marker.length);
-    const jsonText = findFirstJsonObject(tail);
-    if (!jsonText) {
-      parseErrors += 1;
-      continue;
-    }
-
-    try {
-      const payload = JSON.parse(jsonText);
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        parseErrors += 1;
-        continue;
-      }
-      records.push({
-        ...payload,
-        _line: i + 1,
-        _marker: marker
-      });
-    } catch {
-      parseErrors += 1;
-    }
-  }
-  return { records, parseErrors };
+function toFiniteOrNaN(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : Number.NaN;
 }
 
-function toNdjson(records) {
-  return records.map((row) => JSON.stringify(row)).join('\n') + (records.length ? '\n' : '');
+function extractFromLog({ runId, blockId, arm, attemptId, inputPath }) {
+  const text = fs.readFileSync(inputPath, 'utf8');
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  let ord = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const idx = line.indexOf('[cgptperf] bench');
+    if (idx < 0) continue;
+    const jsonRaw = firstJsonObject(line.slice(idx + '[cgptperf] bench'.length));
+    if (!jsonRaw) continue;
+    let obj;
+    try {
+      obj = JSON.parse(jsonRaw);
+    } catch {
+      continue;
+    }
+    ord += 1;
+    rows.push({
+      run_id: runId,
+      block_id: blockId,
+      arm,
+      attempt_id: attemptId,
+      ts: new Date().toISOString(),
+      round_id: String(obj.round_id || `r${String(ord).padStart(4, '0')}`),
+      dt_ms: toFiniteOrNaN(obj.dt ?? obj.dt_ms),
+      long_task_total_ms: toFiniteOrNaN(obj.longTaskTotal ?? obj.long_task_total_ms),
+      long_task_count: toFiniteOrNaN(obj.longTaskCount ?? obj.long_task_count),
+      heap_mb: toFiniteOrNaN(obj.heapMb ?? obj.heap_mb),
+      dom_nodes: toFiniteOrNaN(obj.domNodes ?? obj.dom_nodes),
+      iframes: toFiniteOrNaN(obj.iframes),
+      source_line: i + 1
+    });
+  }
+  return rows.filter((row) => Number.isFinite(row.dt_ms) || Number.isFinite(row.long_task_total_ms));
 }
 
 function main() {
-  const opts = parseArgv(process.argv.slice(2));
-  if (opts.help) {
-    console.log(usage());
-    return EXIT.OK;
+  const spec = {
+    'run-id': { type: 'string', required: true, description: 'Run id' },
+    'block-id': { type: 'string', required: true, description: 'Block id' },
+    arm: { type: 'string', required: true, choices: ['A', 'B'], description: 'AB arm' },
+    'attempt-id': { type: 'string', required: true, description: 'Attempt id' },
+    source: { type: 'string', required: true, choices: ['logfile', 'console'], description: 'Data source' },
+    input: { type: 'string', default: '', description: 'Input logfile path when source=logfile' },
+    out: { type: 'string', default: '', description: 'Output ndjson path (optional)' },
+    'out-root': { type: 'string', default: '', description: 'Run root path (optional)' }
+  };
+  const { help, args } = parseArgs(process.argv.slice(2), spec);
+  if (help) {
+    process.stdout.write(
+      formatHelp(
+        {
+          usage:
+            'node dev/test-chatgpt-perf-extract-bench.js --run-id <id> --block-id <id> --arm <A|B> --attempt-id <id> --source logfile --input <console.log> [--out <ndjson>] [--out-root <run-root>]',
+          description:
+            'Extract [cgptperf] bench console log lines to NDJSON schema (run_id, block_id, arm, attempt_id, ts, round_id, dt_ms, long_task_total_ms, long_task_count, heap_mb, dom_nodes, iframes). source=console returns code 20.',
+          examples: [
+            'node dev/test-chatgpt-perf-extract-bench.js --run-id run-20260227T120000Z-abcd123 --block-id b01-AthenB --arm A --attempt-id att-001 --source logfile --input ./tmp/console.log --out ./.omx/logs/.../raw/bench/b01-AthenB/A/att-001/cgptperf-bench.ndjson'
+          ]
+        },
+        spec
+      )
+    );
+    return;
   }
 
-  const source = String(opts.source || '').trim().toLowerCase();
-  if (!source) throw new CliError(EXIT.REQUIRED, 'Missing required argument: --source');
+  const runId = String(args.runId).trim();
+  const blockId = String(args.blockId).trim();
+  const arm = normalizeArm(args.arm);
+  const attemptId = String(args.attemptId).trim();
+  const source = String(args.source).trim().toLowerCase();
+  if (!runId || !blockId || !attemptId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'run-id/block-id/attempt-id cannot be empty');
 
   if (source === 'console') {
-    throw new CliError(EXIT.NO_SESSION, 'source=console is not available: no browser console session connected');
+    throw new ExitError(EXIT_CODES.ENV_UNAVAILABLE, 'source=console not available without browser attachment');
   }
-  if (source !== 'logfile') {
-    throw new CliError(EXIT.VALIDATION, `Unsupported --source: ${source}`);
-  }
+  const inputPath = path.resolve(String(args.input || '').trim());
+  if (!inputPath || !fs.existsSync(inputPath)) throw new ExitError(EXIT_CODES.PRECONDITION_FAILED, `input not found: ${inputPath}`);
 
-  const inputPath = path.resolve(mustString(opts, 'input'));
-  const logText = readFileUtf8(inputPath);
-  const { records, parseErrors } = extractBenchRecords(logText);
-  if (!records.length) {
-    throw new CliError(EXIT.VALIDATION, 'No [cgptperf] bench JSON records found in logfile');
-  }
+  const rows = extractFromLog({ runId, blockId, arm, attemptId, inputPath });
+  if (!rows.length) throw new ExitError(EXIT_CODES.DATA_QUALITY_FAILED, 'no [cgptperf] bench rows extracted');
 
-  const outRoot = path.resolve(String(opts['out-root'] || process.cwd()));
-  const outName = String(opts['out-ndjson'] || 'bench.ndjson').trim();
-  if (!outName) throw new CliError(EXIT.REQUIRED, '--out-ndjson cannot be empty');
-  const outNdjson = path.isAbsolute(outName) ? outName : path.join(outRoot, outName);
+  const outPath =
+    String(args.out || '').trim()
+      ? path.resolve(String(args.out).trim())
+      : path.join(
+          String(args.outRoot || '').trim() ? path.resolve(String(args.outRoot).trim()) : process.cwd(),
+          'raw',
+          'bench',
+          blockId,
+          arm,
+          attemptId,
+          'cgptperf-bench.ndjson'
+        );
 
-  ensureDir(path.dirname(outNdjson));
-  writeText(outNdjson, toNdjson(records));
+  writeNdjson(outPath, rows, { append: false });
 
-  console.log(
-    JSON.stringify({
-      ok: true,
-      code: EXIT.OK,
-      source,
-      records: records.length,
-      parseErrors,
-      output: outNdjson
-    })
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        ok: true,
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        rows: rows.length,
+        output: outPath
+      },
+      null,
+      2
+    )}\n`
   );
-  return EXIT.OK;
 }
 
 try {
-  const code = main();
-  process.exitCode = Number.isInteger(code) ? code : EXIT.OK;
+  main();
 } catch (error) {
-  const exitCode =
-    error instanceof CliError && Number.isInteger(error.exitCode)
-      ? error.exitCode
-      : EXIT.INTERNAL;
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[FAIL] ${message}`);
-  process.exitCode = exitCode;
+  const code = asExitCode(error);
+  const payload = {
+    ok: false,
+    exit_code: code,
+    message: error instanceof Error ? error.message : String(error)
+  };
+  if (error instanceof ExitError && error.details !== undefined) payload.details = error.details;
+  safeExit(code, payload);
 }

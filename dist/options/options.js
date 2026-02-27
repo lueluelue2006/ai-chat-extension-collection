@@ -2220,6 +2220,58 @@
     loadingState.className = 'cgptUsageEmpty';
     loadingState.textContent = '正在读取本地用量数据…';
     usagePane.appendChild(loadingState);
+    const ensureUsagePanelVisible = (reason) => {
+      try {
+        if (token !== renderSeq) return true;
+        const isVisiblyRendered = (node) => {
+          if (!(node instanceof HTMLElement)) return false;
+          const style = globalThis.getComputedStyle(node);
+          const rect = node.getBoundingClientRect();
+          return (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            Number(style.opacity || 1) > 0.01 &&
+            rect.width >= 40 &&
+            rect.height >= 24
+          );
+        };
+        const attached = dash.isConnected && usagePane.isConnected;
+        const hasChildren = usagePane.childElementCount > 0;
+        const hasText = String(usagePane.textContent || '').trim().length > 0;
+        const dashVisible = isVisiblyRendered(dash);
+        const paneVisible = isVisiblyRendered(usagePane);
+        if (attached && dashVisible && paneVisible && (hasChildren || hasText)) {
+          const existing = elModuleSettings.querySelector('[data-qn-usage-panel-fallback="1"]');
+          if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+          return true;
+        }
+        let fallback = elModuleSettings.querySelector('[data-qn-usage-panel-fallback="1"]');
+        if (!(fallback instanceof HTMLElement)) {
+          fallback = document.createElement('div');
+          fallback.setAttribute('data-qn-usage-panel-fallback', '1');
+          fallback.className = 'cgptUsageEmpty';
+          elModuleSettings.appendChild(fallback);
+        }
+        fallback.textContent = `用量面板渲染异常（${String(reason || 'unknown')}）：attached=${attached ? '1' : '0'} / dashVisible=${dashVisible ? '1' : '0'} / paneVisible=${paneVisible ? '1' : '0'}，请点击“刷新数据”重试。`;
+        return false;
+      } catch {
+        return false;
+      }
+    };
+    const ensureUsagePaneNotBlank = (message) => {
+      try {
+        const hasChildren = usagePane.childElementCount > 0;
+        const hasText = String(usagePane.textContent || '').trim().length > 0;
+        if (hasChildren || hasText) return false;
+        const fallback = document.createElement('div');
+        fallback.className = 'cgptUsageEmpty';
+        fallback.textContent = String(message || '').trim() || '用量面板当前无可视内容，请点击“刷新数据”重试。';
+        usagePane.appendChild(fallback);
+        return true;
+      } catch {
+        return false;
+      }
+    };
 
     const settingsActions = document.createElement('div');
     settingsActions.className = 'cgptUsageActions cgptUsageActionsInline';
@@ -2554,12 +2606,22 @@
     };
 
     let latestUsageData = null;
+    let initialRenderWatchdog = null;
+    const clearInitialRenderWatchdog = () => {
+      try {
+        if (initialRenderWatchdog != null) clearTimeout(initialRenderWatchdog);
+      } catch {}
+      initialRenderWatchdog = null;
+    };
     const refreshDashboard = async (showStatus) => {
       btnRefresh.disabled = true;
       try {
         const { usageData } = await loadUsageSnapshot();
         latestUsageData = normalizeUsageDataForRender(usageData || null);
         renderUsagePane(latestUsageData);
+        ensureUsagePaneNotBlank();
+        ensureUsagePanelVisible('refresh-ok');
+        clearInitialRenderWatchdog();
         if (showStatus) setStatus('已刷新用量数据', 'ok');
       } catch (e) {
         usagePane.textContent = '';
@@ -2569,6 +2631,8 @@
         usagePane.appendChild(errState);
         setStatus(`刷新失败：${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
+        ensureUsagePaneNotBlank('用量面板未获取到可视内容，请点击“刷新数据”重试。');
+        ensureUsagePanelVisible('refresh-finally');
         btnRefresh.disabled = false;
       }
     };
@@ -2588,10 +2652,19 @@
     try {
       chrome.storage.onChanged.addListener(storageListener);
     } catch {}
+    try {
+      initialRenderWatchdog = setTimeout(() => {
+        if (token !== renderSeq) return;
+        const patched = ensureUsagePaneNotBlank('用量面板加载超时，请点击“刷新数据”重试。');
+        ensureUsagePanelVisible('watchdog-timeout');
+        if (patched) setStatus('用量面板加载超时，已显示兜底提示', 'err');
+      }, STORAGE_READ_TIMEOUT_MS + 600);
+    } catch {}
     teardownModuleSettingsSideEffects = () => {
       try {
         chrome.storage.onChanged.removeListener(storageListener);
       } catch {}
+      clearInitialRenderWatchdog();
     };
 
     btnExport.addEventListener('click', async () => {

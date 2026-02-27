@@ -2884,7 +2884,7 @@
   }
 
   function renderChatGPTExportConversationModuleSettings(siteId) {
-    addModuleHeader('chatgpt_export_conversation', 'ChatGPT 对话导出（新版 UI）', '导出当前对话为 Markdown / HTML（菜单在扩展弹窗里）。');
+    addModuleHeader('chatgpt_export_conversation', 'ChatGPT 对话导出（新版 UI）', '优先导出整棵对话树（含分支与图片链接）；失败时自动回退当前可见导出。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -2908,7 +2908,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'smallHint';
-    hint.textContent = '说明：导出为纯前端下载（Blob），无需额外权限；图片会保持为原始链接（不做 base64 内嵌）。';
+    hint.textContent = '说明：导出为纯前端下载（Blob），无需额外权限；图片默认导出为原始链接（不做 base64 内嵌），并提供整棵树 JSON。';
     elModuleSettings.appendChild(hint);
 
     addPanelMenuPreview('chatgpt_export_conversation');

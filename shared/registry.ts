@@ -252,9 +252,9 @@
     chatgpt_export_conversation: {
       id: 'chatgpt_export_conversation',
       name: 'ChatGPT 对话导出（新版 UI）',
-      sub: '一键导出当前对话为 Markdown / HTML（在扩展菜单里执行）',
+      sub: '优先按会话 mapping 导出整棵树（含分支与图片链接），失败时自动回退为当前可见导出',
       hotkeys: [],
-      menuPreview: ['导出为 Markdown', '导出为 HTML'],
+      menuPreview: ['导出为 Markdown', '导出为 HTML', '导出为 JSON（整棵树）'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

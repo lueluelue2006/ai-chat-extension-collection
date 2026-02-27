@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.2.12
-- Generated: 2026-02-26 20:53
+- Version: 2.2.13
+- Generated: 2026-02-27 08:22
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -13,7 +13,7 @@
 当前 registry 标注了菜单预览（menuPreview）的模块：
 
 - `quicknav`: QuickNav（“重置问题栏位置” / “清理过期检查点（30天）” / “清理无效收藏”）
-- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML”）
+- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI）（“导出为 Markdown” / “导出为 HTML” / “导出为 JSON（整棵树）”）
 
 ## Sites
 
@@ -83,7 +83,7 @@
   - 许可证: GPL-3.0-or-later
   - 上游: `https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote`
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-tex-copy-quote/main.js`
-- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 一键导出当前对话为 Markdown / HTML（在扩展菜单里执行）
+- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 优先按会话 mapping 导出整棵树（含分支与图片链接），失败时自动回退为当前可见导出
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`
@@ -235,3 +235,4 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+

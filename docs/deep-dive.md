@@ -335,6 +335,16 @@ Turn 筛选策略（维护重点）：
 - 功能变更：已移除“Markdown 分段虚拟化（`virtualizeMarkdownBlocks`）”子策略与对应样式/配置项，避免对块级节点做二次虚拟化。
 - 维护原则：涉及全局样式开关时，优先“窄选择器 + 可回滚默认值”，避免在长对话中触发大范围样式失效与内存压力。
 
+### 6.7 ChatGPT 对话导出（`content/chatgpt-export-conversation/main.js`，ISOLATED）
+
+定位：导出模块现在以会话 `mapping` 为优先数据源，支持整棵树导出（含分支结构与图片链接），并保留 DOM 线性导出作为兜底。
+
+- 主链路：`GET /backend-api/conversation/:id`（与消息树同源），不再只依赖当前页面可见 turn
+- 图片策略：优先导出现成 URL；遇到 `file-service://` 资源会尝试解析 download URL；解析失败保留 unresolved id 提示
+- 导出格式：Markdown / HTML（默认菜单）+ JSON（整棵树）
+- 容灾：树数据拉取失败时自动回退“当前可见导出”，避免完全不可用
+- 内存保护：沿用 6MB JSON 上限，防止超大对话导出时触发内存峰值
+
 ---
 
 ## 7) Popup / Options 交互层

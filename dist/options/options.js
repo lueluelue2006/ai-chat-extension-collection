@@ -1953,6 +1953,18 @@
     // Usage dashboard viewer (options-only).
     addPanelDivider();
     addPanelTitle('用量面板', '展示效果与油猴脚本一致；数据存储在扩展 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。');
+    const usagePanelNotice = document.createElement('div');
+    usagePanelNotice.className = 'cgptUsageEmpty';
+    usagePanelNotice.textContent = '正在初始化用量面板…';
+    elModuleSettings.appendChild(usagePanelNotice);
+    const setUsagePanelNotice = (message) => {
+      usagePanelNotice.textContent = String(message || '').trim() || '用量面板暂不可用。';
+    };
+    const clearUsagePanelNotice = () => {
+      try {
+        if (usagePanelNotice.parentNode) usagePanelNotice.parentNode.removeChild(usagePanelNotice);
+      } catch {}
+    };
 
     const USAGE_DATA_KEY = '__aichat_gm_chatgpt_usage_monitor__:usageData';
     const PLAN_TYPE_GM_KEY = '__aichat_gm_chatgpt_usage_monitor__:planType';
@@ -1967,10 +1979,7 @@
       }
     })();
     if (!usageUtils) {
-      const err = document.createElement('div');
-      err.className = 'smallHint';
-      err.textContent = '内部错误：用量统计工具库未加载（shared/chatgpt-usage-monitor-utils.js）。请尝试重新加载扩展。';
-      elModuleSettings.appendChild(err);
+      setUsagePanelNotice('内部错误：用量统计工具库未加载（shared/chatgpt-usage-monitor-utils.js）。请尝试在 chrome://extensions 重新加载当前扩展。');
       setStatus('用量统计工具库缺失，无法导入/合并/展示数据', 'err');
       return;
     }
@@ -2147,17 +2156,39 @@
       }
     };
 
-    const loadUsageSnapshot = async () => {
-      const res = await new Promise((resolve) => {
+    const STORAGE_READ_TIMEOUT_MS = 2500;
+    const readLocalStorageWithTimeout = async (defaults, timeoutMs = STORAGE_READ_TIMEOUT_MS) => {
+      const fallback = defaults && typeof defaults === 'object' ? defaults : {};
+      return await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(new Error(`读取 storage.local 超时（>${timeoutMs}ms）`));
+        }, timeoutMs);
         try {
-          chrome.storage.local.get({ [USAGE_DATA_KEY]: null, [PLAN_TYPE_GM_KEY]: null }, (items) => {
-            void chrome.runtime.lastError;
-            resolve(items || {});
+          chrome.storage.local.get(fallback, (items) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const err = chrome.runtime?.lastError;
+            if (err) {
+              reject(new Error(err.message || String(err)));
+              return;
+            }
+            resolve(items && typeof items === 'object' ? items : fallback);
           });
-        } catch {
-          resolve({ [USAGE_DATA_KEY]: null, [PLAN_TYPE_GM_KEY]: null });
+        } catch (e) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(e);
         }
       });
+    };
+
+    const loadUsageSnapshot = async () => {
+      const res = await readLocalStorageWithTimeout({ [USAGE_DATA_KEY]: null, [PLAN_TYPE_GM_KEY]: null });
       return {
         usageData: res?.[USAGE_DATA_KEY] || null,
         planType: String(res?.[PLAN_TYPE_GM_KEY] || '').trim()
@@ -2167,6 +2198,7 @@
     const dash = document.createElement('div');
     dash.className = 'cgptUsageDash';
     elModuleSettings.appendChild(dash);
+    clearUsagePanelNotice();
 
     const dashHeader = document.createElement('header');
     dashHeader.className = 'cgptUsageDashHeader';

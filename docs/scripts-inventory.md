@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.2.14
-- Generated: 2026-02-27 08:44
+- Version: 2.2.15
+- Generated: 2026-02-27 10:00
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -84,7 +84,7 @@
   - 许可证: GPL-3.0-or-later
   - 上游: `https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote`
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-tex-copy-quote/main.js`
-- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 按会话 mapping 导出当前分支（含图片链接），失败时自动回退为当前可见导出
+- `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 按页面当前可见分支导出（会话 mapping，含图片链接）；不可判定时回退 current_node，再兜底当前可见导出
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`

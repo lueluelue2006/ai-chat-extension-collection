@@ -598,6 +598,68 @@
     return depth;
   }
 
+  function getTurnMessageId(turnEl) {
+    const turn = turnEl && turnEl.nodeType === 1 ? turnEl : null;
+    if (!turn) return '';
+    try {
+      const core = getCore();
+      if (core && typeof core.getMessageId === 'function') {
+        const id = String(core.getMessageId(turn) || '').trim();
+        if (id) return id;
+      }
+    } catch {}
+    try {
+      const id = String(turn.getAttribute?.('data-message-id') || '').trim();
+      if (id) return id;
+    } catch {}
+    try {
+      const nested = String(turn.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id') || '').trim();
+      if (nested) return nested;
+    } catch {}
+    try {
+      const id = String(turn.getAttribute?.('data-turn-id') || '').trim();
+      if (id) return id;
+    } catch {}
+    return '';
+  }
+
+  function resolveNodeIdForMessageId(mapping, messageId) {
+    const id = String(messageId || '').trim();
+    if (!id || !mapping || typeof mapping !== 'object') return '';
+    try {
+      if (Object.prototype.hasOwnProperty.call(mapping, id)) return id;
+    } catch {}
+    try {
+      for (const [nodeId, node] of Object.entries(mapping)) {
+        const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
+        if (mid === id) return nodeId;
+      }
+    } catch {}
+    return '';
+  }
+
+  function resolveVisibleCurrentNodeId(mapping, fallbackCurrentNodeId) {
+    const fallback = String(fallbackCurrentNodeId || '');
+    try {
+      const turns = getTurns();
+      if (!Array.isArray(turns) || !turns.length) return fallback;
+      const seen = new Set();
+      const messageIds = [];
+      for (const turn of turns) {
+        const id = getTurnMessageId(turn);
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        messageIds.push(id);
+      }
+
+      for (let i = messageIds.length - 1; i >= 0; i -= 1) {
+        const nodeId = resolveNodeIdForMessageId(mapping, messageIds[i]);
+        if (nodeId) return nodeId;
+      }
+    } catch {}
+    return fallback;
+  }
+
   function getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId) {
     const rootId = String(rootNodeId || '');
     const currentId = String(currentNodeId || '');
@@ -645,13 +707,18 @@
       const mapping = data?.mapping && typeof data.mapping === 'object' ? data.mapping : null;
       if (!mapping) return { ok: false, error: '未拿到会话树数据（mapping 为空）' };
 
-      const rootNodeId = getRootNodeId(mapping) || String(data?.current_node || '');
-      const currentNodeId = typeof data?.current_node === 'string' ? data.current_node : '';
+      const backendCurrentNodeId = typeof data?.current_node === 'string' ? data.current_node : '';
+      const rootNodeId = getRootNodeId(mapping) || String(backendCurrentNodeId || '');
+      const currentNodeId = resolveVisibleCurrentNodeId(mapping, backendCurrentNodeId);
       const branchNodeIds = getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId);
       const orderedNodeIds = branchNodeIds.length ? branchNodeIds : buildNodeVisitOrder(mapping, rootNodeId);
       const depthCache = new Map();
       const nodes = [];
       const warnings = [];
+
+      if (currentNodeId && backendCurrentNodeId && currentNodeId !== backendCurrentNodeId) {
+        warnings.push('检测到页面当前可见分支与 current_node 不一致，已按当前可见分支导出。');
+      }
 
       for (const nodeId of orderedNodeIds) {
         const node = mapping?.[nodeId] || null;

@@ -341,7 +341,7 @@ Turn 筛选策略（维护重点）：
 定位：导出模块以会话 `mapping` 为优先数据源，导出“当前分支”Markdown / HTML，并保留 DOM 线性导出作为兜底。
 
 - 主链路：`GET /backend-api/conversation/:id`（与消息树同源），不再只依赖当前页面可见 turn
-- 分支策略：默认按 `current_node -> root` 路径导出用户当前所在分支
+- 分支策略：优先按“页面当前可见分支”解析当前节点并导出 `current -> root` 路径；仅在可见分支无法判定时回退 `current_node`
 - 图片策略：优先导出现成 URL；遇到 `file-service://` 资源会尝试解析 download URL；解析失败保留 unresolved id 提示
 - 容灾：mapping 拉取失败时自动回退“当前可见导出”，避免完全不可用
 - 内存保护：沿用 6MB JSON 上限，防止超大对话导出时触发内存峰值

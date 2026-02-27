@@ -16,7 +16,8 @@
   const MAIN_MENU_SOURCE = 'main-world';
   const MAIN_WORLD_ALLOWLIST = Object.freeze([
     // Only a few scripts run in MAIN world and need this bridge. Keep it tight to reduce page spoofing.
-    Object.freeze({ group: 'ChatGPT 用量统计', handlerKeyPrefix: 'chatgpt_usage_monitor:' })
+    Object.freeze({ group: 'ChatGPT 用量统计', handlerKeyPrefix: 'chatgpt_usage_monitor:' }),
+    Object.freeze({ group: 'ChatGPT 消息树', handlerKeyPrefix: 'chatgpt_message_tree:' })
   ]);
   const MAX_COMMANDS = 100;
   /** @type {{commands: Array<{id: string, name: string, fn: Function, group?: string, source?: string, moduleId?: string, handlerKey?: string}>, nextId: number, listenerInstalled: boolean, __deduped?: boolean}} */

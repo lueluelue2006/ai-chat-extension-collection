@@ -598,7 +598,36 @@
     return depth;
   }
 
-  async function buildTreeExportPayload() {
+  function getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId) {
+    const rootId = String(rootNodeId || '');
+    const currentId = String(currentNodeId || '');
+    const fallbackId = currentId || rootId;
+    if (!fallbackId || !mapping || typeof mapping !== 'object') return [];
+
+    const seen = new Set();
+    const path = [];
+    let cur = fallbackId;
+    let guard = 0;
+
+    while (cur && guard < 4096 && !seen.has(cur)) {
+      guard += 1;
+      seen.add(cur);
+      path.unshift(cur);
+      if (cur === rootId) break;
+      const node = mapping?.[cur] || null;
+      const parent = typeof node?.parent === 'string' ? node.parent : '';
+      if (!parent || !mapping?.[parent]) break;
+      cur = parent;
+    }
+
+    if (rootId && mapping?.[rootId] && path[0] !== rootId) {
+      path.unshift(rootId);
+    }
+
+    return path.filter((id, idx, arr) => id && arr.indexOf(id) === idx);
+  }
+
+  async function buildBranchExportPayload() {
     const conversationId = getConversationIdFromUrl();
     if (!conversationId) return { ok: false, error: '未检测到会话 ID（请打开具体对话再导出）' };
 
@@ -618,7 +647,8 @@
 
       const rootNodeId = getRootNodeId(mapping) || String(data?.current_node || '');
       const currentNodeId = typeof data?.current_node === 'string' ? data.current_node : '';
-      const orderedNodeIds = buildNodeVisitOrder(mapping, rootNodeId);
+      const branchNodeIds = getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId);
+      const orderedNodeIds = branchNodeIds.length ? branchNodeIds : buildNodeVisitOrder(mapping, rootNodeId);
       const depthCache = new Map();
       const nodes = [];
       const warnings = [];
@@ -667,10 +697,12 @@
         data: {
           version: 1,
           exportedAt: new Date().toISOString(),
+          exportType: 'current-branch',
           conversationId,
           rootNodeId,
           currentNodeId,
           nodeCount: nodes.length,
+          branchNodeIds: orderedNodeIds,
           nodes,
           warnings
         }
@@ -718,10 +750,10 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  function buildTreeMarkdown(exportData) {
+  function buildBranchMarkdown(exportData) {
     const date = formatDate(new Date());
     let out = '';
-    out += `# ${date} ChatGPT 对话树导出\n\n`;
+    out += `# ${date} ChatGPT 当前分支导出\n\n`;
     out += `- 会话 ID: \`${mdEscapeInline(exportData.conversationId || '')}\`\n`;
     out += `- 根节点: \`${mdEscapeInline(exportData.rootNodeId || '')}\`\n`;
     out += `- 当前节点: \`${mdEscapeInline(exportData.currentNodeId || '')}\`\n`;
@@ -769,7 +801,7 @@
     return out.trimEnd() + '\n';
   }
 
-  function buildTreeHtml(exportData) {
+  function buildBranchHtml(exportData) {
     const date = formatDate(new Date());
     const nodes = Array.isArray(exportData.nodes) ? exportData.nodes : [];
 
@@ -813,7 +845,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ChatGPT Tree Export ${escapeHtml(date)}</title>
+  <title>ChatGPT Branch Export ${escapeHtml(date)}</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; line-height: 1.55; max-width: 1040px; margin: 0 auto; padding: 22px; }
@@ -834,7 +866,7 @@
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(date)} ChatGPT 对话树导出</h1>
+  <h1>${escapeHtml(date)} ChatGPT 当前分支导出</h1>
   <ul>
     <li>会话 ID: <code>${escapeHtml(exportData.conversationId || '')}</code></li>
     <li>根节点: <code>${escapeHtml(exportData.rootNodeId || '')}</code></li>
@@ -1090,51 +1122,34 @@
     downloadText(html, fileName, 'text/html;charset=utf-8');
   }
 
-  async function exportTreeAsMarkdown() {
+  async function exportBranchAsMarkdown() {
     const date = formatDate(new Date());
     const convoId = getConversationIdFromUrl();
-    const treeRes = await buildTreeExportPayload();
+    const treeRes = await buildBranchExportPayload();
 
     if (treeRes.ok && treeRes.data) {
-      const fileName = convoId ? `chatgpt-tree-${sanitizeFilePart(convoId)}-${date}.md` : `chatgpt-tree-${date}.md`;
-      const text = buildTreeMarkdown(treeRes.data);
+      const fileName = convoId ? `chatgpt-branch-${sanitizeFilePart(convoId)}-${date}.md` : `chatgpt-branch-${date}.md`;
+      const text = buildBranchMarkdown(treeRes.data);
       downloadText(text, fileName, 'text/markdown;charset=utf-8');
       return;
     }
 
-    console.warn('[chatgpt-export-conversation] 树导出失败，回退到当前可见导出：', treeRes.error || 'unknown');
     exportDomAsMarkdown(date, convoId);
   }
 
-  async function exportTreeAsHtml() {
+  async function exportBranchAsHtml() {
     const date = formatDate(new Date());
     const convoId = getConversationIdFromUrl();
-    const treeRes = await buildTreeExportPayload();
+    const treeRes = await buildBranchExportPayload();
 
     if (treeRes.ok && treeRes.data) {
-      const fileName = convoId ? `chatgpt-tree-${sanitizeFilePart(convoId)}-${date}.html` : `chatgpt-tree-${date}.html`;
-      const html = buildTreeHtml(treeRes.data);
+      const fileName = convoId ? `chatgpt-branch-${sanitizeFilePart(convoId)}-${date}.html` : `chatgpt-branch-${date}.html`;
+      const html = buildBranchHtml(treeRes.data);
       downloadText(html, fileName, 'text/html;charset=utf-8');
       return;
     }
 
-    console.warn('[chatgpt-export-conversation] 树导出失败，回退到当前可见导出：', treeRes.error || 'unknown');
     exportDomAsHtml(date, convoId);
-  }
-
-  async function exportTreeAsJson() {
-    const date = formatDate(new Date());
-    const convoId = getConversationIdFromUrl();
-    const treeRes = await buildTreeExportPayload();
-
-    if (!treeRes.ok || !treeRes.data) {
-      alert(`导出失败：${treeRes.error || '未知错误'}`);
-      return;
-    }
-
-    const fileName = convoId ? `chatgpt-tree-${sanitizeFilePart(convoId)}-${date}.json` : `chatgpt-tree-${date}.json`;
-    const json = JSON.stringify(treeRes.data, null, 2);
-    downloadText(json, fileName, 'application/json;charset=utf-8');
   }
 
   function registerCommands() {
@@ -1146,9 +1161,8 @@
     }
     if (typeof reg !== 'function') return;
 
-    reg('导出为 Markdown', exportTreeAsMarkdown, { moduleId: 'chatgpt_export_conversation' });
-    reg('导出为 HTML', exportTreeAsHtml, { moduleId: 'chatgpt_export_conversation' });
-    reg('导出为 JSON（整棵树）', exportTreeAsJson, { moduleId: 'chatgpt_export_conversation' });
+    reg('导出为 Markdown', exportBranchAsMarkdown, { moduleId: 'chatgpt_export_conversation' });
+    reg('导出为 HTML', exportBranchAsHtml, { moduleId: 'chatgpt_export_conversation' });
   }
 
   if (document.readyState === 'loading') {

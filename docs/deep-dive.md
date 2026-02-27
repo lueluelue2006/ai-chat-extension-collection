@@ -304,6 +304,7 @@ Turn 筛选策略（维护重点）：
 - QuickNav 桥协议：`AISHORTCUTS_CHATGPT_TREE_*`（summary/toggle/open/close/refresh/navigate）
 - 缓存回收：关闭时主动丢弃大 mapping（避免常驻占用）
 - 凭据边界：auth/session 缓存放在闭包内 `authCache`，`window.__aichat_chatgpt_message_tree_state__` 不再暴露 `token/accountId/deviceId`
+- 菜单导出：提供“导出完整树为 JSON”（整棵 mapping + 统计）
 
 ### 6.4 thinking toggle（`content/chatgpt-thinking-toggle/main.js` + `content/chatgpt-thinking-toggle/config-bridge.js`）
 
@@ -337,12 +338,12 @@ Turn 筛选策略（维护重点）：
 
 ### 6.7 ChatGPT 对话导出（`content/chatgpt-export-conversation/main.js`，ISOLATED）
 
-定位：导出模块现在以会话 `mapping` 为优先数据源，支持整棵树导出（含分支结构与图片链接），并保留 DOM 线性导出作为兜底。
+定位：导出模块以会话 `mapping` 为优先数据源，导出“当前分支”Markdown / HTML，并保留 DOM 线性导出作为兜底。
 
 - 主链路：`GET /backend-api/conversation/:id`（与消息树同源），不再只依赖当前页面可见 turn
+- 分支策略：默认按 `current_node -> root` 路径导出用户当前所在分支
 - 图片策略：优先导出现成 URL；遇到 `file-service://` 资源会尝试解析 download URL；解析失败保留 unresolved id 提示
-- 导出格式：Markdown / HTML（默认菜单）+ JSON（整棵树）
-- 容灾：树数据拉取失败时自动回退“当前可见导出”，避免完全不可用
+- 容灾：mapping 拉取失败时自动回退“当前可见导出”，避免完全不可用
 - 内存保护：沿用 6MB JSON 上限，防止超大对话导出时触发内存峰值
 
 ---

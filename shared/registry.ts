@@ -252,9 +252,9 @@
     chatgpt_export_conversation: {
       id: 'chatgpt_export_conversation',
       name: 'ChatGPT 对话导出（新版 UI）',
-      sub: '优先按会话 mapping 导出整棵树（含分支与图片链接），失败时自动回退为当前可见导出',
+      sub: '按会话 mapping 导出当前分支（含图片链接），失败时自动回退为当前可见导出',
       hotkeys: [],
-      menuPreview: ['导出为 Markdown', '导出为 HTML', '导出为 JSON（整棵树）'],
+      menuPreview: ['导出为 Markdown', '导出为 HTML'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },
@@ -269,8 +269,9 @@
     chatgpt_message_tree: {
       id: 'chatgpt_message_tree',
       name: 'ChatGPT 消息树',
-      sub: '显示当前对话的完整消息树/分支结构（右侧面板）',
+      sub: '显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON',
       hotkeys: [],
+      menuPreview: ['导出完整树为 JSON'],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'
     },

@@ -37,6 +37,11 @@
     BRIDGE_REFRESH
   ]);
 
+  const MAIN_MENU_REGISTER_EVENT = '__quicknav_menu_bridge_register_main_command_v1__';
+  const MAIN_MENU_RUN_EVENT = '__quicknav_menu_bridge_run_main_command_v1__';
+  const MAIN_MENU_GROUP = 'ChatGPT 消息树';
+  const MAIN_MENU_MODULE_ID = 'chatgpt_message_tree';
+
   function getOrCreateBridgeNonce() {
     const fallback = 'quicknav-bridge-fallback';
     try {
@@ -200,6 +205,38 @@
     authCache = createEmptyAuthCache();
   }
 
+  function sanitizeFilePart(input) {
+    return String(input || '').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
+  function pad2(n) {
+    const x = Math.max(0, Number(n) || 0);
+    return x < 10 ? `0${x}` : String(x);
+  }
+
+  function formatDate(d) {
+    const dt = d instanceof Date ? d : new Date();
+    return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  }
+
+  function downloadText(text, fileName, mime = 'application/json;charset=utf-8') {
+    try {
+      const blob = new Blob([String(text || '')], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = String(fileName || 'chatgpt-tree-export.json');
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function getRouteKeyFromHref(href) {
     try {
       const raw = typeof href === 'string' && href ? href : location.href;
@@ -251,6 +288,10 @@
     bridgeInstalled: false,
     bridgeHandler: null,
     escHandler: null,
+    mainMenuHandlers: Object.create(null),
+    mainMenuHandlerKeys: new Set(),
+    mainMenuOwnerKey: `chatgpt-message-tree-${Math.random().toString(36).slice(2, 10)}`,
+    mainMenuRunHandler: null,
     cleanup: null
   };
 
@@ -281,6 +322,71 @@
       };
       window.addEventListener('keydown', state.escHandler, { capture: true });
     } catch {}
+  }
+
+  function releaseMainMenuHandlers() {
+    try {
+      for (const key of Array.from(state.mainMenuHandlerKeys || [])) {
+        try { state.mainMenuHandlerKeys.delete(key); } catch {}
+        try { delete state.mainMenuHandlers[key]; } catch {}
+      }
+    } catch {}
+  }
+
+  function dispatchMainMenuRegister(name, handlerKey) {
+    try {
+      const detail = { name, handlerKey, group: MAIN_MENU_GROUP, moduleId: MAIN_MENU_MODULE_ID };
+      window.dispatchEvent(new CustomEvent(MAIN_MENU_REGISTER_EVENT, { detail }));
+    } catch {}
+  }
+
+  function registerMainMenuCommand(name, fn) {
+    const n = String(name || '').trim();
+    if (!n || typeof fn !== 'function') return null;
+
+    // Best-effort direct registration when worlds are bridged.
+    try {
+      const reg = window.__quicknavRegisterMenuCommand;
+      if (typeof reg === 'function') {
+        return reg(n, fn, { group: MAIN_MENU_GROUP, moduleId: MAIN_MENU_MODULE_ID });
+      }
+    } catch {}
+
+    const owner = String(state.mainMenuOwnerKey || 'message-tree').replace(/[^a-zA-Z0-9:_-]/g, '');
+    const handlerKey = `chatgpt_message_tree:${owner}:${n}`;
+    state.mainMenuHandlers[handlerKey] = fn;
+    state.mainMenuHandlerKeys.add(handlerKey);
+
+    dispatchMainMenuRegister(n, handlerKey);
+    setTimeout(() => dispatchMainMenuRegister(n, handlerKey), 500);
+    setTimeout(() => dispatchMainMenuRegister(n, handlerKey), 1500);
+    return handlerKey;
+  }
+
+  function installMainMenuRunBridge() {
+    try {
+      if (state.mainMenuRunHandler) return;
+      state.mainMenuRunHandler = (e) => {
+        try {
+          const d = e?.detail && typeof e.detail === 'object' ? e.detail : {};
+          const handlerKey = String(d.handlerKey || '').trim();
+          const fn = handlerKey ? state.mainMenuHandlers?.[handlerKey] : null;
+          if (typeof fn === 'function') fn();
+        } catch {}
+      };
+      window.addEventListener(MAIN_MENU_RUN_EVENT, state.mainMenuRunHandler, true);
+    } catch {
+      state.mainMenuRunHandler = null;
+    }
+  }
+
+  function uninstallMainMenuRunBridge() {
+    try {
+      if (state.mainMenuRunHandler) {
+        window.removeEventListener(MAIN_MENU_RUN_EVENT, state.mainMenuRunHandler, true);
+      }
+    } catch {}
+    state.mainMenuRunHandler = null;
   }
 
   function loadPrefs() {
@@ -2222,6 +2328,85 @@
     }
   }
 
+  async function ensureConversationDataForExport() {
+    const conversationId = getConversationIdFromUrl();
+    if (!conversationId) throw new Error('未检测到会话 ID（请先打开具体对话）');
+
+    const cached = state.lastData;
+    const age = now() - (Number(state.lastLoadedAt) || 0);
+    const canUseCache = !!(
+      cached &&
+      cached.conversationId === conversationId &&
+      !state.dirty &&
+      age >= 0 &&
+      age < 15000 &&
+      cached.mapping &&
+      typeof cached.mapping === 'object'
+    );
+    if (canUseCache) return cached;
+
+    if (state.refreshPromise) {
+      await state.refreshPromise;
+    } else {
+      const nextRefresh = refreshConversation('menu-export', { silent: true })
+        .catch(() => void 0)
+        .finally(() => {
+          if (state.refreshPromise === nextRefresh) state.refreshPromise = null;
+        });
+      state.refreshPromise = nextRefresh;
+      await nextRefresh;
+    }
+
+    const latest = state.lastData;
+    if (!latest || latest.conversationId !== conversationId || !latest.mapping || typeof latest.mapping !== 'object') {
+      throw new Error('未拿到完整消息树数据（可尝试先打开消息树面板再导出）');
+    }
+    return latest;
+  }
+
+  function buildFullTreeExportJson(cached) {
+    const mapping = cached?.mapping && typeof cached.mapping === 'object' ? cached.mapping : {};
+    const currentNodeId = String(cached?.currentId || '');
+    const rootNodeId = String(cached?.rootId || getRootId(mapping) || currentNodeId || '');
+    const stats = computeDisplayStats(mapping, rootNodeId);
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      exportType: 'full-tree',
+      source: 'chatgpt-message-tree',
+      conversationId: String(cached?.conversationId || ''),
+      rootNodeId,
+      currentNodeId,
+      stats,
+      mapping
+    };
+  }
+
+  async function exportFullTreeJsonFromMenu() {
+    try {
+      const cached = await ensureConversationDataForExport();
+      const payload = buildFullTreeExportJson(cached);
+      const date = formatDate(new Date());
+      const cid = sanitizeFilePart(payload.conversationId || '');
+      const fileName = cid ? `chatgpt-tree-${cid}-${date}.json` : `chatgpt-tree-${date}.json`;
+      const ok = downloadText(JSON.stringify(payload, null, 2), fileName, 'application/json;charset=utf-8');
+      if (!ok) throw new Error('文件下载失败');
+      setStatus(`已导出完整树：${fileName}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e || '未知错误');
+      setStatus(`导出失败：${msg}`);
+    } finally {
+      dropLastDataIfClosed('menu-export');
+    }
+  }
+
+  function installMainMenuCommands() {
+    installMainMenuRunBridge();
+    registerMainMenuCommand('导出完整树为 JSON', () => {
+      void exportFullTreeJsonFromMenu();
+    });
+  }
+
   function scheduleRefresh(delayMs = 400, reason = 'auto') {
     try {
       if (!state.open) {
@@ -2406,6 +2591,8 @@
     stopGeneratingWatcher();
     uninstallTurnsWatcher();
     uninstallQuickNavBridge();
+    uninstallMainMenuRunBridge();
+    releaseMainMenuHandlers();
 
     try {
       if (state.escHandler) window.removeEventListener('keydown', state.escHandler, { capture: true });
@@ -2440,6 +2627,7 @@
   ensureUi();
   installEscClose();
   installQuickNavBridge();
+  installMainMenuCommands();
   installTurnsWatcher();
   startHrefWatcher();
 })();

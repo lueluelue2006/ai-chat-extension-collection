@@ -2884,7 +2884,7 @@
   }
 
   function renderChatGPTExportConversationModuleSettings(siteId) {
-    addModuleHeader('chatgpt_export_conversation', 'ChatGPT 对话导出（新版 UI）', '优先导出整棵对话树（含分支与图片链接）；失败时自动回退当前可见导出。');
+    addModuleHeader('chatgpt_export_conversation', 'ChatGPT 对话导出（新版 UI）', '按 mapping 导出当前分支（Markdown / HTML）；失败时自动回退当前可见导出。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -2908,7 +2908,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'smallHint';
-    hint.textContent = '说明：导出为纯前端下载（Blob），无需额外权限；图片默认导出为原始链接（不做 base64 内嵌），并提供整棵树 JSON。';
+    hint.textContent = '说明：导出为纯前端下载（Blob），无需额外权限；图片默认导出为原始链接（不做 base64 内嵌）。完整树 JSON 请使用“ChatGPT 消息树”模块菜单导出。';
     elModuleSettings.appendChild(hint);
 
     addPanelMenuPreview('chatgpt_export_conversation');
@@ -2944,7 +2944,7 @@
   }
 
   function renderChatGPTMessageTreeModuleSettings(siteId) {
-    addModuleHeader('chatgpt_message_tree', 'ChatGPT 消息树', '显示当前对话的完整消息树/分支结构（不切换主界面分支）。');
+    addModuleHeader('chatgpt_message_tree', 'ChatGPT 消息树', '显示当前对话的完整消息树/分支结构（不切换主界面分支），并支持导出完整树 JSON。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -2968,7 +2968,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '使用方式：在右下角会出现 “Tree” 按钮。点开后显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。';
+      '使用方式：在右下角会出现 “Tree” 按钮。点开后显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。若要导出完整树，请在扩展菜单中执行“导出完整树为 JSON”。';
     elModuleSettings.appendChild(hint);
   }
 

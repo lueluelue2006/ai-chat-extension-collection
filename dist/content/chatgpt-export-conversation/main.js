@@ -623,18 +623,42 @@
     return '';
   }
 
-  function resolveNodeIdForMessageId(mapping, messageId) {
+  function buildMessageIdNodeIdIndex(mapping) {
+    const idx = new Map();
+    if (!mapping || typeof mapping !== 'object') return idx;
+    try {
+      for (const [nodeId, node] of Object.entries(mapping)) {
+        const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
+        if (!mid || idx.has(mid)) continue;
+        idx.set(mid, nodeId);
+      }
+    } catch {}
+    return idx;
+  }
+
+  function resolveNodeIdForMessageId(mapping, messageId, lookupState) {
     const id = String(messageId || '').trim();
     if (!id || !mapping || typeof mapping !== 'object') return '';
     try {
       if (Object.prototype.hasOwnProperty.call(mapping, id)) return id;
     } catch {}
+    const state = lookupState && typeof lookupState === 'object' ? lookupState : null;
+    const quickIdx = state?.messageIdToNodeId instanceof Map ? state.messageIdToNodeId : null;
+    if (quickIdx) {
+      return String(quickIdx.get(id) || '');
+    }
     try {
       for (const [nodeId, node] of Object.entries(mapping)) {
         const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
         if (mid === id) return nodeId;
       }
     } catch {}
+    if (state) {
+      try {
+        state.messageIdToNodeId = buildMessageIdNodeIdIndex(mapping);
+        return String(state.messageIdToNodeId.get(id) || '');
+      } catch {}
+    }
     return '';
   }
 
@@ -645,6 +669,7 @@
       if (!Array.isArray(turns) || !turns.length) return fallback;
       const seen = new Set();
       const messageIds = [];
+      const lookupState = { messageIdToNodeId: null };
       for (const turn of turns) {
         const id = getTurnMessageId(turn);
         if (!id || seen.has(id)) continue;
@@ -653,7 +678,7 @@
       }
 
       for (let i = messageIds.length - 1; i >= 0; i -= 1) {
-        const nodeId = resolveNodeIdForMessageId(mapping, messageIds[i]);
+        const nodeId = resolveNodeIdForMessageId(mapping, messageIds[i], lookupState);
         if (nodeId) return nodeId;
       }
     } catch {}

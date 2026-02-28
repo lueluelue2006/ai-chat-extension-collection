@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.3.2
-- Generated: 2026-02-28 10:40
+- Version: 2.3.3
+- Generated: 2026-02-28 12:54
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -63,7 +63,7 @@
 - `chatgpt_reply_timer`: ChatGPT 回复计时器 — 统计从发送到回复完成的耗时（右下角极简数字）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-reply-timer/main.js`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-reply-timer/main.js`
 - `chatgpt_download_file_fix`: ChatGPT 下载修复 — 修复文件下载失败（sandbox_path 解码）
   - 作者: pengzhile(linux.do)
   - 许可证: 未标注（内部脚本）
@@ -87,7 +87,7 @@
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 按页面当前可见分支导出（会话 mapping，含图片链接）；不可判定时回退 current_node，再兜底当前可见导出
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
-  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`
+  - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-mapping-client/main.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`
 - `chatgpt_image_message_edit`: ChatGPT 消息分叉编辑（可加图） — 给用户消息增加“分叉编辑”按钮：在输入框里编辑并可补图/文件；与原生编辑共存
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -95,7 +95,7 @@
 - `chatgpt_message_tree`: ChatGPT 消息树 — 显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
-  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
 - `chatgpt_sidebar_header_fix`: ChatGPT 侧边栏顶部按钮修复 — 左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
@@ -236,3 +236,4 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
+

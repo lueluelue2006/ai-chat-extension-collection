@@ -15,6 +15,8 @@
   const PANEL_ID = '__aichat_chatgpt_message_tree_panel_v1__';
   const PREFS_KEY = '__aichat_chatgpt_message_tree_prefs_v1__';
   const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
+  const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
+  const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
 
   const BRIDGE_REQ_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_REQUEST';
   const BRIDGE_RES_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_RESPONSE';
@@ -441,7 +443,35 @@
     }
   }
 
+  function getMappingClient() {
+    try {
+      const client = globalThis[MAPPING_CLIENT_KEY];
+      if (client && typeof client === 'object' && typeof client.fetchConversationMapping === 'function') {
+        return client;
+      }
+    } catch {}
+    return null;
+  }
+
   async function getAuthContext(signal = null) {
+    const mappingClient = getMappingClient();
+    if (mappingClient && typeof mappingClient.getAuthContext === 'function') {
+      try {
+        const auth = await mappingClient.getAuthContext({ signal });
+        if (auth && typeof auth === 'object') {
+          const token = typeof auth.token === 'string' ? auth.token : '';
+          const accountId = typeof auth.accountId === 'string' ? auth.accountId : '';
+          const deviceId = typeof auth.deviceId === 'string' ? auth.deviceId : '';
+          if (deviceId) {
+            authCache = { fetchedAt: now(), token, accountId, deviceId };
+            return authCache;
+          }
+        }
+      } catch (e) {
+        if (isAbortError(e)) throw e;
+      }
+    }
+
     const age = now() - (Number(authCache.fetchedAt) || 0);
     if (authCache.token && authCache.accountId && authCache.deviceId && age < 5 * 60 * 1000) return authCache;
 
@@ -473,6 +503,14 @@
 
   async function fetchConversation(conversationId, opts = {}) {
     const signal = opts && typeof opts === 'object' ? opts.signal || null : null;
+    const mappingClient = getMappingClient();
+    if (mappingClient && typeof mappingClient.fetchConversationMapping === 'function') {
+      return await mappingClient.fetchConversationMapping(conversationId, {
+        signal,
+        maxJsonBytes: MAX_MAPPING_JSON_BYTES
+      });
+    }
+
     const { token, accountId, deviceId } = await getAuthContext(signal);
     const headers = {
       accept: 'application/json',
@@ -493,7 +531,7 @@
     // Guard: extremely long conversations can return very large JSON payloads.
     // Parsing them can cause huge memory spikes (multiple GB) on some machines.
     // Keep a conservative byte limit and ask users to rely on QuickNav list when exceeded.
-    const MAX_JSON_BYTES = 6 * 1024 * 1024; // 6MB (decompressed). Tuned for stability over completeness.
+    const MAX_JSON_BYTES = MAX_MAPPING_JSON_BYTES; // 6MB (decompressed). Tuned for stability over completeness.
 
     try {
       const lenHeader = resp.headers?.get?.('content-length') || '';

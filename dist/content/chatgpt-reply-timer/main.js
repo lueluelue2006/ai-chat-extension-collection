@@ -2,8 +2,8 @@
   'use strict';
 
   // ChatGPT reply timer (send -> done), minimal UI (a small number at bottom-right).
-  // Stability-first: detects "generating" via DOM (stop-button presence) instead of draining SSE streams.
-  // This avoids extra buffering/decoding work on long responses and reduces the chance of memory blow-ups.
+  // Primary signal: fetch-hub conversation lifecycle events.
+  // Fallback signal: DOM generating-state watcher (stop-button presence) for degraded environments.
 
   // Avoid running inside iframes.
   const ALLOWED_FRAME = (() => {
@@ -18,6 +18,7 @@
   if (!ALLOWED_FRAME) return;
 
   const GLOBAL_KEY = '__aichat_chatgpt_reply_timer_v1__';
+  const CONSUMER_KEY = 'chatgpt-reply-timer';
   const STYLE_ID = '__aichat_chatgpt_reply_timer_style_v1__';
   const EL_ID = '__aichat_chatgpt_reply_timer_el_v1__';
 
@@ -42,6 +43,7 @@
   const state = {
     __installed: true,
     hubUnsub: null,
+    usingHub: false,
     gen: {
       mo: null,
       root: null,
@@ -255,7 +257,8 @@
       startedAt: Number.isFinite(startedAt) ? startedAt : now(),
       firstByteAt: null,
       doneAt: null,
-      outcome: null
+      outcome: null,
+      source: 'hub'
     };
     state.runsByRequestId.set(id, run);
     pruneRuns();
@@ -295,6 +298,7 @@
         firstByteAt: null,
         doneAt: null,
         outcome: null,
+        source: 'dom',
         reason: String(reason || '')
       };
       state.runsByRequestId.set(run.id, run);
@@ -312,6 +316,7 @@
     try {
       const run = state.run.active;
       if (!run || run.doneAt) return;
+      if (run.source === 'hub') return;
       run.doneAt = now();
       run.outcome = String(outcome || 'complete');
       state.run.last = run;
@@ -333,8 +338,57 @@
     }
   }
 
+  function installHubConsumer() {
+    try {
+      if (state.hubUnsub) return true;
+      const consumerBase = window.__aichat_chatgpt_fetch_consumer_base_v1__;
+      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
+      const registerConsumer =
+        consumerBase && typeof consumerBase.registerConsumer === 'function'
+          ? (key, handlers) => consumerBase.registerConsumer(key, handlers)
+          : hub && typeof hub.register === 'function'
+            ? (_key, handlers) => hub.register(handlers)
+            : null;
+      if (!registerConsumer) return false;
+
+      const maybeUnsub = registerConsumer(CONSUMER_KEY, {
+        // Run very late: read final outgoing payload after model/effort rewrites.
+        priority: 250,
+        onConversationStart: (ctx) => {
+          try {
+            if (state.__installed !== true) return;
+            state.usingHub = true;
+            startRunFromCtx(ctx);
+          } catch {}
+        },
+        onConversationDone: (ctx) => {
+          try {
+            if (state.__installed !== true) return;
+            state.usingHub = true;
+            finalizeRunFromCtx(ctx);
+          } catch {}
+        }
+      });
+
+      if (typeof maybeUnsub === 'function') {
+        state.hubUnsub = maybeUnsub;
+        return true;
+      }
+      if (maybeUnsub && typeof maybeUnsub.dispose === 'function') {
+        state.hubUnsub = () => {
+          try {
+            maybeUnsub.dispose();
+          } catch {}
+        };
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
   function checkGeneratingTransition() {
     try {
+      if (state.usingHub) return;
       const generating = isGeneratingNow();
       const prev = !!state.gen.lastGenerating;
       state.gen.lastGenerating = generating;
@@ -514,6 +568,7 @@
   ensureEl();
   render();
   ensureUiResilience();
+  installHubConsumer();
   installRouteWatcher();
   // Prefer watcher on composer form; fall back to a short-lived bootstrap until the form exists.
   if (!ensureGeneratingObserver()) ensureGeneratingBootstrap();

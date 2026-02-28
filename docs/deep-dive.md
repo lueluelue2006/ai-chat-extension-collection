@@ -295,11 +295,14 @@ Turn 筛选策略（维护重点）：
 
 常见依赖模块（ChatGPT 站点）：用量统计 / 回复计时器 / 下载修复 / thinking toggle 等。
 
+- 回复计时器策略：优先订阅 `onConversationStart` / `onConversationDone` 做事件化计时；仅在 fetch-hub 不可用时回退 DOM（stop-button）检测，减少长对话下误判与额外开销。
+
 ### 6.3 message tree（`content/chatgpt-message-tree/main.js`，MAIN）
 
 定位：对话“完整消息树/分支结构”的侧边面板，并与 QuickNav 协作导航到某个分支节点。
 
 - 对话拉取：`GET /backend-api/conversation/:id`
+- 共享能力：优先复用 `content/chatgpt-mapping-client/main.js`（统一 URL 解析、auth/session 缓存、6MB 上限流式 JSON 读取），模块内保留兼容 fallback。
 - 大对话内存保护：设置 JSON 上限（6MB 解压后），超限直接拒载以保稳定性
 - QuickNav 桥协议：`AISHORTCUTS_CHATGPT_TREE_*`（summary/toggle/open/close/refresh/navigate）
 - 缓存回收：关闭时主动丢弃大 mapping（避免常驻占用）
@@ -349,6 +352,7 @@ Turn 筛选策略（维护重点）：
 定位：导出模块以会话 `mapping` 为优先数据源，导出“当前分支”Markdown / HTML，并保留 DOM 线性导出作为兜底。
 
 - 主链路：`GET /backend-api/conversation/:id`（与消息树同源），不再只依赖当前页面可见 turn
+- 共享能力：优先复用 `content/chatgpt-mapping-client/main.js` 拉取 mapping 与 auth 上下文，减少与消息树之间的重复实现
 - 分支策略：优先按“页面当前可见分支”解析当前节点并导出 `current -> root` 路径；仅在可见分支无法判定时回退 `current_node`
 - 性能策略：可见分支解析走“懒加载 messageId→nodeId 索引”——命中场景保持低开销；仅在首次未命中时构建索引，避免大对话下反复全表扫描
 - 图片策略：优先导出现成 URL；遇到 `file-service://` 资源会尝试解析 download URL；解析失败保留 unresolved id 提示

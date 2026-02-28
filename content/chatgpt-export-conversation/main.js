@@ -5,6 +5,7 @@
   if (window[GUARD_KEY]) return;
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
 
+  const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const DOM_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"]';
   const MAX_TREE_JSON_BYTES = 6 * 1024 * 1024;
   const FILE_SERVICE_PREFIX = 'file-service://';
@@ -17,6 +18,16 @@
     } catch {
       return null;
     }
+  }
+
+  function getMappingClient() {
+    try {
+      const client = globalThis[MAPPING_CLIENT_KEY];
+      if (client && typeof client === 'object' && typeof client.fetchConversationMapping === 'function') {
+        return client;
+      }
+    } catch {}
+    return null;
   }
 
   function escapeHtml(input) {
@@ -102,6 +113,14 @@
 
   function getConversationIdFromUrl() {
     try {
+      const mappingClient = getMappingClient();
+      if (mappingClient && typeof mappingClient.getConversationIdFromUrl === 'function') {
+        const id = mappingClient.getConversationIdFromUrl(location.href);
+        if (id) return id;
+      }
+    } catch {}
+
+    try {
       const core = getCore();
       if (core && typeof core.getConversationIdFromUrl === 'function') {
         const id = core.getConversationIdFromUrl(location.href);
@@ -146,6 +165,24 @@
   const fileDownloadUrlCache = new Map();
 
   async function getAuthContext(signal) {
+    const mappingClient = getMappingClient();
+    if (mappingClient && typeof mappingClient.getAuthContext === 'function') {
+      try {
+        const auth = await mappingClient.getAuthContext({ signal });
+        if (auth && typeof auth === 'object') {
+          const token = typeof auth.token === 'string' ? auth.token : '';
+          const accountId = typeof auth.accountId === 'string' ? auth.accountId : '';
+          const deviceId = typeof auth.deviceId === 'string' ? auth.deviceId : '';
+          if (deviceId) {
+            authCache = { fetchedAt: Date.now(), token, accountId, deviceId };
+            return authCache;
+          }
+        }
+      } catch (e) {
+        if (isAbortError(e)) throw e;
+      }
+    }
+
     const age = Date.now() - (Number(authCache.fetchedAt) || 0);
     if (authCache.token && authCache.accountId && authCache.deviceId && age < 5 * 60 * 1000) return authCache;
 
@@ -188,6 +225,14 @@
   }
 
   async function fetchConversationData(conversationId, signal) {
+    const mappingClient = getMappingClient();
+    if (mappingClient && typeof mappingClient.fetchConversationMapping === 'function') {
+      return await mappingClient.fetchConversationMapping(conversationId, {
+        signal,
+        maxJsonBytes: MAX_TREE_JSON_BYTES
+      });
+    }
+
     const auth = await getAuthContext(signal);
     const headers = buildChatGptHeaders(auth);
     const request = { credentials: 'include', headers };

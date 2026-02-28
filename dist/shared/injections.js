@@ -15,6 +15,7 @@
   ];
   const CHATGPT_CORE_FILE = "content/chatgpt-core.js";
   const CHATGPT_CORE_MAIN_FILE = "content/chatgpt-core-main.js";
+  const CHATGPT_MAPPING_CLIENT_FILE = "content/chatgpt-mapping-client/main.js";
   const CHATGPT_FETCH_HUB_FILE = "content/chatgpt-fetch-hub/main.js";
   const CHATGPT_FETCH_HUB_CONSUMER_BASE_FILE = "content/chatgpt-fetch-hub/consumer-base.js";
   const CHATGPT_FETCH_HUB_CONSUMER_FILES = [CHATGPT_FETCH_HUB_FILE, CHATGPT_FETCH_HUB_CONSUMER_BASE_FILE];
@@ -334,7 +335,7 @@
       siteId: "chatgpt",
       moduleId: "chatgpt_reply_timer",
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, "content/chatgpt-fetch-hub/main.js", "content/chatgpt-reply-timer/main.js"],
+      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, "content/chatgpt-reply-timer/main.js"],
       runAt: "document_start",
       world: "MAIN"
     });
@@ -408,7 +409,7 @@
       siteId: "chatgpt",
       moduleId: "chatgpt_export_conversation",
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, "content/menu-bridge.js", "content/chatgpt-export-conversation/main.js"],
+      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, CHATGPT_MAPPING_CLIENT_FILE, "content/menu-bridge.js", "content/chatgpt-export-conversation/main.js"],
       runAt: "document_end"
     });
     defs.push({
@@ -425,7 +426,7 @@
       siteId: "chatgpt",
       moduleId: "chatgpt_message_tree",
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, "content/chatgpt-fetch-hub/main.js", "content/chatgpt-message-tree/main.js"],
+      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, CHATGPT_MAPPING_CLIENT_FILE, "content/chatgpt-fetch-hub/main.js", "content/chatgpt-message-tree/main.js"],
       runAt: "document_start",
       world: "MAIN"
     });

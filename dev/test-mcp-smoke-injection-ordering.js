@@ -137,6 +137,60 @@ function testGrokQuicknavOrdering(defs) {
   );
 }
 
+function testChatgptTreeMappingOrdering(defs) {
+  const treeDef = findDef(defs, 'quicknav_chatgpt_message_tree');
+  assert.ok(treeDef, 'defs should include quicknav_chatgpt_message_tree');
+  const js = toLocalArray(treeDef.js).map((item) => String(item || ''));
+
+  assertRelativeOrder(
+    js,
+    [
+      'content/aishortcuts-bridge-main.js',
+      'content/chatgpt-core-main.js',
+      'content/chatgpt-mapping-client/main.js',
+      'content/chatgpt-fetch-hub/main.js',
+      'content/chatgpt-message-tree/main.js'
+    ],
+    'quicknav_chatgpt_message_tree ordering'
+  );
+}
+
+function testChatgptExportMappingOrdering(defs) {
+  const exportDef = findDef(defs, 'quicknav_chatgpt_export_conversation');
+  assert.ok(exportDef, 'defs should include quicknav_chatgpt_export_conversation');
+  const js = toLocalArray(exportDef.js).map((item) => String(item || ''));
+
+  assertRelativeOrder(
+    js,
+    [
+      'content/aishortcuts-bridge.js',
+      'content/chatgpt-core.js',
+      'content/chatgpt-mapping-client/main.js',
+      'content/menu-bridge.js',
+      'content/chatgpt-export-conversation/main.js'
+    ],
+    'quicknav_chatgpt_export_conversation ordering'
+  );
+}
+
+function testChatgptReplyTimerHubOrdering(defs) {
+  const timerDef = findDef(defs, 'quicknav_chatgpt_reply_timer');
+  assert.ok(timerDef, 'defs should include quicknav_chatgpt_reply_timer');
+  const js = toLocalArray(timerDef.js).map((item) => String(item || ''));
+
+  assertRelativeOrder(
+    js,
+    [
+      'content/aishortcuts-bridge-main.js',
+      'content/chatgpt-core-main.js',
+      'content/chatgpt-fetch-hub/main.js',
+      'content/chatgpt-fetch-hub/consumer-base.js',
+      'content/chatgpt-reply-timer/main.js'
+    ],
+    'quicknav_chatgpt_reply_timer ordering'
+  );
+}
+
 function main() {
   const registry = evalSharedScript('shared/registry.ts').AISHORTCUTS_REGISTRY;
   const injections = evalSharedScript('shared/injections.ts').AISHORTCUTS_INJECTIONS;
@@ -149,6 +203,9 @@ function main() {
   testScopeHelperOrdering(defs);
   testChatgptQuicknavCoreOrdering(defs);
   testGrokQuicknavOrdering(defs);
+  testChatgptTreeMappingOrdering(defs);
+  testChatgptExportMappingOrdering(defs);
+  testChatgptReplyTimerHubOrdering(defs);
 
   console.log('PASS dev/test-mcp-smoke-injection-ordering.js');
 }

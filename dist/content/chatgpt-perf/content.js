@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.21';
+  const EXT_VERSION = '0.1.22';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -85,6 +85,12 @@
     lastHref: '',
     lastVirtualizeStartAt: 0,
     lastReconcileAt: 0,
+    lastVisibleFirst: -1,
+    lastVisibleLast: -1,
+    lastVisibleTotal: 0,
+    structureDirty: true,
+    lastGeneratingCheckAt: 0,
+    generatingCached: false,
   };
 
   function clampInt(n, min, max) {
@@ -102,6 +108,27 @@
     }
     if (el instanceof HTMLElement && el.isContentEditable) return true;
     return false;
+  }
+
+  function nowPerf() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  }
+
+  function isGeneratingResponse(force = false) {
+    const now = nowPerf();
+    if (!force && now - state.lastGeneratingCheckAt < 220) return state.generatingCached;
+
+    let active = false;
+    try {
+      active = !!document.querySelector(
+        'button[aria-label*="Stop streaming" i], button[aria-label*="Stop generating" i], button[aria-label*="Continue generating" i], button[aria-label*="停止" i], button[aria-label*="继续生成" i]',
+      );
+    } catch {
+      active = false;
+    }
+    state.lastGeneratingCheckAt = now;
+    state.generatingCached = active;
+    return active;
   }
 
   function boostMarginPx() {
@@ -643,14 +670,21 @@
   function attachContainerObserver(container) {
     if (state.containerMo) return;
     state.containerMo = new MutationObserver((records) => {
+      let structureChanged = false;
       for (const r of records) {
         for (const n of r.addedNodes) {
           enqueueArticle(n);
+          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
+            structureChanged = true;
+          }
         }
         // Prevent memory leaks: IntersectionObserver keeps strong refs to observed nodes.
         // If ChatGPT swaps/removes turn <article> elements (common on SPA navigations),
         // we must `unobserve()` removed nodes so they can be GC'd.
         for (const n of r.removedNodes || []) {
+          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
+            structureChanged = true;
+          }
           try {
             if (!state.io) continue;
             if (!(n instanceof HTMLElement)) continue;
@@ -678,6 +712,7 @@
           }
         }
       }
+      if (structureChanged) state.structureDirty = true;
       scheduleScan();
     });
     // Only observe list-level changes (avoid token-by-token streaming updates).
@@ -694,9 +729,13 @@
   }
 
   function startVirtualization() {
-    const perfNow = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    const perfNow = nowPerf();
     if (perfNow - state.lastVirtualizeStartAt < 480) return;
     state.lastVirtualizeStartAt = perfNow;
+    state.lastVisibleFirst = -1;
+    state.lastVisibleLast = -1;
+    state.lastVisibleTotal = 0;
+    state.structureDirty = true;
 
     detachIo();
     detachContainerObserver();
@@ -743,6 +782,10 @@
     detachContainerObserver();
     detachIo();
     state.containerEl = null;
+    state.lastVisibleFirst = -1;
+    state.lastVisibleLast = -1;
+    state.lastVisibleTotal = 0;
+    state.structureDirty = true;
     document.querySelectorAll(`main article.${OFFSCREEN_CLASS}`).forEach((a) => clearOffscreen(a));
   }
 
@@ -1031,6 +1074,7 @@
     const container = state.containerEl || findArticlesContainer();
     detachIo();
     attachIo();
+    state.structureDirty = true;
     if (!container) return;
     updateDefaultIntrinsic(container);
     enqueueExistingArticles(container);
@@ -1128,8 +1172,15 @@
     const bottomBound = window.innerHeight + marginPx;
     const first = findFirstIndexByBottom(articles, topBound);
     const last = findLastIndexByTop(articles, bottomBound);
+    const unchangedWindow =
+      first === state.lastVisibleFirst && last === state.lastVisibleLast && total === state.lastVisibleTotal;
+    if (unchangedWindow && !state.structureDirty) return;
+    state.lastVisibleFirst = first;
+    state.lastVisibleLast = last;
+    state.lastVisibleTotal = total;
 
-    const padItems = 60;
+    const generating = isGeneratingResponse();
+    const padItems = generating ? 24 : state.boostActive ? 36 : 60;
     const start = Math.max(0, first - padItems);
     const end = Math.min(total - 1, last + padItems);
     for (let i = start; i <= end; i += 1) {
@@ -1137,9 +1188,13 @@
       if (i < first || i > last) setOffscreen(el);
       else clearOffscreen(el);
     }
+    state.structureDirty = false;
+
+    // Streaming responses are the hottest path; avoid full-list reconcile scans in this phase.
+    if (generating) return;
 
     // Reconcile the rest during idle time to keep interactions snappy.
-    const perfNow = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    const perfNow = nowPerf();
     if (perfNow - state.lastReconcileAt >= 220) {
       state.lastReconcileAt = perfNow;
       scheduleReconcile(articles, first, last);

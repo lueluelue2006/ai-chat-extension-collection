@@ -746,7 +746,7 @@ function main() {
     'control-trigger-consecutive': { type: 'int', default: 3, validate: (v) => v >= 1, description: 'Consecutive trigger windows required to enter degraded mode.' },
     'control-exit-consecutive': { type: 'int', default: 5, validate: (v) => v >= 1, description: 'Consecutive recovery windows required to exit degraded mode.' },
     'control-cooldown-sec': { type: 'int', default: 90, validate: (v) => v >= 0, description: 'Cooldown seconds after each mode switch.' },
-    'control-max-switch-per-10min': { type: 'int', default: 4, validate: (v) => v >= 1, description: 'Maximum allowed mode switches within any 10 minute window.' },
+    'control-max-switch-per-10min': { type: 'int', dest: 'controlMaxSwitchPer10Min', default: 4, validate: (v) => v >= 1, description: 'Maximum allowed mode switches within any 10 minute window.' },
     'control-trigger-long-task-ms': { type: 'number', default: 180, validate: (v) => v > 0, description: 'Trigger threshold: long task p95 (ms).' },
     'control-trigger-frame-dt-ms': { type: 'number', default: 28, validate: (v) => v > 0, description: 'Trigger threshold: frame dt p95 (ms).' },
     'control-trigger-heap-slope': { type: 'number', default: 2, validate: (v) => v > 0, description: 'Trigger threshold: heap slope 5m (MB/min).' },

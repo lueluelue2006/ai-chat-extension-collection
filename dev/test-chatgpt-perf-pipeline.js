@@ -121,7 +121,16 @@ function buildRollbackDrill({ runId, runRoot, statsJson, qualityJson, controlJso
 
   const triggered = triggerReasons.length > 0;
   const startTs = nowIso();
-  const completionSec = triggered ? Math.min(rollbackSlaSec, 120) : 0;
+  let completionSec = 0;
+  if (triggered) {
+    completionSec = 90;
+    if (!qualityJson.pass) completionSec += 180;
+    if (controlJson && controlJson.pass === false) completionSec += 120;
+    if (Number.isFinite(latencyRatio) && latencyRatio > latencyRatioThreshold) {
+      const penalty = Math.round((latencyRatio - latencyRatioThreshold) * 420);
+      completionSec += Math.max(30, penalty);
+    }
+  }
   const doneTs = triggered ? new Date(Date.now() + completionSec * 1000).toISOString() : startTs;
   const stageReports = [10, 50, 100].map((pct) => ({
     stage_pct: pct,

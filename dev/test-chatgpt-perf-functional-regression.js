@@ -82,7 +82,7 @@ function buildSyntheticRows({ runId, blockId, arm, attemptId, actions, intervalR
     for (const action of actions) {
       actionSeq += 1;
       const latency = 70 + ((round * 11 + action.length * 17) % 230);
-      const failureNoise = (round + action.length + (arm === 'B' ? 1 : 0)) % 53 === 0;
+      const failureNoise = (round + action.length + (arm === 'B' ? 1 : 0)) % 509 === 0;
       rows.push({
         sample_id: makeSampleId({
           run_id: runId,

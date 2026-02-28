@@ -69,7 +69,7 @@ function parseResume(resumeFrom) {
 function buildSyntheticRound({ runId, blockId, arm, attemptId, stage, absRound, localRound, baseMs, rand }) {
   const sendTsMs = baseMs + (absRound - 1) * 1400 + ((absRound * 17) % 97);
   const jitter = Math.floor(rand() * 37);
-  const armBase = arm === 'B' ? 585 : 680;
+  const armBase = arm === 'B' ? 600 : 930;
   const latencyMs = armBase + ((absRound * 31 + (arm === 'B' ? 11 : 23)) % 680) + jitter;
   const doneTsMs = sendTsMs + latencyMs;
   const round = roundId(absRound);

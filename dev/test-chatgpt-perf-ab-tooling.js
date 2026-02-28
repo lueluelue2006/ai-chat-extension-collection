@@ -44,19 +44,32 @@ function writeText(filePath, value) {
 
 function buildBenchLog(lines = 160, arm = 'A') {
   const out = [];
+  const baseTs = Date.now();
   for (let i = 1; i <= lines; i += 1) {
+    const dt = arm === 'B' ? 10 + ((i * 2) % 10) : 24 + ((i * 3) % 14);
+    const longTaskTotal = arm === 'B' ? 28 + ((i * 5) % 42) : 62 + ((i * 7) % 58);
     const rec = {
       round_id: `r${String(i).padStart(4, '0')}`,
-      dt: 12 + ((i * 3) % 19) + (arm === 'B' ? -1 : 1),
-      longTaskTotal: 8 + ((i * 7) % 41) + (arm === 'B' ? -2 : 2),
+      dt,
+      longTaskTotal,
       longTaskCount: 1 + (i % 3),
       heapMb: 220 + i * (arm === 'B' ? 0.09 : 0.14),
       domNodes: 2400 + i * 3,
       iframes: 0
     };
-    out.push(`[cgptperf] bench ${JSON.stringify(rec)}`);
+    const ts = new Date(baseTs + i * 1200).toISOString();
+    out.push(`${ts} [cgptperf] bench ${JSON.stringify(rec)}`);
   }
   return `${out.join('\n')}\n`;
+}
+
+function parseMode(argv) {
+  const args = Array.isArray(argv) ? argv : [];
+  const idx = args.findIndex((x) => x === '--mode');
+  if (idx < 0) return 'gate';
+  const raw = String(args[idx + 1] || '').trim().toLowerCase();
+  if (raw === 'smoke' || raw === 'gate') return raw;
+  throw new Error(`Invalid --mode: ${raw || '(empty)'}`);
 }
 
 function toReplySource(roundsNdjsonPath) {
@@ -78,6 +91,9 @@ function toReplySource(roundsNdjsonPath) {
 }
 
 function main() {
+  const mode = parseMode(process.argv.slice(2));
+  const gateMode = mode === 'gate';
+
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aichat-perf-ab-'));
   const runId = `run-${Date.now()}-tooling`;
   const runRoot = path.join(tmpRoot, 'run-root');
@@ -330,13 +346,29 @@ function main() {
     'iqr3',
     '--missing-threshold',
     '0.2',
+    '--require-block-count',
+    '1',
+    '--gate-latency-p95-ratio',
+    '0.85',
+    '--gate-bench-dt-p95-abs',
+    '22',
+    '--gate-heap-slope-abs',
+    '6',
+    '--require-significance',
+    'false',
+    '--control-trigger-long-task-ms',
+    '999',
+    '--control-trigger-frame-dt-ms',
+    '999',
+    '--control-trigger-heap-slope',
+    '999',
     '--bootstrap-resamples',
     '200',
     '--permutation-resamples',
     '200',
     '--alpha',
     '0.05'
-  ], [0, 30, 40, 50]);
+  ], gateMode ? [0] : [0, 30, 40, 50]);
 
   runNode([
     'dev/test-chatgpt-perf-pipeline.js',
@@ -345,7 +377,7 @@ function main() {
     '--run-root',
     runRoot,
     '--stop-on-fail',
-    'false'
+    gateMode ? 'true' : 'false'
   ]);
 
   const verdict = readJson(path.join(runRoot, 'index', 'evidence-index.json'));
@@ -361,6 +393,10 @@ function main() {
   mustExist(path.join(runRoot, 'index', 'evidence-index.jsonl'));
   mustExist(path.join(runRoot, 'SHA256SUMS'));
   assert.notStrictEqual(String(verdict.verdict || ''), 'NO_GAIN', 'NO_GAIN should not be used as pass-through verdict');
+  if (gateMode) {
+    const acceptance = readJson(path.join(runRoot, 'derived', 'mvp-acceptance-report.json'));
+    assert.strictEqual(Boolean(acceptance.pass), true, 'gate mode requires acceptance pass');
+  }
 
   console.log('PASS dev/test-chatgpt-perf-ab-tooling.js');
 }

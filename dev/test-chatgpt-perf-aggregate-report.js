@@ -494,6 +494,20 @@ function computeHeapSlopeMbPerMin(rows) {
   return ((valid[valid.length - 1].heap_mb - valid[0].heap_mb) / dtMs) * 60000;
 }
 
+function computeCounterSlopePerMin(rows, key) {
+  const k = String(key || '').trim();
+  if (!k) return Number.NaN;
+  const valid = rows
+    .filter((row) => Number.isFinite(row.ts_ms) && Number.isFinite(row?.[k]))
+    .sort((a, b) => a.ts_ms - b.ts_ms);
+  if (valid.length < 2) return Number.NaN;
+  const head = valid[0];
+  const tail = valid[valid.length - 1];
+  const dtMs = tail.ts_ms - head.ts_ms;
+  if (!(dtMs > 0)) return Number.NaN;
+  return ((tail[k] - head[k]) / dtMs) * 60000;
+}
+
 function maxSwitchesInWindow(events, windowMs) {
   if (!events.length) return 0;
   const tsList = events
@@ -741,6 +755,9 @@ function main() {
     'gate-latency-p95-ratio': { type: 'number', default: 0.75, validate: (v) => v > 0, description: 'Release gate: latency p95 ratio (B/A) upper bound.' },
     'gate-bench-dt-p95-abs': { type: 'number', default: 22, validate: (v) => v > 0, description: 'Release gate: bench dt p95 absolute upper bound (arm B).' },
     'gate-heap-slope-abs': { type: 'number', default: 1.5, validate: (v) => v > 0, description: 'Release gate: heap slope MB/min upper bound (arm B).' },
+    'gate-dom-query-ops-ratio': { type: 'number', default: 0.7, validate: (v) => v > 0, description: 'Release gate: dom_query_ops_per_min ratio (B/A) upper bound.' },
+    'gate-mo-callbacks-ratio': { type: 'number', default: 0.75, validate: (v) => v > 0, description: 'Release gate: mo_callbacks_per_min ratio (B/A) upper bound.' },
+    'gate-turn-scans-ratio': { type: 'number', default: 0.8, validate: (v) => v > 0, description: 'Release gate: turn_scans_per_min ratio (B/A) upper bound.' },
     'require-significance': { type: 'boolean', default: true, description: 'Require p-value + CI significance for release PASS.' },
     'control-window-sec': { type: 'int', default: 30, validate: (v) => v >= 5, description: 'Control-plane evaluation window (seconds).' },
     'control-trigger-consecutive': { type: 'int', default: 3, validate: (v) => v >= 1, description: 'Consecutive trigger windows required to enter degraded mode.' },
@@ -795,6 +812,9 @@ function main() {
   const gateLatencyP95Ratio = Number(args.gateLatencyP95Ratio);
   const gateBenchDtP95Abs = Number(args.gateBenchDtP95Abs);
   const gateHeapSlopeAbs = Number(args.gateHeapSlopeAbs);
+  const gateDomQueryOpsRatio = Number(args.gateDomQueryOpsRatio);
+  const gateMoCallbacksRatio = Number(args.gateMoCallbacksRatio);
+  const gateTurnScansRatio = Number(args.gateTurnScansRatio);
   const requireSignificance = asBool(args.requireSignificance, true);
   const controlWindowSec = Number(args.controlWindowSec);
   const controlTriggerConsecutive = Number(args.controlTriggerConsecutive);
@@ -917,6 +937,9 @@ function main() {
         long_task_count: toFiniteNumber(row.long_task_count),
         heap_mb: toFiniteNumber(row.heap_mb),
         dom_nodes: toFiniteNumber(row.dom_nodes),
+        dom_query_ops: toFiniteNumber(row.dom_query_ops),
+        mo_callback_count: toFiniteNumber(row.mo_callback_count),
+        turn_scan_count: toFiniteNumber(row.turn_scan_count),
         iframes: toFiniteNumber(row.iframes)
       });
     }
@@ -1105,6 +1128,9 @@ function main() {
 
   const heapSlopeSamples = [];
   const maxHeapSamples = [];
+  const domQueryOpsSamples = [];
+  const moCallbackSamples = [];
+  const turnScanSamples = [];
   for (const rows of benchGroupedByAttempt.values()) {
     const valid = rows
       .filter((row) => Number.isFinite(row.ts_ms) && Number.isFinite(row.heap_mb))
@@ -1123,6 +1149,7 @@ function main() {
         value: slope
       });
     }
+
     const maxHeap = Math.max(...valid.map((row) => row.heap_mb));
     maxHeapSamples.push({
       block_id: head.block_id,
@@ -1131,6 +1158,39 @@ function main() {
       round_id: '',
       value: maxHeap
     });
+
+    const domQueryOpsPerMin = computeCounterSlopePerMin(rows, 'dom_query_ops');
+    if (Number.isFinite(domQueryOpsPerMin)) {
+      domQueryOpsSamples.push({
+        block_id: head.block_id,
+        arm: head.arm,
+        attempt_id: head.attempt_id,
+        round_id: '',
+        value: domQueryOpsPerMin
+      });
+    }
+
+    const moCallbacksPerMin = computeCounterSlopePerMin(rows, 'mo_callback_count');
+    if (Number.isFinite(moCallbacksPerMin)) {
+      moCallbackSamples.push({
+        block_id: head.block_id,
+        arm: head.arm,
+        attempt_id: head.attempt_id,
+        round_id: '',
+        value: moCallbacksPerMin
+      });
+    }
+
+    const turnScansPerMin = computeCounterSlopePerMin(rows, 'turn_scan_count');
+    if (Number.isFinite(turnScansPerMin)) {
+      turnScanSamples.push({
+        block_id: head.block_id,
+        arm: head.arm,
+        attempt_id: head.attempt_id,
+        round_id: '',
+        value: turnScansPerMin
+      });
+    }
   }
 
   const functionalSamples = functionalRows
@@ -1149,6 +1209,9 @@ function main() {
   const benchLongFiltered = applyOutlierFilter(benchLongSamples, outlierMethod, 'bench_long_task_total_ms', exclusions, runId);
   const heapSlopeFiltered = applyOutlierFilter(heapSlopeSamples, outlierMethod, 'heap_slope_mb_per_min', exclusions, runId);
   const maxHeapFiltered = applyOutlierFilter(maxHeapSamples, outlierMethod, 'max_heap_mb', exclusions, runId);
+  const domQueryOpsFiltered = applyOutlierFilter(domQueryOpsSamples, outlierMethod, 'dom_query_ops_per_min', exclusions, runId);
+  const moCallbacksFiltered = applyOutlierFilter(moCallbackSamples, outlierMethod, 'mo_callbacks_per_min', exclusions, runId);
+  const turnScansFiltered = applyOutlierFilter(turnScanSamples, outlierMethod, 'turn_scans_per_min', exclusions, runId);
 
   const metricResults = [];
   metricResults.push(computeMetric({
@@ -1212,6 +1275,42 @@ function main() {
     seed: runId
   }));
   metricResults.push(computeMetric({
+    id: 'dom_query_ops_per_min',
+    unit: 'ops/min',
+    direction: 'lower_better',
+    samples: domQueryOpsFiltered,
+    summaryFn: (arr) => mean(arr),
+    statFn: (arr) => mean(arr),
+    alpha,
+    bootstrapResamples,
+    permutationResamples,
+    seed: runId
+  }));
+  metricResults.push(computeMetric({
+    id: 'mo_callbacks_per_min',
+    unit: 'callbacks/min',
+    direction: 'lower_better',
+    samples: moCallbacksFiltered,
+    summaryFn: (arr) => mean(arr),
+    statFn: (arr) => mean(arr),
+    alpha,
+    bootstrapResamples,
+    permutationResamples,
+    seed: runId
+  }));
+  metricResults.push(computeMetric({
+    id: 'turn_scans_per_min',
+    unit: 'scans/min',
+    direction: 'lower_better',
+    samples: turnScansFiltered,
+    summaryFn: (arr) => mean(arr),
+    statFn: (arr) => mean(arr),
+    alpha,
+    bootstrapResamples,
+    permutationResamples,
+    seed: runId
+  }));
+  metricResults.push(computeMetric({
     id: 'max_heap_mb',
     unit: 'MB',
     direction: 'lower_better',
@@ -1253,6 +1352,9 @@ function main() {
   const benchDtP95 = summaryMap.get('bench_dt_p95_ms');
   const benchLongP95 = summaryMap.get('bench_long_task_total_p95_ms');
   const heapSlope = summaryMap.get('heap_slope_mb_per_min');
+  const domQueryOps = summaryMap.get('dom_query_ops_per_min');
+  const moCallbacks = summaryMap.get('mo_callbacks_per_min');
+  const turnScans = summaryMap.get('turn_scans_per_min');
   const maxHeap = summaryMap.get('max_heap_mb');
   const funcRate = summaryMap.get('functional_success_rate');
 
@@ -1261,6 +1363,9 @@ function main() {
   const ratioBenchDt = safeRatio(benchDtP95?.arm_b, benchDtP95?.arm_a);
   const ratioBenchLong = safeRatio(benchLongP95?.arm_b, benchLongP95?.arm_a);
   const ratioHeapSlope = safeRatio(heapSlope?.arm_b, heapSlope?.arm_a);
+  const ratioDomQueryOps = safeRatio(domQueryOps?.arm_b, domQueryOps?.arm_a);
+  const ratioMoCallbacks = safeRatio(moCallbacks?.arm_b, moCallbacks?.arm_a);
+  const ratioTurnScans = safeRatio(turnScans?.arm_b, turnScans?.arm_a);
   const ratioMaxHeap = safeRatio(maxHeap?.arm_b, maxHeap?.arm_a);
 
   const sendRateB = toFiniteNumber(functionalRates.B.send);
@@ -1288,6 +1393,9 @@ function main() {
     Number.isFinite(ratioLatencyP95) && ratioLatencyP95 <= gateLatencyP95Ratio &&
     Number.isFinite(benchDtP95?.arm_b) && benchDtP95.arm_b <= gateBenchDtP95Abs &&
     Number.isFinite(heapSlope?.arm_b) && heapSlope.arm_b <= gateHeapSlopeAbs &&
+    Number.isFinite(ratioDomQueryOps) && ratioDomQueryOps <= gateDomQueryOpsRatio &&
+    Number.isFinite(ratioMoCallbacks) && ratioMoCallbacks <= gateMoCallbacksRatio &&
+    Number.isFinite(ratioTurnScans) && ratioTurnScans <= gateTurnScansRatio &&
     Number.isFinite(ratioLatencyP50) &&
     Number.isFinite(ratioBenchLong) &&
     Number.isFinite(ratioHeapSlope) &&
@@ -1364,6 +1472,9 @@ function main() {
       latency_p95_ratio_max: gateLatencyP95Ratio,
       bench_dt_p95_abs_max: gateBenchDtP95Abs,
       heap_slope_abs_max: gateHeapSlopeAbs,
+      dom_query_ops_per_min_ratio_max: gateDomQueryOpsRatio,
+      mo_callbacks_per_min_ratio_max: gateMoCallbacksRatio,
+      turn_scans_per_min_ratio_max: gateTurnScansRatio,
       require_significance: requireSignificance
     },
     per_block_summary: Array.from(perBlock.entries()).map(([block_id, arms]) => ({

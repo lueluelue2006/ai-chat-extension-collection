@@ -40,12 +40,12 @@
   const COPY_UNFREEZE_ATTR = 'data-cgptperf-copy-unfreeze';
   const MSG_GET_STATE = 'CGPT_PERF_GET_STATE';
 
-  const state = {
-    settings: { ...DEFAULT_SETTINGS },
-    storageArea: null,
-    storageAreaName: 'sync',
-    benchArmed: false,
-    benchTimer: 0,
+	  const state = {
+	    settings: { ...DEFAULT_SETTINGS },
+	    storageArea: null,
+	    storageAreaName: 'sync',
+	    benchArmed: false,
+	    benchTimer: 0,
     lastActionBoostAt: 0,
     reconcileToken: 0,
     reconcileIdx: 0,
@@ -91,10 +91,15 @@
     structureDirty: true,
     lastGeneratingCheckAt: 0,
     generatingCached: false,
-    budgetSnapshot: null,
-    budgetSnapshotAt: 0,
-    budgetLevel: 0,
-  };
+	    budgetSnapshot: null,
+	    budgetSnapshotAt: 0,
+	    budgetLevel: 0,
+	    kpi: {
+	      domQueryOps: 0,
+	      moCallbackCount: 0,
+	      turnScanCount: 0,
+	    },
+	  };
 
   function clampInt(n, min, max) {
     const x = Math.round(Number(n));
@@ -117,48 +122,51 @@
     return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
   }
 
-  function isGeneratingResponse(force = false) {
-    const now = nowPerf();
-    if (!force && now - state.lastGeneratingCheckAt < 220) return state.generatingCached;
+	  function isGeneratingResponse(force = false) {
+	    const now = nowPerf();
+	    if (!force && now - state.lastGeneratingCheckAt < 220) return state.generatingCached;
 
-    let active = false;
-    try {
-      active = !!document.querySelector(
-        'button[aria-label*="Stop streaming" i], button[aria-label*="Stop generating" i], button[aria-label*="Continue generating" i], button[aria-label*="停止" i], button[aria-label*="继续生成" i]',
-      );
-    } catch {
-      active = false;
+	    let active = false;
+	    try {
+	      state.kpi.domQueryOps += 1;
+	      active = !!document.querySelector(
+	        'button[aria-label*="Stop streaming" i], button[aria-label*="Stop generating" i], button[aria-label*="Continue generating" i], button[aria-label*="停止" i], button[aria-label*="继续生成" i]',
+	      );
+	    } catch {
+	      active = false;
     }
     state.lastGeneratingCheckAt = now;
     state.generatingCached = active;
     return active;
   }
 
-  function collectBudgetSnapshot(totalArticles, force = false) {
-    const now = nowPerf();
-    const prev = state.budgetSnapshot;
-    const articleChanged = !prev || prev.totalArticles !== totalArticles;
-    const staleByTime = now - state.budgetSnapshotAt > 1800;
+	  function collectBudgetSnapshot(totalArticles, force = false) {
+	    const now = nowPerf();
+	    const prev = state.budgetSnapshot;
+	    const articleChanged = !prev || prev.totalArticles !== totalArticles;
+	    const staleByTime = now - state.budgetSnapshotAt > 1800;
     const shouldRefresh = force || articleChanged || state.structureDirty || staleByTime;
 
     if (!shouldRefresh && prev) return prev;
 
-    let domNodes = prev?.domNodes ?? 0;
-    let katexNodes = prev?.katexNodes ?? 0;
-    try {
-      domNodes = document.getElementsByTagName('*').length;
-    } catch {
-      // ignore
-    }
+	    let domNodes = prev?.domNodes ?? 0;
+	    let katexNodes = prev?.katexNodes ?? 0;
+	    try {
+	      state.kpi.domQueryOps += 1;
+	      domNodes = document.getElementsByTagName('*').length;
+	    } catch {
+	      // ignore
+	    }
     // KaTeX query is relatively expensive; only refresh when the conversation has enough turns
     // or we explicitly force a refresh.
-    if (force || articleChanged || totalArticles >= 10) {
-      try {
-        katexNodes = document.querySelectorAll('.katex-display, mjx-container').length;
-      } catch {
-        // ignore
-      }
-    }
+	    if (force || articleChanged || totalArticles >= 10) {
+	      try {
+	        state.kpi.domQueryOps += 1;
+	        katexNodes = document.querySelectorAll('.katex-display, mjx-container').length;
+	      } catch {
+	        // ignore
+	      }
+	    }
 
     const snap = { totalArticles, domNodes, katexNodes, ts: Date.now() };
     state.budgetSnapshot = snap;
@@ -267,27 +275,35 @@
     toggleRootAttr(ROOT_NOANIM_ATTR, s.enabled && s.disableAnimations, '1');
   }
 
-  function ensureRootAttrGuard() {
-    if (state.rootAttrMo) return;
-    const html = document.documentElement;
-    if (!html || typeof MutationObserver !== 'function') return;
+	  function ensureRootAttrGuard() {
+	    if (state.rootAttrMo) return;
+	    const html = document.documentElement;
+	    if (!html || typeof MutationObserver !== 'function') return;
 
-    let queued = false;
-    const schedule = () => {
-      if (queued) return;
-      queued = true;
-      Promise.resolve().then(() => {
-        queued = false;
-        applyRootAttrs();
-      });
-    };
+	    let queued = false;
+	    const schedule = () => {
+	      if (queued) return;
+	      queued = true;
+	      Promise.resolve().then(() => {
+	        queued = false;
+	        applyRootAttrs();
+	      });
+	    };
 
-    try {
-      state.rootAttrMo = new MutationObserver(schedule);
-      state.rootAttrMo.observe(html, {
-        attributes: true,
-        attributeFilter: [
-          ROOT_ATTR,
+	    try {
+	      const onMutate = () => {
+	        try {
+	          state.kpi.moCallbackCount += 1;
+	        } catch {
+	          // ignore
+	        }
+	        schedule();
+	      };
+	      state.rootAttrMo = new MutationObserver(onMutate);
+	      state.rootAttrMo.observe(html, {
+	        attributes: true,
+	        attributeFilter: [
+	          ROOT_ATTR,
           ROOT_VER_ATTR,
           ROOT_ENABLED_ATTR,
           ROOT_OFFSCREEN_ATTR,
@@ -460,11 +476,11 @@
     }, 1400);
   }
 
-  function runBench(label, meta = {}) {
-    if (!state.benchArmed) return;
-    state.benchArmed = false;
-    if (state.benchTimer) window.clearTimeout(state.benchTimer);
-    state.benchTimer = 0;
+	  function runBench(label, meta = {}) {
+	    if (!state.benchArmed) return;
+	    state.benchArmed = false;
+	    if (state.benchTimer) window.clearTimeout(state.benchTimer);
+	    state.benchTimer = 0;
 
     const t0 = performance.now();
     let longTaskTotal = 0;
@@ -491,28 +507,50 @@
       }
     }
 
-    requestAnimationFrame(() => {
-      const dt = Math.round(performance.now() - t0);
-      if (po) {
-        try {
-          po.disconnect();
+	    requestAnimationFrame(() => {
+	      const dt = Math.round(performance.now() - t0);
+	      if (po) {
+	        try {
+	          po.disconnect();
         } catch {
           // ignore
         }
       }
-      const lt = Math.round(longTaskTotal);
+	      const lt = Math.round(longTaskTotal);
 
-      try {
-        console.log('[cgptperf] bench', {
-          label,
-          dt,
-          longTaskTotal: lt,
-          longTaskCount,
-          rootMarginPx: state.settings.rootMarginPx,
-          boostDuringInput: state.settings.boostDuringInput,
-          boostActive: state.boostActive,
-          ...meta,
-        });
+	      try {
+	        let heapMb = Number.NaN;
+	        try {
+	          const used = performance?.memory?.usedJSHeapSize;
+	          if (typeof used === 'number' && Number.isFinite(used)) heapMb = used / 1024 / 1024;
+	        } catch {
+	          // ignore
+	        }
+	        let domNodes = Number(state.budgetSnapshot?.domNodes);
+	        if (!Number.isFinite(domNodes)) domNodes = Number.NaN;
+	        let iframes = 0;
+	        try {
+	          state.kpi.domQueryOps += 1;
+	          iframes = document.querySelectorAll('iframe').length;
+	        } catch {
+	          iframes = 0;
+	        }
+	        console.log('[cgptperf] bench', {
+	          label,
+	          dt,
+	          longTaskTotal: lt,
+	          longTaskCount,
+	          heapMb,
+	          domNodes,
+	          iframes,
+	          domQueryOps: state.kpi.domQueryOps,
+	          moCallbackCount: state.kpi.moCallbackCount,
+	          turnScanCount: state.kpi.turnScanCount,
+	          rootMarginPx: state.settings.rootMarginPx,
+	          boostDuringInput: state.settings.boostDuringInput,
+	          boostActive: state.boostActive,
+	          ...meta,
+	        });
       } catch {
         // ignore
       }
@@ -740,14 +778,19 @@
     }
   }
 
-  function attachContainerObserver(container) {
-    if (state.containerMo) return;
-    state.containerMo = new MutationObserver((records) => {
-      let structureChanged = false;
-      for (const r of records) {
-        for (const n of r.addedNodes) {
-          enqueueArticle(n);
-          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
+	  function attachContainerObserver(container) {
+	    if (state.containerMo) return;
+	    state.containerMo = new MutationObserver((records) => {
+	      try {
+	        state.kpi.moCallbackCount += 1;
+	      } catch {
+	        // ignore
+	      }
+	      let structureChanged = false;
+	      for (const r of records) {
+	        for (const n of r.addedNodes) {
+	          enqueueArticle(n);
+	          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
             structureChanged = true;
           }
         }
@@ -1236,13 +1279,19 @@
     else setTimeout(run, 0);
   }
 
-  function applyVirtualizationNow(marginPx) {
-    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-    const container = state.containerEl;
-    if (!(container instanceof HTMLElement)) return;
-    const articles = container.querySelectorAll(':scope > article');
-    const total = articles.length;
-    if (!total) return;
+	  function applyVirtualizationNow(marginPx) {
+	    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+	    const container = state.containerEl;
+	    if (!(container instanceof HTMLElement)) return;
+	    try {
+	      state.kpi.domQueryOps += 1;
+	      state.kpi.turnScanCount += 1;
+	    } catch {
+	      // ignore
+	    }
+	    const articles = container.querySelectorAll(':scope > article');
+	    const total = articles.length;
+	    if (!total) return;
 
     const topBound = -marginPx;
     const bottomBound = window.innerHeight + marginPx;

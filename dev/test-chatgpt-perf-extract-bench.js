@@ -134,6 +134,9 @@ function extractFromLog({ runId, blockId, arm, attemptId, inputPath }) {
       long_task_count: toFiniteOrNaN(obj.longTaskCount ?? obj.long_task_count),
       heap_mb: toFiniteOrNaN(obj.heapMb ?? obj.heap_mb),
       dom_nodes: toFiniteOrNaN(obj.domNodes ?? obj.dom_nodes),
+      dom_query_ops: toFiniteOrNaN(obj.domQueryOps ?? obj.dom_query_ops),
+      mo_callback_count: toFiniteOrNaN(obj.moCallbackCount ?? obj.mo_callback_count),
+      turn_scan_count: toFiniteOrNaN(obj.turnScanCount ?? obj.turn_scan_count),
       iframes: toFiniteOrNaN(obj.iframes),
       source_line: i + 1
     });
@@ -160,7 +163,7 @@ function main() {
           usage:
             'node dev/test-chatgpt-perf-extract-bench.js --run-id <id> --block-id <id> --arm <A|B> --attempt-id <id> --source logfile --input <console.log> [--out <ndjson>] [--out-root <run-root>]',
           description:
-            'Extract [cgptperf] bench console log lines to NDJSON schema (sample_id, run_id, block_id, arm, attempt_id, ts, round_id, channel, action_seq, dt_ms, long_task_total_ms, long_task_count, heap_mb, dom_nodes, iframes).',
+            'Extract [cgptperf] bench console log lines to NDJSON schema (sample_id, run_id, block_id, arm, attempt_id, ts, round_id, channel, action_seq, dt_ms, long_task_total_ms, long_task_count, heap_mb, dom_nodes, dom_query_ops, mo_callback_count, turn_scan_count, iframes).',
           examples: [
             'node dev/test-chatgpt-perf-extract-bench.js --run-id run-20260227T120000Z-abcd123 --block-id b01-AthenB --arm A --attempt-id att-001 --source logfile --input ./tmp/console.log --out ./.omx/logs/.../raw/bench/b01-AthenB/A/att-001/cgptperf-bench.ndjson'
           ]

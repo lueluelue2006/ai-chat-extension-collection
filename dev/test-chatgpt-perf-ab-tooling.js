@@ -45,9 +45,15 @@ function writeText(filePath, value) {
 function buildBenchLog(lines = 160, arm = 'A') {
   const out = [];
   const baseTs = Date.now();
+  let domQueryOps = arm === 'B' ? 820 : 1280;
+  let moCallbackCount = arm === 'B' ? 240 : 360;
+  let turnScanCount = arm === 'B' ? 180 : 260;
   for (let i = 1; i <= lines; i += 1) {
     const dt = arm === 'B' ? 10 + ((i * 2) % 10) : 24 + ((i * 3) % 14);
     const longTaskTotal = arm === 'B' ? 28 + ((i * 5) % 42) : 62 + ((i * 7) % 58);
+    domQueryOps += arm === 'B' ? 15 + (i % 3) : 24 + (i % 5);
+    moCallbackCount += arm === 'B' ? 7 + (i % 2) : 10 + (i % 3);
+    turnScanCount += arm === 'B' ? 4 + (i % 2) : 6 + (i % 2);
     const rec = {
       round_id: `r${String(i).padStart(4, '0')}`,
       dt,
@@ -55,6 +61,9 @@ function buildBenchLog(lines = 160, arm = 'A') {
       longTaskCount: 1 + (i % 3),
       heapMb: 220 + i * (arm === 'B' ? 0.09 : 0.14),
       domNodes: 2400 + i * 3,
+      domQueryOps,
+      moCallbackCount,
+      turnScanCount,
       iframes: 0
     };
     const ts = new Date(baseTs + i * 1200).toISOString();

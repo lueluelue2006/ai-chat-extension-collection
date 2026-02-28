@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.22';
+  const EXT_VERSION = '0.1.23';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -91,6 +91,9 @@
     structureDirty: true,
     lastGeneratingCheckAt: 0,
     generatingCached: false,
+    budgetSnapshot: null,
+    budgetSnapshotAt: 0,
+    budgetLevel: 0,
   };
 
   function clampInt(n, min, max) {
@@ -129,6 +132,67 @@
     state.lastGeneratingCheckAt = now;
     state.generatingCached = active;
     return active;
+  }
+
+  function collectBudgetSnapshot(totalArticles, force = false) {
+    const now = nowPerf();
+    const prev = state.budgetSnapshot;
+    const articleChanged = !prev || prev.totalArticles !== totalArticles;
+    const staleByTime = now - state.budgetSnapshotAt > 1800;
+    const shouldRefresh = force || articleChanged || state.structureDirty || staleByTime;
+
+    if (!shouldRefresh && prev) return prev;
+
+    let domNodes = prev?.domNodes ?? 0;
+    let katexNodes = prev?.katexNodes ?? 0;
+    try {
+      domNodes = document.getElementsByTagName('*').length;
+    } catch {
+      // ignore
+    }
+    // KaTeX query is relatively expensive; only refresh when the conversation has enough turns
+    // or we explicitly force a refresh.
+    if (force || articleChanged || totalArticles >= 10) {
+      try {
+        katexNodes = document.querySelectorAll('.katex-display, mjx-container').length;
+      } catch {
+        // ignore
+      }
+    }
+
+    const snap = { totalArticles, domNodes, katexNodes, ts: Date.now() };
+    state.budgetSnapshot = snap;
+    state.budgetSnapshotAt = now;
+    return snap;
+  }
+
+  function computeBudgetLevel(snapshot) {
+    if (!snapshot) return 0;
+    let level = 0;
+    const dom = Number(snapshot.domNodes) || 0;
+    const katex = Number(snapshot.katexNodes) || 0;
+    const turns = Number(snapshot.totalArticles) || 0;
+
+    if (dom >= 10000) level += 1;
+    if (dom >= 18000) level += 1;
+    if (dom >= 26000) level += 1;
+    if (katex >= 120) level += 1;
+    if (katex >= 220) level += 1;
+    if (turns >= 24) level += 1;
+    if (turns >= 36) level += 1;
+
+    return Math.max(0, Math.min(4, level));
+  }
+
+  function computeAdaptivePadItems({ generating, boostActive, snapshot }) {
+    const base = generating ? 24 : boostActive ? 36 : 60;
+    const level = computeBudgetLevel(snapshot);
+    state.budgetLevel = level;
+
+    const factors = generating ? [1, 0.92, 0.78, 0.64, 0.54] : [1, 0.9, 0.76, 0.62, 0.5];
+    const scaled = Math.round(base * factors[level]);
+    const minPad = generating ? 12 : boostActive ? 16 : 20;
+    return clampInt(scaled, minPad, base);
   }
 
   function boostMarginPx() {
@@ -786,6 +850,9 @@
     state.lastVisibleLast = -1;
     state.lastVisibleTotal = 0;
     state.structureDirty = true;
+    state.budgetSnapshot = null;
+    state.budgetSnapshotAt = 0;
+    state.budgetLevel = 0;
     document.querySelectorAll(`main article.${OFFSCREEN_CLASS}`).forEach((a) => clearOffscreen(a));
   }
 
@@ -1180,7 +1247,8 @@
     state.lastVisibleTotal = total;
 
     const generating = isGeneratingResponse();
-    const padItems = generating ? 24 : state.boostActive ? 36 : 60;
+    const budget = collectBudgetSnapshot(total);
+    const padItems = computeAdaptivePadItems({ generating, boostActive: state.boostActive, snapshot: budget });
     const start = Math.max(0, first - padItems);
     const end = Math.min(total - 1, last + padItems);
     for (let i = start; i <= end; i += 1) {

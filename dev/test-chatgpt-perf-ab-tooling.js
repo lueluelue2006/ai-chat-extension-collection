@@ -338,13 +338,28 @@ function main() {
     '0.05'
   ], [0, 30, 40, 50]);
 
+  runNode([
+    'dev/test-chatgpt-perf-pipeline.js',
+    '--run-id',
+    runId,
+    '--run-root',
+    runRoot,
+    '--stop-on-fail',
+    'false'
+  ]);
+
   const verdict = readJson(path.join(runRoot, 'index', 'evidence-index.json'));
   assert.ok(typeof verdict.verdict === 'string' && verdict.verdict.length > 0, 'verdict should exist');
   mustExist(path.join(runRoot, 'derived', 'ab-summary.csv'));
   mustExist(path.join(runRoot, 'derived', 'stats.json'));
   mustExist(path.join(runRoot, 'derived', 'quality.json'));
   mustExist(path.join(runRoot, 'derived', 'control-plane.json'));
+  mustExist(path.join(runRoot, 'derived', 'rollback-drill.json'));
+  mustExist(path.join(runRoot, 'derived', 'mvp-acceptance-report.json'));
   mustExist(path.join(runRoot, 'derived', 'verdict.md'));
+  mustExist(path.join(runRoot, 'index', 'run-index.json'));
+  mustExist(path.join(runRoot, 'index', 'evidence-index.jsonl'));
+  mustExist(path.join(runRoot, 'SHA256SUMS'));
   assert.notStrictEqual(String(verdict.verdict || ''), 'NO_GAIN', 'NO_GAIN should not be used as pass-through verdict');
 
   console.log('PASS dev/test-chatgpt-perf-ab-tooling.js');

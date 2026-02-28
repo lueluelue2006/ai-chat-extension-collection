@@ -337,6 +337,7 @@ Turn 筛选策略（维护重点）：
 - AB 样本主键统一：`sample_id = run:block:arm:attempt:round:channel:action_seq`，用于跨 reply/bench/functional 去重与证据追溯。
 - 聚合闸门升级：`dev/test-chatgpt-perf-aggregate-report.js` 现在输出 `derived/quality.json`，并执行硬门槛（`latency_p95_ratio` / `bench_dt_p95_abs` / `heap_slope_abs` + 可选显著性）；`NO_GAIN` 不再作为成功结果。
 - 控制面评估：同一聚合脚本会输出 `derived/control-plane.json`，按 30s 窗口评估触发/退出阈值、冷却窗口与 10 分钟切换频率上限，作为发布前稳定性信号。
+- 一键收口：`dev/test-chatgpt-perf-pipeline.js` 会基于已有聚合产物补齐 `index/run-index.json`、`index/evidence-index.jsonl`、`SHA256SUMS`、`derived/rollback-drill.json` 与 `derived/mvp-acceptance-report.json`，用于灰度/回滚演练与放行凭证。
 - 功能变更：已移除“禁用毛玻璃（`disableBackdropFilters`）”独立开关
 - 功能变更：已移除“极限轻量（`extremeLite`）”开关与对应样式分支，统一由主性能项负责优化策略。
 - 功能变更：已移除“Markdown 分段虚拟化（`virtualizeMarkdownBlocks`）”子策略与对应样式/配置项，避免对块级节点做二次虚拟化。

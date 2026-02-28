@@ -342,7 +342,9 @@ function main() {
   assert.ok(typeof verdict.verdict === 'string' && verdict.verdict.length > 0, 'verdict should exist');
   mustExist(path.join(runRoot, 'derived', 'ab-summary.csv'));
   mustExist(path.join(runRoot, 'derived', 'stats.json'));
+  mustExist(path.join(runRoot, 'derived', 'quality.json'));
   mustExist(path.join(runRoot, 'derived', 'verdict.md'));
+  assert.notStrictEqual(String(verdict.verdict || ''), 'NO_GAIN', 'NO_GAIN should not be used as pass-through verdict');
 
   console.log('PASS dev/test-chatgpt-perf-ab-tooling.js');
 }

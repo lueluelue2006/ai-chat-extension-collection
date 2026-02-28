@@ -48,6 +48,23 @@ function sha256(input) {
   return crypto.createHash('sha256').update(payload).digest('hex');
 }
 
+function sanitizeSamplePart(value, fallback = 'na') {
+  const raw = String(value === undefined || value === null ? '' : value).trim();
+  if (!raw) return fallback;
+  return raw.replace(/[:\s]+/g, '_');
+}
+
+function makeSampleId(parts = {}) {
+  const runId = sanitizeSamplePart(parts.run_id || parts.runId || 'run');
+  const blockId = sanitizeSamplePart(parts.block_id || parts.blockId || 'block');
+  const arm = sanitizeSamplePart(parts.arm || 'X').toUpperCase();
+  const attemptId = sanitizeSamplePart(parts.attempt_id || parts.attemptId || 'attempt');
+  const roundId = sanitizeSamplePart(parts.round_id || parts.roundId || 'round');
+  const channel = sanitizeSamplePart(parts.channel || 'unknown');
+  const actionSeq = sanitizeSamplePart(parts.action_seq ?? parts.actionSeq ?? 0);
+  return `${runId}:${blockId}:${arm}:${attemptId}:${roundId}:${channel}:${actionSeq}`;
+}
+
 function ensureDir(dirPath) {
   const abs = path.resolve(String(dirPath));
   fs.mkdirSync(abs, { recursive: true });
@@ -503,5 +520,6 @@ module.exports = {
   iqrOutlierFilter,
   computeMissingRate,
   deepClone,
+  makeSampleId,
   safeExit
 };

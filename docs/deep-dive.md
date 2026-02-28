@@ -333,6 +333,9 @@ Turn 筛选策略（维护重点）：
 - 核心策略：默认开启离屏虚拟化/重内容优化/禁用动画/交互加速/查找解冻；仅“页面内性能菜单”默认关闭（避免常驻浮层干扰）。
 - 性能策略：离屏虚拟化窗口已改为“预算自适应”——按 `DOM 节点数 + 公式节点数 + turn 数量` 动态收紧 `padItems`，长对话下优先保证交互流畅与内存稳定。
 - 性能策略：`scheduleReconcile` 频率同样按预算等级动态降频（高压力时降低全量 reconcile 频次），减少长对话中的重复样式切换与主线程抖动。
+- AB 测量链路（`dev/test-chatgpt-perf-*`）已改为**强约束输入源**：reply 仅 `source=path`、bench 仅 `source=logfile`；移除 `session/console` 伪入口，避免“命令可跑但不可取证”。
+- AB 样本主键统一：`sample_id = run:block:arm:attempt:round:channel:action_seq`，用于跨 reply/bench/functional 去重与证据追溯。
+- 聚合闸门升级：`dev/test-chatgpt-perf-aggregate-report.js` 现在输出 `derived/quality.json`，并执行硬门槛（`latency_p95_ratio` / `bench_dt_p95_abs` / `heap_slope_abs` + 可选显著性）；`NO_GAIN` 不再作为成功结果。
 - 功能变更：已移除“禁用毛玻璃（`disableBackdropFilters`）”独立开关
 - 功能变更：已移除“极限轻量（`extremeLite`）”开关与对应样式分支，统一由主性能项负责优化策略。
 - 功能变更：已移除“Markdown 分段虚拟化（`virtualizeMarkdownBlocks`）”子策略与对应样式/配置项，避免对块级节点做二次虚拟化。

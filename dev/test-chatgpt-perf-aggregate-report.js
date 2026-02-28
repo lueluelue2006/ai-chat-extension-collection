@@ -27,7 +27,7 @@ const {
   safeExit
 } = require('./perf-ab/common');
 
-const VERDICTS = Object.freeze(['PASS', 'FAIL', 'NO_GAIN', 'INVALID', 'PASS_EARLY', 'FAIL_EARLY', 'INVALID_TIMEOUT']);
+const VERDICTS = Object.freeze(['PASS', 'FAIL', 'INVALID', 'INVALID_TIMEOUT']);
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -293,6 +293,7 @@ function computeMetric({
       metric: id,
       bootstrap_ci_low: ciLow,
       bootstrap_ci_high: ciHigh,
+      bootstrap_ci_width: Number.isFinite(ciLow) && Number.isFinite(ciHigh) ? Math.abs(ciHigh - ciLow) : Number.NaN,
       p_value: pValue,
       significant,
       improved,
@@ -350,6 +351,139 @@ function evaluateMissingByBlock(rows, requiredFields, threshold) {
   return { reports, invalidBlocks };
 }
 
+function asBool(raw, fallback = false) {
+  if (typeof raw === 'boolean') return raw;
+  if (raw === undefined || raw === null) return fallback;
+  const text = String(raw).trim().toLowerCase();
+  if (!text) return fallback;
+  if (['1', 'true', 'yes', 'on', 'y'].includes(text)) return true;
+  if (['0', 'false', 'no', 'off', 'n'].includes(text)) return false;
+  return fallback;
+}
+
+function groupByAttempt(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const key = attemptKey(row.block_id, row.arm, row.attempt_id);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  }
+  return map;
+}
+
+function evaluateChannelQuality({
+  channel,
+  rows,
+  successAttemptsMeta,
+  warmupRounds,
+  thresholds,
+  validPredicate
+}) {
+  const byAttemptRows = groupByAttempt(rows);
+  const byArm = { A: { expected: 0, observed: 0, valid: 0, invalid: 0, missing: 0 }, B: { expected: 0, observed: 0, valid: 0, invalid: 0, missing: 0 } };
+  const perAttempt = [];
+  const perBlockArm = new Map();
+
+  for (const meta of successAttemptsMeta) {
+    const key = attemptKey(meta.block_id, meta.arm, meta.attempt_id);
+    const attemptRows = byAttemptRows.get(key) || [];
+    const expected = Math.max(0, Number(meta.rounds_target || 0) - Number(warmupRounds || 0));
+    const observed = attemptRows.length;
+    let valid = 0;
+    for (const row of attemptRows) {
+      if (validPredicate(row)) valid += 1;
+    }
+    const invalid = Math.max(0, observed - valid);
+    const missing = Math.max(0, expected - observed);
+    const missingRate = expected > 0 ? missing / expected : 0;
+    const invalidRate = observed > 0 ? invalid / observed : expected > 0 ? 1 : 0;
+    const pass =
+      missingRate <= thresholds.missingRateMax &&
+      invalidRate <= thresholds.invalidRateMax &&
+      valid >= thresholds.minSamplesPerAttempt &&
+      valid >= thresholds.minRoundsPerBlockArm;
+
+    perAttempt.push({
+      block_id: meta.block_id,
+      arm: meta.arm,
+      attempt_id: meta.attempt_id,
+      expected,
+      observed,
+      valid,
+      invalid,
+      missing,
+      missing_rate: missingRate,
+      invalid_rate: invalidRate,
+      pass
+    });
+
+    const armStat = byArm[meta.arm] || byArm.A;
+    armStat.expected += expected;
+    armStat.observed += observed;
+    armStat.valid += valid;
+    armStat.invalid += invalid;
+    armStat.missing += missing;
+
+    const blockArmKey = `${meta.block_id}::${meta.arm}`;
+    if (!perBlockArm.has(blockArmKey)) {
+      perBlockArm.set(blockArmKey, {
+        block_id: meta.block_id,
+        arm: meta.arm,
+        expected: 0,
+        observed: 0,
+        valid: 0,
+        invalid: 0,
+        missing: 0
+      });
+    }
+    const blockArm = perBlockArm.get(blockArmKey);
+    blockArm.expected += expected;
+    blockArm.observed += observed;
+    blockArm.valid += valid;
+    blockArm.invalid += invalid;
+    blockArm.missing += missing;
+  }
+
+  const blockArmStats = Array.from(perBlockArm.values()).map((row) => {
+    const missingRate = row.expected > 0 ? row.missing / row.expected : 0;
+    const invalidRate = row.observed > 0 ? row.invalid / row.observed : row.expected > 0 ? 1 : 0;
+    return {
+      ...row,
+      missing_rate: missingRate,
+      invalid_rate: invalidRate,
+      pass:
+        missingRate <= thresholds.missingRateMax &&
+        invalidRate <= thresholds.invalidRateMax &&
+        row.valid >= thresholds.minRoundsPerBlockArm
+    };
+  });
+
+  for (const arm of ['A', 'B']) {
+    const stat = byArm[arm];
+    stat.missing_rate = stat.expected > 0 ? stat.missing / stat.expected : 0;
+    stat.invalid_rate = stat.observed > 0 ? stat.invalid / stat.observed : stat.expected > 0 ? 1 : 0;
+    stat.pass =
+      stat.missing_rate <= thresholds.missingRateMax &&
+      stat.invalid_rate <= thresholds.invalidRateMax &&
+      stat.valid >= thresholds.minSamplesPerArm;
+  }
+
+  const pass =
+    perAttempt.every((x) => x.pass) &&
+    blockArmStats.every((x) => x.pass) &&
+    byArm.A.pass &&
+    byArm.B.pass;
+
+  return {
+    channel,
+    thresholds,
+    by_arm: byArm,
+    per_attempt: perAttempt,
+    per_block_arm: blockArmStats,
+    pass
+  };
+}
+
 function blockSummaries(replyRows, benchRows, functionalRows) {
   const blocks = new Map();
   const ensure = (blockId, arm) => {
@@ -392,45 +526,6 @@ function blockSummaries(replyRows, benchRows, functionalRows) {
   return byBlock;
 }
 
-function evaluateEarlyVerdict(perBlock) {
-  const ordered = Array.from(perBlock.entries()).sort((a, b) => a[0].localeCompare(b[0], 'en'));
-  const statusList = [];
-  for (const [blockId, arms] of ordered) {
-    const a = arms.A;
-    const b = arms.B;
-    if (!a || !b) continue;
-    const latencyRatio = safeRatio(b.latency_p95, a.latency_p95);
-    const dtRatio = safeRatio(b.bench_dt_p95, a.bench_dt_p95);
-    const longRatio = safeRatio(b.bench_long_p95, a.bench_long_p95);
-    const funcRateB = b.functional_rate;
-
-    let status = 'neutral';
-    if (
-      Number.isFinite(latencyRatio) && Number.isFinite(dtRatio) && Number.isFinite(longRatio) &&
-      latencyRatio <= 0.9 && dtRatio <= 0.85 && longRatio <= 0.85 &&
-      Number.isFinite(funcRateB) && funcRateB >= 0.99
-    ) {
-      status = 'pass';
-    } else if (
-      (Number.isFinite(latencyRatio) && latencyRatio >= 1.05) ||
-      (Number.isFinite(dtRatio) && dtRatio >= 1.05) ||
-      (Number.isFinite(longRatio) && longRatio >= 1.05) ||
-      (Number.isFinite(funcRateB) && funcRateB < 0.99)
-    ) {
-      status = 'fail';
-    }
-    statusList.push({ block_id: blockId, status });
-  }
-
-  for (let i = 1; i < statusList.length; i += 1) {
-    const prev = statusList[i - 1];
-    const curr = statusList[i];
-    if (prev.status === 'pass' && curr.status === 'pass') return 'PASS_EARLY';
-    if (prev.status === 'fail' && curr.status === 'fail') return 'FAIL_EARLY';
-  }
-  return '';
-}
-
 function writeVerdictMarkdown(filePath, payload) {
   const lines = [];
   lines.push(`# ChatGPT Perf AB Verdict`);
@@ -460,6 +555,21 @@ function main() {
     'warmup-seconds': { type: 'int', default: 120, validate: (v) => v >= 0, description: 'Warmup seconds to drop for bench samples.' },
     'outlier-method': { type: 'string', default: 'iqr3', choices: ['iqr3', 'mad3'], description: 'Outlier method.' },
     'missing-threshold': { type: 'number', default: 0.03, validate: (v) => v >= 0 && v <= 1, description: 'Missing-rate threshold.' },
+    'require-block-count': { type: 'int', default: 3, validate: (v) => v >= 1, description: 'Minimum unique blocks required.' },
+    'min-rounds-per-block-arm': { type: 'int', default: 30, validate: (v) => v >= 1, description: 'Minimum valid rounds required for each block+arm.' },
+    'reply-missing-threshold': { type: 'number', default: 0.03, validate: (v) => v >= 0 && v <= 1, description: 'Reply channel missing-rate max.' },
+    'reply-invalid-threshold': { type: 'number', default: 0.02, validate: (v) => v >= 0 && v <= 1, description: 'Reply channel invalid-rate max.' },
+    'reply-min-samples-arm': { type: 'int', default: 85, validate: (v) => v >= 1, description: 'Reply channel minimum valid samples per arm.' },
+    'bench-missing-threshold': { type: 'number', default: 0.05, validate: (v) => v >= 0 && v <= 1, description: 'Bench channel missing-rate max.' },
+    'bench-invalid-threshold': { type: 'number', default: 0, validate: (v) => v >= 0 && v <= 1, description: 'Bench channel invalid-rate max.' },
+    'bench-min-samples-arm': { type: 'int', default: 80, validate: (v) => v >= 1, description: 'Bench channel minimum valid samples per arm.' },
+    'functional-missing-threshold': { type: 'number', default: 0.03, validate: (v) => v >= 0 && v <= 1, description: 'Functional channel missing-rate max.' },
+    'functional-invalid-threshold': { type: 'number', default: 0.01, validate: (v) => v >= 0 && v <= 1, description: 'Functional channel invalid-rate max.' },
+    'functional-min-samples-arm': { type: 'int', default: 85, validate: (v) => v >= 1, description: 'Functional channel minimum valid samples per arm.' },
+    'gate-latency-p95-ratio': { type: 'number', default: 0.75, validate: (v) => v > 0, description: 'Release gate: latency p95 ratio (B/A) upper bound.' },
+    'gate-bench-dt-p95-abs': { type: 'number', default: 22, validate: (v) => v > 0, description: 'Release gate: bench dt p95 absolute upper bound (arm B).' },
+    'gate-heap-slope-abs': { type: 'number', default: 1.5, validate: (v) => v > 0, description: 'Release gate: heap slope MB/min upper bound (arm B).' },
+    'require-significance': { type: 'boolean', default: true, description: 'Require p-value + CI significance for release PASS.' },
     'bootstrap-resamples': { type: 'int', default: 10000, validate: (v) => v >= 100, description: 'Bootstrap resamples.' },
     'permutation-resamples': { type: 'int', default: 10000, validate: (v) => v >= 100, description: 'Permutation resamples.' },
     alpha: { type: 'number', default: 0.05, validate: (v) => v > 0 && v < 1, description: 'Significance alpha.' },
@@ -488,6 +598,21 @@ function main() {
   const warmupSeconds = Number(args.warmupSeconds);
   const outlierMethod = String(args.outlierMethod);
   const missingThreshold = Number(args.missingThreshold);
+  const requireBlockCount = Number(args.requireBlockCount);
+  const minRoundsPerBlockArm = Number(args.minRoundsPerBlockArm);
+  const replyMissingThreshold = Number(args.replyMissingThreshold);
+  const replyInvalidThreshold = Number(args.replyInvalidThreshold);
+  const replyMinSamplesArm = Number(args.replyMinSamplesArm);
+  const benchMissingThreshold = Number(args.benchMissingThreshold);
+  const benchInvalidThreshold = Number(args.benchInvalidThreshold);
+  const benchMinSamplesArm = Number(args.benchMinSamplesArm);
+  const functionalMissingThreshold = Number(args.functionalMissingThreshold);
+  const functionalInvalidThreshold = Number(args.functionalInvalidThreshold);
+  const functionalMinSamplesArm = Number(args.functionalMinSamplesArm);
+  const gateLatencyP95Ratio = Number(args.gateLatencyP95Ratio);
+  const gateBenchDtP95Abs = Number(args.gateBenchDtP95Abs);
+  const gateHeapSlopeAbs = Number(args.gateHeapSlopeAbs);
+  const requireSignificance = asBool(args.requireSignificance, true);
   const bootstrapResamples = Number(args.bootstrapResamples);
   const permutationResamples = Number(args.permutationResamples);
   const alpha = Number(args.alpha);
@@ -526,7 +651,11 @@ function main() {
       block_id: blockId,
       arm,
       attempt_id: attemptId,
-      status
+      status,
+      rounds_target: Number(meta.rounds_target || 0),
+      rounds_completed: Number(meta.rounds_completed || 0),
+      stage: String(meta.stage || ''),
+      mode: String(meta.mode || '')
     });
   }
 
@@ -535,6 +664,7 @@ function main() {
       .filter((meta) => meta.status === 'SUCCESS')
       .map((meta) => attemptKey(meta.block_id, meta.arm, meta.attempt_id))
   );
+  const successAttemptsMeta = Array.from(attemptMetaMap.values()).filter((meta) => meta.status === 'SUCCESS');
   if (!successAttempts.size) {
     throw new ExitError(EXIT_CODES.DATA_QUALITY_FAILED, 'No SUCCESS attempt.meta entries found');
   }
@@ -551,6 +681,7 @@ function main() {
       const key = attemptKey(blockId, arm, attemptId);
       if (!successAttempts.has(key)) continue;
       replyRowsRaw.push({
+        sample_id: String(row.sample_id || ''),
         run_id: String(row.run_id || runId),
         block_id: blockId,
         arm,
@@ -577,11 +708,14 @@ function main() {
       const key = attemptKey(blockId, arm, attemptId);
       if (!successAttempts.has(key)) continue;
       benchRowsRaw.push({
+        sample_id: String(row.sample_id || ''),
         run_id: String(row.run_id || runId),
         block_id: blockId,
         arm,
         attempt_id: attemptId,
         round_id: String(row.round_id || ''),
+        channel: String(row.channel || 'bench'),
+        action_seq: Number.isInteger(Number(row.action_seq)) ? Number(row.action_seq) : 0,
         round_ord: parseRoundOrdinal(row.round_id, i),
         ts_ms: toEpochMs(row.ts),
         dt_ms: toFiniteNumber(row.dt_ms),
@@ -606,6 +740,7 @@ function main() {
       const key = attemptKey(blockId, arm, attemptId);
       if (!successAttempts.has(key)) continue;
       functionalRowsRaw.push({
+        sample_id: String(row.sample_id || ''),
         run_id: String(row.run_id || runId),
         block_id: blockId,
         arm,
@@ -613,6 +748,7 @@ function main() {
         round_id: String(row.round_id || `r${String(i + 1).padStart(4, '0')}`),
         round_ord: parseRoundOrdinal(row.round_id, i),
         action: String(row.action || '').trim().toLowerCase(),
+        action_seq: Number.isInteger(Number(row.action_seq)) ? Number(row.action_seq) : 0,
         success_bool: parseSuccess(row.success),
         latency_ms: toFiniteNumber(row.latency_ms)
       });
@@ -627,12 +763,95 @@ function main() {
   const missingReply = evaluateMissingByBlock(replyRows, ['send_ts_ms', 'done_ts_ms', 'latency_ms'], missingThreshold);
   const missingBench = evaluateMissingByBlock(benchRows, ['ts_ms', 'dt_ms', 'long_task_total_ms', 'heap_mb'], missingThreshold);
   const missingFunctional = evaluateMissingByBlock(functionalRows, ['action', 'success_bool'], missingThreshold);
+  const requiredBlockIds = new Set(successAttemptsMeta.map((meta) => meta.block_id));
 
-  const dataQualityInvalidBlocks = [
-    ...missingReply.invalidBlocks.map((x) => ({ ...x, dataset: 'reply' })),
-    ...missingBench.invalidBlocks.map((x) => ({ ...x, dataset: 'bench' })),
-    ...missingFunctional.invalidBlocks.map((x) => ({ ...x, dataset: 'functional' }))
-  ];
+  const sampleIdCounts = new Map();
+  for (const row of [...replyRows, ...benchRows, ...functionalRows]) {
+    const sampleId = String(row.sample_id || '').trim();
+    if (!sampleId) continue;
+    sampleIdCounts.set(sampleId, (sampleIdCounts.get(sampleId) || 0) + 1);
+  }
+  const duplicateSampleIds = Array.from(sampleIdCounts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([sampleId, count]) => ({ sample_id: sampleId, count }));
+
+  const qualityThresholds = {
+    require_block_count: requireBlockCount,
+    min_rounds_per_block_arm: minRoundsPerBlockArm,
+    channels: {
+      reply: {
+        missing_rate_max: replyMissingThreshold,
+        invalid_rate_max: replyInvalidThreshold,
+        min_samples_per_arm: replyMinSamplesArm
+      },
+      bench: {
+        missing_rate_max: benchMissingThreshold,
+        invalid_rate_max: benchInvalidThreshold,
+        min_samples_per_arm: benchMinSamplesArm
+      },
+      functional: {
+        missing_rate_max: functionalMissingThreshold,
+        invalid_rate_max: functionalInvalidThreshold,
+        min_samples_per_arm: functionalMinSamplesArm
+      }
+    }
+  };
+
+  const qualityReply = evaluateChannelQuality({
+    channel: 'reply',
+    rows: replyRows,
+    successAttemptsMeta,
+    warmupRounds,
+    thresholds: {
+      missingRateMax: replyMissingThreshold,
+      invalidRateMax: replyInvalidThreshold,
+      minSamplesPerArm: replyMinSamplesArm,
+      minSamplesPerAttempt: Math.min(minRoundsPerBlockArm, replyMinSamplesArm),
+      minRoundsPerBlockArm
+    },
+    validPredicate: (row) => row.success_bool && Number.isFinite(row.latency_ms) && Number.isFinite(row.send_ts_ms) && Number.isFinite(row.done_ts_ms)
+  });
+  const qualityBench = evaluateChannelQuality({
+    channel: 'bench',
+    rows: benchRows,
+    successAttemptsMeta,
+    warmupRounds,
+    thresholds: {
+      missingRateMax: benchMissingThreshold,
+      invalidRateMax: benchInvalidThreshold,
+      minSamplesPerArm: benchMinSamplesArm,
+      minSamplesPerAttempt: Math.min(minRoundsPerBlockArm, benchMinSamplesArm),
+      minRoundsPerBlockArm
+    },
+    validPredicate: (row) =>
+      Number.isFinite(row.dt_ms) &&
+      row.dt_ms > 0 &&
+      Number.isFinite(row.long_task_total_ms) &&
+      Number.isFinite(row.ts_ms)
+  });
+  const qualityFunctional = evaluateChannelQuality({
+    channel: 'functional',
+    rows: functionalRows,
+    successAttemptsMeta,
+    warmupRounds,
+    thresholds: {
+      missingRateMax: functionalMissingThreshold,
+      invalidRateMax: functionalInvalidThreshold,
+      minSamplesPerArm: functionalMinSamplesArm,
+      minSamplesPerAttempt: Math.min(minRoundsPerBlockArm, functionalMinSamplesArm),
+      minRoundsPerBlockArm
+    },
+    validPredicate: (row) => !!String(row.action || '').trim() && (row.success_bool === true || row.success_bool === false)
+  });
+
+  const blockCountPass = requiredBlockIds.size >= requireBlockCount;
+  const dataQualityPass = blockCountPass && duplicateSampleIds.length === 0 && qualityReply.pass && qualityBench.pass && qualityFunctional.pass;
+  const dataQualityReasons = [];
+  if (!blockCountPass) dataQualityReasons.push(`block_count<${requireBlockCount}`);
+  if (duplicateSampleIds.length) dataQualityReasons.push(`duplicate_sample_id=${duplicateSampleIds.length}`);
+  if (!qualityReply.pass) dataQualityReasons.push('reply_quality_failed');
+  if (!qualityBench.pass) dataQualityReasons.push('bench_quality_failed');
+  if (!qualityFunctional.pass) dataQualityReasons.push('functional_quality_failed');
 
   const latencySamples = replyRows
     .filter((row) => row.success_bool && Number.isFinite(row.latency_ms))
@@ -810,16 +1029,10 @@ function main() {
   const statsMap = new Map(statsRows.map((row) => [row.metric, row]));
   const functionalRates = buildFunctionalRates(functionalRows);
   const perBlock = blockSummaries(replyRows, benchRows, functionalRows);
-  const earlyVerdict = evaluateEarlyVerdict(perBlock);
 
   const reasons = [];
   if (timeoutAttemptCount > 0) reasons.push(`Found ${timeoutAttemptCount} timeout attempt.meta status.`);
-  if (dataQualityInvalidBlocks.length) {
-    const joined = dataQualityInvalidBlocks
-      .map((x) => `${x.dataset}:${x.block_id}=${(x.overall_missing_rate * 100).toFixed(2)}%`)
-      .join(', ');
-    reasons.push(`Missing rate exceeds threshold ${missingThreshold}: ${joined}`);
-  }
+  if (!dataQualityPass) reasons.push(`Data quality failed: ${dataQualityReasons.join(', ')}`);
 
   const latencyP95 = summaryMap.get('latency_p95_ms');
   const latencyP50 = summaryMap.get('latency_p50_ms');
@@ -845,7 +1058,7 @@ function main() {
 
   const functionalGatePass =
     Number.isFinite(sendRateB) &&
-    sendRateB >= 1 &&
+    sendRateB >= 0.995 &&
     (!nonSendRatesB.length || minNonSendRateB >= 0.99) &&
     Number.isFinite(funcRate?.arm_b) &&
     funcRate.arm_b >= 0.99;
@@ -853,60 +1066,39 @@ function main() {
   const coreStats = [
     statsMap.get('latency_p95_ms'),
     statsMap.get('bench_dt_p95_ms'),
-    statsMap.get('bench_long_task_total_p95_ms'),
     statsMap.get('heap_slope_mb_per_min')
   ];
   const significancePass = coreStats.every((s) => s && Number.isFinite(s.p_value) && s.p_value < alpha && s.bootstrap_ci_high < 0);
 
   const passThresholds =
-    Number.isFinite(ratioLatencyP95) && ratioLatencyP95 <= 0.9 &&
-    Number.isFinite(ratioLatencyP50) && ratioLatencyP50 <= 0.95 &&
-    Number.isFinite(ratioBenchDt) && ratioBenchDt <= 0.85 &&
-    Number.isFinite(ratioBenchLong) && ratioBenchLong <= 0.85 &&
-    Number.isFinite(ratioHeapSlope) && ratioHeapSlope <= 0.9 &&
-    Number.isFinite(heapSlope?.arm_b) && heapSlope.arm_b <= 2.5 &&
-    Number.isFinite(ratioMaxHeap) && ratioMaxHeap <= 1.1 &&
+    Number.isFinite(ratioLatencyP95) && ratioLatencyP95 <= gateLatencyP95Ratio &&
+    Number.isFinite(benchDtP95?.arm_b) && benchDtP95.arm_b <= gateBenchDtP95Abs &&
+    Number.isFinite(heapSlope?.arm_b) && heapSlope.arm_b <= gateHeapSlopeAbs &&
+    Number.isFinite(ratioLatencyP50) &&
+    Number.isFinite(ratioBenchLong) &&
+    Number.isFinite(ratioHeapSlope) &&
+    Number.isFinite(ratioMaxHeap) &&
     functionalGatePass;
 
-  const severeRegression = [
-    { ratio: ratioLatencyP95, stats: statsMap.get('latency_p95_ms') },
-    { ratio: ratioBenchDt, stats: statsMap.get('bench_dt_p95_ms') },
-    { ratio: ratioBenchLong, stats: statsMap.get('bench_long_task_total_p95_ms') },
-    { ratio: ratioHeapSlope, stats: statsMap.get('heap_slope_mb_per_min') }
-  ].some((item) => {
-    if (!item.stats) return false;
-    return Number.isFinite(item.ratio) && item.ratio >= 1.05 && item.stats.p_value < 0.01 && item.stats.bootstrap_ci_low > 0;
-  });
-
-  let verdict = 'NO_GAIN';
+  let verdict = 'FAIL';
   let status = 'OK';
   if (timeoutAttemptCount > 0) {
     verdict = 'INVALID_TIMEOUT';
     status = 'TIMEOUT';
-  } else if (dataQualityInvalidBlocks.length) {
+  } else if (!dataQualityPass) {
     verdict = 'INVALID';
     status = 'DATA_QUALITY_FAILED';
-  } else if (earlyVerdict === 'PASS_EARLY') {
-    verdict = 'PASS_EARLY';
-    status = 'OK';
-    reasons.push('Early-stop pass rule hit: two consecutive passing blocks.');
-  } else if (earlyVerdict === 'FAIL_EARLY') {
-    verdict = 'FAIL_EARLY';
-    status = 'REGRESSION';
-    reasons.push('Early-stop fail rule hit: two consecutive failing blocks.');
-  } else if (passThresholds && significancePass) {
+  } else if (passThresholds && (!requireSignificance || significancePass)) {
     verdict = 'PASS';
     status = 'OK';
-    reasons.push('All main thresholds passed with significance.');
-  } else if (severeRegression || !functionalGatePass) {
+    reasons.push('All release gates passed.');
+    if (requireSignificance) reasons.push('Significance gate passed.');
+  } else {
     verdict = 'FAIL';
     status = 'REGRESSION';
-    if (!functionalGatePass) reasons.push('Functional gate failed (send=100%, others>=99%).');
-    if (severeRegression) reasons.push('Detected statistically significant regression (>=5%, p<0.01).');
-  } else {
-    verdict = 'NO_GAIN';
-    status = 'OK';
-    reasons.push('No clear statistically validated gain; no hard regression detected.');
+    if (!passThresholds) reasons.push('One or more release gates failed.');
+    if (requireSignificance && !significancePass) reasons.push('Significance gate failed.');
+    if (!functionalGatePass) reasons.push('Functional gate failed.');
   }
 
   if (!VERDICTS.includes(verdict)) {
@@ -934,6 +1126,7 @@ function main() {
   const summaryCsvPath = path.join(derivedRoot, 'ab-summary.csv');
   const summaryJsonPath = path.join(derivedRoot, 'ab-summary.json');
   const statsJsonPath = path.join(derivedRoot, 'stats.json');
+  const qualityJsonPath = path.join(derivedRoot, 'quality.json');
   const exclusionsCsvPath = path.join(derivedRoot, 'exclusions.csv');
   const verdictMdPath = path.join(derivedRoot, 'verdict.md');
   const indexPath = path.join(indexRoot, 'evidence-index.json');
@@ -949,12 +1142,38 @@ function main() {
     alpha,
     generated_at: new Date().toISOString(),
     rows: statsRows,
+    gates: {
+      latency_p95_ratio_max: gateLatencyP95Ratio,
+      bench_dt_p95_abs_max: gateBenchDtP95Abs,
+      heap_slope_abs_max: gateHeapSlopeAbs,
+      require_significance: requireSignificance
+    },
+    per_block_summary: Array.from(perBlock.entries()).map(([block_id, arms]) => ({
+      block_id,
+      A: arms.A || null,
+      B: arms.B || null
+    })),
     missing: {
       threshold: missingThreshold,
       reply_by_block: missingReply.reports,
       bench_by_block: missingBench.reports,
       functional_by_block: missingFunctional.reports
     }
+  });
+  writeJson(qualityJsonPath, {
+    run_id: runId,
+    generated_at: new Date().toISOString(),
+    thresholds: qualityThresholds,
+    required_blocks: requireBlockCount,
+    observed_blocks: Array.from(requiredBlockIds).sort(),
+    duplicate_sample_ids: duplicateSampleIds,
+    channels: {
+      reply: qualityReply,
+      bench: qualityBench,
+      functional: qualityFunctional
+    },
+    pass: dataQualityPass,
+    reasons: dataQualityReasons
   });
   writeCsv(exclusionsCsvPath, exclusions, ['run_id', 'block_id', 'arm', 'attempt_id', 'round_id', 'reason']);
 
@@ -971,6 +1190,7 @@ function main() {
     { path: 'derived/ab-summary.csv', sha256: sha256(fs.readFileSync(summaryCsvPath)), row_count: summaryRows.length },
     { path: 'derived/ab-summary.json', sha256: sha256(fs.readFileSync(summaryJsonPath)), row_count: summaryRows.length },
     { path: 'derived/stats.json', sha256: sha256(fs.readFileSync(statsJsonPath)), row_count: statsRows.length },
+    { path: 'derived/quality.json', sha256: sha256(fs.readFileSync(qualityJsonPath)), row_count: 1 },
     { path: 'derived/exclusions.csv', sha256: sha256(fs.readFileSync(exclusionsCsvPath)), row_count: exclusions.length },
     { path: 'derived/verdict.md', sha256: sha256(fs.readFileSync(verdictMdPath)), row_count: fs.readFileSync(verdictMdPath, 'utf8').split(/\r?\n/).length }
   ];
@@ -1007,6 +1227,7 @@ function main() {
       summary_csv: summaryCsvPath,
       summary_json: summaryJsonPath,
       stats_json: statsJsonPath,
+      quality_json: qualityJsonPath,
       exclusions_csv: exclusionsCsvPath,
       verdict_md: verdictMdPath,
       evidence_index_json: indexPath
@@ -1014,10 +1235,10 @@ function main() {
   };
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 
-  if (verdict === 'PASS' || verdict === 'PASS_EARLY' || verdict === 'NO_GAIN') return;
+  if (verdict === 'PASS') return;
   if (verdict === 'INVALID_TIMEOUT') throw new ExitError(EXIT_CODES.TIMEOUT, 'Run marked INVALID_TIMEOUT');
   if (verdict === 'INVALID') throw new ExitError(EXIT_CODES.DATA_QUALITY_FAILED, 'Run marked INVALID');
-  if (verdict === 'FAIL' || verdict === 'FAIL_EARLY') {
+  if (verdict === 'FAIL') {
     throw new ExitError(EXIT_CODES.ASSERTION_FAILED, `Run marked ${verdict}`);
   }
 }

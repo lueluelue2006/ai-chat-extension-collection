@@ -12,6 +12,7 @@ const {
   formatHelp,
   writeCsv,
   readJson,
+  makeSampleId,
   safeExit
 } = require('./perf-ab/common');
 
@@ -59,6 +60,7 @@ function normalizeInputRows(input) {
       return {
         round_ord: Number.isFinite(Number(row.round_ord)) ? Number(row.round_ord) : idx + 1,
         action,
+        action_seq: Number.isInteger(Number(row.action_seq)) ? Number(row.action_seq) : 0,
         success,
         latency_ms: Number.isFinite(latency) ? Math.max(0, Math.round(latency)) : '',
         error_code: String(row.error_code || ''),
@@ -76,16 +78,28 @@ function buildSyntheticRows({ runId, blockId, arm, attemptId, actions, intervalR
   for (let round = 1; round <= roundsTotal; round += 1) {
     if (round % every !== 0) continue;
     const roundLabel = roundId(round);
+    let actionSeq = 0;
     for (const action of actions) {
+      actionSeq += 1;
       const latency = 70 + ((round * 11 + action.length * 17) % 230);
       const failureNoise = (round + action.length + (arm === 'B' ? 1 : 0)) % 53 === 0;
       rows.push({
+        sample_id: makeSampleId({
+          run_id: runId,
+          block_id: blockId,
+          arm,
+          attempt_id: attemptId,
+          round_id: roundLabel,
+          channel: 'functional',
+          action_seq: actionSeq
+        }),
         run_id: runId,
         block_id: blockId,
         arm,
         attempt_id: attemptId,
         round_id: roundLabel,
         action,
+        action_seq: actionSeq,
         success: failureNoise ? false : true,
         latency_ms: latency,
         error_code: failureNoise ? 'SYNTH_FAIL' : '',
@@ -152,12 +166,22 @@ function main() {
     if (!inputPath) throw new ExitError(EXIT_CODES.ARG_ERROR, '--input is required when source=path');
     if (!fs.existsSync(inputPath)) throw new ExitError(EXIT_CODES.PRECONDITION_FAILED, `input not found: ${inputPath}`);
     rows = normalizeInputRows(readJson(inputPath)).map((row) => ({
+      sample_id: makeSampleId({
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        round_id: roundId(row.round_ord),
+        channel: 'functional',
+        action_seq: row.action_seq
+      }),
       run_id: runId,
       block_id: blockId,
       arm,
       attempt_id: attemptId,
       round_id: roundId(row.round_ord),
       action: row.action,
+      action_seq: row.action_seq,
       success: row.success,
       latency_ms: row.latency_ms,
       error_code: row.error_code,
@@ -183,12 +207,14 @@ function main() {
       : path.join(outRoot || process.cwd(), 'raw', 'functional', blockId, arm, attemptId, 'functional.csv');
 
   writeCsv(outPath, rows, [
+    'sample_id',
     'run_id',
     'block_id',
     'arm',
     'attempt_id',
     'round_id',
     'action',
+    'action_seq',
     'success',
     'latency_ms',
     'error_code',

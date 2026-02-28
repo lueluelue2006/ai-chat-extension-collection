@@ -12,6 +12,7 @@ const {
   formatHelp,
   readJson,
   writeCsv,
+  makeSampleId,
   safeExit
 } = require('./perf-ab/common');
 
@@ -61,6 +62,15 @@ function normalizeRows({ runId, blockId, arm, attemptId, records }) {
 
     if (!Number.isFinite(latencyMs)) continue;
     rows.push({
+      sample_id: makeSampleId({
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        round_id: String(row.round_id || `r${String(roundOrd).padStart(4, '0')}`),
+        channel: 'reply',
+        action_seq: 0
+      }),
       run_id: runId,
       block_id: blockId,
       arm,
@@ -81,7 +91,7 @@ function main() {
     'block-id': { type: 'string', required: true, description: 'Block id' },
     arm: { type: 'string', required: true, choices: ['A', 'B'], description: 'AB arm' },
     'attempt-id': { type: 'string', required: true, description: 'Attempt id' },
-    source: { type: 'string', required: true, choices: ['path', 'session'], description: 'Data source' },
+    source: { type: 'string', required: true, choices: ['path'], description: 'Data source' },
     input: { type: 'string', default: '', description: 'Input JSON file when source=path' },
     out: { type: 'string', default: '', description: 'Output CSV path (optional)' },
     'out-root': { type: 'string', default: '', description: 'Run root path (optional)' }
@@ -94,7 +104,7 @@ function main() {
           usage:
             'node dev/test-chatgpt-perf-extract-reply-timer.js --run-id <id> --block-id <id> --arm <A|B> --attempt-id <id> --source path --input <json> [--out <csv>] [--out-root <run-root>]',
           description:
-            'Extract reply-timer records to CSV schema (run_id, block_id, arm, attempt_id, round_id, send_ts, done_ts, latency_ms, success). source=session returns code 20.',
+            'Extract reply-timer records to CSV schema (sample_id, run_id, block_id, arm, attempt_id, round_id, send_ts, done_ts, latency_ms, success).',
           examples: [
             'node dev/test-chatgpt-perf-extract-reply-timer.js --run-id run-20260227T120000Z-abcd123 --block-id b01-AthenB --arm A --attempt-id att-001 --source path --input ./tmp/reply-timer.json --out ./.omx/logs/.../raw/reply-timer/b01-AthenB/A/att-001/reply-timer.csv'
           ]
@@ -109,12 +119,8 @@ function main() {
   const blockId = String(args.blockId).trim();
   const arm = normalizeArm(args.arm);
   const attemptId = String(args.attemptId).trim();
-  const source = String(args.source).trim().toLowerCase();
   if (!runId || !blockId || !attemptId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'run-id/block-id/attempt-id cannot be empty');
 
-  if (source === 'session') {
-    throw new ExitError(EXIT_CODES.ENV_UNAVAILABLE, 'source=session not available without browser attachment');
-  }
   const inputPath = path.resolve(String(args.input || '').trim());
   if (!inputPath || !fs.existsSync(inputPath)) throw new ExitError(EXIT_CODES.PRECONDITION_FAILED, `input not found: ${inputPath}`);
 
@@ -139,7 +145,7 @@ function main() {
           attemptId,
           'reply-timer.csv'
         );
-  writeCsv(outPath, rows, ['run_id', 'block_id', 'arm', 'attempt_id', 'round_id', 'send_ts', 'done_ts', 'latency_ms', 'success']);
+  writeCsv(outPath, rows, ['sample_id', 'run_id', 'block_id', 'arm', 'attempt_id', 'round_id', 'send_ts', 'done_ts', 'latency_ms', 'success']);
 
   process.stdout.write(
     `${JSON.stringify(

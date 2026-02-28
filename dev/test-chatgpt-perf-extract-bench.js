@@ -11,6 +11,7 @@ const {
   parseArgs,
   formatHelp,
   writeNdjson,
+  makeSampleId,
   safeExit
 } = require('./perf-ab/common');
 
@@ -56,6 +57,36 @@ function toFiniteOrNaN(value) {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
+function toEpochMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 1000000000000) return value;
+    if (value > 1000000000) return value * 1000;
+    return value;
+  }
+  const text = String(value || '').trim();
+  if (!text) return Number.NaN;
+  const num = Number(text);
+  if (Number.isFinite(num)) {
+    if (num > 1000000000000) return num;
+    if (num > 1000000000) return num * 1000;
+    return num;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function toIso(value) {
+  const ms = toEpochMs(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+}
+
+function parseLineTimestamp(line) {
+  const match = line.match(/^\s*(\d{4}-\d{2}-\d{2}T[^\s]+)\s+/);
+  if (!match) return '';
+  const ms = Date.parse(match[1]);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+}
+
 function extractFromLog({ runId, blockId, arm, attemptId, inputPath }) {
   const text = fs.readFileSync(inputPath, 'utf8');
   const lines = text.split(/\r?\n/);
@@ -74,13 +105,30 @@ function extractFromLog({ runId, blockId, arm, attemptId, inputPath }) {
       continue;
     }
     ord += 1;
+    const round = String(obj.round_id || `r${String(ord).padStart(4, '0')}`);
+    const actionSeq = Number.isInteger(Number(obj.action_seq)) ? Number(obj.action_seq) : 0;
+    const ts =
+      toIso(obj.ts ?? obj.ts_ms ?? obj.timestamp ?? obj.time) ||
+      parseLineTimestamp(line) ||
+      new Date().toISOString();
     rows.push({
+      sample_id: makeSampleId({
+        run_id: runId,
+        block_id: blockId,
+        arm,
+        attempt_id: attemptId,
+        round_id: round,
+        channel: 'bench',
+        action_seq: actionSeq
+      }),
       run_id: runId,
       block_id: blockId,
       arm,
       attempt_id: attemptId,
-      ts: new Date().toISOString(),
-      round_id: String(obj.round_id || `r${String(ord).padStart(4, '0')}`),
+      ts,
+      round_id: round,
+      channel: 'bench',
+      action_seq: actionSeq,
       dt_ms: toFiniteOrNaN(obj.dt ?? obj.dt_ms),
       long_task_total_ms: toFiniteOrNaN(obj.longTaskTotal ?? obj.long_task_total_ms),
       long_task_count: toFiniteOrNaN(obj.longTaskCount ?? obj.long_task_count),
@@ -99,7 +147,7 @@ function main() {
     'block-id': { type: 'string', required: true, description: 'Block id' },
     arm: { type: 'string', required: true, choices: ['A', 'B'], description: 'AB arm' },
     'attempt-id': { type: 'string', required: true, description: 'Attempt id' },
-    source: { type: 'string', required: true, choices: ['logfile', 'console'], description: 'Data source' },
+    source: { type: 'string', required: true, choices: ['logfile'], description: 'Data source' },
     input: { type: 'string', default: '', description: 'Input logfile path when source=logfile' },
     out: { type: 'string', default: '', description: 'Output ndjson path (optional)' },
     'out-root': { type: 'string', default: '', description: 'Run root path (optional)' }
@@ -112,7 +160,7 @@ function main() {
           usage:
             'node dev/test-chatgpt-perf-extract-bench.js --run-id <id> --block-id <id> --arm <A|B> --attempt-id <id> --source logfile --input <console.log> [--out <ndjson>] [--out-root <run-root>]',
           description:
-            'Extract [cgptperf] bench console log lines to NDJSON schema (run_id, block_id, arm, attempt_id, ts, round_id, dt_ms, long_task_total_ms, long_task_count, heap_mb, dom_nodes, iframes). source=console returns code 20.',
+            'Extract [cgptperf] bench console log lines to NDJSON schema (sample_id, run_id, block_id, arm, attempt_id, ts, round_id, channel, action_seq, dt_ms, long_task_total_ms, long_task_count, heap_mb, dom_nodes, iframes).',
           examples: [
             'node dev/test-chatgpt-perf-extract-bench.js --run-id run-20260227T120000Z-abcd123 --block-id b01-AthenB --arm A --attempt-id att-001 --source logfile --input ./tmp/console.log --out ./.omx/logs/.../raw/bench/b01-AthenB/A/att-001/cgptperf-bench.ndjson'
           ]
@@ -127,12 +175,8 @@ function main() {
   const blockId = String(args.blockId).trim();
   const arm = normalizeArm(args.arm);
   const attemptId = String(args.attemptId).trim();
-  const source = String(args.source).trim().toLowerCase();
   if (!runId || !blockId || !attemptId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'run-id/block-id/attempt-id cannot be empty');
 
-  if (source === 'console') {
-    throw new ExitError(EXIT_CODES.ENV_UNAVAILABLE, 'source=console not available without browser attachment');
-  }
   const inputPath = path.resolve(String(args.input || '').trim());
   if (!inputPath || !fs.existsSync(inputPath)) throw new ExitError(EXIT_CODES.PRECONDITION_FAILED, `input not found: ${inputPath}`);
 

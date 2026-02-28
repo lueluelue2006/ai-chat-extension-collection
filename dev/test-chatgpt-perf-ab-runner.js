@@ -15,6 +15,7 @@ const {
   readNdjson,
   writeJson,
   writeNdjson,
+  makeSampleId,
   safeExit
 } = require('./perf-ab/common');
 
@@ -24,6 +25,22 @@ function nowIso() {
 
 function roundId(n) {
   return `r${String(Math.max(1, Number(n) || 1)).padStart(4, '0')}`;
+}
+
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function rand() {
+    t += 0x6D2B79F5;
+    let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function normalizeSeed(raw) {
+  const n = Number(raw);
+  return Number.isInteger(n) ? (n >>> 0) : (Date.now() >>> 0);
 }
 
 function normalizeArm(raw) {
@@ -49,22 +66,34 @@ function parseResume(resumeFrom) {
   };
 }
 
-function buildSyntheticRound({ runId, blockId, arm, attemptId, stage, absRound, localRound, baseMs }) {
+function buildSyntheticRound({ runId, blockId, arm, attemptId, stage, absRound, localRound, baseMs, rand }) {
   const sendTsMs = baseMs + (absRound - 1) * 1400 + ((absRound * 17) % 97);
-  const latencyMs = 650 + ((absRound * 37 + (arm === 'B' ? 13 : 29)) % 920);
+  const jitter = Math.floor(rand() * 37);
+  const armBase = arm === 'B' ? 585 : 680;
+  const latencyMs = armBase + ((absRound * 31 + (arm === 'B' ? 11 : 23)) % 680) + jitter;
   const doneTsMs = sendTsMs + latencyMs;
+  const round = roundId(absRound);
   return {
     run_id: runId,
     block_id: blockId,
     arm,
     attempt_id: attemptId,
     stage,
-    round_id: roundId(absRound),
+    round_id: round,
     round_ord: absRound,
     local_round_ord: localRound,
     send_ts: new Date(sendTsMs).toISOString(),
     done_ts: new Date(doneTsMs).toISOString(),
     latency_ms: latencyMs,
+    sample_id: makeSampleId({
+      run_id: runId,
+      block_id: blockId,
+      arm,
+      attempt_id: attemptId,
+      round_id: round,
+      channel: 'reply',
+      action_seq: 0
+    }),
     success: true,
     synthetic: true
   };
@@ -83,7 +112,7 @@ function main() {
     'resume-from': { type: 'string', default: '', description: 'Previous attempt meta path/dir' },
     'out-root': { type: 'string', required: true, description: 'Run root directory' },
     mode: { type: 'string', default: 'synthetic', choices: ['synthetic'], description: 'Runner mode' },
-    seed: { type: 'int', default: 0, description: 'Optional seed placeholder' }
+    seed: { type: 'int', default: 0, description: 'Seed for deterministic synthetic generation' }
   };
 
   const { help, args } = parseArgs(process.argv.slice(2), spec);
@@ -117,6 +146,8 @@ function main() {
   const attemptId = String(args.attemptId || '').trim() || `att-${Date.now().toString(36)}`;
   const resume = parseResume(String(args.resumeFrom || '').trim());
   const mode = String(args.mode || 'synthetic').trim().toLowerCase();
+  const seed = normalizeSeed(args.seed);
+  const rand = mulberry32(seed);
 
   if (mode !== 'synthetic') throw new ExitError(EXIT_CODES.ASSERTION_FAILED, `Unsupported mode: ${mode}`);
   if (!runId) throw new ExitError(EXIT_CODES.ARG_ERROR, 'run-id is empty');
@@ -159,6 +190,7 @@ function main() {
     detail: {
       stage,
       mode,
+      seed,
       rounds_target: roundsTarget,
       resume_from: resume ? resume.metaPath : null,
       previous_rounds: previousRounds
@@ -191,7 +223,8 @@ function main() {
       stage,
       absRound,
       localRound,
-      baseMs
+      baseMs,
+      rand
     });
     rounds.push(rec);
     events.push({
@@ -236,6 +269,7 @@ function main() {
     ended_at: endedAt,
     status,
     mode,
+    seed,
     synthetic: true,
     rounds_target: roundsTarget,
     rounds_completed: roundsCompleted,

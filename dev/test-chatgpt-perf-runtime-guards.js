@@ -43,8 +43,13 @@ function main() {
   );
   expectRegex(
     source,
-    /if\s*\(perfNow\s*-\s*state\.lastReconcileAt\s*>=\s*220\)\s*\{/,
-    'reconcile scheduling should be throttled'
+    /function\s+reconcileIntervalMs\(\)\s*\{[\s\S]*if\s*\(level\s*>=\s*4\)\s*return\s*1500;[\s\S]*if\s*\(level\s*>=\s*3\)\s*return\s*1000;[\s\S]*if\s*\(level\s*>=\s*2\)\s*return\s*650;[\s\S]*return\s*220;/s,
+    'reconcileIntervalMs should adapt cadence by budget level'
+  );
+  expectRegex(
+    source,
+    /const\s+minReconcileMs\s*=\s*wasStructureDirty\s*\?\s*220\s*:\s*reconcileIntervalMs\(\);[\s\S]*if\s*\(perfNow\s*-\s*state\.lastReconcileAt\s*>=\s*minReconcileMs\)\s*\{/s,
+    'reconcile scheduling should use adaptive throttle interval'
   );
 
   console.log('PASS dev/test-chatgpt-perf-runtime-guards.js');

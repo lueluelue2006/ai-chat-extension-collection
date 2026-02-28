@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.23';
+  const EXT_VERSION = '0.1.24';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -195,6 +195,14 @@
     return clampInt(scaled, minPad, base);
   }
 
+  function reconcileIntervalMs() {
+    const level = Number(state.budgetLevel) || 0;
+    if (level >= 4) return 1500;
+    if (level >= 3) return 1000;
+    if (level >= 2) return 650;
+    return 220;
+  }
+
   function boostMarginPx() {
     // During editing/sending, we want aggressive pruning to reduce layout/paint work on huge conversations.
     return clampInt(window.innerHeight * 0.22, 80, 360);
@@ -343,6 +351,7 @@
       articleCount,
       offscreenCount,
       boostActive: !!state.boostActive,
+      budgetLevel: state.budgetLevel || 0,
       ioMarginPx: state.ioMarginPx,
       ts: Date.now(),
     };
@@ -1247,6 +1256,7 @@
     state.lastVisibleTotal = total;
 
     const generating = isGeneratingResponse();
+    const wasStructureDirty = state.structureDirty;
     const budget = collectBudgetSnapshot(total);
     const padItems = computeAdaptivePadItems({ generating, boostActive: state.boostActive, snapshot: budget });
     const start = Math.max(0, first - padItems);
@@ -1263,7 +1273,8 @@
 
     // Reconcile the rest during idle time to keep interactions snappy.
     const perfNow = nowPerf();
-    if (perfNow - state.lastReconcileAt >= 220) {
+    const minReconcileMs = wasStructureDirty ? 220 : reconcileIntervalMs();
+    if (perfNow - state.lastReconcileAt >= minReconcileMs) {
       state.lastReconcileAt = perfNow;
       scheduleReconcile(articles, first, last);
     }

@@ -343,6 +343,7 @@ function main() {
   mustExist(path.join(runRoot, 'derived', 'ab-summary.csv'));
   mustExist(path.join(runRoot, 'derived', 'stats.json'));
   mustExist(path.join(runRoot, 'derived', 'quality.json'));
+  mustExist(path.join(runRoot, 'derived', 'control-plane.json'));
   mustExist(path.join(runRoot, 'derived', 'verdict.md'));
   assert.notStrictEqual(String(verdict.verdict || ''), 'NO_GAIN', 'NO_GAIN should not be used as pass-through verdict');
 

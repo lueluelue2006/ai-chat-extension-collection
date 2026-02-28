@@ -484,6 +484,178 @@ function evaluateChannelQuality({
   };
 }
 
+function computeHeapSlopeMbPerMin(rows) {
+  const valid = rows
+    .filter((row) => Number.isFinite(row.ts_ms) && Number.isFinite(row.heap_mb))
+    .sort((a, b) => a.ts_ms - b.ts_ms);
+  if (valid.length < 2) return Number.NaN;
+  const dtMs = valid[valid.length - 1].ts_ms - valid[0].ts_ms;
+  if (!(dtMs > 0)) return Number.NaN;
+  return ((valid[valid.length - 1].heap_mb - valid[0].heap_mb) / dtMs) * 60000;
+}
+
+function maxSwitchesInWindow(events, windowMs) {
+  if (!events.length) return 0;
+  const tsList = events
+    .map((e) => toEpochMs(e.ts))
+    .filter((ts) => Number.isFinite(ts))
+    .sort((a, b) => a - b);
+  if (!tsList.length) return 0;
+  let max = 0;
+  let i = 0;
+  for (let j = 0; j < tsList.length; j += 1) {
+    while (tsList[j] - tsList[i] > windowMs) i += 1;
+    max = Math.max(max, j - i + 1);
+  }
+  return max;
+}
+
+function evaluateControlPlaneByArm(rows, policy, arm) {
+  const filtered = rows
+    .filter((row) => row.arm === arm && Number.isFinite(row.ts_ms))
+    .sort((a, b) => a.ts_ms - b.ts_ms);
+  if (!filtered.length) {
+    return {
+      arm,
+      windows: [],
+      events: [],
+      switch_count: 0,
+      blocked_switches: 0,
+      cooldown_hits: 0,
+      max_switches_per_10min_observed: 0,
+      pass: true
+    };
+  }
+
+  const windows = [];
+  const stepMs = Math.max(1000, Number(policy.window_sec) * 1000);
+  const startTs = filtered[0].ts_ms;
+  const endTs = filtered[filtered.length - 1].ts_ms;
+  let cursor = startTs;
+  while (cursor <= endTs) {
+    const next = cursor + stepMs;
+    const windowRows = filtered.filter((row) => row.ts_ms >= cursor && row.ts_ms < next);
+    const dtP95 = quantile(windowRows.map((row) => row.dt_ms), 0.95);
+    const longTaskP95 = quantile(windowRows.map((row) => row.long_task_total_ms), 0.95);
+    const heapWindowRows = filtered.filter((row) => row.ts_ms >= next - 5 * 60 * 1000 && row.ts_ms <= next);
+    const heapSlope5m = computeHeapSlopeMbPerMin(heapWindowRows);
+    windows.push({
+      start_ts: new Date(cursor).toISOString(),
+      end_ts: new Date(next).toISOString(),
+      dt_p95_ms: dtP95,
+      long_task_p95_ms: longTaskP95,
+      heap_slope_5m_mb_per_min: heapSlope5m
+    });
+    cursor = next;
+  }
+
+  let state = 'normal';
+  let triggerHits = 0;
+  let exitHits = 0;
+  let cooldownUntilMs = 0;
+  let blockedSwitches = 0;
+  let cooldownHits = 0;
+  const events = [];
+  const switchTimestamps = [];
+  const maxWindowMs = 10 * 60 * 1000;
+
+  for (const window of windows) {
+    const tsMs = toEpochMs(window.end_ts);
+    const triggerHit =
+      (Number.isFinite(window.long_task_p95_ms) && window.long_task_p95_ms > policy.trigger.long_task_p95_ms) ||
+      (Number.isFinite(window.dt_p95_ms) && window.dt_p95_ms > policy.trigger.frame_dt_p95_ms) ||
+      (Number.isFinite(window.heap_slope_5m_mb_per_min) && window.heap_slope_5m_mb_per_min > policy.trigger.heap_slope_5m_mb_per_min);
+    const exitHit =
+      (Number.isFinite(window.long_task_p95_ms) && window.long_task_p95_ms < policy.exit.long_task_p95_ms) &&
+      (Number.isFinite(window.dt_p95_ms) && window.dt_p95_ms < policy.exit.frame_dt_p95_ms) &&
+      (Number.isFinite(window.heap_slope_5m_mb_per_min) && window.heap_slope_5m_mb_per_min < policy.exit.heap_slope_5m_mb_per_min);
+
+    if (Number.isFinite(tsMs) && tsMs < cooldownUntilMs) {
+      cooldownHits += 1;
+      events.push({
+        ts: window.end_ts,
+        arm,
+        event: 'cooldown_skip',
+        state,
+        metrics: {
+          dt_p95_ms: window.dt_p95_ms,
+          long_task_p95_ms: window.long_task_p95_ms,
+          heap_slope_5m_mb_per_min: window.heap_slope_5m_mb_per_min
+        }
+      });
+      continue;
+    }
+
+    if (state === 'normal') {
+      triggerHits = triggerHit ? triggerHits + 1 : 0;
+      if (triggerHits >= policy.trigger_consecutive) {
+        const recent = switchTimestamps.filter((t) => tsMs - t <= maxWindowMs);
+        if (recent.length >= policy.max_switch_per_10min) {
+          blockedSwitches += 1;
+          events.push({ ts: window.end_ts, arm, event: 'switch_blocked', from: 'normal', to: 'degraded', reason: 'max_switch_per_10min' });
+          triggerHits = 0;
+        } else {
+          state = 'degraded';
+          triggerHits = 0;
+          exitHits = 0;
+          switchTimestamps.push(tsMs);
+          cooldownUntilMs = tsMs + policy.cooldown_sec * 1000;
+          events.push({ ts: window.end_ts, arm, event: 'switch', from: 'normal', to: 'degraded' });
+        }
+      }
+    } else {
+      exitHits = exitHit ? exitHits + 1 : 0;
+      if (exitHits >= policy.exit_consecutive) {
+        const recent = switchTimestamps.filter((t) => tsMs - t <= maxWindowMs);
+        if (recent.length >= policy.max_switch_per_10min) {
+          blockedSwitches += 1;
+          events.push({ ts: window.end_ts, arm, event: 'switch_blocked', from: 'degraded', to: 'normal', reason: 'max_switch_per_10min' });
+          exitHits = 0;
+        } else {
+          state = 'normal';
+          exitHits = 0;
+          triggerHits = 0;
+          switchTimestamps.push(tsMs);
+          cooldownUntilMs = tsMs + policy.cooldown_sec * 1000;
+          events.push({ ts: window.end_ts, arm, event: 'switch', from: 'degraded', to: 'normal' });
+        }
+      }
+    }
+  }
+
+  const maxObserved = maxSwitchesInWindow(
+    events.filter((e) => e.event === 'switch'),
+    maxWindowMs
+  );
+  return {
+    arm,
+    windows,
+    events,
+    switch_count: events.filter((e) => e.event === 'switch').length,
+    blocked_switches: blockedSwitches,
+    cooldown_hits: cooldownHits,
+    max_switches_per_10min_observed: maxObserved,
+    pass: blockedSwitches === 0 && maxObserved <= policy.max_switch_per_10min
+  };
+}
+
+function evaluateControlPlane(rows, policy) {
+  const armA = evaluateControlPlaneByArm(rows, policy, 'A');
+  const armB = evaluateControlPlaneByArm(rows, policy, 'B');
+  return {
+    policy,
+    arm_reports: {
+      A: armA,
+      B: armB
+    },
+    events: [...armA.events, ...armB.events].sort((a, b) => String(a.ts).localeCompare(String(b.ts), 'en')),
+    switch_count: armA.switch_count + armB.switch_count,
+    blocked_switches: armA.blocked_switches + armB.blocked_switches,
+    cooldown_hits: armA.cooldown_hits + armB.cooldown_hits,
+    pass: armA.pass && armB.pass
+  };
+}
+
 function blockSummaries(replyRows, benchRows, functionalRows) {
   const blocks = new Map();
   const ensure = (blockId, arm) => {
@@ -570,6 +742,17 @@ function main() {
     'gate-bench-dt-p95-abs': { type: 'number', default: 22, validate: (v) => v > 0, description: 'Release gate: bench dt p95 absolute upper bound (arm B).' },
     'gate-heap-slope-abs': { type: 'number', default: 1.5, validate: (v) => v > 0, description: 'Release gate: heap slope MB/min upper bound (arm B).' },
     'require-significance': { type: 'boolean', default: true, description: 'Require p-value + CI significance for release PASS.' },
+    'control-window-sec': { type: 'int', default: 30, validate: (v) => v >= 5, description: 'Control-plane evaluation window (seconds).' },
+    'control-trigger-consecutive': { type: 'int', default: 3, validate: (v) => v >= 1, description: 'Consecutive trigger windows required to enter degraded mode.' },
+    'control-exit-consecutive': { type: 'int', default: 5, validate: (v) => v >= 1, description: 'Consecutive recovery windows required to exit degraded mode.' },
+    'control-cooldown-sec': { type: 'int', default: 90, validate: (v) => v >= 0, description: 'Cooldown seconds after each mode switch.' },
+    'control-max-switch-per-10min': { type: 'int', default: 4, validate: (v) => v >= 1, description: 'Maximum allowed mode switches within any 10 minute window.' },
+    'control-trigger-long-task-ms': { type: 'number', default: 180, validate: (v) => v > 0, description: 'Trigger threshold: long task p95 (ms).' },
+    'control-trigger-frame-dt-ms': { type: 'number', default: 28, validate: (v) => v > 0, description: 'Trigger threshold: frame dt p95 (ms).' },
+    'control-trigger-heap-slope': { type: 'number', default: 2, validate: (v) => v > 0, description: 'Trigger threshold: heap slope 5m (MB/min).' },
+    'control-exit-long-task-ms': { type: 'number', default: 120, validate: (v) => v > 0, description: 'Exit threshold: long task p95 (ms).' },
+    'control-exit-frame-dt-ms': { type: 'number', default: 22, validate: (v) => v > 0, description: 'Exit threshold: frame dt p95 (ms).' },
+    'control-exit-heap-slope': { type: 'number', default: 1.2, validate: (v) => v > 0, description: 'Exit threshold: heap slope 5m (MB/min).' },
     'bootstrap-resamples': { type: 'int', default: 10000, validate: (v) => v >= 100, description: 'Bootstrap resamples.' },
     'permutation-resamples': { type: 'int', default: 10000, validate: (v) => v >= 100, description: 'Permutation resamples.' },
     alpha: { type: 'number', default: 0.05, validate: (v) => v > 0 && v < 1, description: 'Significance alpha.' },
@@ -613,6 +796,17 @@ function main() {
   const gateBenchDtP95Abs = Number(args.gateBenchDtP95Abs);
   const gateHeapSlopeAbs = Number(args.gateHeapSlopeAbs);
   const requireSignificance = asBool(args.requireSignificance, true);
+  const controlWindowSec = Number(args.controlWindowSec);
+  const controlTriggerConsecutive = Number(args.controlTriggerConsecutive);
+  const controlExitConsecutive = Number(args.controlExitConsecutive);
+  const controlCooldownSec = Number(args.controlCooldownSec);
+  const controlMaxSwitchPer10Min = Number(args.controlMaxSwitchPer10Min);
+  const controlTriggerLongTaskMs = Number(args.controlTriggerLongTaskMs);
+  const controlTriggerFrameDtMs = Number(args.controlTriggerFrameDtMs);
+  const controlTriggerHeapSlope = Number(args.controlTriggerHeapSlope);
+  const controlExitLongTaskMs = Number(args.controlExitLongTaskMs);
+  const controlExitFrameDtMs = Number(args.controlExitFrameDtMs);
+  const controlExitHeapSlope = Number(args.controlExitHeapSlope);
   const bootstrapResamples = Number(args.bootstrapResamples);
   const permutationResamples = Number(args.permutationResamples);
   const alpha = Number(args.alpha);
@@ -853,6 +1047,25 @@ function main() {
   if (!qualityBench.pass) dataQualityReasons.push('bench_quality_failed');
   if (!qualityFunctional.pass) dataQualityReasons.push('functional_quality_failed');
 
+  const controlPolicy = {
+    window_sec: controlWindowSec,
+    trigger_consecutive: controlTriggerConsecutive,
+    exit_consecutive: controlExitConsecutive,
+    cooldown_sec: controlCooldownSec,
+    max_switch_per_10min: controlMaxSwitchPer10Min,
+    trigger: {
+      long_task_p95_ms: controlTriggerLongTaskMs,
+      frame_dt_p95_ms: controlTriggerFrameDtMs,
+      heap_slope_5m_mb_per_min: controlTriggerHeapSlope
+    },
+    exit: {
+      long_task_p95_ms: controlExitLongTaskMs,
+      frame_dt_p95_ms: controlExitFrameDtMs,
+      heap_slope_5m_mb_per_min: controlExitHeapSlope
+    }
+  };
+  const controlReport = evaluateControlPlane(benchRows, controlPolicy);
+
   const latencySamples = replyRows
     .filter((row) => row.success_bool && Number.isFinite(row.latency_ms))
     .map((row) => ({
@@ -1033,6 +1246,7 @@ function main() {
   const reasons = [];
   if (timeoutAttemptCount > 0) reasons.push(`Found ${timeoutAttemptCount} timeout attempt.meta status.`);
   if (!dataQualityPass) reasons.push(`Data quality failed: ${dataQualityReasons.join(', ')}`);
+  if (!controlReport.pass) reasons.push('Control-plane policy check failed.');
 
   const latencyP95 = summaryMap.get('latency_p95_ms');
   const latencyP50 = summaryMap.get('latency_p50_ms');
@@ -1088,6 +1302,9 @@ function main() {
   } else if (!dataQualityPass) {
     verdict = 'INVALID';
     status = 'DATA_QUALITY_FAILED';
+  } else if (!controlReport.pass) {
+    verdict = 'FAIL';
+    status = 'REGRESSION';
   } else if (passThresholds && (!requireSignificance || significancePass)) {
     verdict = 'PASS';
     status = 'OK';
@@ -1127,6 +1344,7 @@ function main() {
   const summaryJsonPath = path.join(derivedRoot, 'ab-summary.json');
   const statsJsonPath = path.join(derivedRoot, 'stats.json');
   const qualityJsonPath = path.join(derivedRoot, 'quality.json');
+  const controlJsonPath = path.join(derivedRoot, 'control-plane.json');
   const exclusionsCsvPath = path.join(derivedRoot, 'exclusions.csv');
   const verdictMdPath = path.join(derivedRoot, 'verdict.md');
   const indexPath = path.join(indexRoot, 'evidence-index.json');
@@ -1175,6 +1393,17 @@ function main() {
     pass: dataQualityPass,
     reasons: dataQualityReasons
   });
+  writeJson(controlJsonPath, {
+    run_id: runId,
+    generated_at: new Date().toISOString(),
+    policy: controlPolicy,
+    arm_reports: controlReport.arm_reports,
+    events: controlReport.events,
+    switch_count: controlReport.switch_count,
+    blocked_switches: controlReport.blocked_switches,
+    cooldown_hits: controlReport.cooldown_hits,
+    pass: controlReport.pass
+  });
   writeCsv(exclusionsCsvPath, exclusions, ['run_id', 'block_id', 'arm', 'attempt_id', 'round_id', 'reason']);
 
   writeVerdictMarkdown(verdictMdPath, {
@@ -1191,6 +1420,7 @@ function main() {
     { path: 'derived/ab-summary.json', sha256: sha256(fs.readFileSync(summaryJsonPath)), row_count: summaryRows.length },
     { path: 'derived/stats.json', sha256: sha256(fs.readFileSync(statsJsonPath)), row_count: statsRows.length },
     { path: 'derived/quality.json', sha256: sha256(fs.readFileSync(qualityJsonPath)), row_count: 1 },
+    { path: 'derived/control-plane.json', sha256: sha256(fs.readFileSync(controlJsonPath)), row_count: controlReport.events.length },
     { path: 'derived/exclusions.csv', sha256: sha256(fs.readFileSync(exclusionsCsvPath)), row_count: exclusions.length },
     { path: 'derived/verdict.md', sha256: sha256(fs.readFileSync(verdictMdPath)), row_count: fs.readFileSync(verdictMdPath, 'utf8').split(/\r?\n/).length }
   ];
@@ -1228,6 +1458,7 @@ function main() {
       summary_json: summaryJsonPath,
       stats_json: statsJsonPath,
       quality_json: qualityJsonPath,
+      control_json: controlJsonPath,
       exclusions_csv: exclusionsCsvPath,
       verdict_md: verdictMdPath,
       evidence_index_json: indexPath

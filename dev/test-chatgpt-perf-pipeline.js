@@ -256,18 +256,6 @@ function main() {
   const acceptancePath = path.join(runRoot, 'derived', 'mvp-acceptance-report.json');
   writeJson(acceptancePath, acceptance);
 
-  const extraFiles = [
-    'derived/stats.json',
-    'derived/quality.json',
-    'derived/control-plane.json',
-    'derived/rollback-drill.json',
-    'derived/mvp-acceptance-report.json',
-    'index/evidence-index.json',
-    'index/run-index.json',
-    'index/evidence-index.jsonl'
-  ];
-  const shaPath = writeShaSums(runRoot, extraFiles);
-
   const mergedManifest = Array.isArray(evidenceIndex.file_manifest) ? evidenceIndex.file_manifest.slice() : [];
   const already = new Set(mergedManifest.map((x) => String(x.path || '')));
   const appendFile = (relPath, rowCount = 1) => {
@@ -281,7 +269,6 @@ function main() {
   appendFile('derived/mvp-acceptance-report.json', 1);
   appendFile('index/run-index.json', Number(runIndex.sample_count || 0));
   appendFile('index/evidence-index.jsonl', Number(runIndex.sample_count || 0));
-  appendFile('SHA256SUMS', fs.readFileSync(shaPath, 'utf8').split(/\r?\n/).filter(Boolean).length);
 
   writeJson(verdictPath, {
     ...evidenceIndex,
@@ -289,6 +276,18 @@ function main() {
     updated_at: nowIso(),
     file_manifest: mergedManifest
   });
+
+  const extraFiles = [
+    'derived/stats.json',
+    'derived/quality.json',
+    'derived/control-plane.json',
+    'derived/rollback-drill.json',
+    'derived/mvp-acceptance-report.json',
+    'index/evidence-index.json',
+    'index/run-index.json',
+    'index/evidence-index.jsonl'
+  ];
+  const shaPath = writeShaSums(runRoot, extraFiles);
 
   const payload = {
     ok: acceptance.pass,

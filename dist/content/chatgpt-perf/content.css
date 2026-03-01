@@ -94,10 +94,21 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] {
 
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :where(body *) {
   /*
-    Use a tiny non-zero duration instead of 0s.
-    Some Radix dialogs/portals rely on animation frames/events to reach the final "open" state;
-    forcing 0s can leave overlays stuck at the initial (often invisible) keyframe.
+    Force all animations/transitions to 0s for snappier UI.
+
+    NOTE:
+    Some ChatGPT sub-views (notably Deep Research) rely on at least one animation frame to
+    reach the final "open" state. We keep a tiny non-zero whitelist for Deep Research below.
   */
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* Deep Research fullscreen overlay: keep a tiny non-zero duration so the view can reach its final open state. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .fixed:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .fixed:has(iframe[title='internal://deep-research']) * {
   animation-duration: 1ms !important;
   transition-duration: 1ms !important;
   animation-delay: 0s !important;

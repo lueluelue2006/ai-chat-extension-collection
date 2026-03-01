@@ -2198,14 +2198,70 @@
   `);
   }
 
-			  // src/tracking/fetchInterceptor.js
-			  let __aichatFetchHubUnsub = null;
-			  const __aichatUsageMonitorFetchPatchStateKey = '__aichat_chatgpt_usage_monitor_fetch_patch_v1__';
-			  function installFetchInterceptor() {
-			    const targetWindow = window;
-			    const consumerBase = targetWindow.__aichat_chatgpt_fetch_consumer_base_v1__ || null;
-			    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
-			    const registerConsumer =
+				  // src/tracking/fetchInterceptor.js
+				  let __aichatFetchHubUnsub = null;
+				  const __aichatUsageMonitorFetchPatchStateKey = '__aichat_chatgpt_usage_monitor_fetch_patch_v1__';
+				  function __aichatHasResearchSystemHint(systemHints) {
+				    if (!Array.isArray(systemHints)) return false;
+				    for (const hint of systemHints) {
+				      let raw = null;
+				      try {
+				        if (typeof hint === "string") raw = hint;
+				        else if (hint && typeof hint === "object" && typeof hint.name === "string") raw = hint.name;
+				      } catch {}
+				      if (!raw) continue;
+				      const v = String(raw).toLowerCase();
+				      // Legacy research uses ["research"]; Deep research uses ["connector:connector_openai_deep_research"].
+				      if (v === "research") return true;
+				      if (v.includes("deep_research")) return true;
+				    }
+				    return false;
+				  }
+				  function __aichatBodyLooksLikeResearch(bodyText) {
+				    if (typeof bodyText !== "string" || !bodyText) return false;
+				    // Avoid false positives from user messages containing "research"; only scan near `system_hints`.
+				    try {
+				      const idx = bodyText.indexOf("system_hints");
+				      if (idx === -1) return false;
+				      const slice = bodyText.slice(Math.max(0, idx - 40), idx + 600).toLowerCase();
+				      if (slice.includes('"research"')) return true;
+				      if (slice.includes("deep_research")) return true;
+				    } catch {}
+				    return false;
+				  }
+				  function __aichatDomLooksLikeResearchMode() {
+				    try {
+				      const editor = document.querySelector("#prompt-textarea");
+				      const form = editor && typeof editor.closest === "function" ? editor.closest("form") : null;
+				      if (!form) return false;
+				      const buttons = form.querySelectorAll("button");
+				      for (const btn of buttons) {
+				        const aria = String(btn.getAttribute("aria-label") || "");
+				        const text = String(btn.innerText || "");
+				        if (/research|研究/i.test(aria) || /research|研究/i.test(text)) return true;
+				      }
+				    } catch {}
+				    return false;
+				  }
+				  function __aichatShouldSkipUsageCounting(ctx) {
+				    try {
+				      const payload = ctx?.conversation?.payload;
+				      if (payload && typeof payload === "object" && __aichatHasResearchSystemHint(payload.system_hints)) return true;
+				    } catch {}
+				    try {
+				      if (__aichatBodyLooksLikeResearch(ctx?.init?.body)) return true;
+				    } catch {}
+				    // Last resort: infer from the composer pill UI.
+				    try {
+				      if (__aichatDomLooksLikeResearchMode()) return true;
+				    } catch {}
+				    return false;
+				  }
+				  function installFetchInterceptor() {
+				    const targetWindow = window;
+				    const consumerBase = targetWindow.__aichat_chatgpt_fetch_consumer_base_v1__ || null;
+				    const hub = targetWindow.__aichat_chatgpt_fetch_hub_v1__ || null;
+				    const registerConsumer =
 			      consumerBase && typeof consumerBase.registerConsumer === "function"
 			        ? (key, handlers) => consumerBase.registerConsumer(key, handlers)
 			        : hub && typeof hub.register === "function"
@@ -2217,13 +2273,14 @@
 			      const unsub = registerConsumer('chatgpt-usage-monitor', {
 			        // Run after other modules that may rewrite the outgoing payload (e.g. model/effort toggles).
 			        priority: 200,
-			        onConversationStart: (ctx) => {
-			          try {
-			            // Use the final outgoing payload (after other modules rewrite the request).
-			            const payload = ctx?.conversation?.payload;
-			            const modelId =
-			              payload && typeof payload === "object" && typeof payload.model === "string" ? payload.model : null;
-			            const modelKey = modelId ? normalizeUsageModelKey(modelId) : getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
+				        onConversationStart: (ctx) => {
+				          try {
+				            if (__aichatShouldSkipUsageCounting(ctx)) return;
+				            // Use the final outgoing payload (after other modules rewrite the request).
+				            const payload = ctx?.conversation?.payload;
+				            const modelId =
+				              payload && typeof payload === "object" && typeof payload.model === "string" ? payload.model : null;
+				            const modelKey = modelId ? normalizeUsageModelKey(modelId) : getUsageModelKeyFromCookieOrBody(ctx?.init?.body);
 			            if (!modelKey) return;
 			            scopeTimeout(__aichatRuntimeScope, () => {
 			              try {
@@ -2256,42 +2313,46 @@
     const originalFetch = targetWindow.fetch;
 		    if (typeof originalFetch !== 'function') return;
 		    if (originalFetch?.__chatgptUsagePatched) return;
-		    const wrapped = new Proxy(originalFetch, {
-		      apply: async function(target, thisArg, args) {
-		        let modelKey = null;
-		        /** @type {Promise<string|null>|null} */
-		        let bodyTextPromise = null;
-		        try {
-		          const [requestInfo, requestInit] = args;
-		          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
-		          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
-		          if (String(requestMethod || "").toUpperCase() === "POST" && /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(fetchUrl || "")) {
-		            if (typeof requestInit?.body === "string") {
-		              modelKey = getUsageModelKeyFromCookieOrBody(requestInit.body);
-		            } else if (requestInfo && typeof requestInfo === "object" && typeof requestInfo.clone === "function") {
-		              bodyTextPromise = requestInfo
-		                .clone()
-		                .text()
-		                .then((t) => (typeof t === "string" ? t : null))
-		                .catch(() => null);
-		            } else {
-		              modelKey = getUsageModelKeyFromCookieOrBody(null);
-		            }
-		          }
-		        } catch {
-		        }
-		        const response = await target.apply(thisArg, args);
-		        if (!modelKey && bodyTextPromise) {
-		          try {
-		            const text = await bodyTextPromise;
-		            modelKey = getUsageModelKeyFromCookieOrBody(text);
-		          } catch {}
-		        }
-		        if (modelKey) {
-		          scopeTimeout(__aichatRuntimeScope, () => {
-		            try {
-		              recordModelUsageByModelId(modelKey);
-		            } catch {}
+			    const wrapped = new Proxy(originalFetch, {
+			      apply: async function(target, thisArg, args) {
+			        let modelKey = null;
+			        let shouldSkip = false;
+			        /** @type {Promise<string|null>|null} */
+			        let bodyTextPromise = null;
+			        try {
+			          const [requestInfo, requestInit] = args;
+			          const fetchUrl = typeof requestInfo === "string" ? requestInfo : requestInfo?.href || requestInfo?.url || "";
+			          const requestMethod = typeof requestInfo === "object" && requestInfo?.method ? requestInfo.method : requestInit?.method || "GET";
+			          if (String(requestMethod || "").toUpperCase() === "POST" && /\/backend-api\/(?:f\/)?conversation(?:\?|$)/.test(fetchUrl || "")) {
+			            if (typeof requestInit?.body === "string") {
+			              shouldSkip = __aichatBodyLooksLikeResearch(requestInit.body) || __aichatDomLooksLikeResearchMode();
+			              if (!shouldSkip) modelKey = getUsageModelKeyFromCookieOrBody(requestInit.body);
+			            } else if (requestInfo && typeof requestInfo === "object" && typeof requestInfo.clone === "function") {
+			              bodyTextPromise = requestInfo
+			                .clone()
+			                .text()
+			                .then((t) => (typeof t === "string" ? t : null))
+			                .catch(() => null);
+			            } else {
+			              shouldSkip = __aichatDomLooksLikeResearchMode();
+			              if (!shouldSkip) modelKey = getUsageModelKeyFromCookieOrBody(null);
+			            }
+			          }
+			        } catch {
+			        }
+			        const response = await target.apply(thisArg, args);
+			        if (!modelKey && bodyTextPromise) {
+			          try {
+			            const text = await bodyTextPromise;
+			            if (text) shouldSkip = shouldSkip || __aichatBodyLooksLikeResearch(text) || __aichatDomLooksLikeResearchMode();
+			            if (!shouldSkip) modelKey = getUsageModelKeyFromCookieOrBody(text);
+			          } catch {}
+			        }
+			        if (modelKey && !shouldSkip) {
+			          scopeTimeout(__aichatRuntimeScope, () => {
+			            try {
+			              recordModelUsageByModelId(modelKey);
+			            } catch {}
 		          }, 0);
 		        }
 		        return response;

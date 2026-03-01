@@ -194,7 +194,7 @@
     chatgpt_usage_monitor: {
       id: 'chatgpt_usage_monitor',
       name: 'ChatGPT 用量统计',
-      sub: '仅记录用量（不在页面注入悬浮窗）；在配置页查看/导入/导出/清空',
+      sub: '仅记录用量（不在页面注入悬浮窗）；Deep/Legacy Research 不计入；在配置页查看/导入/导出/清空',
       hotkeys: [],
       authors: ['lueluelue2006（基于 tizee@Github 的实现移植）'],
       license: 'MIT',

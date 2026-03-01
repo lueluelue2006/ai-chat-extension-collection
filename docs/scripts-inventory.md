@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.4.0
-- Generated: 2026-03-01 05:12
+- Version: 2.4.1
+- Generated: 2026-03-01 08:50
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -54,7 +54,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-readaloud-speed-controller/main.js`
-- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 仅记录用量（不在页面注入悬浮窗）；在配置页查看/导入/导出/清空
+- `chatgpt_usage_monitor`: ChatGPT 用量统计 — 仅记录用量（不在页面注入悬浮窗）；Deep/Legacy Research 不计入；在配置页查看/导入/导出/清空
   - 作者: lueluelue2006（基于 tizee@Github 的实现移植）
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`

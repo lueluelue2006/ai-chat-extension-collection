@@ -4,6 +4,18 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article {
   contain: layout paint;
 }
 
+/* Deep Research whitelist:
+   its report panel uses fixed-position overlay; article containment/offscreen virtualization can clip it.
+   Keep this scope minimal: only articles that actually host deep-research iframes. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article:has(iframe[src*='connector_openai_deep_research' i]),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen:has(iframe[src*='connector_openai_deep_research' i]) {
+  contain: none !important;
+  content-visibility: visible !important;
+  contain-intrinsic-size: none !important;
+}
+
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen {
   content-visibility: auto;
   contain: layout paint style;
@@ -102,6 +114,17 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :wh
   */
   animation-duration: 0s !important;
   transition-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* Deep Research (turn-level): allow minimal durations even before the fullscreen overlay iframe is mounted. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[src*='connector_openai_deep_research' i]),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[title='internal://deep-research']) :where(*),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[src*='connector_openai_deep_research' i]) :where(*) {
+  animation-duration: 1ms !important;
+  transition-duration: 1ms !important;
   animation-delay: 0s !important;
   transition-delay: 0s !important;
 }

@@ -20,7 +20,7 @@
     boostDuringInput: true,
     unfreezeOnFind: true,
     showOverlay: false,
-    rootMarginPx: 1200,
+    rootMarginPx: 1000,
   });
 
   const ROOT_ATTR = 'data-cgptperf';

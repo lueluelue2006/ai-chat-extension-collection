@@ -61,7 +61,7 @@
     boostDuringInput: true,
     unfreezeOnFind: true,
     showOverlay: false,
-    rootMarginPx: 1200
+    rootMarginPx: 1000
   });
 
   const CGPT_READALOUD_SPEED_STORAGE_KEY = 'aichat_chatgpt_readaloud_speed_v1';

@@ -346,6 +346,7 @@ Turn 筛选策略（维护重点）：
 - 功能变更：已移除“极限轻量（`extremeLite`）”开关与对应样式分支，统一由主性能项负责优化策略。
 - 功能变更：已移除“Markdown 分段虚拟化（`virtualizeMarkdownBlocks`）”子策略与对应样式/配置项，避免对块级节点做二次虚拟化。
 - 维护原则：涉及全局样式开关时，优先“窄选择器 + 可回滚默认值”，避免在长对话中触发大范围样式失效与内存压力。
+- Deep Research 兼容白名单（最小范围）：仅对“包含 Deep Research iframe 的 turn article”放行，解除 `contain/layout paint` 与 `content-visibility` 约束，避免 fullscreen overlay 被父级 article 裁切导致黑屏；其他消息仍走原虚拟化与包含策略。
 
 ### 6.7 ChatGPT 对话导出（`content/chatgpt-export-conversation/main.js`，ISOLATED）
 

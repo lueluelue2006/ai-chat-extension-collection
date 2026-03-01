@@ -2993,7 +2993,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）重载 Range/Selection 的复制逻辑：选区中遇到 .katex 会读取 annotation 还原为 $...$ / $$...$$。交互：悬停公式 0.8s 显示 LaTeX 提示，双击公式复制 LaTeX 并弹出提示。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '说明：该模块在页面主世界（MAIN world）通过事件驱动处理复制/引用：复制时仅在选区含 .katex 时改写剪贴板为原始 LaTeX；点击原生 Quote 时仅对该次引用做补丁替换（不再全局重载 Range/Selection）。交互：悬停公式 0.8s 显示 LaTeX 提示，双击公式复制 LaTeX 并弹出提示。关闭模块后已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 

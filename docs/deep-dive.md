@@ -360,6 +360,16 @@ Turn 筛选策略（维护重点）：
 - 容灾：mapping 拉取失败时自动回退“当前可见导出”，避免完全不可用
 - 内存保护：沿用 6MB JSON 上限，防止超大对话导出时触发内存峰值
 
+### 6.8 ChatGPT TeX Copy & Quote（`content/chatgpt-tex-copy-quote/main.js`，MAIN）
+
+定位：对含 KaTeX 的复制/引用做“最小作用域修正”，保留原生交互路径，不做全局原型补丁。
+
+- 风险收敛：取消 `Range/Selection` 原型重载，改为事件驱动（`copy` + `pointerdown/click`）
+- 复制策略：仅在选区命中 `.katex` 时改写剪贴板；`text/plain` 输出原始 LaTeX，`text/html` 使用变换后的片段
+- 引用策略：仅在命中原生 Quote 触发器时进入短窗口补丁，按“原生引用文本 -> LaTeX 引用文本”做一次性替换
+- 可维护性：将“选区快照 / 引用变体构造 / 文本替换 / 触发器识别”拆为独立函数，便于单测与回归
+- 交互保持：继续支持“悬停 0.8s 提示 LaTeX + 双击公式复制”
+
 ---
 
 ## 7) Popup / Options 交互层

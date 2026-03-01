@@ -20,6 +20,9 @@ function main() {
   assert.ok(!source.includes('_btqPatched'), 'legacy prototype patch sentinel should be removed');
 
   assert.ok(source.includes("document.addEventListener('copy'"), 'should intercept copy via event listener');
+  assert.ok(source.includes("document.addEventListener('pointermove'"), 'should use pointermove hover listener');
+  assert.ok(!source.includes("document.addEventListener('mouseover'"), 'legacy mouseover hover listener should be removed');
+  assert.ok(!source.includes("document.addEventListener('mouseout'"), 'legacy mouseout hover listener should be removed');
   assert.ok(source.includes('snapshotActiveSelection'), 'should snapshot selection on-demand');
   assert.ok(source.includes('buildQuotePairs'), 'should keep quote replacement strategy isolated');
   assert.ok(source.includes('isQuoteActionTrigger'), 'should scope quote patch to quote action trigger');

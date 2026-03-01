@@ -21,6 +21,7 @@
   const BTQ_TOOLTIP_ID = '__btq_latex_tooltip_v2__';
 
   const HOVER_DELAY_MS = 800;
+  const HOVER_MOVE_THROTTLE_MS = 80;
   const QUOTE_RETRY_DELAYS_MS = [0, 40, 120, 260, 520];
   const QUOTE_PATCH_WINDOW_MS = 2600;
   const QUOTE_PREFIXES = ['> ', '>'];
@@ -32,6 +33,8 @@
   const state = {
     tooltip: null,
     tooltipTimer: null,
+    hoverKatex: null,
+    hoverMoveLastAt: 0,
     pendingPointerQuoteSnapshot: null,
     pendingQuotePatch: null
   };
@@ -516,46 +519,51 @@
     document.head.appendChild(styleEl);
   }
 
-  function onMouseOver(ev) {
-    const target = ev?.target;
-    if (!target || !(target instanceof Element)) return;
-    if (!ensureTooltipEl()) return;
-
-    const katexEl = target.closest('.katex');
-    if (!katexEl) return;
-
-    katexEl.style.cursor = 'pointer';
-    if (state.tooltipTimer) {
-      clearTimeout(state.tooltipTimer);
-    }
-
-    state.tooltipTimer = setTimeout(() => {
-      const tex = findTexFromKatex(katexEl);
-      if (!tex) return;
-      showTooltip(katexEl, tex);
-    }, HOVER_DELAY_MS);
-  }
-
-  function onMouseOut(ev) {
-    const from = ev?.target;
-    if (!from || !(from instanceof Element)) return;
-
-    const fromKatex = from.closest('.katex');
-    if (!fromKatex) return;
-
-    const to = ev?.relatedTarget;
-    if (to && to instanceof Element) {
-      const toKatex = to.closest('.katex');
-      if (toKatex === fromKatex) {
-        return;
-      }
-    }
-
+  function clearHoverTooltipTimer() {
     if (state.tooltipTimer) {
       clearTimeout(state.tooltipTimer);
       state.tooltipTimer = null;
     }
+  }
+
+  function updateHoverKatex(nextKatex) {
+    const normalized = nextKatex && nextKatex instanceof Element ? nextKatex : null;
+    if (state.hoverKatex === normalized) return;
+
+    state.hoverKatex = normalized;
+    clearHoverTooltipTimer();
     hideTooltip();
+
+    if (!normalized) return;
+    normalized.style.cursor = 'pointer';
+
+    state.tooltipTimer = setTimeout(() => {
+      if (state.hoverKatex !== normalized) return;
+      if (!normalized.isConnected) return;
+      const tex = findTexFromKatex(normalized);
+      if (!tex) return;
+      showTooltip(normalized, tex);
+    }, HOVER_DELAY_MS);
+  }
+
+  function onPointerMove(ev) {
+    const target = ev?.target;
+    if (!target || !(target instanceof Element)) return;
+
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    if (now - Number(state.hoverMoveLastAt || 0) < HOVER_MOVE_THROTTLE_MS) return;
+    state.hoverMoveLastAt = now;
+
+    const katexEl = target.closest('.katex');
+    updateHoverKatex(katexEl);
+  }
+
+  function onPointerLeaveDocument() {
+    updateHoverKatex(null);
+  }
+
+  function onWindowBlur() {
+    updateHoverKatex(null);
   }
 
   function onDblClick(ev) {
@@ -625,8 +633,9 @@
     if (window.__btqHandlersBoundV2) return;
     window.__btqHandlersBoundV2 = true;
 
-    document.addEventListener('mouseover', onMouseOver, true);
-    document.addEventListener('mouseout', onMouseOut, true);
+    document.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });
+    document.addEventListener('mouseleave', onPointerLeaveDocument, true);
+    window.addEventListener('blur', onWindowBlur, true);
     document.addEventListener('dblclick', onDblClick, false);
     document.addEventListener('copy', onCopy, true);
     document.addEventListener('pointerdown', onPointerDown, true);

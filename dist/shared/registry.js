@@ -24,6 +24,7 @@
         "chatgpt_tex_copy_quote",
         "chatgpt_export_conversation",
         "chatgpt_image_message_edit",
+        "chatgpt_canvas_enhancements",
         "chatgpt_message_tree",
         "chatgpt_sidebar_header_fix"
       ]
@@ -257,6 +258,14 @@
       id: "chatgpt_image_message_edit",
       name: "ChatGPT \u6D88\u606F\u5206\u53C9\u7F16\u8F91\uFF08\u53EF\u52A0\u56FE\uFF09",
       sub: "\u7ED9\u7528\u6237\u6D88\u606F\u589E\u52A0\u201C\u5206\u53C9\u7F16\u8F91\u201D\u6309\u94AE\uFF1A\u5728\u8F93\u5165\u6846\u91CC\u7F16\u8F91\u5E76\u53EF\u8865\u56FE/\u6587\u4EF6\uFF1B\u4E0E\u539F\u751F\u7F16\u8F91\u5171\u5B58",
+      hotkeys: [],
+      authors: ["lueluelue2006"],
+      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+    },
+    chatgpt_canvas_enhancements: {
+      id: "chatgpt_canvas_enhancements",
+      name: "Canvas Enhancements",
+      sub: "\u5728 Writing/Canvas \u5361\u7247\u5DE6\u4E0A\u89D2\u663E\u793A Canvas ID\uFF08\u4E0D\u8986\u76D6\u539F\u751F\u884C\u4E3A\uFF09",
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"

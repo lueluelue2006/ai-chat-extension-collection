@@ -430,6 +430,15 @@
       runAt: "document_start",
       world: "MAIN"
     });
+    defs.push({
+      id: "quicknav_chatgpt_canvas_enhancements",
+      siteId: "chatgpt",
+      moduleId: "chatgpt_canvas_enhancements",
+      matches: chatgpt,
+      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, CHATGPT_MAPPING_CLIENT_FILE, "content/chatgpt-canvas-enhancements/main.js"],
+      runAt: "document_start",
+      world: "MAIN"
+    });
     return defs;
   }
   const API = Object.freeze({

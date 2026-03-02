@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.4.7
-- Generated: 2026-03-01 11:48
+- Version: 2.4.8
+- Generated: 2026-03-02 17:16
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -92,6 +92,10 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-image-message-edit/main.js`
+- `chatgpt_canvas_enhancements`: Canvas Enhancements — 在 Writing/Canvas 卡片左上角显示 Canvas ID（不覆盖原生行为）
+  - 作者: lueluelue2006
+  - 许可证: 未标注（内部脚本）
+  - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-canvas-enhancements/main.js`
 - `chatgpt_message_tree`: ChatGPT 消息树 — 显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）

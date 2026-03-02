@@ -28,6 +28,7 @@
         'chatgpt_tex_copy_quote',
         'chatgpt_export_conversation',
         'chatgpt_image_message_edit',
+        'chatgpt_canvas_enhancements',
         'chatgpt_message_tree',
         'chatgpt_sidebar_header_fix'
       ]
@@ -262,6 +263,14 @@
       id: 'chatgpt_image_message_edit',
       name: 'ChatGPT 消息分叉编辑（可加图）',
       sub: '给用户消息增加“分叉编辑”按钮：在输入框里编辑并可补图/文件；与原生编辑共存',
+      hotkeys: [],
+      authors: ['lueluelue2006'],
+      license: '未标注（内部脚本）'
+    },
+    chatgpt_canvas_enhancements: {
+      id: 'chatgpt_canvas_enhancements',
+      name: 'Canvas Enhancements',
+      sub: '在 Writing/Canvas 卡片左上角显示 Canvas ID（不覆盖原生行为）',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

@@ -13,6 +13,11 @@
     { moduleId: 'cmdenter_send', renderer: 'cmdEnterSend' },
     { moduleId: 'qwen_thinking_toggle', renderer: 'basicToggle' },
     { moduleId: 'chatgpt_sidebar_header_fix', renderer: 'basicToggle' },
+    {
+      moduleId: 'chatgpt_canvas_enhancements',
+      renderer: 'basicToggle',
+      hintText: '说明：仅在页面出现 Writing/Canvas 卡片时才会读取对话 mapping，用于在左上角显示 Canvas ID。'
+    },
     { moduleId: 'genspark_codeblock_fold', renderer: 'basicToggle' },
     {
       moduleId: 'genspark_force_sonnet45_thinking',

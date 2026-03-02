@@ -115,22 +115,33 @@
     root.appendChild(sheet);
   }
 
-  const WRITING_OPEN_RE = /:::writing\\{([^}]*)\\}/g;
-  const WRITING_ID_RE = /\\bid\\s*=\\s*(?:\"([^\"]+)\"|'([^']+)'|([^\\s\"'}]+))/i;
+  const WRITING_MARKER = ':::writing{';
+  // Support: id="51231" / id='51231' / id=51231
+  // Also tolerate escaped quotes: id=\"51231\" (some backends/models emit this literally)
+  const WRITING_ID_RE = /(?:^|\\s)id\\s*=\\s*(?:\\\\?\"([^\"]+)\"|\\\\?'([^']+)'|([^\\s\"'}]+))/i;
 
   function extractWritingIds(text) {
     const ids = [];
     const input = String(text || '');
-    if (!input.includes(':::writing{')) return ids;
-    WRITING_OPEN_RE.lastIndex = 0;
+    if (!input.includes(WRITING_MARKER)) return ids;
+
+    let cursor = 0;
     while (true) {
-      const m = WRITING_OPEN_RE.exec(input);
-      if (!m) break;
-      const attrs = String(m[1] || '');
+      const start = input.indexOf(WRITING_MARKER, cursor);
+      if (start < 0) break;
+
+      const attrsStart = start + WRITING_MARKER.length;
+      const end = input.indexOf('}', attrsStart);
+      if (end < 0) break;
+
+      const attrs = input.slice(attrsStart, end);
       const idMatch = attrs.match(WRITING_ID_RE);
       const id = String(idMatch?.[1] || idMatch?.[2] || idMatch?.[3] || '').trim();
       if (id) ids.push(id);
+
+      cursor = end + 1;
     }
+
     return ids;
   }
 

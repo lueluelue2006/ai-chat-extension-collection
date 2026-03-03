@@ -118,7 +118,7 @@
   const WRITING_MARKER = ':::writing{';
   // Support: id="51231" / id='51231' / id=51231
   // Also tolerate escaped quotes: id=\"51231\" (some backends/models emit this literally)
-  const WRITING_ID_RE = /(?:^|\\s)id\\s*=\\s*(?:\\\\?\"([^\"]+)\"|\\\\?'([^']+)'|([^\\s\"'}]+))/i;
+  const WRITING_ID_RE = /(?:^|\s)id\s*=\s*(?:\\?"([^"]+)"|\\?'([^']+)'|([^\s"'}]+))/i;
 
   function extractWritingIds(text) {
     const ids = [];

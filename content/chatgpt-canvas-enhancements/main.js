@@ -226,10 +226,15 @@
   function formatTextdocId(textdocId) {
     const id = String(textdocId || '').trim();
     if (!id) return '';
-    if (id.length <= 12) return id;
-    const head = id.slice(0, 6);
-    const tail = id.slice(-5);
-    return `${head}…${tail}`;
+    // textdoc_id is a 32-char hex. We compress it into a stable 5-digit code to keep the UI tiny.
+    // NOTE: This is a derived short code (not the official id).
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < id.length; i++) {
+      hash ^= id.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    const n = (hash >>> 0) % 100_000;
+    return String(n).padStart(5, '0');
   }
 
   function setBlockBadge(blockEl, canvasId) {
@@ -284,7 +289,7 @@
     const badge = document.createElement('span');
     badge.className = BADGE_CLASS;
     badge.setAttribute('data-textdoc-id', textdocId);
-    badge.textContent = `Doc ${shortId}`;
+    badge.textContent = `Canvas ${shortId}`;
 
     try {
       left.insertBefore(badge, left.firstChild);

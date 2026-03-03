@@ -265,7 +265,7 @@
     chatgpt_canvas_enhancements: {
       id: "chatgpt_canvas_enhancements",
       name: "Canvas Enhancements",
-      sub: "\u5728 Writing/Canvas \u5361\u7247\u5DE6\u4E0A\u89D2\u663E\u793A Canvas ID\uFF08512xx\uFF09/ textdoc_id\uFF08Doc 69a693\u2026\uFF09\uFF0C\u4E0D\u8986\u76D6\u539F\u751F\u884C\u4E3A",
+      sub: "\u5728 Writing/Canvas \u5361\u7247\u5DE6\u4E0A\u89D2\u663E\u793A Canvas ID\uFF08512xx\uFF09/ textdoc Canvas \u77ED\u7F16\u53F7\uFF085\u4F4D\uFF09\uFF0C\u4E0D\u8986\u76D6\u539F\u751F\u884C\u4E3A",
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"

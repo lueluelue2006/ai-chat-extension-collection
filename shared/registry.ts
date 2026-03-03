@@ -270,7 +270,7 @@
     chatgpt_canvas_enhancements: {
       id: 'chatgpt_canvas_enhancements',
       name: 'Canvas Enhancements',
-      sub: '在 Writing/Canvas 卡片左上角显示 Canvas ID（不覆盖原生行为）',
+      sub: '在 Writing/Canvas 卡片左上角显示 Canvas ID（512xx）/ textdoc_id（Doc 69a693…），不覆盖原生行为',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

@@ -6,6 +6,7 @@
   const STYLE_ID = '__aichat_chatgpt_canvas_enhancements_style_v1__';
   const BADGE_CLASS = '__aichat_canvas_id_badge_v1__';
   const BLOCK_SELECTOR = '[data-writing-block][id^="writing-block-"]';
+  const TEXTDOC_CARD_SELECTOR = 'div[id^="textdoc-message-"]';
   const CORE_KEY = '__aichat_chatgpt_core_main_v1__';
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
@@ -179,6 +180,14 @@
     }
   }
 
+  function listTextdocCards() {
+    try {
+      return Array.from(document.querySelectorAll(TEXTDOC_CARD_SELECTOR));
+    } catch {
+      return [];
+    }
+  }
+
   function clearBadges() {
     try {
       document.querySelectorAll(`.${BADGE_CLASS}`).forEach((n) => n.remove());
@@ -202,6 +211,25 @@
       if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
     } catch {}
     return 0;
+  }
+
+  function getTextdocIdFromCard(el) {
+    try {
+      const raw = String(el?.id || '');
+      if (!raw.startsWith('textdoc-message-')) return '';
+      return raw.slice('textdoc-message-'.length).trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function formatTextdocId(textdocId) {
+    const id = String(textdocId || '').trim();
+    if (!id) return '';
+    if (id.length <= 12) return id;
+    const head = id.slice(0, 6);
+    const tail = id.slice(-5);
+    return `${head}…${tail}`;
   }
 
   function setBlockBadge(blockEl, canvasId) {
@@ -230,6 +258,44 @@
         return false;
       }
     }
+    return true;
+  }
+
+  function setTextdocBadge(cardEl) {
+    if (!cardEl || !(cardEl instanceof Element)) return false;
+    const textdocId = getTextdocIdFromCard(cardEl);
+    if (!textdocId) return false;
+
+    const shortId = formatTextdocId(textdocId);
+    if (!shortId) return false;
+
+    const headerBar = cardEl.querySelector(':scope > div.sticky > div');
+    if (!headerBar) return false;
+
+    const left = headerBar.firstElementChild;
+    if (!left || !(left instanceof Element)) return false;
+
+    const existing = left.querySelector(`:scope > span.${BADGE_CLASS}`);
+    if (existing && existing.getAttribute('data-textdoc-id') === textdocId) return false;
+    try {
+      existing?.remove?.();
+    } catch {}
+
+    const badge = document.createElement('span');
+    badge.className = BADGE_CLASS;
+    badge.setAttribute('data-textdoc-id', textdocId);
+    badge.textContent = `Doc ${shortId}`;
+
+    try {
+      left.insertBefore(badge, left.firstChild);
+    } catch {
+      try {
+        left.appendChild(badge);
+      } catch {
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -320,6 +386,12 @@
     if (state.disposed) return;
     ensureStyle();
 
+    const textdocCards = listTextdocCards();
+    let wroteAny = false;
+    if (textdocCards.length) {
+      for (const card of textdocCards) wroteAny = setTextdocBadge(card) || wroteAny;
+    }
+
     const blocks = listWritingBlocks();
     if (!blocks.length) return;
 
@@ -333,7 +405,6 @@
     }
 
     let needRefresh = false;
-    let wroteAny = false;
     for (const [msgId, els] of groups.entries()) {
       const ids = state.writingIdsByMsg.get(msgId) || null;
       if (!ids || !ids.length) {
@@ -388,6 +459,7 @@
     const mo = new MutationObserver((mutations) => {
       if (state.disposed) return;
       let sawWritingBlock = false;
+      let sawTextdoc = false;
       for (const m of mutations) {
         if (!m || !m.addedNodes) continue;
         for (const n of Array.from(m.addedNodes)) {
@@ -396,12 +468,16 @@
             sawWritingBlock = true;
             break;
           }
+          if (n.matches?.(TEXTDOC_CARD_SELECTOR) || n.querySelector?.(TEXTDOC_CARD_SELECTOR)) {
+            sawTextdoc = true;
+            // keep scanning: writing blocks should still trigger refresh
+          }
         }
         if (sawWritingBlock) break;
       }
-      if (!sawWritingBlock) return;
+      if (!sawWritingBlock && !sawTextdoc) return;
       scheduleAnnotate();
-      scheduleRefresh('dom-added');
+      if (sawWritingBlock) scheduleRefresh('dom-added');
     });
 
     try {

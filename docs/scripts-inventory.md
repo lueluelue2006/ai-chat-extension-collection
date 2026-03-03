@@ -92,7 +92,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-image-message-edit/main.js`
-- `chatgpt_canvas_enhancements`: Canvas Enhancements — 在 Writing/Canvas 卡片左上角显示 Canvas ID（不覆盖原生行为）
+- `chatgpt_canvas_enhancements`: Canvas Enhancements — 在 Writing/Canvas 卡片左上角显示 Canvas ID（512xx）/ textdoc_id（Doc 69a693…）
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-canvas-enhancements/main.js`
@@ -240,4 +240,3 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-

@@ -93,7 +93,7 @@
         align-items: center;
         justify-content: center;
         padding: 1px 7px;
-        margin-right: 8px;
+        margin-left: 8px;
         border-radius: 9999px;
         border: 1px solid rgba(116, 240, 167, 0.45);
         background: rgba(0, 0, 0, 0.65);
@@ -255,13 +255,9 @@
     badge.setAttribute('data-canvas-id', String(canvasId || '').trim());
     badge.textContent = `Canvas ${String(canvasId || '').trim()}`;
     try {
-      labelContainer.insertBefore(badge, labelContainer.firstChild);
+      labelContainer.appendChild(badge);
     } catch {
-      try {
-        labelContainer.appendChild(badge);
-      } catch {
-        return false;
-      }
+      return false;
     }
     return true;
   }
@@ -292,13 +288,9 @@
     badge.textContent = `Canvas ${shortId}`;
 
     try {
-      left.insertBefore(badge, left.firstChild);
+      left.appendChild(badge);
     } catch {
-      try {
-        left.appendChild(badge);
-      } catch {
-        return false;
-      }
+      return false;
     }
 
     return true;

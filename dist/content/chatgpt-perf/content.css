@@ -118,36 +118,6 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :wh
   transition-delay: 0s !important;
 }
 
-/* Sidebar whitelist:
-   ChatGPT's sidebar (rail <-> expanded) sometimes relies on transition/animation events to reach its final layout.
-   With a hard 0s duration, it can get stuck in an intermediate "narrow/blank" state. Keep a tiny non-zero duration. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] #stage-slideover-sidebar,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] #stage-slideover-sidebar :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] nav[aria-label='Chat history'],
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] nav[aria-label='Chat history'] :where(*) {
-  animation-duration: 1ms !important;
-  transition-duration: 1ms !important;
-  animation-delay: 0s !important;
-  transition-delay: 0s !important;
-}
-
-/* Radix dropdown/popup whitelist:
-   ChatGPT uses Radix UI for many menus (model picker, profile menus, etc.).
-   0s duration can prevent Radix from finishing mount/unmount state machines. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-menu-content],
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-menu-content] :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-popover-content],
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-popover-content] :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-select-content],
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-select-content] :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-popper-content-wrapper],
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-popper-content-wrapper] :where(*) {
-  animation-duration: 1ms !important;
-  transition-duration: 1ms !important;
-  animation-delay: 0s !important;
-  transition-delay: 0s !important;
-}
-
 /* Deep Research (turn-level): allow minimal durations even before the fullscreen overlay iframe is mounted. */
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[title='internal://deep-research']),
 html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[src*='connector_openai_deep_research' i]),

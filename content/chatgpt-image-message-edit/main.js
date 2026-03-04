@@ -22,6 +22,8 @@
     '#composer-submit-button,button[data-testid="send-button"],button[aria-label*="Send" i],button[title*="Send" i],button[aria-label*="发送" i],button[title*="发送" i]';
   const COMPOSER_ATTACHMENT_SELECTOR =
     '[data-testid*="composer-attachment" i],[data-testid*="attachment" i],[data-testid*="uploaded-file" i],[data-testid*="file-chip" i],button[aria-label*="Remove file" i],button[aria-label*="移除文件" i],button[aria-label*="删除文件" i]';
+  const COMPOSER_REMOVE_FILE_SELECTOR =
+    'button[aria-label*="Remove file" i],button[aria-label*="移除文件" i],button[aria-label*="删除文件" i]';
   const AUTO_BRANCH_SEND_TIMEOUT_MS = 15000;
   const AUTO_BRANCH_STOP_RETRY_MS = 4000;
   const AUTO_BRANCH_MAX_STOP_CLICKS = 2;
@@ -275,6 +277,81 @@
     el.blur();
     el.focus();
     return true;
+  }
+
+  function callReactOnClick(btn) {
+    if (!(btn instanceof HTMLElement)) return false;
+    try {
+      const key = Object.keys(btn).find((k) => k.startsWith('__reactProps$'));
+      if (!key) return false;
+      const props = btn[key];
+      if (!props || typeof props !== 'object') return false;
+      if (typeof props.onClick !== 'function') return false;
+      const evt = {
+        type: 'click',
+        isTrusted: true,
+        target: btn,
+        currentTarget: btn,
+        defaultPrevented: false,
+        preventDefault() {},
+        stopPropagation() {},
+        persist() {},
+        nativeEvent: {
+          type: 'click',
+          isTrusted: true,
+          preventDefault() {},
+          stopPropagation() {}
+        }
+      };
+      props.onClick(evt);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function clearComposerAttachments() {
+    const form = getComposerFormEl();
+    if (!form) return false;
+    const deadline = now() + 2500;
+
+    let removedAny = false;
+    let guard = 0;
+    while (now() < deadline && guard++ < 20) {
+      const btn = form.querySelector(COMPOSER_REMOVE_FILE_SELECTOR);
+      if (!(btn instanceof HTMLElement)) break;
+      if (isElementDisabled(btn)) break;
+
+      removedAny = true;
+      const clicked = callReactOnClick(btn);
+      if (!clicked) {
+        try {
+          btn.click();
+        } catch {}
+      }
+
+      // Wait for ChatGPT to update attachment state.
+      const start = now();
+      while (now() - start < 800) {
+        if (!btn.isConnected) break;
+        if (!form.querySelector(COMPOSER_REMOVE_FILE_SELECTOR)) break;
+        await sleep(50);
+      }
+      await sleep(30);
+    }
+
+    // Also clear any file inputs as a best-effort fallback.
+    try {
+      const inputs = Array.from(form.querySelectorAll('input[type="file"]'));
+      for (const input of inputs) {
+        try {
+          input.value = '';
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch {}
+      }
+    } catch {}
+
+    return removedAny;
   }
 
   function ensureStyles() {
@@ -781,6 +858,7 @@
 
     setBanner('消息编辑模式：正在准备…');
 
+    await clearComposerAttachments();
     clearComposerText();
     setComposerText(extractUserText(userMsg));
 

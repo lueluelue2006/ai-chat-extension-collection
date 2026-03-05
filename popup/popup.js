@@ -782,6 +782,30 @@
       }
 
       let saveChain = Promise.resolve();
+      let menuRefreshTimer = 0;
+      let menuRefreshSeq = 0;
+      let menuRefreshAppliedSeq = 0;
+
+      function clearPendingMenuRefresh() {
+        if (!menuRefreshTimer) return;
+        clearTimeout(menuRefreshTimer);
+        menuRefreshTimer = 0;
+      }
+
+      function queueMenuRefresh(delayMs = 300) {
+        const seq = ++menuRefreshSeq;
+        clearPendingMenuRefresh();
+        menuRefreshTimer = setTimeout(async () => {
+          menuRefreshTimer = 0;
+          const next = await refreshMenu();
+          if (seq !== menuRefreshSeq || seq < menuRefreshAppliedSeq) return;
+          menuRefreshAppliedSeq = seq;
+          menuByModule = next.byModule;
+          unmappedMenu = next.unmapped;
+          renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
+        }, Math.max(0, Number(delayMs) || 0));
+      }
+
       function enqueueSave(fn) {
         saveChain = saveChain
           .catch(() => void 0)
@@ -810,13 +834,7 @@
 
           setStatus('已保存', 'ok');
           renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
-
-          setTimeout(async () => {
-            const next = await refreshMenu();
-            menuByModule = next.byModule;
-            unmappedMenu = next.unmapped;
-            renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
-          }, 300);
+          queueMenuRefresh(300);
         });
       }
 

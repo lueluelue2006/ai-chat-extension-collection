@@ -43,6 +43,8 @@
   const MAIN_MENU_RUN_EVENT = '__quicknav_menu_bridge_run_main_command_v1__';
   const MAIN_MENU_GROUP = 'ChatGPT 消息树';
   const MAIN_MENU_MODULE_ID = 'chatgpt_message_tree';
+  const MAIN_MENU_BRIDGE_SOURCE = 'content/menu-bridge.js';
+  const MAIN_MENU_SELF_SOURCE = 'content/chatgpt-message-tree/main.js';
 
   function getOrCreateBridgeNonce() {
     const fallback = 'quicknav-bridge-fallback';
@@ -343,6 +345,31 @@
     } catch {}
   }
 
+  function getExtensionCallerSource(skipSource) {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return '';
+      const skip = String(skipSource || '').trim();
+      const lines = String(stack).split('\n').map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(/chrome-extension:\/\/[^/]+\/([^\s:)]+\.js)/i);
+        if (!match) continue;
+        const source = String(match[1] || '').trim();
+        if (!source) continue;
+        if (skip && source.includes(skip)) continue;
+        return source;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function isTrustedMainMenuRunDispatch() {
+    const callerSource = getExtensionCallerSource(MAIN_MENU_SELF_SOURCE);
+    return !!callerSource && callerSource.includes(MAIN_MENU_BRIDGE_SOURCE);
+  }
+
   function clearMainMenuRetryTimers() {
     try {
       for (const timerId of Array.from(state.mainMenuRetryTimers || [])) {
@@ -394,6 +421,7 @@
       if (state.mainMenuRunHandler) return;
       state.mainMenuRunHandler = (e) => {
         try {
+          if (!isTrustedMainMenuRunDispatch()) return;
           const d = e?.detail && typeof e.detail === 'object' ? e.detail : {};
           const handlerKey = String(d.handlerKey || '').trim();
           const fn = handlerKey ? state.mainMenuHandlers?.[handlerKey] : null;

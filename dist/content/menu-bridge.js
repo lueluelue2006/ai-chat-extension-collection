@@ -16,8 +16,16 @@
   const MAIN_MENU_SOURCE = 'main-world';
   const MAIN_WORLD_ALLOWLIST = Object.freeze([
     // Only a few scripts run in MAIN world and need this bridge. Keep it tight to reduce page spoofing.
-    Object.freeze({ group: 'ChatGPT 用量统计', handlerKeyPrefix: 'chatgpt_usage_monitor:' }),
-    Object.freeze({ group: 'ChatGPT 消息树', handlerKeyPrefix: 'chatgpt_message_tree:' })
+    Object.freeze({
+      group: 'ChatGPT 用量统计',
+      handlerKeyPrefix: 'chatgpt_usage_monitor:',
+      sourceIncludes: 'content/chatgpt-usage-monitor/main.js'
+    }),
+    Object.freeze({
+      group: 'ChatGPT 消息树',
+      handlerKeyPrefix: 'chatgpt_message_tree:',
+      sourceIncludes: 'content/chatgpt-message-tree/main.js'
+    })
   ]);
   const MAX_COMMANDS = 100;
   /** @type {{commands: Array<{id: string, name: string, fn: Function, group?: string, source?: string, moduleId?: string, handlerKey?: string}>, nextId: number, listenerInstalled: boolean, __deduped?: boolean}} */
@@ -131,6 +139,23 @@
     return tail || p;
   }
 
+  function getMainWorldAllowRule(group, handlerKey, callerSource) {
+    const normalizedGroup = String(group || '').trim();
+    const normalizedHandlerKey = String(handlerKey || '').trim();
+    const normalizedCallerSource = String(callerSource || '').trim();
+    if (!normalizedGroup || !normalizedHandlerKey || !normalizedCallerSource) return null;
+    return (
+      MAIN_WORLD_ALLOWLIST.find((rule) => {
+        if (!rule || rule.group !== normalizedGroup) return false;
+        const prefix = String(rule.handlerKeyPrefix || '');
+        const sourceIncludes = String(rule.sourceIncludes || '');
+        if (!prefix || !normalizedHandlerKey.startsWith(prefix)) return false;
+        if (!sourceIncludes || !normalizedCallerSource.includes(sourceIncludes)) return false;
+        return true;
+      }) || null
+    );
+  }
+
   function readMenuMetadata(rawMetadata) {
     const meta = rawMetadata && typeof rawMetadata === 'object' ? rawMetadata : null;
     if (!meta) return { group: '', moduleId: '' };
@@ -180,11 +205,10 @@
         const handlerKey = String(d.handlerKey || '').trim();
         const group = String(d.group || 'Main').trim() || 'Main';
         const moduleId = String(d.moduleId || '').trim();
+        const callerSource = getCallerSource();
         if (!name || !handlerKey) return;
         if (name.length > 120 || handlerKey.length > 240 || group.length > 120 || moduleId.length > 120) return;
-
-        const allow = MAIN_WORLD_ALLOWLIST.some((r) => r && r.group === group && handlerKey.startsWith(String(r.handlerKeyPrefix || '')));
-        if (!allow) return;
+        if (!getMainWorldAllowRule(group, handlerKey, callerSource)) return;
 
         const runProxy = () => {
           try {
@@ -197,13 +221,13 @@
         if (existingCmd) {
           existingCmd.fn = runProxy;
           existingCmd.handlerKey = handlerKey;
-          existingCmd.source = MAIN_MENU_SOURCE;
+          existingCmd.source = callerSource || MAIN_MENU_SOURCE;
           if (moduleId) existingCmd.moduleId = moduleId;
           return;
         }
 
         const id = String(state.nextId++);
-        const command = { id, name, fn: runProxy, group, source: MAIN_MENU_SOURCE, handlerKey };
+        const command = { id, name, fn: runProxy, group, source: callerSource || MAIN_MENU_SOURCE, handlerKey };
         if (moduleId) command.moduleId = moduleId;
         state.commands.push(command);
         if (state.commands.length > MAX_COMMANDS) state.commands = state.commands.slice(-MAX_COMMANDS);

@@ -202,6 +202,7 @@ QuickNav 注入顺序（实现细节）已经收敛到 `shared/injections.ts`，
   - `AISHORTCUTS_RUN_MENU` → 执行某个 `id`
 
 MAIN world 菜单桥（关键）：MAIN world 不能把函数引用交给 ISOLATED，所以 `menu-bridge.js` 通过 `CustomEvent` 做“注册 key / 执行 key”的单向桥接。
+从 2026-03-05 的安全收口开始，这条桥不再只看 `group + handlerKeyPrefix`；注册侧还会校验调用栈里的扩展脚本来源，执行侧也只接受由 `content/menu-bridge.js` 触发的 run 事件，避免页面脚本伪造同名 `CustomEvent` 混入弹窗菜单。
 
 ### 5.4 Scroll Guard：MAIN world 防自动滚动 + 路由广播
 

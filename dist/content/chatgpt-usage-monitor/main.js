@@ -656,6 +656,8 @@
   const __aichatMainMenuRunEvent = '__quicknav_menu_bridge_run_main_command_v1__';
   const __aichatMainMenuGroup = 'ChatGPT 用量统计';
   const __aichatMainMenuModuleId = 'chatgpt_usage_monitor';
+  const __aichatMainMenuBridgeSource = 'content/menu-bridge.js';
+  const __aichatMainMenuSelfSource = 'content/chatgpt-usage-monitor/main.js';
   const __aichatUsageMonitorSetPlanEvent = '__aichat_chatgpt_usage_monitor_set_plan_v1__';
   const __aichatUsageMonitorPlanChangedEvent = '__aichat_chatgpt_usage_monitor_plan_changed_v1__';
   const __aichatUsageMonitorActionEvent = '__aichat_chatgpt_usage_monitor_action_v1__';
@@ -678,6 +680,31 @@
     try {
       window.dispatchEvent(new CustomEvent(__aichatMainMenuRegisterEvent, { detail }));
     } catch {}
+  }
+
+  function __aichatGetExtensionCallerSource(skipSource) {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return '';
+      const skip = String(skipSource || '').trim();
+      const lines = String(stack).split('\n').map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(/chrome-extension:\/\/[^/]+\/([^\s:)]+\.js)/i);
+        if (!match) continue;
+        const source = String(match[1] || '').trim();
+        if (!source) continue;
+        if (skip && source.includes(skip)) continue;
+        return source;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function __aichatIsTrustedMainMenuRunDispatch() {
+    const callerSource = __aichatGetExtensionCallerSource(__aichatMainMenuSelfSource);
+    return !!callerSource && callerSource.includes(__aichatMainMenuBridgeSource);
   }
 
   // Register a MAIN-world handler with the isolated-world menu bridge (via CustomEvent).
@@ -712,6 +739,7 @@
       __aichatMainMenuRunEvent,
       (e) => {
         try {
+          if (!__aichatIsTrustedMainMenuRunDispatch()) return;
           const d = e?.detail && typeof e.detail === 'object' ? e.detail : {};
           const handlerKey = String(d.handlerKey || '').trim();
           const fn = handlerKey ? __aichatMainMenuHandlers[handlerKey] : null;

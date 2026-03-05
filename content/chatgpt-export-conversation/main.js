@@ -39,12 +39,58 @@
       .replace(/'/g, '&#39;');
   }
 
+  const EXPORT_HTML_ALLOWED_GLOBAL_ATTRS = new Set(['dir', 'lang', 'title']);
+  const EXPORT_HTML_ALLOWED_TAG_ATTRS = Object.freeze({
+    A: new Set(['href', 'title']),
+    IMG: new Set(['src', 'alt', 'title', 'width', 'height']),
+    TD: new Set(['colspan', 'rowspan']),
+    TH: new Set(['colspan', 'rowspan']),
+    OL: new Set(['start', 'reversed']),
+    LI: new Set(['value']),
+    TIME: new Set(['datetime'])
+  });
+
+  function sanitizeExportLinkUrl(rawValue) {
+    try {
+      const value = String(rawValue || '').trim();
+      if (!value || value.length > 4096) return '';
+      if (/[\u0000-\u001F\u007F]/.test(value)) return '';
+      if (/^#/i.test(value)) return value;
+      if (/^(https?:|mailto:|tel:)/i.test(value)) return value;
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function sanitizeExportImageUrl(rawValue) {
+    try {
+      const value = String(rawValue || '').trim();
+      if (!value || value.length > 4096) return '';
+      if (/[\u0000-\u001F\u007F]/.test(value)) return '';
+      if (/^https?:/i.test(value)) return value;
+      if (/^data:image\/(?:png|jpe?g|gif|webp|bmp|svg\+xml|avif);base64,[a-z0-9+/=\s]+$/i.test(value)) {
+        return value.replace(/\s+/g, '');
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function sanitizeExportNumericAttr(rawValue, max) {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) return '';
+    const safe = Math.max(1, Math.min(Number(max) || 9999, Math.round(value)));
+    return String(safe);
+  }
+
   function sanitizeExportHtmlFromElement(el) {
     try {
       if (!el || !(el instanceof Element)) return '';
       const clone = el.cloneNode(true);
 
-      const banned = new Set(['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META']);
+      const banned = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'FORM']);
       const sanitizeEl = (node) => {
         if (!node || !(node instanceof Element)) return;
         if (banned.has(node.tagName)) {
@@ -52,23 +98,113 @@
           return;
         }
 
+        const allowedAttrs = EXPORT_HTML_ALLOWED_TAG_ATTRS[node.tagName] || null;
         const attrs = Array.from(node.attributes || []);
         for (const a of attrs) {
           const name = String(a?.name || '');
           const value = String(a?.value || '');
+          const lowerName = name.toLowerCase();
           if (!name) continue;
           if (/^on/i.test(name)) {
             try { node.removeAttribute(name); } catch {}
             continue;
           }
-          if (name === 'srcdoc') {
+          if (
+            lowerName === 'srcdoc' ||
+            lowerName === 'style' ||
+            lowerName === 'srcset' ||
+            lowerName === 'poster' ||
+            lowerName === 'action' ||
+            lowerName === 'formaction' ||
+            lowerName === 'background' ||
+            lowerName === 'cite' ||
+            lowerName.startsWith('data-') ||
+            lowerName.startsWith('aria-')
+          ) {
             try { node.removeAttribute(name); } catch {}
             continue;
           }
-          if (name === 'href' || name === 'src' || name === 'xlink:href') {
-            if (/^\s*javascript:/i.test(value)) {
+          if (!EXPORT_HTML_ALLOWED_GLOBAL_ATTRS.has(lowerName) && !(allowedAttrs && allowedAttrs.has(lowerName))) {
+            try { node.removeAttribute(name); } catch {}
+            continue;
+          }
+          if (node.tagName === 'A' && lowerName === 'href') {
+            const safeHref = sanitizeExportLinkUrl(value);
+            if (!safeHref) {
+              try { node.removeAttribute(name); } catch {}
+            } else {
+              try { node.setAttribute('href', safeHref); } catch {}
+              try { node.setAttribute('rel', 'noopener noreferrer nofollow'); } catch {}
+              try { node.setAttribute('target', '_blank'); } catch {}
+            }
+            continue;
+          }
+          if (node.tagName === 'IMG' && lowerName === 'src') {
+            const safeSrc = sanitizeExportImageUrl(value);
+            if (!safeSrc) {
+              try { node.remove(); } catch {}
+              return;
+            }
+            try { node.setAttribute('src', safeSrc); } catch {}
+            try { node.setAttribute('loading', 'lazy'); } catch {}
+            try { node.setAttribute('referrerpolicy', 'no-referrer'); } catch {}
+            continue;
+          }
+          if ((node.tagName === 'IMG' || node.tagName === 'A') && lowerName === 'title') {
+            try { node.setAttribute('title', value.slice(0, 512)); } catch {}
+            continue;
+          }
+          if (node.tagName === 'IMG' && lowerName === 'alt') {
+            try { node.setAttribute('alt', value.slice(0, 512)); } catch {}
+            continue;
+          }
+          if (node.tagName === 'IMG' && (lowerName === 'width' || lowerName === 'height')) {
+            const safeSize = sanitizeExportNumericAttr(value, 4096);
+            if (!safeSize) {
+              try { node.removeAttribute(name); } catch {}
+            } else {
+              try { node.setAttribute(name, safeSize); } catch {}
+            }
+            continue;
+          }
+          if ((node.tagName === 'TD' || node.tagName === 'TH') && (lowerName === 'colspan' || lowerName === 'rowspan')) {
+            const safeSpan = sanitizeExportNumericAttr(value, 64);
+            if (!safeSpan) {
+              try { node.removeAttribute(name); } catch {}
+            } else {
+              try { node.setAttribute(name, safeSpan); } catch {}
+            }
+            continue;
+          }
+          if (node.tagName === 'OL' && lowerName === 'start') {
+            const safeStart = sanitizeExportNumericAttr(value, 1000000);
+            if (!safeStart) {
+              try { node.removeAttribute(name); } catch {}
+            } else {
+              try { node.setAttribute(name, safeStart); } catch {}
+            }
+            continue;
+          }
+          if (node.tagName === 'OL' && lowerName === 'reversed') {
+            if (!value || value === 'reversed') {
+              try { node.setAttribute('reversed', 'reversed'); } catch {}
+            } else {
               try { node.removeAttribute(name); } catch {}
             }
+            continue;
+          }
+          if (node.tagName === 'LI' && lowerName === 'value') {
+            const safeValue = sanitizeExportNumericAttr(value, 1000000);
+            if (!safeValue) {
+              try { node.removeAttribute(name); } catch {}
+            } else {
+              try { node.setAttribute(name, safeValue); } catch {}
+            }
+            continue;
+          }
+          if (node.tagName === 'TIME' && lowerName === 'datetime') {
+            try { node.setAttribute(name, value.slice(0, 128)); } catch {}
+            continue;
           }
         }
       };

@@ -11,7 +11,6 @@
 > - `background/sw.js` + `background/sw/*.ts`（`sw.js` 只做装配；模块负责注册/设置/监控/重置/路由）  
 > - `shared/registry.ts`（站点/模块元数据；Popup/Options 的“单一真相”）  
 > - `shared/injections.ts`（注入定义；SW 的“单一真相”）
-> - `shared/ui-shell.css`（扩展页共享 UI 壳层；Popup/Options 的视觉 token 与基础组件）
 
 本文以 `manifest.source.json`（以及构建产物 `dist/manifest.json`）当前内容为准，假设读者了解 Chrome Extension MV3（Service Worker / content scripts / MAIN vs ISOLATED world）。
 
@@ -379,15 +378,13 @@ Turn 筛选策略（维护重点）：
 
 ### Popup（`popup/popup.js`）
 
-- 视觉层：`shared/ui-shell.css` + `popup/popup.css`，采用共享 token + Popup 专属布局；首页摘要会实时显示总开关、当前站点、启用模块数与可运行菜单数。
 - 读取/修改设置：`AISHORTCUTS_GET_SETTINGS`、`AISHORTCUTS_PATCH_SETTINGS`
 - 菜单发现/执行：向当前 tab 发 `AISHORTCUTS_GET_MENU`、`AISHORTCUTS_RUN_MENU`
 - 更新检查：拉取远端 `dist/manifest.json` version 做对比（仅提示，不自动更新）
 
 ### Options（`options/options.js`）
 
-- 视觉层：`shared/ui-shell.css` + `options/options.css`；共享色板/按钮/卡片规范，页面内再叠加“概览卡片 + 三栏工作区 + 监控面板”的控制台布局。
-- 主入口：三栏布局（站点/模块/设置）+ 顶部概览摘要 + 模块设置面板路由（`renderModuleSettings(...)`）
+- 主入口：三栏布局（站点/模块/设置）+ 模块设置面板路由（`renderModuleSettings(...)`）
 - 设置操作：`AISHORTCUTS_GET_SETTINGS`、`AISHORTCUTS_PATCH_SETTINGS`、`AISHORTCUTS_RESET_DEFAULTS`
 - OpenAI 资源监控：通过 `AISHORTCUTS_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当资源可访问时会在 `chatgpt.com` 显示页内横幅。若需停止提醒，清空 URL 列表并保存即可（`MARK_READ` 只清未读标记）
 - 横幅“打开配置”动作：内容脚本通过 `AISHORTCUTS_OPEN_OPTIONS_PAGE` 交给 SW 调扩展 API 打开配置页（优先 `chrome.tabs.create(optionsUrl)`，失败再 fallback `chrome.runtime.openOptionsPage()`）；该消息为低风险动作，SW 端不再对 sender 做额外拦截，避免不同实例字段差异导致误判。

@@ -23,11 +23,6 @@
   const elAuthor = document.getElementById('author');
   const elVersion = document.getElementById('version');
   const elStatus = document.getElementById('status');
-  const elGlobalStateLabel = document.getElementById('globalStateLabel');
-  const elActiveModuleCount = document.getElementById('activeModuleCount');
-  const elActiveMenuCount = document.getElementById('activeMenuCount');
-  const elSiteContextLabel = document.getElementById('siteContextLabel');
-  const elWorkspaceSummary = document.getElementById('workspaceSummary');
   const btnCheck = document.getElementById('checkUpdate');
   const btnOpen = document.getElementById('openRepo');
   const btnOptions = document.getElementById('openOptions');
@@ -561,71 +556,8 @@
     return { byModule, unmapped };
   }
 
-  function countEnabledModulesForPopup(settings, activeSiteId) {
-    if (settings?.enabled === false) return 0;
-    let total = 0;
-    const collect = (siteId, modules) => {
-      if (!Array.isArray(modules)) return;
-      for (const moduleId of modules) {
-        if (settings?.siteModules?.[siteId]?.[moduleId] !== false) total += 1;
-      }
-    };
-
-    const commonDef = getSiteDef('common');
-    if (commonDef && settings?.sites?.common !== false) collect('common', commonDef.modules);
-
-    if (activeSiteId && activeSiteId !== 'common') {
-      const siteDef = getSiteDef(activeSiteId);
-      if (siteDef && settings?.sites?.[activeSiteId] !== false) collect(activeSiteId, siteDef.modules);
-    }
-
-    return total;
-  }
-
-  function countVisibleMenuCommands(menuByModule, unmappedMenu) {
-    let total = 0;
-    for (const list of Object.values(menuByModule || {})) {
-      if (Array.isArray(list)) total += list.length;
-    }
-    if (Array.isArray(unmappedMenu)) total += unmappedMenu.length;
-    return total;
-  }
-
-  function renderHeroSummary({ settings, activeSiteId, menuByModule, unmappedMenu }) {
-    const siteDef = activeSiteId ? getSiteDef(activeSiteId) : null;
-    const enabledModules = countEnabledModulesForPopup(settings, activeSiteId);
-    const menuCount = countVisibleMenuCommands(menuByModule, unmappedMenu);
-
-    if (elActiveModuleCount) elActiveModuleCount.textContent = String(enabledModules);
-    if (elActiveMenuCount) elActiveMenuCount.textContent = String(menuCount);
-
-    if (elSiteContextLabel) {
-      if (settings?.enabled === false) elSiteContextLabel.textContent = '扩展总开关已关闭，当前页面不会执行脚本';
-      else if (!siteDef) elSiteContextLabel.textContent = '当前页面未接入可控模块';
-      else elSiteContextLabel.textContent = String(siteDef.sub || '当前页面已接入控制台');
-    }
-
-    if (elGlobalStateLabel) {
-      if (settings?.enabled === false) elGlobalStateLabel.textContent = '总开关关闭';
-      else if (!siteDef) elGlobalStateLabel.textContent = '未接入站点';
-      else if (settings?.sites?.[activeSiteId] === false) elGlobalStateLabel.textContent = `${siteDef.name} 已停用`;
-      else elGlobalStateLabel.textContent = '脚本就绪';
-    }
-
-    if (elWorkspaceSummary) {
-      if (!siteDef) {
-        elWorkspaceSummary.textContent = '当前标签页没有接入可控脚本，只保留基础入口。';
-      } else if (menuCount > 0) {
-        elWorkspaceSummary.textContent = `当前页面可直接运行 ${menuCount} 个菜单动作，并可切换 ${enabledModules} 个启用模块。`;
-      } else {
-        elWorkspaceSummary.textContent = `当前页面没有暴露菜单动作；你仍可切换 ${enabledModules} 个启用模块。`;
-      }
-    }
-  }
-
   function renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate, onRunMenu }) {
     clearEl(elToggleList);
-    renderHeroSummary({ settings, activeSiteId, menuByModule, unmappedMenu });
     if (!elToggleList) return;
 
     const globalRow = createToggleRow({

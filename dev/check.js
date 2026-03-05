@@ -37,7 +37,6 @@ const DEV_SELF_TESTS = Object.freeze([
   'dev/test-chatgpt-export-conversation-sanitizer.js',
   'dev/test-menu-bridge-main-world-source-gates.js',
   'dev/test-popup-menu-refresh-race.js',
-  'dev/test-extension-ui-shell.js',
   'dev/test-chatgpt-mapping-client-and-reply-timer.js',
   'dev/test-chatgpt-tex-copy-quote.js',
   'dev/test-qwen-thinking-toggle.js',

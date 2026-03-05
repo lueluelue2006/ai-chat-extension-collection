@@ -4,152 +4,83 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AI捷径 设置</title>
-    <link rel="stylesheet" href="../shared/ui-shell.css" />
     <link rel="stylesheet" href="./options.css" />
   </head>
-  <body class="optionsPage">
-    <div class="optionsShell">
-      <header class="header card">
-        <div class="heroLayout">
-          <div class="heroIntro">
-            <div class="titleRow">
-              <img class="titleLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
-              <div>
-                <p class="sectionEyebrow">AI Shortcuts</p>
-                <div class="title">控制台</div>
-              </div>
-            </div>
-            <div class="subtitle">把多站点脚本、模块开关和资源监控集中在一个更清晰的工作台里。</div>
-          </div>
-          <div class="heroSide">
-            <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
-              <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">Light</button>
-              <button class="themeToggleBtn" id="themeDark" type="button" aria-label="暗色">Dark</button>
-            </div>
-          </div>
-        </div>
-        <div class="overviewGrid" aria-label="全局概览">
-          <div class="metricCard">
-            <div class="metricLabel">总开关</div>
-            <div class="metricValue" id="overviewEnabled">待加载</div>
-            <div class="metricNote" id="overviewSelection">正在读取当前工作区。</div>
-          </div>
-          <div class="metricCard">
-            <div class="metricLabel">站点范围</div>
-            <div class="metricValue" id="overviewSiteCount">0/0</div>
-            <div class="metricNote" id="overviewSiteDetail">正在统计站点开关。</div>
-          </div>
-          <div class="metricCard">
-            <div class="metricLabel">当前脚本</div>
-            <div class="metricValue" id="overviewModuleCount">0/0</div>
-            <div class="metricNote" id="overviewModuleDetail">选择脚本后会在这里显示摘要。</div>
-          </div>
-          <div class="metricCard">
-            <div class="metricLabel">新模型监控</div>
-            <div class="metricValue" id="overviewMonitorState">未检测</div>
-            <div class="metricNote" id="overviewMonitorDetail">等待监控状态返回。</div>
-          </div>
-        </div>
-      </header>
+  <body>
+    <header class="header">
+      <div class="titleRow">
+        <img class="titleLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
+        <div class="title">AI捷径 设置</div>
+      </div>
+      <div class="subtitle">在这里控制各网站与各模块的启用状态。</div>
+      <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
+        <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">☀︎</button>
+        <button class="themeToggleBtn" id="themeDark" type="button" aria-label="暗色">☾</button>
+      </div>
+    </header>
 
-      <main class="main">
-        <section class="card switchCard">
-          <div class="cardHeader">
-            <div>
-              <p class="sectionEyebrow">Master</p>
-              <h1 class="sectionTitle compactSectionTitle">全局总开关</h1>
-            </div>
-            <span class="pill neutral">Runtime</span>
-          </div>
-          <label class="toggle masterToggle">
+    <main class="main">
+      <section class="card">
+        <div class="cardTitle">总开关</div>
+        <label class="toggle">
           <input type="checkbox" id="enabled" />
-            <span>
-              <strong>启用扩展（所有模块）</strong>
-              <span class="toggleNote">保存后会自动同步到已打开页面。</span>
-            </span>
-          </label>
-          <div class="hintStack">
-            <div class="hint">若要彻底移除已注入内容，仍需手动刷新对应页面。</div>
-            <div class="hint">安装路径必须是 <code>dist/</code> 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。</div>
-          </div>
-        </section>
+          <span>启用扩展（所有模块）</span>
+        </label>
+        <div class="hint">保存后会自动生效到已打开页面；若要彻底移除已注入内容，仍需手动刷新对应页面。</div>
+        <div class="hint">安装路径必须是 <code>dist/</code> 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。</div>
+      </section>
 
-        <section class="card workspaceCard">
-          <div class="cardHeader workspaceHeader">
-            <div>
-              <p class="sectionEyebrow">Workspace</p>
-              <h2 class="sectionTitle compactSectionTitle">站点与脚本编排</h2>
-              <p class="sectionSub" id="selectionSummary">选择站点和脚本后，在右侧编辑模块设置。</p>
-            </div>
-          </div>
-          <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
-            <div class="triCol" aria-label="页面">
-              <div class="triHeader">
-                <div class="triTitle">页面</div>
-                <div class="pill neutral triCount" id="siteCountBadge">0</div>
-              </div>
+      <section class="card">
+        <div class="cardTitle">配置</div>
+        <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
+          <div class="triCol" aria-label="页面">
+            <div class="triTitle">页面</div>
             <input class="triSearch" id="siteSearch" type="search" placeholder="搜索页面…" />
             <div class="triList" id="siteList"></div>
-            </div>
-            <div class="triCol" aria-label="脚本">
-              <div class="triHeader">
-                <div class="triTitle">脚本</div>
-                <div class="pill neutral triCount" id="moduleCountBadge">0</div>
-              </div>
+          </div>
+          <div class="triCol" aria-label="脚本">
+            <div class="triTitle">脚本</div>
             <input class="triSearch" id="moduleSearch" type="search" placeholder="搜索脚本…" />
             <div class="triList" id="moduleList"></div>
-            </div>
-            <div class="triCol triColPanel" aria-label="脚本设置">
-              <div class="triHeader">
-                <div class="triTitle">设置</div>
-                <div class="inspectorMeta">
-                  <div class="inspectorTitle" id="inspectorTitle">当前脚本</div>
-                  <div class="inspectorSub" id="inspectorSub">选择脚本后显示详细设置。</div>
-                </div>
-              </div>
+          </div>
+          <div class="triCol" aria-label="脚本设置">
+            <div class="triTitle">设置</div>
             <div class="triPanel" id="moduleSettings"></div>
-            </div>
           </div>
-          <div class="hint">提示：设置变更会自动生效；关闭某个模块后，已打开页面一般仍需刷新才会完全停用。</div>
-        </section>
+        </div>
+        <div class="hint">提示：设置变更会自动生效；关闭某个模块后，已打开页面一般仍需刷新才会完全停用。</div>
+      </section>
 
-        <section class="card monitorCard" aria-label="OpenAI 新模型监控">
-          <div class="cardHeader">
-            <div>
-              <p class="sectionEyebrow">Monitor</p>
-              <h2 class="sectionTitle compactSectionTitle">OpenAI 新模型监控</h2>
-            </div>
-            <span class="pill warm">5 min</span>
-          </div>
-          <div class="hint">
+      <section class="card" aria-label="OpenAI 新模型监控">
+        <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
+        <div class="hint">
           每 5 分钟请求一次下方每个 URL（目前仅支持 cdn.openai.com）；只要检测到可用资源（非 404）就会提醒你（系统通知 + 扩展角标 + ChatGPT 页内横幅）。要停止提醒，请删除全部 URL 并保存（空列表会停用检测/提醒；横幅不会被点击关闭）。
+        </div>
+        <div class="alertBox" id="gpt53AlertBox" hidden>
+          <div class="alertTitle">OpenAI 新模型提示</div>
+          <div class="alertText" id="gpt53AlertText"></div>
+          <div class="actions">
+            <button class="btn secondary" id="gpt53MarkRead" type="button">清除角标（不停止提醒）</button>
           </div>
-          <div class="alertBox" id="gpt53AlertBox" hidden>
-            <div class="alertTitle">OpenAI 新模型提示</div>
-            <div class="alertText" id="gpt53AlertText"></div>
-            <div class="actions monitorActions">
-              <button class="btn ghost" id="gpt53MarkRead" type="button">清除角标（不停止提醒）</button>
-            </div>
-          </div>
-          <textarea class="codeBox" id="gpt53Urls" rows="4" spellcheck="false" placeholder="每行一个：https://cdn.openai.com/..."></textarea>
-          <div class="actions monitorActions">
-            <button class="btn secondary" id="gpt53Save" type="button">保存列表</button>
-            <button class="btn ghost" id="gpt53Refresh" type="button">查看状态</button>
-            <button class="btn" id="gpt53Run" type="button">立即检测</button>
-          </div>
-          <div class="gpt53Status" id="gpt53Status">（未检测）</div>
-        </section>
+        </div>
+        <textarea class="codeBox" id="gpt53Urls" rows="3" spellcheck="false" placeholder="每行一个：https://cdn.openai.com/..."></textarea>
+        <div class="actions">
+          <button class="btn secondary" id="gpt53Save" type="button">保存列表</button>
+          <button class="btn secondary" id="gpt53Refresh" type="button">查看状态</button>
+          <button class="btn" id="gpt53Run" type="button">立即检测</button>
+        </div>
+        <div class="gpt53Status" id="gpt53Status">（未检测）</div>
+      </section>
 
-        <section class="actions actionDock">
-          <button class="btn secondary" id="restoreDefault" type="button">恢复默认</button>
-          <button class="btn danger" id="factoryReset" type="button">恢复出厂（清空所有数据）</button>
-          <button class="btn" id="reinjectNow" type="button">重新注入已打开页面</button>
-          <button class="btn ghost" id="openRepo" type="button">仓库链接</button>
-        </section>
+      <section class="actions">
+        <button class="btn secondary" id="restoreDefault" type="button">恢复默认</button>
+        <button class="btn danger" id="factoryReset" type="button">恢复出厂（清空所有数据）</button>
+        <button class="btn" id="reinjectNow" type="button">重新注入已打开页面</button>
+        <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
+      </section>
 
-        <div class="status" id="status" role="status" aria-live="polite"></div>
-      </main>
-    </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
 
     <script src="../shared/registry.js"></script>
     <script src="../shared/chatgpt-usage-monitor-utils.js"></script>

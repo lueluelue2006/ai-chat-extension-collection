@@ -4,54 +4,98 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AI Shortcuts</title>
+    <link rel="stylesheet" href="../shared/ui-shell.css" />
     <link rel="stylesheet" href="./popup.css" />
   </head>
-  <body>
-    <header class="header">
-      <div class="brand">
-        <img class="brandLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
-        <div class="brandText">
-          <div class="title">AI Shortcuts</div>
-          <div class="subtitle">脚本菜单</div>
+  <body class="popupPage">
+    <div class="popupShell">
+      <header class="card heroCard">
+        <div class="heroHead">
+          <div class="heroBrand">
+            <img class="brandLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
+            <div class="heroCopy">
+              <div class="pill neutral">AI Shortcuts</div>
+              <div class="heroTitleGroup">
+                <div class="heroTitle" id="siteName">未检测</div>
+                <div class="heroContext" id="siteContextLabel">尚未绑定到支持站点</div>
+              </div>
+            </div>
+          </div>
+          <div class="heroMeta">
+            <div class="metaCard">
+              <div class="metaKey">版本</div>
+              <div class="metaValue" id="version"></div>
+            </div>
+            <div class="metaCard">
+              <div class="metaKey">维护</div>
+              <div class="metaValue" id="author"></div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="meta">
-        <div class="row"><span class="k">作者</span><span class="v" id="author"></span></div>
-        <div class="row"><span class="k">版本</span><span class="v" id="version"></span></div>
-      </div>
-    </header>
+        <div class="heroBody">
+          <div class="heroUrl" id="siteUrl"></div>
+          <div class="heroMetrics">
+            <div class="metricCard compact">
+              <div class="metricLabel">扩展状态</div>
+              <div class="metricValue compactValue" id="globalStateLabel">待检测</div>
+            </div>
+            <div class="metricCard compact">
+              <div class="metricLabel">启用模块</div>
+              <div class="metricValue compactValue" id="activeModuleCount">0</div>
+            </div>
+            <div class="metricCard compact">
+              <div class="metricLabel">菜单操作</div>
+              <div class="metricValue compactValue" id="activeMenuCount">0</div>
+            </div>
+          </div>
+        </div>
+      </header>
 
-    <main class="main">
-      <section class="toolbar" aria-label="快捷操作">
-        <div class="actions actionsPrimary">
-          <button class="btn" id="checkUpdate" type="button">检查更新</button>
-          <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
-        </div>
-        <div class="actions actionsSingle">
-          <button class="btn secondary" id="openOptions" type="button">配置</button>
-        </div>
-      </section>
+      <main class="main">
+        <section class="card quickActions" aria-label="快捷操作">
+          <div class="sectionHead">
+            <div>
+              <p class="sectionEyebrow">Actions</p>
+              <h1 class="sectionTitle compactSectionTitle">快速入口</h1>
+              <p class="sectionSub" id="workspaceSummary">配置、更新检查与仓库入口集中在这里。</p>
+            </div>
+          </div>
+          <div class="actions actionGrid">
+            <button class="btn" id="checkUpdate" type="button">检查更新</button>
+            <button class="btn secondary" id="openOptions" type="button">打开配置</button>
+            <button class="btn ghost actionWide" id="openRepo" type="button">查看仓库</button>
+          </div>
+        </section>
 
-      <section class="card" id="gpt53AlertCard" aria-label="OpenAI 新模型提示" hidden>
-        <div class="cardTitle">OpenAI 新模型提示</div>
-        <div class="hint" id="gpt53AlertText"></div>
-        <div class="actions">
-          <button class="btn" id="gpt53AlertOpenOptions" type="button">打开配置</button>
-          <button class="btn secondary" id="gpt53AlertMarkRead" type="button">知道了</button>
-        </div>
-      </section>
+        <section class="card alertCard" id="gpt53AlertCard" aria-label="OpenAI 新模型提示" hidden>
+          <div class="cardHeader">
+            <div>
+              <p class="sectionEyebrow">Watch</p>
+              <h2 class="sectionTitle compactSectionTitle">OpenAI 新模型提醒</h2>
+            </div>
+            <span class="pill warm">Live</span>
+          </div>
+          <div class="hint alertText" id="gpt53AlertText"></div>
+          <div class="actions alertActions">
+            <button class="btn secondary" id="gpt53AlertOpenOptions" type="button">打开配置</button>
+            <button class="btn ghost" id="gpt53AlertMarkRead" type="button">清除提示</button>
+          </div>
+        </section>
 
-      <section class="card" id="siteCard" aria-label="当前页面脚本">
-        <div class="cardTitle">当前页面</div>
-        <div class="siteMeta">
-          <div class="siteName" id="siteName">未检测</div>
-          <div class="siteUrl" id="siteUrl"></div>
-        </div>
-        <div class="toggleList" id="toggleList"></div>
-      </section>
+        <section class="card siteCard" id="siteCard" aria-label="当前页面脚本">
+          <div class="cardHeader">
+            <div>
+              <p class="sectionEyebrow">Workspace</p>
+              <h2 class="sectionTitle compactSectionTitle">页面控制台</h2>
+              <p class="sectionSub">按站点和模块直接切换注入状态，支持在当前页面执行可见菜单。</p>
+            </div>
+          </div>
+          <div class="toggleList" id="toggleList"></div>
+        </section>
 
-      <div class="status" id="status" role="status" aria-live="polite"></div>
-    </main>
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+      </main>
+    </div>
 
     <script src="../shared/registry.js"></script>
     <script src="./popup.js"></script>

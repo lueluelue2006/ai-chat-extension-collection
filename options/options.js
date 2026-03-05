@@ -26,6 +26,19 @@
   const elModuleSettings = document.getElementById('moduleSettings');
   const elSiteSearch = document.getElementById('siteSearch');
   const elModuleSearch = document.getElementById('moduleSearch');
+  const elOverviewEnabled = document.getElementById('overviewEnabled');
+  const elOverviewSelection = document.getElementById('overviewSelection');
+  const elOverviewSiteCount = document.getElementById('overviewSiteCount');
+  const elOverviewSiteDetail = document.getElementById('overviewSiteDetail');
+  const elOverviewModuleCount = document.getElementById('overviewModuleCount');
+  const elOverviewModuleDetail = document.getElementById('overviewModuleDetail');
+  const elOverviewMonitorState = document.getElementById('overviewMonitorState');
+  const elOverviewMonitorDetail = document.getElementById('overviewMonitorDetail');
+  const elSelectionSummary = document.getElementById('selectionSummary');
+  const elSiteCountBadge = document.getElementById('siteCountBadge');
+  const elModuleCountBadge = document.getElementById('moduleCountBadge');
+  const elInspectorTitle = document.getElementById('inspectorTitle');
+  const elInspectorSub = document.getElementById('inspectorSub');
 
   const REGISTRY = (() => {
     try {
@@ -213,9 +226,112 @@
     }
   }
 
+  function updateWorkspaceOverview(siteId, moduleId) {
+    const filteredSites = typeof getFilteredSites === 'function' ? getFilteredSites() : [];
+    const filteredModules = typeof getFilteredModuleIds === 'function' ? getFilteredModuleIds(siteId) : [];
+    const activeSiteDef = getSite(siteId);
+    const activeModuleDef = MODULES?.[moduleId] || null;
+    const activeDisplay = typeof getModuleDisplayMeta === 'function' ? getModuleDisplayMeta(siteId, moduleId) : null;
+    const totalSites = Array.isArray(SITES) ? SITES.filter((site) => String(site?.id || '') !== 'common').length : 0;
+    const enabledSites = Array.isArray(SITES)
+      ? SITES.filter((site) => String(site?.id || '') !== 'common' && isSiteEnabled(String(site?.id || ''))).length
+      : 0;
+    const totalModules = Array.isArray(filteredModules) ? filteredModules.length : 0;
+    const enabledModules = Array.isArray(filteredModules)
+      ? filteredModules.reduce((sum, id) => sum + (isModuleEnabled(siteId, id) ? 1 : 0), 0)
+      : 0;
+    const displayName = String(activeDisplay?.name || activeModuleDef?.name || '').trim();
+    const displaySub = String(activeDisplay?.sub || activeModuleDef?.sub || '').trim();
+
+    if (elOverviewEnabled) {
+      elOverviewEnabled.textContent = currentSettings?.enabled === false ? '已停用' : '在线';
+    }
+    if (elOverviewSelection) {
+      if (activeSiteDef && displayName) elOverviewSelection.textContent = `${activeSiteDef.name} / ${displayName}`;
+      else if (activeSiteDef) elOverviewSelection.textContent = `${activeSiteDef.name} 工作区`;
+      else elOverviewSelection.textContent = '等待选择站点与脚本。';
+    }
+    if (elOverviewSiteCount) {
+      elOverviewSiteCount.textContent = `${enabledSites}/${totalSites || 0}`;
+    }
+    if (elOverviewSiteDetail) {
+      if (activeSiteDef) {
+        const siteLabel = String(activeSiteDef.id || '') === 'common' ? '通用脚本工作区' : activeSiteDef.name;
+        elOverviewSiteDetail.textContent = `当前聚焦：${siteLabel}`;
+      } else {
+        elOverviewSiteDetail.textContent = '当前没有聚焦站点。';
+      }
+    }
+    if (elOverviewModuleCount) {
+      elOverviewModuleCount.textContent = `${enabledModules}/${totalModules || 0}`;
+    }
+    if (elOverviewModuleDetail) {
+      if (displayName) elOverviewModuleDetail.textContent = displaySub || '当前脚本已选中，可在右侧编辑。';
+      else elOverviewModuleDetail.textContent = '选择脚本后会在这里显示摘要。';
+    }
+
+    if (elSelectionSummary) {
+      if (activeSiteDef && displayName) {
+        elSelectionSummary.textContent = `当前选择 ${activeSiteDef.name} / ${displayName}，右侧面板负责该模块的运行开关与细项配置。`;
+      } else if (activeSiteDef) {
+        const siteLabel = String(activeSiteDef.id || '') === 'common' ? '通用脚本工作区' : activeSiteDef.name;
+        elSelectionSummary.textContent = `当前正在查看 ${siteLabel}，请选择一个脚本进入详细设置。`;
+      } else {
+        elSelectionSummary.textContent = '选择站点和脚本后，在右侧编辑模块设置。';
+      }
+    }
+
+    if (elSiteCountBadge) elSiteCountBadge.textContent = String(Array.isArray(filteredSites) ? filteredSites.length : 0);
+    if (elModuleCountBadge) elModuleCountBadge.textContent = String(totalModules);
+
+    if (elInspectorTitle) {
+      elInspectorTitle.textContent = displayName || '当前脚本';
+    }
+    if (elInspectorSub) {
+      if (activeSiteDef && displaySub) elInspectorSub.textContent = `${activeSiteDef.name} · ${displaySub}`;
+      else if (activeSiteDef) elInspectorSub.textContent = `${activeSiteDef.name} · 选择脚本后显示详细设置。`;
+      else elInspectorSub.textContent = '选择脚本后显示详细设置。';
+    }
+  }
+
+  function updateMonitorOverview(resp) {
+    if (!elOverviewMonitorState || !elOverviewMonitorDetail) return;
+    if (!resp || resp.ok !== true) {
+      elOverviewMonitorState.textContent = '无响应';
+      elOverviewMonitorDetail.textContent = '等待监控状态返回。';
+      return;
+    }
+
+    const urls = Array.isArray(resp.urls) ? resp.urls.filter((u) => typeof u === 'string' && u.trim()) : [];
+    const alerts = resp.alerts && typeof resp.alerts === 'object' ? resp.alerts : null;
+    const unread = Number(alerts?.unread) || 0;
+
+    if (resp.enabled === false) {
+      elOverviewMonitorState.textContent = '总开关关闭';
+      elOverviewMonitorDetail.textContent = '扩展总开关关闭时不会继续监控。';
+      return;
+    }
+    if (resp.monitorEnabled !== true && resp.monitorReason === 'no_urls') {
+      elOverviewMonitorState.textContent = '未启用';
+      elOverviewMonitorDetail.textContent = 'URL 列表为空，填入资源地址后才会启动监控。';
+      return;
+    }
+    if (resp.monitorEnabled !== true) {
+      elOverviewMonitorState.textContent = '已停用';
+      elOverviewMonitorDetail.textContent = '当前监控未运行。';
+      return;
+    }
+
+    elOverviewMonitorState.textContent = unread > 0 ? '有提醒' : '运行中';
+    elOverviewMonitorDetail.textContent = unread > 0
+      ? `当前有 ${unread} 条未读提醒，监控范围 ${urls.length} 个 URL。`
+      : `正在轮询 ${urls.length} 个 URL。`;
+  }
+
   function renderGpt53MonitorStatus(resp) {
     if (!elGpt53Status) return;
     elGpt53Status.textContent = '';
+    updateMonitorOverview(resp);
     if (!resp || resp.ok !== true) {
       elGpt53Status.textContent = '（无响应）';
       return;
@@ -3412,6 +3528,7 @@
     renderSites(siteId);
     renderModules(siteId, moduleId);
     renderModuleSettings(siteId, moduleId, token);
+    updateWorkspaceOverview(siteId, moduleId);
     flushDeepLinkScroll();
   }
 

@@ -292,6 +292,7 @@
     escHandler: null,
     mainMenuHandlers: Object.create(null),
     mainMenuHandlerKeys: new Set(),
+    mainMenuRetryTimers: new Set(),
     mainMenuOwnerKey: `chatgpt-message-tree-${Math.random().toString(36).slice(2, 10)}`,
     mainMenuRunHandler: null,
     cleanup: null
@@ -342,6 +343,29 @@
     } catch {}
   }
 
+  function clearMainMenuRetryTimers() {
+    try {
+      for (const timerId of Array.from(state.mainMenuRetryTimers || [])) {
+        try { state.mainMenuRetryTimers.delete(timerId); } catch {}
+        try { clearTimeout(timerId); } catch {}
+      }
+    } catch {}
+  }
+
+  function scheduleMainMenuRegisterRetry(name, handlerKey, delayMs) {
+    try {
+      const timerId = setTimeout(() => {
+        try { state.mainMenuRetryTimers.delete(timerId); } catch {}
+        if (state.disposed) return;
+        dispatchMainMenuRegister(name, handlerKey);
+      }, Math.max(0, Number(delayMs) || 0));
+      state.mainMenuRetryTimers.add(timerId);
+      return timerId;
+    } catch {
+      return 0;
+    }
+  }
+
   function registerMainMenuCommand(name, fn) {
     const n = String(name || '').trim();
     if (!n || typeof fn !== 'function') return null;
@@ -360,8 +384,8 @@
     state.mainMenuHandlerKeys.add(handlerKey);
 
     dispatchMainMenuRegister(n, handlerKey);
-    setTimeout(() => dispatchMainMenuRegister(n, handlerKey), 500);
-    setTimeout(() => dispatchMainMenuRegister(n, handlerKey), 1500);
+    scheduleMainMenuRegisterRetry(n, handlerKey, 500);
+    scheduleMainMenuRegisterRetry(n, handlerKey, 1500);
     return handlerKey;
   }
 
@@ -2630,6 +2654,7 @@
     uninstallTurnsWatcher();
     uninstallQuickNavBridge();
     uninstallMainMenuRunBridge();
+    clearMainMenuRetryTimers();
     releaseMainMenuHandlers();
 
     try {

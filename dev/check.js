@@ -20,6 +20,8 @@ const CONTENT_RUNTIME_EXTENSIONS = new Set(['.css', '.js', ...TS_LOADERS.keys()]
 const DEV_SELF_TESTS = Object.freeze([
   'dev/test-usage-monitor-utils.js',
   'dev/test-usage-monitor-bridge.js',
+  'dev/test-gpt53-monitor-alarm.js',
+  'dev/test-sw-sender-gates.js',
   'dev/test-quicknav-bridge-nonce.js',
   'dev/test-quicknav-runtime-naming.js',
   'dev/test-qwen-quicknav-active-lock.js',
@@ -31,6 +33,7 @@ const DEV_SELF_TESTS = Object.freeze([
   'dev/test-chatgpt-thinking-toggle-effort-cycle.js',
   'dev/test-chatgpt-quicknav-pin-anchor.js',
   'dev/test-chatgpt-tree-quicknav-autocollapse.js',
+  'dev/test-chatgpt-message-tree-main-menu-retry.js',
   'dev/test-chatgpt-mapping-client-and-reply-timer.js',
   'dev/test-chatgpt-tex-copy-quote.js',
   'dev/test-qwen-thinking-toggle.js',
@@ -73,6 +76,23 @@ function readScriptsInventoryVersion() {
     throw new Error('docs/scripts-inventory.md is missing "- Version: <version>" (run: node dev/gen-scripts-inventory.js)');
   }
   return String(m[1] || '').trim();
+}
+
+function readDeepDiveStatsSnapshot() {
+  const doc = readText('docs/deep-dive.md');
+  const siteMatch = doc.match(/^- 站点：(\d+)/m);
+  const moduleMatch = doc.match(/^- 模块：(\d+)/m);
+  const defsMatch = doc.match(/^- 注入定义：(\d+)（MAIN\s+(\d+)\s+\/\s+ISOLATED\s+(\d+)）/m);
+  if (!siteMatch || !moduleMatch || !defsMatch) {
+    throw new Error('docs/deep-dive.md is missing the 规模与热点 stats block (run: node dev/stats.js and update docs/deep-dive.md)');
+  }
+  return {
+    siteCount: Number(siteMatch[1]) || 0,
+    moduleCount: Number(moduleMatch[1]) || 0,
+    defCount: Number(defsMatch[1]) || 0,
+    mainCount: Number(defsMatch[2]) || 0,
+    isolatedCount: Number(defsMatch[3]) || 0
+  };
 }
 
 function listSourceFiles(dirRel) {
@@ -441,6 +461,25 @@ function verifyNoOrphanContentRuntimeFiles(defs, manifest) {
   };
 }
 
+function summarizeInjectionStats(reg, defs) {
+  const sites = Array.isArray(reg?.sites) ? reg.sites : [];
+  const modules = reg?.modules && typeof reg.modules === 'object' ? reg.modules : {};
+  let mainCount = 0;
+  let isolatedCount = 0;
+  for (const def of Array.isArray(defs) ? defs : []) {
+    const world = String(def?.world || '').toUpperCase();
+    if (world === 'MAIN') mainCount += 1;
+    else isolatedCount += 1;
+  }
+  return {
+    siteCount: sites.length,
+    moduleCount: Object.keys(modules).length,
+    defCount: Array.isArray(defs) ? defs.length : 0,
+    mainCount,
+    isolatedCount
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -517,6 +556,38 @@ function main() {
     return;
   }
   console.log('Registry consistency: OK');
+
+  let deepDiveStats;
+  try {
+    deepDiveStats = readDeepDiveStatsSnapshot();
+  } catch (e) {
+    console.error(`docs/deep-dive.md stats check: FAIL (${e instanceof Error ? e.message : String(e)})`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const actualStats = summarizeInjectionStats(reg, runtimeDefs);
+  const statsMismatch =
+    deepDiveStats.siteCount !== actualStats.siteCount ||
+    deepDiveStats.moduleCount !== actualStats.moduleCount ||
+    deepDiveStats.defCount !== actualStats.defCount ||
+    deepDiveStats.mainCount !== actualStats.mainCount ||
+    deepDiveStats.isolatedCount !== actualStats.isolatedCount;
+  if (statsMismatch) {
+    console.error('docs/deep-dive.md stats check: FAIL');
+    console.error(
+      `- docs/deep-dive.md stats: sites ${deepDiveStats.siteCount}, modules ${deepDiveStats.moduleCount}, defs ${deepDiveStats.defCount} (MAIN ${deepDiveStats.mainCount} / ISOLATED ${deepDiveStats.isolatedCount})`
+    );
+    console.error(
+      `- actual stats: sites ${actualStats.siteCount}, modules ${actualStats.moduleCount}, defs ${actualStats.defCount} (MAIN ${actualStats.mainCount} / ISOLATED ${actualStats.isolatedCount})`
+    );
+    console.error('- Run: node dev/stats.js and update docs/deep-dive.md');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    `docs/deep-dive.md stats check: OK (sites ${actualStats.siteCount}, modules ${actualStats.moduleCount}, defs ${actualStats.defCount})`
+  );
 
   const orphanCheck = verifyNoOrphanContentRuntimeFiles(runtimeDefs, manifest);
   if (!orphanCheck.ok) {

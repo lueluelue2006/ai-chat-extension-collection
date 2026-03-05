@@ -45,8 +45,8 @@ npm run build
 ## 开发工作流
 
 - 修改源码后执行：`npm run build`
-- 本地质量检查：`npm run check`
-- 类型检查：`npm run typecheck`
+- 本地质量检查：`npm test`（等价于 `npm run check && npm run typecheck`）
+- 提交前完整校验：`npm run verify`（同步 manifest / 生成清单 / 测试 / 构建）
 - 在 `chrome://extensions` 点击该扩展「重新加载」
 
 ## 功能与站点

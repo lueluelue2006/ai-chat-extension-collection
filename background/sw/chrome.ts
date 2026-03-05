@@ -116,10 +116,47 @@ declare var chrome: any;
     }
   }
 
+  function getSupportedTabUrlPrefixes() {
+    try {
+      const reg = (root as any).AISHORTCUTS_REGISTRY;
+      const sites = Array.isArray(reg?.sites) ? reg.sites : [];
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const site of sites) {
+        const patterns = Array.isArray(site?.matchPatterns) ? site.matchPatterns : [];
+        for (const pattern of patterns) {
+          const raw = String(pattern || '').trim();
+          if (!raw) continue;
+          const star = raw.indexOf('*');
+          const prefix = (star >= 0 ? raw.slice(0, star) : raw).trim();
+          if (!prefix || seen.has(prefix)) continue;
+          seen.add(prefix);
+          out.push(prefix);
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  function isSupportedTabSender(sender: any) {
+    try {
+      const url = typeof sender?.url === 'string' && sender.url ? sender.url : typeof sender?.tab?.url === 'string' ? sender.tab.url : '';
+      if (!url) return false;
+      return getSupportedTabUrlPrefixes().some((prefix) => prefix && url.startsWith(prefix));
+    } catch {
+      return false;
+    }
+  }
+
   function senderGate(sender: any, options?: any) {
     const allowTabSender = !!options?.allowTabSender;
+    const requireSupportedTabUrl = !!options?.requireSupportedTabUrl;
     if (isExtensionPageSender(sender)) return '';
-    if (allowTabSender && Number.isFinite(sender?.tab?.id)) return '';
+    if (allowTabSender && Number.isFinite(sender?.tab?.id)) {
+      if (!requireSupportedTabUrl || isSupportedTabSender(sender)) return '';
+    }
     return 'forbidden';
   }
 
@@ -136,6 +173,7 @@ declare var chrome: any;
     scriptingUnregisterContentScripts,
     notificationsCreate,
     isExtensionPageSender,
+    isSupportedTabSender,
     senderGate
   });
 })();

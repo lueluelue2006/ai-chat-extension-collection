@@ -20,19 +20,19 @@
 
 ## 规模与热点（可复现）
 
-当前规模（由 `shared/registry.ts` + `shared/injections.ts` 实际计算得到；可跑 `node dev/stats.js` 复现）：
+请以 `node dev/stats.js` 的当次输出为准。2026-03-05 这次审计时的输出是：
 
 - 站点：10（含 `common`）
-- 模块：26
-- 注入定义：53（MAIN 19 / ISOLATED 34）
+- 模块：27
+- 注入定义：54（MAIN 20 / ISOLATED 34）
 
-代码热点（`wc -l` 口径，仅用于“哪里复杂/容易出问题”，会随提交变化）：
+代码热点（`wc -l` 口径，仅用于“哪里复杂/容易出问题”；请以本地现跑结果为准。2026-03-05 审计时示例输出如下）：
 
-- `content/chatgpt-quicknav.js`（约 5886 行）
-- `content/chatgpt-usage-monitor/main.js`（约 5226 行）
-- `content/chatgpt-message-tree/main.js`（约 2430 行）
-- `options/options.js`（约 3325 行）
-- `background/sw/router.ts`（约 191 行）
+- `content/chatgpt-quicknav.js`（6642 行）
+- `content/chatgpt-usage-monitor/main.js`（5536 行）
+- `content/chatgpt-message-tree/main.js`（2671 行）
+- `options/options.js`（3613 行）
+- `background/sw/router.ts`（211 行）
 
 ---
 
@@ -492,7 +492,10 @@ Turn 筛选策略（维护重点）：
 
 推荐改动后顺序（尤其是改了 `shared/registry.ts` / `shared/injections.ts` 时）：
 
-- 跑 `node dev/sync-manifest.js` → `node dev/gen-scripts-inventory.js` → `node dev/check.js`
+- 日常本地回归：`npm test`
+- 提交前完整校验：`npm run verify`
+- `npm run verify` 会串起 `node dev/sync-manifest.js` → `node dev/gen-scripts-inventory.js` → `npm test` → `npm run build`
+- 仓库内置 GitHub Actions CI 会在 push / pull_request 上执行同一条主验证链，并检查 `manifest.source.json`、`docs/scripts-inventory.md`、`dist/` 是否存在未提交生成差异
 
 ### 9.1 Dev-only MCP smoke probe（ChatGPT + Grok）
 

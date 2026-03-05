@@ -59,9 +59,8 @@
     });
   }
 
-  async function buildGpt53Status() {
-    const alarm = await ns.monitors.ensureGpt53Alarm();
-    const urls = await ns.monitors.getGpt53Urls();
+  async function buildGpt53Status(options: any = {}) {
+    const urls = Array.isArray(options?.urls) ? options.urls : await ns.monitors.getGpt53Urls();
     const state = await ns.monitors.getGpt53State();
     const alerts = await ns.monitors.getGpt53Alerts();
     let enabled = true;
@@ -69,9 +68,13 @@
       const settings = await ns.storage.getSettings();
       if (settings && settings.enabled === false) enabled = false;
     } catch {}
+    const monitor = await ns.monitors.getGpt53MonitorStatus({ urls, settingsEnabled: enabled });
+    const alarm = Object.prototype.hasOwnProperty.call(options, 'alarm') ? options.alarm || null : await ns.monitors.ensureGpt53Alarm();
     return {
       ok: true,
       enabled,
+      monitorEnabled: !!monitor?.enabled,
+      monitorReason: typeof monitor?.reason === 'string' ? monitor.reason : '',
       urls,
       url: urls[0] || ns.monitors.GPT53_MONITOR.defaultUrls[0] || '',
       alarm,

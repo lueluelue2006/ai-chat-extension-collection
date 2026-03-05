@@ -249,7 +249,9 @@
     });
 
     const view = {
-      enabled: resp.enabled !== false,
+      globalEnabled: resp.enabled !== false,
+      monitorEnabled: resp.monitorEnabled === true,
+      monitorReason: typeof resp.monitorReason === 'string' ? resp.monitorReason : '',
       urls,
       alarm: alarm
         ? {
@@ -284,12 +286,19 @@
       summary.appendChild(line);
     };
 
-    const enabledText = view.enabled ? '开启' : '关闭';
     const interval = Number(view.alarm?.periodInMinutes) || 5;
-    pushLine('监控', `${enabledText}（每 ${interval} 分钟）`);
+    const monitorDetail = (() => {
+      if (!view.globalEnabled) return '关闭（扩展总开关已关闭）';
+      if (!view.monitorEnabled && view.monitorReason === 'no_urls') return '关闭（URL 列表为空）';
+      if (!view.monitorEnabled) return '关闭';
+      return `开启（每 ${interval} 分钟）`;
+    })();
+    pushLine('监控', monitorDetail);
 
-    if (view.alarm?.scheduledAt) {
+    if (view.monitorEnabled && view.alarm?.scheduledAt) {
       pushLine('下次', `${view.alarm.scheduledAt}${view.alarm.nextIn ? `（${view.alarm.nextIn}）` : ''}`);
+    } else if (!view.monitorEnabled) {
+      pushLine('下次', '（未启用）');
     } else {
       pushLine('下次', '（未知）');
     }

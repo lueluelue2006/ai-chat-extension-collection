@@ -6,9 +6,13 @@
   async function applySettingsChange(settings, msg) {
     if (msg && msg.noInject) {
       await ns.registration.applySettingsAndRegister(settings);
-      return;
+    } else {
+      await ns.registration.applySettingsAndReinject(settings);
     }
-    await ns.registration.applySettingsAndReinject(settings);
+    await ns.monitors.ensureGpt53Alarm();
+    if (settings && settings.enabled === false && typeof ns.monitors.clearGpt53Alerts === "function") {
+      await ns.monitors.clearGpt53Alerts();
+    }
   }
   function handleSettingsMessage(context) {
     const { msg, sender, sendResponse, requireAllowedSender, respondError } = context || {};

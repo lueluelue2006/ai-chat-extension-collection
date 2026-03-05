@@ -8,10 +8,14 @@
   async function applySettingsChange(settings: any, msg: any) {
     if (msg && msg.noInject) {
       await ns.registration.applySettingsAndRegister(settings);
-      return;
+    } else {
+      // 默认策略：保存后立即对已打开页面做静默重注入，减少手动刷新/重载提示打断。
+      await ns.registration.applySettingsAndReinject(settings);
     }
-    // 默认策略：保存后立即对已打开页面做静默重注入，减少手动刷新/重载提示打断。
-    await ns.registration.applySettingsAndReinject(settings);
+    await ns.monitors.ensureGpt53Alarm();
+    if (settings && settings.enabled === false && typeof ns.monitors.clearGpt53Alerts === 'function') {
+      await ns.monitors.clearGpt53Alerts();
+    }
   }
 
   function handleSettingsMessage(context: any) {

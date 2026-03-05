@@ -367,6 +367,22 @@ modules: ${mods}` : ""}`;
       return null;
     }
   }
+  async function clearGpt53Alarm() {
+    try {
+      return await new Promise((resolve) => {
+        try {
+          chrome.alarms.clear(GPT53_MONITOR.alarmName, (cleared) => {
+            void chrome.runtime.lastError;
+            resolve(!!cleared);
+          });
+        } catch {
+          resolve(false);
+        }
+      });
+    } catch {
+      return false;
+    }
+  }
   async function clearLegacyGpt53Alarm() {
     const legacyName = String(GPT53_MONITOR.legacyAlarmName || "").trim();
     const canonicalName = String(GPT53_MONITOR.alarmName || "").trim();
@@ -385,8 +401,55 @@ modules: ${mods}` : ""}`;
     } catch {
     }
   }
+  async function getGpt53MonitorStatus(options = {}) {
+    let settingsEnabled = options?.settingsEnabled;
+    if (typeof settingsEnabled !== "boolean") {
+      try {
+        const settings = await ns.storage.getSettings();
+        settingsEnabled = !(settings && settings.enabled === false);
+      } catch {
+        settingsEnabled = true;
+      }
+    }
+    const urls = Array.isArray(options?.urls) ? options.urls.filter((url) => typeof url === "string" && url.trim()) : await getGpt53Urls();
+    if (!settingsEnabled) {
+      return {
+        enabled: false,
+        reason: "extension_disabled",
+        settingsEnabled: false,
+        urls
+      };
+    }
+    if (!urls.length) {
+      return {
+        enabled: false,
+        reason: "no_urls",
+        settingsEnabled: true,
+        urls
+      };
+    }
+    return {
+      enabled: true,
+      reason: "active",
+      settingsEnabled: true,
+      urls
+    };
+  }
+  async function clearGpt53Alerts() {
+    try {
+      await setGpt53Alerts({ unread: 0, events: [] });
+    } catch {
+    }
+    setActionBadge(0);
+    return { unread: 0, events: [] };
+  }
   async function ensureGpt53Alarm() {
     await clearLegacyGpt53Alarm();
+    const monitor = await getGpt53MonitorStatus();
+    if (!monitor.enabled) {
+      await clearGpt53Alarm();
+      return null;
+    }
     try {
       const existing = await getGpt53Alarm();
       if (existing && Number(existing.periodInMinutes) === GPT53_MONITOR.intervalMin) return existing;
@@ -612,6 +675,9 @@ modules: ${mods}` : ""}`;
     setGpt53Urls,
     getGpt53State,
     setGpt53State,
+    getGpt53MonitorStatus,
+    clearGpt53Alerts,
+    clearGpt53Alarm,
     runGpt53Probe,
     ensureGpt53Alarm,
     markGpt53AlertsRead,

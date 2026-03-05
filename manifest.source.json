@@ -2,15 +2,13 @@
   "manifest_version": 3,
   "name": "AI捷径 (AI Shortcuts)",
   "short_name": "AI捷径",
-  "version": "2.4.18",
+  "version": "2.4.19",
   "description": "多AI站点脚本合集",
   "permissions": [
     "scripting",
     "storage",
     "alarms",
-    "notifications",
-    "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess"
+    "notifications"
   ],
   "host_permissions": [
     "https://cdn.openai.com/*",
@@ -25,15 +23,6 @@
     "https://www.genspark.ai/*",
     "https://www.kimi.com/*"
   ],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "bypass_headers",
-        "enabled": true,
-        "path": "rules/bypass-headers.json"
-      }
-    ]
-  },
   "background": {
     "service_worker": "background/sw.js"
   },

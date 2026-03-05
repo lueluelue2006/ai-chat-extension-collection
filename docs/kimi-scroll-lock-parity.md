@@ -1,7 +1,8 @@
 # Kimi Scroll-Lock Parity（与 ChatGPT/Qwen 同口径）
 
-> 更新日期：2026-02-19
-> 适用版本：v1.3.87
+> 更新日期：2026-03-05
+> 首次引入版本：v1.3.87
+> 当前复核版本：v2.4.19
 
 ## 1. 目标与范围
 
@@ -68,7 +69,7 @@
 ### 6.2 扩展重载与版本
 
 - `chrome://extensions/?id=mcmanbmincmbgieimlngimndkbcdakbc`
-  - 版本显示：`1.3.87`
+  - 版本显示：`2.4.19`
   - 点击“重新加载”后出现提示：`已重新加载`
 
 ### 6.3 Kimi（www.kimi.com）主验证

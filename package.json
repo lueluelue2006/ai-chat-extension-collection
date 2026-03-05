@@ -1,12 +1,13 @@
 {
   "name": "quicknav-mv3",
-  "version": "0.0.0",
+  "version": "2.4.19",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node dev/check.js",
-    "test": "node dev/test-usage-monitor-utils.js && node dev/test-usage-monitor-bridge.js",
-    "typecheck": "tsc --noEmit"
+    "test": "npm run check && npm run typecheck",
+    "typecheck": "tsc --noEmit",
+    "verify": "node dev/sync-manifest.js && node dev/gen-scripts-inventory.js && npm test && npm run build"
   },
   "devDependencies": {
     "esbuild": "^0.27.3",

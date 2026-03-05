@@ -17,24 +17,7 @@
         const urls = await ns.monitors.setGpt53Urls(msg?.urlsText ?? msg?.urls ?? null);
         const alarm = await ns.monitors.ensureGpt53Alarm();
         await ns.monitors.runGpt53Probe({ silent: true });
-        const state = await ns.monitors.getGpt53State();
-        const alerts = await ns.monitors.getGpt53Alerts();
-        let enabled = true;
-        try {
-          const settings = await ns.storage.getSettings();
-          if (settings && settings.enabled === false) enabled = false;
-        } catch {
-        }
-        return {
-          ok: true,
-          enabled,
-          urls,
-          url: urls[0] || ns.monitors.GPT53_MONITOR.defaultUrls[0] || "",
-          alarm,
-          state,
-          alerts: { unread: alerts.unread, events: alerts.events.slice(-20) },
-          now: Date.now()
-        };
+        return await buildGpt53Status({ urls, alarm });
       })().then((resp) => sendResponse(resp)).catch((error) => respondError(sendResponse, error));
       return true;
     }
@@ -43,30 +26,12 @@
       (async () => {
         const alarm = await ns.monitors.ensureGpt53Alarm();
         await ns.monitors.runGpt53Probe();
-        const urls = await ns.monitors.getGpt53Urls();
-        const state = await ns.monitors.getGpt53State();
-        const alerts = await ns.monitors.getGpt53Alerts();
-        let enabled = true;
-        try {
-          const settings = await ns.storage.getSettings();
-          if (settings && settings.enabled === false) enabled = false;
-        } catch {
-        }
-        return {
-          ok: true,
-          enabled,
-          urls,
-          url: urls[0] || ns.monitors.GPT53_MONITOR.defaultUrls[0] || "",
-          alarm,
-          state,
-          alerts: { unread: alerts.unread, events: alerts.events.slice(-20) },
-          now: Date.now()
-        };
+        return await buildGpt53Status({ alarm });
       })().then((resp) => sendResponse(resp)).catch((error) => respondError(sendResponse, error));
       return true;
     }
     if (msg.type === "AISHORTCUTS_GPT53_MARK_READ") {
-      if (!requireAllowedSender(sendResponse, sender, { allowTabSender: true })) return true;
+      if (!requireAllowedSender(sendResponse, sender)) return true;
       (async () => {
         const alerts = await ns.monitors.markGpt53AlertsRead();
         return { ok: true, alerts: { unread: alerts.unread, events: alerts.events.slice(-20) }, now: Date.now() };

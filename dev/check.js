@@ -34,6 +34,7 @@ const DEV_SELF_TESTS = Object.freeze([
   'dev/test-chatgpt-quicknav-pin-anchor.js',
   'dev/test-chatgpt-tree-quicknav-autocollapse.js',
   'dev/test-chatgpt-message-tree-main-menu-retry.js',
+  'dev/test-chatgpt-sidebar-header-fix.js',
   'dev/test-chatgpt-export-conversation-sanitizer.js',
   'dev/test-menu-bridge-main-world-source-gates.js',
   'dev/test-popup-menu-refresh-race.js',

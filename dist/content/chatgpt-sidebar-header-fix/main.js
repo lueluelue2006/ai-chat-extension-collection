@@ -1,14 +1,16 @@
 (() => {
   'use strict';
 
-  // ChatGPT sidebar header fix:
+  // ChatGPT header fix:
   // - Keep the top-left control always as sidebar toggle (no "logo morph" on hover).
   // - When sidebar is expanded, swap header controls so: [Close sidebar] on the left, [Home/New chat] on the right.
   // - Add a tiny click-guard during rapid toggle to prevent accidental "New chat" clicks before swap settles.
+  // - Move the top-right "group chat / temporary chat" actions next to the model selector,
+  //   so they stop occupying the far-right gap that collides with QuickNav.
   //
   // Keep it lightweight & robust:
-  // - Pure CSS based on `#stage-slideover-sidebar` inline width (rail vs expanded).
-  // - No global MutationObserver: at most a tiny attribute watcher on the sidebar style.
+  // - Sidebar swap is still pure CSS based on `#stage-slideover-sidebar` inline width (rail vs expanded).
+  // - Top banner relayout is DOM-based, but only watches the active header subtree.
 
   const FLAG = '__quicknavChatgptSidebarHeaderFixV1__';
   const STATE_KEY = '__quicknavChatgptSidebarHeaderFixStateV1__';
@@ -32,6 +34,13 @@
   const FORCE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-force-expanded';
   const MODE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-expanded';
   const MODE_RAIL_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-rail';
+  const TOPBAR_MODEL_SELECTOR = 'button[data-testid="model-switcher-dropdown-button"]';
+  const TOPBAR_INLINE_MODEL_ROW_CLASS = 'qn-chatgpt-topbar-inline-model-row';
+  const TOPBAR_INLINE_ACTIONS_CLASS = 'qn-chatgpt-topbar-inline-actions';
+  const TOPBAR_PLACEHOLDER_ATTR = 'data-qn-chatgpt-topbar-actions-placeholder';
+  const TOPBAR_RELOCATED_ATTR = 'data-qn-chatgpt-topbar-actions-relocated';
+  const TOPBAR_MIN_WIDTH_PX = 720;
+  const TOPBAR_MIN_GAP_PX = 6;
   const root = document.documentElement;
   let lockUntil = 0;
   let unlockTimer = 0;
@@ -39,6 +48,13 @@
   let intentMode = '';
   let intentAt = 0;
   let intentSyncTimer = 0;
+  let topbarEnsureTimer = 0;
+  let topbarRouteBound = false;
+  let topbarWatchedHeader = null;
+  let topbarHeaderObserver = null;
+  let topbarInlineRow = null;
+  let topbarActionsHost = null;
+  let topbarActionsPlaceholder = null;
 
   const trackedOffs = [];
   const trackedObservers = new Set();
@@ -258,6 +274,269 @@
     };
   addTrackedListener(document, 'click', onClickGuard, true);
 
+  function getChatGptCore() {
+    try {
+      return globalThis.__aichat_chatgpt_core_v1__ || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function matchesTopbarActionLabel(label) {
+    const raw = String(label || '').trim();
+    if (!raw) return false;
+    const lower = raw.toLowerCase();
+    if (lower.includes('group chat')) return true;
+    if (lower.includes('temporary chat')) return true;
+    if (/群聊/.test(raw)) return true;
+    if (/临时(聊天|对话|会话)/.test(raw)) return true;
+    return false;
+  }
+
+  function isTopbarActionButton(node) {
+    try {
+      if (!(node instanceof HTMLButtonElement)) return false;
+      const aria = String(node.getAttribute('aria-label') || '').trim();
+      if (matchesTopbarActionLabel(aria)) return true;
+      return matchesTopbarActionLabel(node.innerText || '');
+    } catch {
+      return false;
+    }
+  }
+
+  function getTopbarModelButton() {
+    try {
+      return document.querySelector(TOPBAR_MODEL_SELECTOR);
+    } catch {
+      return null;
+    }
+  }
+
+  function getTopbarModelRow(modelButton) {
+    const btn = modelButton || getTopbarModelButton();
+    const row = btn?.parentElement || null;
+    if (!btn || !row) return null;
+    if (!row.closest?.('header')) return null;
+    return row;
+  }
+
+  function getTopbarHeader(modelButton) {
+    try {
+      return (modelButton || getTopbarModelButton())?.closest?.('header') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function cleanupTopbarOrphans() {
+    if (topbarInlineRow && !topbarInlineRow.isConnected) topbarInlineRow = null;
+    if (topbarWatchedHeader && !topbarWatchedHeader.isConnected) topbarWatchedHeader = null;
+    if (topbarActionsHost && !topbarActionsHost.isConnected) topbarActionsHost = null;
+    if (topbarActionsPlaceholder && !topbarActionsPlaceholder.isConnected) topbarActionsPlaceholder = null;
+    if (!topbarActionsHost && topbarActionsPlaceholder) {
+      try {
+        topbarActionsPlaceholder.remove();
+      } catch {}
+      topbarActionsPlaceholder = null;
+    }
+  }
+
+  function resetTopbarObserver() {
+    if (!topbarHeaderObserver) return;
+    try {
+      topbarHeaderObserver.disconnect();
+    } catch {}
+    trackedObservers.delete(topbarHeaderObserver);
+    topbarHeaderObserver = null;
+    topbarWatchedHeader = null;
+  }
+
+  function restoreTopbarActionsHost() {
+    cleanupTopbarOrphans();
+    try {
+      topbarInlineRow?.classList?.remove(TOPBAR_INLINE_MODEL_ROW_CLASS);
+    } catch {}
+    try {
+      topbarActionsHost?.classList?.remove(TOPBAR_INLINE_ACTIONS_CLASS);
+      topbarActionsHost?.removeAttribute?.(TOPBAR_RELOCATED_ATTR);
+    } catch {}
+    try {
+      if (
+        topbarActionsHost &&
+        topbarActionsPlaceholder &&
+        topbarActionsHost.isConnected &&
+        topbarActionsPlaceholder.isConnected &&
+        topbarActionsPlaceholder.parentElement
+      ) {
+        topbarActionsPlaceholder.parentElement.insertBefore(topbarActionsHost, topbarActionsPlaceholder);
+      }
+    } catch {}
+    try {
+      topbarActionsPlaceholder?.remove?.();
+    } catch {}
+    topbarInlineRow = null;
+    topbarActionsHost = null;
+    topbarActionsPlaceholder = null;
+  }
+
+  function findTopbarActionsHost(header, modelRow) {
+    cleanupTopbarOrphans();
+    if (topbarActionsHost && topbarActionsHost.isConnected) return topbarActionsHost;
+
+    const row = modelRow || null;
+    try {
+      const relocated = row?.querySelector?.(`[${TOPBAR_RELOCATED_ATTR}="1"]`);
+      if (relocated instanceof HTMLElement) return relocated;
+    } catch {}
+
+    const host = header || null;
+    if (!host) return null;
+    const children = Array.from(host.children).filter((node) => node instanceof HTMLElement);
+
+    for (const child of children) {
+      if (!(child instanceof HTMLElement) || child === row) continue;
+      if (String(child.className || '').includes('absolute')) continue;
+      const buttons = Array.from(child.querySelectorAll('button'));
+      if (buttons.filter((button) => isTopbarActionButton(button)).length >= 2) return child;
+    }
+
+    for (const child of children) {
+      if (!(child instanceof HTMLElement) || child === row) continue;
+      if (String(child.className || '').includes('absolute')) continue;
+      if (child.querySelector(TOPBAR_MODEL_SELECTOR)) continue;
+      const buttons = Array.from(child.querySelectorAll('button'));
+      if (buttons.length >= 1 && buttons.length <= 4) return child;
+    }
+
+    return null;
+  }
+
+  function canInlineTopbarActions(modelRow, modelButton, actionsHost) {
+    try {
+      if (!modelRow || !modelButton || !actionsHost) return false;
+      if (window.innerWidth < TOPBAR_MIN_WIDTH_PX) return false;
+      const rowWidth = Number(modelRow.getBoundingClientRect?.().width || 0);
+      const modelWidth = Number(modelButton.getBoundingClientRect?.().width || 0);
+      let hostWidth = Number(actionsHost.getBoundingClientRect?.().width || 0);
+      if (!Number.isFinite(hostWidth) || hostWidth <= 0) {
+        hostWidth = Math.max(72, actionsHost.querySelectorAll('button').length * 40);
+      }
+      if (!Number.isFinite(rowWidth) || !Number.isFinite(modelWidth)) return false;
+      return rowWidth >= modelWidth + hostWidth + TOPBAR_MIN_GAP_PX + 24;
+    } catch {
+      return false;
+    }
+  }
+
+  function moveTopbarActionsInline(modelRow, modelButton, actionsHost) {
+    if (!modelRow || !modelButton || !actionsHost) return false;
+
+    if (topbarActionsHost && topbarActionsHost !== actionsHost) restoreTopbarActionsHost();
+
+    if (actionsHost.parentElement !== modelRow) {
+      const parent = actionsHost.parentElement;
+      if (!parent) return false;
+      if (!(topbarActionsPlaceholder && topbarActionsHost === actionsHost && topbarActionsPlaceholder.isConnected)) {
+        try {
+          topbarActionsPlaceholder?.remove?.();
+        } catch {}
+        const placeholder = document.createElement('span');
+        placeholder.hidden = true;
+        placeholder.setAttribute(TOPBAR_PLACEHOLDER_ATTR, '1');
+        parent.insertBefore(placeholder, actionsHost);
+        topbarActionsPlaceholder = placeholder;
+      }
+      const anchor = Array.from(modelRow.children).find((child) => child !== modelButton && child !== actionsHost) || null;
+      if (anchor) modelRow.insertBefore(actionsHost, anchor);
+      else modelRow.appendChild(actionsHost);
+    }
+
+    if (topbarInlineRow && topbarInlineRow !== modelRow) {
+      try {
+        topbarInlineRow.classList.remove(TOPBAR_INLINE_MODEL_ROW_CLASS);
+      } catch {}
+    }
+
+    topbarInlineRow = modelRow;
+    topbarActionsHost = actionsHost;
+
+    try {
+      modelRow.classList.add(TOPBAR_INLINE_MODEL_ROW_CLASS);
+      actionsHost.classList.add(TOPBAR_INLINE_ACTIONS_CLASS);
+      actionsHost.setAttribute(TOPBAR_RELOCATED_ATTR, '1');
+    } catch {}
+    return true;
+  }
+
+  function ensureTopbarActionsInline(reason = '') {
+    cleanupTopbarOrphans();
+    const modelButton = getTopbarModelButton();
+    const modelRow = getTopbarModelRow(modelButton);
+    const header = getTopbarHeader(modelButton);
+    if (!modelButton || !modelRow || !header) {
+      restoreTopbarActionsHost();
+      resetTopbarObserver();
+      return false;
+    }
+
+    const actionsHost = findTopbarActionsHost(header, modelRow);
+    if (!actionsHost) return false;
+    if (!canInlineTopbarActions(modelRow, modelButton, actionsHost)) {
+      restoreTopbarActionsHost();
+      return false;
+    }
+
+    const moved = moveTopbarActionsInline(modelRow, modelButton, actionsHost);
+    if (!moved) return false;
+
+    if (header !== topbarWatchedHeader) {
+      resetTopbarObserver();
+      topbarWatchedHeader = header;
+      topbarHeaderObserver = trackObserver(
+        new MutationObserver(() => {
+          scheduleTopbarEnsure(`header-mutation:${reason}`);
+        })
+      );
+      try {
+        topbarHeaderObserver.observe(header, { childList: true, subtree: true });
+      } catch {}
+    }
+    return true;
+  }
+
+  function scheduleTopbarEnsure(reason = '') {
+    if (topbarEnsureTimer) return;
+    topbarEnsureTimer = setTrackedTimeout(() => {
+      topbarEnsureTimer = 0;
+      ensureTopbarActionsInline(reason);
+    }, 40);
+  }
+
+  function installTopbarRouteSync() {
+    if (topbarRouteBound) return;
+    const core = getChatGptCore();
+    if (!core || typeof core.onRouteChange !== 'function') return;
+    const off = core.onRouteChange(() => {
+      scheduleTopbarEnsure('route');
+      setTrackedTimeout(() => scheduleTopbarEnsure('route+160'), 160);
+      setTrackedTimeout(() => scheduleTopbarEnsure('route+640'), 640);
+    });
+    trackOff(() => {
+      topbarRouteBound = false;
+      try {
+        off();
+      } catch {}
+    });
+    topbarRouteBound = true;
+  }
+
+  function runTopbarStartupPasses(reason = 'startup') {
+    scheduleTopbarEnsure(reason);
+    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+400`), 400);
+    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+1400`), 1400);
+    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+3200`), 3200);
+  }
+
 	  function ensureStyle() {
 	    if (document.getElementById(STYLE_ID)) return;
 	    const style = document.createElement('style');
@@ -341,7 +620,34 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 #stage-slideover-sidebar[style*="--sidebar-width"] .h-header-height.flex.items-center.justify-between{
 	  flex-direction: row-reverse !important;
 }
-	`;
+
+/* Top banner: keep utility actions close to the model selector so they stop blocking QuickNav. */
+.${TOPBAR_INLINE_MODEL_ROW_CLASS}{
+	  flex: 1 1 auto !important;
+	  min-width: 0 !important;
+	  gap: 0 !important;
+}
+.${TOPBAR_INLINE_MODEL_ROW_CLASS} > ${TOPBAR_MODEL_SELECTOR}{
+	  flex: none !important;
+}
+.${TOPBAR_INLINE_ACTIONS_CLASS}{
+	  flex: none !important;
+	  align-items: center !important;
+	  justify-content: flex-start !important;
+	  gap: 4px !important;
+	  margin-inline-start: ${TOPBAR_MIN_GAP_PX}px !important;
+	  overflow: visible !important;
+}
+.${TOPBAR_INLINE_ACTIONS_CLASS} .flex.items-center{
+	  gap: 4px !important;
+}
+.${TOPBAR_INLINE_ACTIONS_CLASS} button{
+	  flex: none !important;
+}
+.${TOPBAR_INLINE_ACTIONS_CLASS} .me-1{
+	  margin-inline-end: 4px !important;
+}
+		`;
 	    (document.head || document.documentElement).appendChild(style);
 	  }
 
@@ -351,6 +657,25 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
       document.getElementById(STYLE_ID)?.remove();
     } catch {}
   });
+
+  addTrackedListener(window, 'resize', () => scheduleTopbarEnsure('resize'), { passive: true });
+  addTrackedListener(document, 'visibilitychange', () => {
+    try {
+      if (!document.hidden) scheduleTopbarEnsure('visible');
+    } catch {}
+  });
+  addTrackedListener(window, 'pageshow', () => runTopbarStartupPasses('pageshow'));
+  addTrackedListener(window, 'load', () => runTopbarStartupPasses('window-load'));
+
+  installTopbarRouteSync();
+  setTrackedTimeout(installTopbarRouteSync, 800);
+  setTrackedTimeout(installTopbarRouteSync, 2000);
+  if (document.readyState === 'complete') runTopbarStartupPasses('ready-complete');
+  else setTrackedTimeout(() => {
+    try {
+      if (document.readyState === 'complete') runTopbarStartupPasses('late-ready');
+    } catch {}
+  }, 5000);
 
 	  // When the sidebar flips between rail <-> expanded, the DOM may re-render for a few frames.
 	  // Add a short lock window so users can't accidentally click a transiently positioned control.
@@ -382,11 +707,16 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  } catch {}
 
 	  function disposeRuntime() {
+	    restoreTopbarActionsHost();
+	    resetTopbarObserver();
 	    clearTrackedTimeout(unlockTimer);
 	    unlockTimer = 0;
 	    clearTrackedTimeout(intentSyncTimer);
 	    intentSyncTimer = 0;
+	    clearTrackedTimeout(topbarEnsureTimer);
+	    topbarEnsureTimer = 0;
 	    clearIntent();
+	    topbarRouteBound = false;
 	    lockUntil = 0;
 	    try {
 	      root.classList.remove(LOCK_CLASS);

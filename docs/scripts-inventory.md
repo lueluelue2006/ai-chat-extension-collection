@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.4.22
-- Generated: 2026-03-05 20:56
+- Version: 2.4.23
+- Generated: 2026-03-06 14:23
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -100,7 +100,7 @@
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / MAIN: `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
-- `chatgpt_sidebar_header_fix`: ChatGPT 侧边栏顶部按钮修复 — 左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置
+- `chatgpt_sidebar_header_fix`: ChatGPT 顶部按钮布局修复 — 修复侧边栏顶部按钮交换；并将右上角群聊/临时聊天按钮移到模型选择器右侧
   - 作者: lueluelue2006
   - 许可证: 未标注（内部脚本）
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-sidebar-header-fix/main.js`

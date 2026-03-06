@@ -286,8 +286,8 @@
     },
     chatgpt_sidebar_header_fix: {
       id: 'chatgpt_sidebar_header_fix',
-      name: 'ChatGPT 侧边栏顶部按钮修复',
-      sub: '左上角永远是展开/收起侧边栏；展开时交换「收起侧边栏」与「Home/新建对话」的位置',
+      name: 'ChatGPT 顶部按钮布局修复',
+      sub: '修复侧边栏顶部按钮交换；并将右上角群聊/临时聊天按钮移到模型选择器右侧',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: '未标注（内部脚本）'

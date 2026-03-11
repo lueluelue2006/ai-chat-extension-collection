@@ -4,6 +4,8 @@ GitHub 首页里的 `Contributors` 只会统计这个仓库默认分支上的实
 
 这个文件用于长期维护 AI捷径 的外部来源与致谢信息。这里只记录当前仓库里**能够明确确认**的外部作者、上游实现、补丁来源或移植链；如果未来补充了更准确的许可证、上游链接或作者信息，应在这里继续更新。
 
+除下面明确列出的外部来源模块外，当前仓库里那些作者只写 `lueluelue2006`、许可证写作 `未标注（内部脚本）` 的模块，都按仓库作者本人编写的内部脚本处理。
+
 ## 当前致谢名单
 
 | 模块 | 致谢对象 | 说明 | 上游 / 来源 | 许可证 |
@@ -13,7 +15,7 @@ GitHub 首页里的 `Contributors` 只会统计这个仓库默认分支上的实
 | `chatgpt_usage_monitor` | `tizee@Github` | 用量统计能力基于其实现思路和代码链路移植，并在当前仓库中持续演进 | <https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor> | `MIT` |
 | `chatgpt_download_file_fix` | `LinuxDO pengzhile` | ChatGPT 下载修复模块来源署名 | 当前注册表注明作者为 `pengzhile(linux.do)` | `未标注（内部脚本）` |
 | `chatgpt_hide_feedback_buttons` | `LinuxDO zhong_little` | ChatGPT 隐藏点赞/点踩模块来源署名 | 当前注册表注明作者为 `zhong_little(linux.do)` | `未标注（内部脚本）` |
-| `genspark_credit_balance` | `LinuxDO 悟空` | Genspark 积分余量模块来源署名 | 当前注册表注明其为原始脚本作者；现仓库为 MV3 集成版 | `未标注（内部脚本）` |
+| `genspark_credit_balance` | `LinuxDO 悟空` | Genspark 积分余量原始脚本作者；当前仓库保留的是 MV3 集成/适配版 | 当前注册表注明其为原始脚本作者；许可证未声明 | `未标注（内部脚本）` |
 
 ## 维护规则
 

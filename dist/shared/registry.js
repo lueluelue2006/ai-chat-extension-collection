@@ -188,7 +188,7 @@
       name: "Grok \u5269\u4F59\u989D\u5EA6\u663E\u793A",
       sub: "\u4EC5\u663E\u793A all \u79EF\u5206\u4F59\u91CF\uFF08\u53D1\u9001\u540E\u66F4\u65B0\uFF09",
       hotkeys: [],
-      authors: ["Blankspeaker\uFF08\u539F\u59CB\u811A\u672C\uFF1B\u79FB\u690D\u81EA CursedAtom \u7684 chrome \u6269\u5C55\uFF09", "lueluelue2006\uFF08MV3 \u96C6\u6210\uFF09"],
+      authors: ["Blankspeaker"],
       license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     grok_trash_cleanup: {
@@ -213,7 +213,7 @@
       name: "ChatGPT \u7528\u91CF\u7EDF\u8BA1",
       sub: "\u4EC5\u8BB0\u5F55\u7528\u91CF\uFF08\u4E0D\u5728\u9875\u9762\u6CE8\u5165\u60AC\u6D6E\u7A97\uFF09\uFF1BDeep/Legacy Research \u4E0D\u8BA1\u5165\uFF1B\u5728\u914D\u7F6E\u9875\u67E5\u770B/\u5BFC\u5165/\u5BFC\u51FA/\u6E05\u7A7A\uFF0C\u5E76\u652F\u6301\u65E7\u7248\u6708\u5EA6 HTML \u62A5\u544A",
       hotkeys: [],
-      authors: ["lueluelue2006\uFF08\u57FA\u4E8E tizee@Github \u7684\u5B9E\u73B0\u79FB\u690D\uFF09"],
+      authors: ["tizee@Github"],
       license: "MIT",
       upstream: "https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor"
     },
@@ -351,7 +351,7 @@
       name: "Genspark \u79EF\u5206\u4F59\u91CF",
       sub: "\u60AC\u505C\u5C0F\u84DD\u70B9\u663E\u793A\u79EF\u5206\u4FE1\u606F\uFF08\u53EF\u5237\u65B0/\u6298\u53E0/\u62D6\u52A8\uFF09",
       hotkeys: [],
-      authors: ["LinuxDo \u609F\u7A7A\uFF08\u539F\u59CB\u811A\u672C\uFF09", "lueluelue2006\uFF08MV3 \u96C6\u6210\uFF09"],
+      authors: ["LinuxDo \u609F\u7A7A"],
       license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     genspark_codeblock_fold: {

@@ -11,11 +11,11 @@ GitHub 首页里的 `Contributors` 只会统计这个仓库默认分支上的实
 | 模块 | 致谢对象 | 说明 | 上游 / 来源 | 许可证 |
 | --- | --- | --- | --- | --- |
 | `quicknav` | `LinuxDO loongphy` | 提供暗色模式与回弹相关补丁 | 当前注册表注明补丁来源；主脚本由 `lueluelue2006` 持续演进 | `MIT（上游脚本声明）` |
-| `grok_rate_limit_display` | `Blankspeaker`、`CursedAtom` | 当前实现说明里注明：原始脚本来自 `Blankspeaker`，并提到其移植自 `CursedAtom` 的 Chrome 扩展 | 来源链已在模块元数据保留 | `许可证未声明` |
-| `chatgpt_usage_monitor` | `tizee@Github` | 用量统计能力基于其实现思路和代码链路移植，并在当前仓库中持续演进 | <https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor> | `MIT` |
+| `grok_rate_limit_display` | `Blankspeaker` | Grok 剩余额度显示原始脚本作者 | 来源链已在模块元数据保留 | `许可证未声明` |
+| `chatgpt_usage_monitor` | `tizee@Github` | 用量统计上游实现作者 | <https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor> | `MIT` |
 | `chatgpt_download_file_fix` | `LinuxDO pengzhile` | ChatGPT 下载修复模块来源署名 | 当前注册表注明作者为 `pengzhile(linux.do)` | `许可证未声明` |
 | `chatgpt_hide_feedback_buttons` | `LinuxDO zhong_little` | ChatGPT 隐藏点赞/点踩模块来源署名 | 当前注册表注明作者为 `zhong_little(linux.do)` | `许可证未声明` |
-| `genspark_credit_balance` | `LinuxDO 悟空` | Genspark 积分余量原始脚本作者；这是当前未标注模块里的唯一外部来源例外，其他同类内部脚本均归 `lueluelue2006` | 当前注册表注明其为原始脚本作者；当前仓库保留的是 MV3 集成/适配版 | `许可证未声明` |
+| `genspark_credit_balance` | `LinuxDO 悟空` | Genspark 积分余量原始脚本作者；这是当前未标注模块里的唯一外部来源例外，其他同类内部脚本均归 `lueluelue2006` | 当前注册表注明其为原始脚本作者 | `许可证未声明` |
 
 ## 维护规则
 

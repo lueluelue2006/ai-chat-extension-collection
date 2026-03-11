@@ -193,7 +193,7 @@
       name: 'Grok 剩余额度显示',
       sub: '仅显示 all 积分余量（发送后更新）',
       hotkeys: [],
-      authors: ["Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展）", 'lueluelue2006（MV3 集成）'],
+      authors: ['Blankspeaker'],
       license: '许可证未声明'
     },
     grok_trash_cleanup: {
@@ -218,7 +218,7 @@
       name: 'ChatGPT 用量统计',
       sub: '仅记录用量（不在页面注入悬浮窗）；Deep/Legacy Research 不计入；在配置页查看/导入/导出/清空，并支持旧版月度 HTML 报告',
       hotkeys: [],
-      authors: ['lueluelue2006（基于 tizee@Github 的实现移植）'],
+      authors: ['tizee@Github'],
       license: 'MIT',
       upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
     },
@@ -356,7 +356,7 @@
       name: 'Genspark 积分余量',
       sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）',
       hotkeys: [],
-      authors: ['LinuxDo 悟空（原始脚本）', 'lueluelue2006（MV3 集成）'],
+      authors: ['LinuxDo 悟空'],
       license: '许可证未声明'
     },
     genspark_codeblock_fold: {

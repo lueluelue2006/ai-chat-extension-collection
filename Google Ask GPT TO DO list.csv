@@ -1,0 +1,4 @@
+id,task,status,completed_at,notes
+1,梳理现有 ChatGPT 搜索与模型切换脚本并设计 Google -> ChatGPT 交接链路,DONE,2026-03-10 23:20,已定位可复用模块 chatgpt_quick_deep_search / chatgpt_thinking_toggle；需要新增 Google 发起端与 ChatGPT 接收端
+2,实现 Google 搜索页入口和 ChatGPT 端接收与自动设置逻辑,DONE,2026-03-10 23:55,已在真实浏览器验证 Google 搜索页按钮 -> ChatGPT 5.4 Thinking 自动发送；请求体确认 model=gpt-5-4-thinking 且 thinking_effort=min
+3,同步配置元数据与文档并完成真实浏览器验证,DONE,2026-03-11 01:08,已在真实浏览器确认 Google 按钮打开 ChatGPT 后自动发送 `web search:` 提示词；请求体确认 model=gpt-5-4-thinking 且 thinking_effort=min

@@ -1,0 +1,17 @@
+{
+  "name": "quicknav-mv3",
+  "version": "2.6.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package:dist": "npm run build && node scripts/package-dist.mjs",
+    "check": "node scripts/verify.js",
+    "test": "npm run check && npm run typecheck",
+    "typecheck": "tsc --noEmit",
+    "verify": "node scripts/sync-manifest.js && node scripts/gen-scripts-inventory.js && npm test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

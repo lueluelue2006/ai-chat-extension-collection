@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": [
+      "ES2020",
+      "DOM"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "background/**/*",
+    "content/**/*",
+    "options/**/*",
+    "popup/**/*",
+    "shared/**/*",
+    "scripts/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "docs",
+    "dev",
+    "node_modules",
+    ".sisyphus",
+    "_metadata"
+  ]
+}

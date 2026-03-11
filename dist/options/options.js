@@ -41,6 +41,23 @@
   const inputMetaKeyModeAuto = document.getElementById('metaKeyModeAuto');
   const inputMetaKeyModeHasMeta = document.getElementById('metaKeyModeHasMeta');
   const inputMetaKeyModeNoMeta = document.getElementById('metaKeyModeNoMeta');
+  const elLocaleModeTitle = document.getElementById('localeModeTitle');
+  const elLocaleModeState = document.getElementById('localeModeState');
+  const elLocaleModePill = document.getElementById('localeModePill');
+  const elLocaleModeHint = document.getElementById('localeModeHint');
+  const inputLocaleModeAuto = document.getElementById('localeModeAuto');
+  const inputLocaleModeZhCn = document.getElementById('localeModeZhCn');
+  const inputLocaleModeEn = document.getElementById('localeModeEn');
+  const elLocaleModeAutoLabel = document.getElementById('localeModeAutoLabel');
+  const elLocaleModeZhCnLabel = document.getElementById('localeModeZhCnLabel');
+  const elLocaleModeEnLabel = document.getElementById('localeModeEnLabel');
+  const I18N = (() => {
+    try {
+      return globalThis.AISHORTCUTS_I18N || null;
+    } catch {
+      return null;
+    }
+  })();
 
   const REGISTRY = (() => {
     try {
@@ -107,12 +124,22 @@
   const META_KEY_MODE_AUTO = 'auto';
   const META_KEY_MODE_HAS_META = 'has_meta';
   const META_KEY_MODE_NO_META = 'no_meta';
+  const LOCALE_MODE_AUTO = 'auto';
+  const LOCALE_MODE_ZH_CN = 'zh_cn';
+  const LOCALE_MODE_EN = 'en';
+  let lastStatusRaw = '';
+  let lastStatusKind = '';
+  let localeObserver = null;
+  let localeObserverTimer = 0;
 
   function setStatus(text, kind = '') {
     if (!elStatus) return;
-    elStatus.textContent = text || '';
+    lastStatusRaw = String(text || '');
+    lastStatusKind = String(kind || '');
+    elStatus.textContent = translateText(lastStatusRaw);
     elStatus.classList.remove('ok', 'warn', 'err');
     if (kind) elStatus.classList.add(kind);
+    localizeBody(resolveUiLocale());
   }
 
   if (!REGISTRY_OK) setStatus('脚本注册表缺失：shared/registry.js 未加载（请刷新扩展或重装）', 'err');
@@ -201,6 +228,62 @@
     const value = String(mode || '').trim().toLowerCase();
     if (value === META_KEY_MODE_AUTO || value === META_KEY_MODE_HAS_META || value === META_KEY_MODE_NO_META) return value;
     return fallback;
+  }
+
+  function normalizeLocaleMode(mode, fallback = LOCALE_MODE_AUTO) {
+    try {
+      if (typeof I18N?.normalizeLocaleMode === 'function') return I18N.normalizeLocaleMode(mode, fallback);
+    } catch {}
+    const value = String(mode || '').trim().toLowerCase();
+    if (value === LOCALE_MODE_AUTO || value === LOCALE_MODE_ZH_CN || value === LOCALE_MODE_EN) return value;
+    return fallback;
+  }
+
+  function resolveUiLocale(settings = currentSettings) {
+    try {
+      if (typeof I18N?.resolveLocale === 'function') return I18N.resolveLocale(settings?.localeMode, navigator);
+    } catch {}
+    return 'en';
+  }
+
+  function translateText(text, locale = resolveUiLocale()) {
+    try {
+      if (typeof I18N?.translateText === 'function') return I18N.translateText(text, locale);
+    } catch {}
+    return String(text ?? '');
+  }
+
+  function localizeBody(locale = resolveUiLocale()) {
+    try {
+      document.documentElement.lang = String(locale || 'en');
+    } catch {}
+    try {
+      if (typeof I18N?.localizeTree === 'function') I18N.localizeTree(document.body, locale);
+    } catch {}
+    try {
+      document.title = translateText('AI捷径 设置', locale);
+    } catch {}
+    try {
+      if (elStatus && lastStatusRaw) elStatus.textContent = translateText(lastStatusRaw, locale);
+      elStatus?.classList?.remove?.('ok', 'warn', 'err');
+      if (elStatus && lastStatusKind) elStatus.classList.add(lastStatusKind);
+    } catch {}
+  }
+
+  function scheduleLocalizeBody() {
+    if (localeObserverTimer) return;
+    localeObserverTimer = window.setTimeout(() => {
+      localeObserverTimer = 0;
+      localizeBody(resolveUiLocale());
+    }, 40);
+  }
+
+  function ensureLocaleObserver() {
+    if (localeObserver || typeof MutationObserver !== 'function') return;
+    try {
+      localeObserver = new MutationObserver(() => scheduleLocalizeBody());
+      localeObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    } catch {}
   }
 
   function detectPlatformOs() {
@@ -725,6 +808,10 @@
     return normalizeMetaKeyMode(settings?.metaKeyMode, META_KEY_MODE_AUTO);
   }
 
+  function getLocaleMode(settings = currentSettings) {
+    return normalizeLocaleMode(settings?.localeMode, LOCALE_MODE_AUTO);
+  }
+
   function getEffectiveHasMetaKey(settings = currentSettings) {
     const mode = getMetaKeyMode(settings);
     if (mode === META_KEY_MODE_HAS_META) return true;
@@ -762,6 +849,47 @@
           ? '会按带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认可用，Ctrl 冲突型快捷键不再默认停用。'
           : '会按不带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认停用，Ctrl+S / T / Y / Z 这类冲突型快捷键也默认停用。'
     };
+  }
+
+  function renderLocaleModeCard() {
+    const mode = getLocaleMode();
+    const locale = resolveUiLocale();
+    const isZh = /^zh/i.test(String(locale || ''));
+
+    if (inputLocaleModeAuto) inputLocaleModeAuto.checked = mode === LOCALE_MODE_AUTO;
+    if (inputLocaleModeZhCn) inputLocaleModeZhCn.checked = mode === LOCALE_MODE_ZH_CN;
+    if (inputLocaleModeEn) inputLocaleModeEn.checked = mode === LOCALE_MODE_EN;
+
+    if (elLocaleModeTitle) elLocaleModeTitle.textContent = translateText('界面语言', locale);
+    if (elLocaleModeAutoLabel) elLocaleModeAutoLabel.textContent = translateText('自动', locale);
+    if (elLocaleModeZhCnLabel) elLocaleModeZhCnLabel.textContent = translateText('简体中文', locale);
+    if (elLocaleModeEnLabel) elLocaleModeEnLabel.textContent = 'English';
+
+    if (elLocaleModePill) {
+      if (mode === LOCALE_MODE_AUTO) elLocaleModePill.textContent = isZh ? 'Auto · 简体中文' : 'Auto · English';
+      else elLocaleModePill.textContent = mode === LOCALE_MODE_ZH_CN ? '简体中文' : 'English';
+    }
+
+    if (elLocaleModeState) {
+      if (mode === LOCALE_MODE_AUTO) {
+        elLocaleModeState.textContent = isZh
+          ? '当前按浏览器语言自动使用简体中文。'
+          : 'The UI is currently using English based on your browser language.';
+      } else if (mode === LOCALE_MODE_ZH_CN) {
+        elLocaleModeState.textContent = '你已手动指定为简体中文。';
+      } else {
+        elLocaleModeState.textContent = 'You manually set the UI language to English.';
+      }
+    }
+
+    if (elLocaleModeHint) {
+      elLocaleModeHint.textContent =
+        mode === LOCALE_MODE_AUTO
+          ? '自动模式下，仅浏览器为简体中文时使用中文版；其他语言或无法判断时默认英文。'
+          : mode === LOCALE_MODE_ZH_CN
+            ? '所有扩展页面和支持双语的脚本 UI 都会优先显示中文。'
+            : 'Extension pages and supported in-page script UIs will prefer English.';
+    }
   }
 
   function getSiteModuleSetting(siteId, key, fallback = false) {
@@ -1187,6 +1315,9 @@
 
     if (normalizeMetaKeyMode(b.metaKeyMode, META_KEY_MODE_AUTO) !== normalizeMetaKeyMode(a.metaKeyMode, META_KEY_MODE_AUTO)) {
       out.push({ op: 'set', path: ['metaKeyMode'], value: normalizeMetaKeyMode(b.metaKeyMode, META_KEY_MODE_AUTO) });
+    }
+    if (normalizeLocaleMode(b.localeMode, LOCALE_MODE_AUTO) !== normalizeLocaleMode(a.localeMode, LOCALE_MODE_AUTO)) {
+      out.push({ op: 'set', path: ['localeMode'], value: normalizeLocaleMode(b.localeMode, LOCALE_MODE_AUTO) });
     }
 
     const siteIds = SITES.map((s) => s.id).filter((id) => typeof id === 'string' && id);
@@ -4097,15 +4228,18 @@
 
     if (elEnabled) elEnabled.checked = !!currentSettings?.enabled;
     renderMetaKeyProfileCard();
+    renderLocaleModeCard();
     renderConfigContext(siteId, moduleId);
     renderSites(siteId);
     renderModules(siteId, moduleId);
     renderModuleSettings(siteId, moduleId, token);
     flushDeepLinkScroll();
+    localizeBody(resolveUiLocale());
   }
 
   async function init() {
     setStatus('正在加载设置…');
+    ensureLocaleObserver();
     try {
       const settings = await getSettings();
       currentSettings = settings;
@@ -4130,6 +4264,16 @@
       const nextMode = normalizeMetaKeyMode(input.value, META_KEY_MODE_AUTO);
       patchQuickNavSettings((next) => {
         next.metaKeyMode = nextMode;
+      });
+    });
+  }
+
+  for (const input of [inputLocaleModeAuto, inputLocaleModeZhCn, inputLocaleModeEn]) {
+    input?.addEventListener('change', () => {
+      if (!input.checked) return;
+      const nextMode = normalizeLocaleMode(input.value, LOCALE_MODE_AUTO);
+      patchQuickNavSettings((next) => {
+        next.localeMode = nextMode;
       });
     });
   }

@@ -13,6 +13,7 @@
   type DefaultSettings = {
     enabled: boolean;
     metaKeyMode: string;
+    localeMode: string;
     sites: Record<string, boolean>;
     scrollLockDefaults: Record<string, boolean>;
     siteModules: Record<string, Record<string, boolean>>;
@@ -30,11 +31,13 @@
   };
 
   const ISOLATED_BRIDGE_FILE = 'content/aishortcuts-bridge.js';
+  const ISOLATED_LOCALE_BRIDGE_FILE = 'content/aishortcuts-locale-bridge.js';
   const MAIN_BRIDGE_FILE = 'content/aishortcuts-bridge-main.js';
+  const MAIN_I18N_FILE = 'content/aishortcuts-i18n-main.js';
   const ISOLATED_SCOPE_FILE = 'content/aishortcuts-scope.js';
   const MAIN_SCOPE_FILE = 'content/aishortcuts-scope-main.js';
-  const ISOLATED_BRIDGE_FILES = [ISOLATED_SCOPE_FILE, ISOLATED_BRIDGE_FILE] as const;
-  const MAIN_BRIDGE_FILES = [MAIN_SCOPE_FILE, MAIN_BRIDGE_FILE] as const;
+  const ISOLATED_BRIDGE_FILES = ['shared/i18n.js', ISOLATED_LOCALE_BRIDGE_FILE, ISOLATED_SCOPE_FILE, ISOLATED_BRIDGE_FILE] as const;
+  const MAIN_BRIDGE_FILES = ['shared/i18n.js', MAIN_SCOPE_FILE, MAIN_BRIDGE_FILE, MAIN_I18N_FILE] as const;
   const QUICKNAV_KERNEL_FILES = [
     'content/aishortcuts-kernel/runtime-guards.js',
     'content/aishortcuts-kernel/route-watch.js',
@@ -164,6 +167,7 @@
     return {
       enabled: true,
       metaKeyMode: 'auto',
+      localeMode: 'auto',
       sites,
       scrollLockDefaults,
       siteModules

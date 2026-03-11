@@ -7,6 +7,18 @@
   const RELEASES_URL = `${REPO_URL}/releases`;
   const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${REPO}/main/dist/manifest.json`;
   const SHOW_DESCRIPTIONS = false;
+  const I18N = (() => {
+    try {
+      return globalThis.AISHORTCUTS_I18N || null;
+    } catch {
+      return null;
+    }
+  })();
+  let currentLocaleMode = 'auto';
+  let lastStatusRaw = '';
+  let lastStatusKind = '';
+  let localeObserver = null;
+  let localeObserverTimer = 0;
 
   const UI_THEME_OVERRIDE_KEY = 'aichat_ai_shortcuts_ui_theme_override_v1';
 
@@ -66,10 +78,60 @@
   ]);
   const REGISTRY_OK = !!(SITE_DEFS.length && Object.keys(MODULE_DEFS).length);
 
+  function resolveUiLocale() {
+    try {
+      if (typeof I18N?.resolveLocale === 'function') return I18N.resolveLocale(currentLocaleMode, navigator);
+    } catch {}
+    return 'en';
+  }
+
+  function translateText(text) {
+    try {
+      if (typeof I18N?.translateText === 'function') return I18N.translateText(text, resolveUiLocale());
+    } catch {}
+    return String(text ?? '');
+  }
+
+  function localizeBody() {
+    try {
+      document.documentElement.lang = String(resolveUiLocale() || 'en');
+    } catch {}
+    try {
+      if (typeof I18N?.localizeTree === 'function') I18N.localizeTree(document.body, resolveUiLocale());
+    } catch {}
+    try {
+      document.title = /^zh/i.test(resolveUiLocale()) ? 'AI Shortcuts' : 'AI Shortcuts';
+    } catch {}
+    try {
+      if (elStatus && lastStatusRaw) elStatus.textContent = translateText(lastStatusRaw);
+      elStatus?.classList?.remove?.('ok', 'warn', 'err');
+      if (elStatus && lastStatusKind) elStatus.classList.add(lastStatusKind);
+    } catch {}
+  }
+
+  function scheduleLocalizeBody() {
+    if (localeObserverTimer) return;
+    localeObserverTimer = window.setTimeout(() => {
+      localeObserverTimer = 0;
+      localizeBody();
+    }, 40);
+  }
+
+  function ensureLocaleObserver() {
+    if (localeObserver || typeof MutationObserver !== 'function') return;
+    try {
+      localeObserver = new MutationObserver(() => scheduleLocalizeBody());
+      localeObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    } catch {}
+  }
+
   function setStatus(text, kind = '') {
-    elStatus.textContent = text || '';
+    lastStatusRaw = String(text || '');
+    lastStatusKind = String(kind || '');
+    elStatus.textContent = translateText(lastStatusRaw);
     elStatus.classList.remove('ok', 'warn', 'err');
     if (kind) elStatus.classList.add(kind);
+    localizeBody();
   }
 
   function getRuntimeVersion() {
@@ -91,17 +153,23 @@
   function setCheckButtonBusy(busy) {
     if (!btnCheck) return;
     btnCheck.disabled = !!busy;
-    btnCheck.textContent = busy ? '检查中…' : '检查更新';
+    btnCheck.textContent = translateText(busy ? '检查中…' : '检查更新');
   }
 
   function buildUpdateActionHint() {
     const id = getRuntimeId();
-    const lines = [
+    const zh = [
       '更新当前已安装实例：请去 Releases 下载最新 dist.zip，覆盖原目录后再到 chrome://extensions 点“重新加载”。',
       '如果 Releases 里暂时还没有这个版本，说明 main 分支已经更新，但发布包还没同步。',
       '不要再次使用“加载未打包的扩展程序”去装另一份目录副本，否则会出现两个同名扩展。'
     ];
-    if (id) lines.push(`当前扩展 ID：${id}`);
+    const en = [
+      'To update the current installed instance, download the latest dist.zip from Releases, replace the files in your existing folder, then click “Reload” in chrome://extensions.',
+      'If Releases does not contain this version yet, main has been updated but the release package has not been published yet.',
+      'Do not use “Load unpacked” again with another folder copy, or you will end up with two extensions of the same name.'
+    ];
+    const lines = /^zh/i.test(resolveUiLocale()) ? zh : en;
+    if (id) lines.push(/^zh/i.test(resolveUiLocale()) ? `当前扩展 ID：${id}` : `Current extension ID: ${id}`);
     return lines.join('\n');
   }
 
@@ -155,7 +223,7 @@
     }
     const proto = String(parsed?.protocol || '').toLowerCase();
     if (proto !== 'https:' && proto !== 'chrome-extension:') {
-      setStatus(`已拦截不安全链接：${raw}`, 'warn');
+      setStatus(/^zh/i.test(resolveUiLocale()) ? `已拦截不安全链接：${raw}` : `Blocked an unsafe link: ${raw}`, 'warn');
       return;
     }
     try {
@@ -174,7 +242,7 @@
       const url = chrome?.runtime?.getURL?.('options/options.html') || 'options/options.html';
       openUrl(url);
     } catch {
-      setStatus('打开配置失败', 'err');
+      setStatus(/^zh/i.test(resolveUiLocale()) ? '打开配置失败' : 'Failed to open settings', 'err');
     }
   }
 
@@ -198,7 +266,7 @@
       }
       openUrl(buildOptionsDeepLink(siteId, moduleId));
     } catch {
-      setStatus('打开配置失败', 'err');
+      setStatus(/^zh/i.test(resolveUiLocale()) ? '打开配置失败' : 'Failed to open settings', 'err');
     }
   }
 
@@ -242,8 +310,11 @@
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
     const more = events.length > 3 ? `…+${events.length - 3}` : '';
     const msg = parts.length ? `${parts.join('，')}${more}` : '';
-    elGpt53AlertText.textContent = `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`;
+    elGpt53AlertText.textContent = /^zh/i.test(resolveUiLocale())
+      ? `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`
+      : `${unread} monitored resources are reachable: ${msg}`;
     elGpt53AlertCard.hidden = false;
+    localizeBody();
   }
 
   async function refreshGpt53AlertCard() {
@@ -707,25 +778,46 @@
 
   async function checkUpdate() {
     const localVersion = getRuntimeVersion();
-    setStatus('正在检查更新…');
+    const zh = /^zh/i.test(resolveUiLocale());
+    setStatus(zh ? '正在检查更新…' : 'Checking for updates…');
     setCheckButtonBusy(true);
     try {
       const remoteVersion = await fetchRemoteManifestVersion();
-      if (!remoteVersion) throw new Error('远端 dist/manifest.json 没有 version 字段');
+      if (!remoteVersion) throw new Error(zh ? '远端 dist/manifest.json 没有 version 字段' : 'Remote dist/manifest.json has no version field');
 
       const cmp = cmpSemver(remoteVersion, localVersion);
       if (cmp > 0) {
-        setStatus(`发现新版本：v${remoteVersion}\n当前版本：v${localVersion}\n\n${buildUpdateActionHint()}`, 'warn');
+        setStatus(
+          zh
+            ? `发现新版本：v${remoteVersion}\n当前版本：v${localVersion}\n\n${buildUpdateActionHint()}`
+            : `New version available: v${remoteVersion}\nCurrent version: v${localVersion}\n\n${buildUpdateActionHint()}`,
+          'warn'
+        );
         return;
       }
       if (cmp < 0) {
-        setStatus(`远端版本：v${remoteVersion}\n当前版本：v${localVersion}\n\n当前版本比远端新。通常表示你正在使用本地开发版，或者 GitHub main 还没同步到这个版本。`, 'ok');
+        setStatus(
+          zh
+            ? `远端版本：v${remoteVersion}\n当前版本：v${localVersion}\n\n当前版本比远端新。通常表示你正在使用本地开发版，或者 GitHub main 还没同步到这个版本。`
+            : `Remote version: v${remoteVersion}\nCurrent version: v${localVersion}\n\nYour local version is newer than main. This usually means you are on a local development build or GitHub main has not caught up yet.`,
+          'ok'
+        );
         return;
       }
-      setStatus(`已是最新版本：v${localVersion}\n\n若你刚替换过代码，请打开扩展页并对当前实例点“重新加载”，不要重新加载另一份目录副本。`, 'ok');
+      setStatus(
+        zh
+          ? `已是最新版本：v${localVersion}\n\n若你刚替换过代码，请打开扩展页并对当前实例点“重新加载”，不要重新加载另一份目录副本。`
+          : `Already up to date: v${localVersion}\n\nIf you have just replaced the files, open the extensions page and click “Reload” on the current instance instead of loading another folder copy.`,
+        'ok'
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setStatus(`检查失败：${msg}\n\n你可以直接打开 Releases 页面下载最新 dist.zip；若要应用新代码，请覆盖当前目录后点“重新加载”，不要重复安装第二份。`, 'err');
+      setStatus(
+        zh
+          ? `检查失败：${msg}\n\n你可以直接打开 Releases 页面下载最新 dist.zip；若要应用新代码，请覆盖当前目录后点“重新加载”，不要重复安装第二份。`
+          : `Update check failed: ${msg}\n\nYou can download the latest dist.zip directly from Releases. To apply new code, replace the files in your current folder and click “Reload” instead of installing a second copy.`,
+        'err'
+      );
     } finally {
       setCheckButtonBusy(false);
     }
@@ -733,9 +825,18 @@
 
   // init
   try {
+    ensureLocaleObserver();
     elAuthor.textContent = AUTHOR;
     elVersion.textContent = getRuntimeVersion() || 'unknown';
     setStatus('就绪\n非开发者用户请优先去 Releases 下载 dist.zip；检查更新只比对仓库 main 分支版本，可能会早于 Releases 发布，不会自动更新。');
+    void getSettings()
+      .then((settings) => {
+        currentLocaleMode = String(settings?.localeMode || 'auto');
+        localizeBody();
+      })
+      .catch(() => {
+        localizeBody();
+      });
   } catch {
     setStatus('初始化失败', 'err');
   }
@@ -749,9 +850,14 @@
     try {
       await sendRuntimeMessage({ type: 'AISHORTCUTS_GPT53_MARK_READ' });
       await refreshGpt53AlertCard();
-      setStatus('已清除 OpenAI 新模型提示', 'ok');
+      setStatus(/^zh/i.test(resolveUiLocale()) ? '已清除 OpenAI 新模型提示' : 'Cleared the OpenAI model alert', 'ok');
     } catch (e) {
-      setStatus(`清除提示失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+      setStatus(
+        /^zh/i.test(resolveUiLocale())
+          ? `清除提示失败：${e instanceof Error ? e.message : String(e)}`
+          : `Failed to clear alert: ${e instanceof Error ? e.message : String(e)}`,
+        'err'
+      );
     } finally {
       if (btnGpt53AlertMarkRead) btnGpt53AlertMarkRead.disabled = false;
     }
@@ -795,6 +901,7 @@
       if (elSiteUrl) elSiteUrl.textContent = href ? href.replace(/^https?:\/\//, '') : '';
 
       let settings = await getSettings();
+      currentLocaleMode = String(settings?.localeMode || 'auto');
       let menuByModule = {};
       let unmappedMenu = [];
       try {
@@ -868,6 +975,7 @@
 
           setStatus('已保存', 'ok');
           renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
+          localizeBody();
           queueMenuRefresh(300);
         });
       }
@@ -884,9 +992,10 @@
       }
 
       renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
+      localizeBody();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setStatus(`初始化菜单失败：${msg}`, 'warn');
+      setStatus(/^zh/i.test(resolveUiLocale()) ? `初始化菜单失败：${msg}` : `Failed to initialize the menu: ${msg}`, 'warn');
     }
   })();
 })();

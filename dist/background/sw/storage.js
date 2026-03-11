@@ -18,7 +18,7 @@
     "quicknav_gpt53_probe_alerts_v1"
   ]);
   let SHARED_CONFIG_LOADED = false;
-  let DEFAULT_SETTINGS = { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
+  let DEFAULT_SETTINGS = { enabled: true, metaKeyMode: "auto", localeMode: "auto", sites: {}, scrollLockDefaults: {}, siteModules: {} };
   let MAIN_GUARD_FILE = "content/scroll-guard-main.js";
   let CONTENT_SCRIPT_DEFS = [];
   let LEGACY_CONTENT_SCRIPT_IDS = [];
@@ -209,10 +209,16 @@
     if (value === "auto" || value === "has_meta" || value === "no_meta") return value;
     return fallback;
   }
+  function normalizeLocaleMode(input, fallback = "auto") {
+    const value = String(input || "").trim().toLowerCase();
+    if (value === "auto" || value === "zh_cn" || value === "en") return value;
+    return fallback;
+  }
   function normalizeSettings(input) {
     const out = {
       enabled: true,
       metaKeyMode: normalizeMetaKeyMode(DEFAULT_SETTINGS?.metaKeyMode, "auto"),
+      localeMode: normalizeLocaleMode(DEFAULT_SETTINGS?.localeMode, "auto"),
       sites: { ...DEFAULT_SETTINGS.sites },
       scrollLockDefaults: { ...DEFAULT_SETTINGS.scrollLockDefaults },
       siteModules: deepCloneJsonSafe(DEFAULT_SETTINGS.siteModules)
@@ -221,6 +227,7 @@
       if (!input || typeof input !== "object") return out;
       if (typeof input.enabled === "boolean") out.enabled = input.enabled;
       out.metaKeyMode = normalizeMetaKeyMode(input.metaKeyMode, out.metaKeyMode);
+      out.localeMode = normalizeLocaleMode(input.localeMode, out.localeMode);
       if (input.sites && typeof input.sites === "object") {
         for (const key of Object.keys(DEFAULT_SETTINGS.sites || {})) {
           if (typeof input.sites[key] === "boolean") out.sites[key] = input.sites[key];
@@ -263,6 +270,9 @@
       const rawMetaKeyMode = typeof raw.metaKeyMode === "string" ? raw.metaKeyMode.trim().toLowerCase() : "";
       if (!rawMetaKeyMode) return true;
       if (normalizeMetaKeyMode(rawMetaKeyMode, "") !== rawMetaKeyMode) return true;
+      const rawLocaleMode = typeof raw.localeMode === "string" ? raw.localeMode.trim().toLowerCase() : "";
+      if (!rawLocaleMode) return true;
+      if (normalizeLocaleMode(rawLocaleMode, "") !== rawLocaleMode) return true;
       if (!raw.sites || typeof raw.sites !== "object") return true;
       for (const key of Object.keys(DEFAULT_SETTINGS.sites || {})) {
         if (typeof raw.sites[key] !== "boolean") return true;
@@ -310,7 +320,7 @@
     const registry = config && typeof config === "object" ? config.registry || null : null;
     const injections = config && typeof config === "object" ? config.injections || null : null;
     SHARED_CONFIG_LOADED = !!(config && config.sharedConfigLoaded);
-    DEFAULT_SETTINGS = { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
+    DEFAULT_SETTINGS = { enabled: true, metaKeyMode: "auto", localeMode: "auto", sites: {}, scrollLockDefaults: {}, siteModules: {} };
     MAIN_GUARD_FILE = "content/scroll-guard-main.js";
     CONTENT_SCRIPT_DEFS = [];
     LEGACY_CONTENT_SCRIPT_IDS = [];
@@ -345,7 +355,7 @@
       }
     } catch {
       SHARED_CONFIG_LOADED = false;
-      DEFAULT_SETTINGS = { enabled: true, sites: {}, scrollLockDefaults: {}, siteModules: {} };
+      DEFAULT_SETTINGS = { enabled: true, metaKeyMode: "auto", localeMode: "auto", sites: {}, scrollLockDefaults: {}, siteModules: {} };
     }
     try {
       MAIN_GUARD_FILE = String(injections?.MAIN_GUARD_FILE || "content/scroll-guard-main.js");
@@ -417,6 +427,10 @@
       }
       if (path.length === 1 && path[0] === "metaKeyMode") {
         next.metaKeyMode = normalizeMetaKeyMode(op.value, next.metaKeyMode);
+        continue;
+      }
+      if (path.length === 1 && path[0] === "localeMode") {
+        next.localeMode = normalizeLocaleMode(op.value, next.localeMode);
         continue;
       }
       if (path.length === 2 && path[0] === "sites") {

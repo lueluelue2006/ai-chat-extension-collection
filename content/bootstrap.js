@@ -18,6 +18,9 @@
   const ERROR_DATASET_KEY = 'quicknavCoreErrorCount';
   const ERROR_REPORT_WINDOW_MS = 15000;
   const ERROR_REPORT_BURST = 3;
+  const SETTINGS_KEY = 'aichat_ai_shortcuts_settings_v1';
+  const DS_LOCALE_MODE_KEY = 'aichatLocaleMode';
+  const DS_LOCALE_KEY = 'aichatLocale';
   const errorReportState = new Map();
 
   function isDebugEnabled() {
@@ -216,6 +219,73 @@
     return createFallbackScope();
   }
 
+  const I18N = (() => {
+    try {
+      return globalThis.AISHORTCUTS_I18N || null;
+    } catch {
+      return null;
+    }
+  })();
+
+  function normalizeLocaleMode(mode) {
+    try {
+      return typeof I18N?.normalizeLocaleMode === 'function' ? I18N.normalizeLocaleMode(mode, 'auto') : 'auto';
+    } catch {
+      return 'auto';
+    }
+  }
+
+  function resolveLocale(mode) {
+    try {
+      return typeof I18N?.resolveLocale === 'function' ? I18N.resolveLocale(mode, navigator) : 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  let pendingLocaleSnapshot = { localeMode: 'auto', locale: 'en' };
+  let localeWriteTimer = 0;
+
+  function tryWriteLocaleDatasetNow(localeMode, locale) {
+    try {
+      const docEl = document.documentElement;
+      if (!docEl || !docEl.dataset) return false;
+      docEl.dataset[DS_LOCALE_MODE_KEY] = normalizeLocaleMode(localeMode);
+      docEl.dataset[DS_LOCALE_KEY] = String(locale || 'en');
+      docEl.lang = String(locale || 'en');
+      return true;
+    } catch {}
+    return false;
+  }
+
+  function scheduleLocaleDatasetWrite(scope) {
+    if (localeWriteTimer || !scope || typeof scope.timeout !== 'function') return;
+    try {
+      localeWriteTimer = scope.timeout(() => {
+        localeWriteTimer = 0;
+        if (!pendingLocaleSnapshot) return;
+        if (!tryWriteLocaleDatasetNow(pendingLocaleSnapshot.localeMode, pendingLocaleSnapshot.locale)) {
+          scheduleLocaleDatasetWrite(scope);
+        }
+      }, 50);
+    } catch {}
+  }
+
+  function writeLocaleDataset(localeMode, locale, scope) {
+    pendingLocaleSnapshot = {
+      localeMode: normalizeLocaleMode(localeMode),
+      locale: String(locale || 'en')
+    };
+    if (!tryWriteLocaleDatasetNow(pendingLocaleSnapshot.localeMode, pendingLocaleSnapshot.locale)) {
+      scheduleLocaleDatasetWrite(scope);
+    }
+  }
+
+  function applyLocaleFromSettings(settings, scope) {
+    const localeMode = normalizeLocaleMode(settings?.localeMode);
+    writeLocaleDataset(localeMode, resolveLocale(localeMode), scope);
+  }
+
   function routeKeyFromHref(href) {
     const raw = String(href || '').trim();
     if (!raw) return '';
@@ -298,6 +368,7 @@
 
     const bootstrapScope = createBootstrapScope();
     let disposed = false;
+    let localeStorageOff = null;
     let attempt = 0;
     let ensureAttempt = 0;
     let lastRouteKey = '';
@@ -305,6 +376,31 @@
     let routeWatcherInstalled = false;
     let sawBridgeRouteSignal = false;
     let lastBridgeRouteSignalAt = 0;
+
+    applyLocaleFromSettings(null, bootstrapScope);
+    try {
+      chrome.storage.local.get({ [SETTINGS_KEY]: null }, (items) => {
+        void chrome.runtime?.lastError;
+        if (disposed) return;
+        applyLocaleFromSettings(items?.[SETTINGS_KEY] || null, bootstrapScope);
+      });
+    } catch (error) {
+      reportError('bootstrap:locale:init', error);
+    }
+    try {
+      const onStorage = (changes, areaName) => {
+        if (disposed || areaName !== 'local' || !changes || !changes[SETTINGS_KEY]) return;
+        applyLocaleFromSettings(changes[SETTINGS_KEY].newValue || null, bootstrapScope);
+      };
+      chrome.storage.onChanged.addListener(onStorage);
+      localeStorageOff = () => {
+        try {
+          chrome.storage.onChanged.removeListener(onStorage);
+        } catch {}
+      };
+    } catch (error) {
+      reportError('bootstrap:locale:listen', error);
+    }
 
     const ensureInjected = ({ force = false, reason = '' } = {}) => {
       if (disposed) return;
@@ -446,6 +542,12 @@
         bootstrapScope.dispose();
       } catch (error) {
         reportError('bootstrap:scope:dispose', error);
+      }
+      localeWriteTimer = 0;
+      try {
+        localeStorageOff?.();
+      } catch (error) {
+        reportError('bootstrap:locale:dispose', error);
       }
     };
 

@@ -168,7 +168,18 @@
 
   const PREFIX = `ultra think and deeper websearch\n\n`;
   const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.\n\n`;
-  const TRANSLATE_PREFIX = `翻译成中文`;
+
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function getTranslatePrefix() {
+    return /^zh/i.test(getUiLocale()) ? '翻译成中文' : 'Translate into English';
+  }
 
   const SEND_BTN_SELECTORS = [
     '#composer-submit-button',
@@ -603,7 +614,7 @@
         if (key === 'y' || key === 'z') {
           e.preventDefault();
           e.stopPropagation();
-          runPrefixThenSend(TRANSLATE_PREFIX);
+          runPrefixThenSend(getTranslatePrefix());
           notify('快捷键"译"已激活：Ctrl+Y / Ctrl+Z');
           return;
         }

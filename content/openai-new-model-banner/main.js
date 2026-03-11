@@ -37,6 +37,39 @@
     onStorage: null
   };
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseLocale() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function msg(key, vars = {}) {
+    const zh = {
+      bannerTitle: 'OpenAI 新模型提示',
+      openOptions: '打开配置（清空 URL 列表可停止提醒）',
+      appName: 'AI捷径',
+      openOptionsFailed: '无法自动打开配置页，请从扩展图标进入“扩展程序选项”。',
+      checkedAt: '检测时间：{value}',
+      notification: '检测到 {count} 条资源可访问（每次检测都会提醒）：{msg}\n\n要关闭此提示：打开配置并清空 URL 列表（删除全部 URL 后保存）。'
+    };
+    const en = {
+      bannerTitle: 'OpenAI model alert',
+      openOptions: 'Open settings (clear the URL list to stop alerts)',
+      appName: 'AI Shortcuts',
+      openOptionsFailed: 'Could not open the settings page automatically. Please open Extension Options from the extension icon.',
+      checkedAt: 'Checked at: {value}',
+      notification: '{count} monitored resources are now reachable: {msg}\n\nTo stop these alerts, open Settings and clear the entire URL list.'
+    };
+    const table = isChineseLocale() ? zh : en;
+    return String(table[key] || '').replaceAll('{count}', String(vars.count ?? '')).replaceAll('{msg}', String(vars.msg ?? '')).replaceAll('{value}', String(vars.value ?? ''));
+  }
+
   function safeNow() {
     try {
       return Date.now();
@@ -147,7 +180,7 @@
 
     const title = document.createElement('div');
     title.className = 'title';
-    title.textContent = 'OpenAI 新模型提示';
+    title.textContent = msg('bannerTitle');
 
     const msg = document.createElement('div');
     msg.className = 'msg';
@@ -163,7 +196,7 @@
     const btnOptions = document.createElement('button');
     btnOptions.className = 'primary';
     btnOptions.type = 'button';
-    btnOptions.textContent = '打开配置（清空 URL 列表可停止提醒）';
+    btnOptions.textContent = msg('openOptions');
     actions.appendChild(btnOptions);
 
     card.appendChild(title);
@@ -204,8 +237,8 @@
           chrome.runtime.sendMessage(
             {
               type: 'AISHORTCUTS_NOTIFY',
-              title: 'AI捷径',
-              message: '无法自动打开配置页，请从扩展图标进入“扩展程序选项”。'
+              title: msg('appName'),
+              message: msg('openOptionsFailed')
             },
             () => void chrome.runtime.lastError
           );
@@ -219,7 +252,7 @@
     ensureUi();
     if (!state.wrapper) return;
     try {
-      if (state.titleEl) state.titleEl.textContent = String(title || 'OpenAI 新模型提示');
+      if (state.titleEl) state.titleEl.textContent = String(title || msg('bannerTitle'));
     } catch {}
     try {
       if (state.msgEl) state.msgEl.textContent = String(message || '').trim();
@@ -227,7 +260,7 @@
     try {
       const ts = Number(checkedAt) || 0;
       if (state.metaEl) {
-        state.metaEl.textContent = ts ? `检测时间：${new Date(ts).toLocaleString()}` : '';
+        state.metaEl.textContent = ts ? msg('checkedAt', { value: new Date(ts).toLocaleString(isChineseLocale() ? 'zh-CN' : 'en-US') }) : '';
       }
     } catch {}
     try {
@@ -319,8 +352,8 @@
       }
     })();
     show({
-      title: 'OpenAI 新模型提示',
-      message: `检测到 ${count} 条资源可访问（每次检测都会提醒）：${msg}\n\n要关闭此提示：打开配置并清空 URL 列表（删除全部 URL 后保存）。`,
+      title: msg('bannerTitle'),
+      message: msg('notification', { count, msg }),
       checkedAt: lastAt || Number(checkedAt) || safeNow()
     });
   }

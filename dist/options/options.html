@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>AI捷径 设置</title>
+    <title>AI Shortcuts Settings</title>
     <link rel="stylesheet" href="./options.css" />
   </head>
   <body>
     <header class="header">
       <div class="titleRow">
-        <img class="titleLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
+        <img class="titleLogo" src="../icons/icon48.png" alt="AI Shortcuts logo" />
         <div class="title">AI捷径 设置</div>
       </div>
       <div class="subtitle">按网站管理脚本、查看模块状态，并编辑每个模块的细项设置。</div>
@@ -62,6 +62,32 @@
           </div>
           <div class="shortcutProfileHint" id="metaKeyProfileHint">
             无 Meta 键时，依赖 ⌘ 的快捷键会默认停用；<code>Ctrl+S / T / Y / Z</code> 这类冲突型快捷键也会默认停用。
+          </div>
+        </section>
+        <section class="shortcutProfileCard" aria-label="语言与界面文案">
+          <div class="shortcutProfileHead">
+            <div>
+              <div class="shortcutProfileTitle" id="localeModeTitle">界面语言</div>
+              <div class="shortcutProfileText" id="localeModeState">自动按浏览器语言选择中文或英文。</div>
+            </div>
+            <div class="shortcutProfilePill" id="localeModePill">检测中</div>
+          </div>
+          <div class="shortcutProfileOptions" role="radiogroup" aria-label="界面语言">
+            <label class="shortcutProfileOption">
+              <input type="radio" name="localeMode" id="localeModeAuto" value="auto" />
+              <span id="localeModeAutoLabel">自动</span>
+            </label>
+            <label class="shortcutProfileOption">
+              <input type="radio" name="localeMode" id="localeModeZhCn" value="zh_cn" />
+              <span id="localeModeZhCnLabel">简体中文</span>
+            </label>
+            <label class="shortcutProfileOption">
+              <input type="radio" name="localeMode" id="localeModeEn" value="en" />
+              <span id="localeModeEnLabel">English</span>
+            </label>
+          </div>
+          <div class="shortcutProfileHint" id="localeModeHint">
+            自动模式下，仅浏览器为简体中文时使用中文版；其他语言或无法判断时默认英文。
           </div>
         </section>
         <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
@@ -145,6 +171,7 @@
       <div class="status" id="status" role="status" aria-live="polite"></div>
     </main>
 
+    <script src="../shared/i18n.js"></script>
     <script src="../shared/registry.js"></script>
     <script src="../shared/chatgpt-usage-monitor-utils.js"></script>
     <script src="./options.js"></script>

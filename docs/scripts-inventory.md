@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.6.11
-- Generated: 2026-03-11 21:19
+- Version: 2.6.12
+- Generated: 2026-03-11 21:29
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -60,7 +60,7 @@
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-readaloud-speed-controller/main.js`
 - `chatgpt_usage_monitor`: ChatGPT 用量统计 — 仅记录用量（不在页面注入悬浮窗）；Deep/Legacy Research 不计入；在配置页查看/导入/导出/清空，并支持旧版月度 HTML 报告
-  - 作者: lueluelue2006（基于 tizee@Github 的实现移植）
+  - 作者: tizee@Github
   - 许可证: MIT
   - 上游: `https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor`
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-usage-monitor/bridge.js`
@@ -137,7 +137,7 @@
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED (allFrames): `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/genspark-moa-image-autosettings/main.js`
 - `genspark_credit_balance`: Genspark 积分余量 — 悬停小蓝点显示积分信息（可刷新/折叠/拖动）
-  - 作者: LinuxDo 悟空（原始脚本） / lueluelue2006（MV3 集成）
+  - 作者: LinuxDo 悟空
   - 许可证: 许可证未声明
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/genspark-credit-balance/main.js`
 - `genspark_codeblock_fold`: Genspark 长代码块折叠 — 自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）
@@ -166,7 +166,7 @@
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
 - `grok_rate_limit_display`: Grok 剩余额度显示 — 仅显示 all 积分余量（发送后更新）
-  - 作者: Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展） / lueluelue2006（MV3 集成）
+  - 作者: Blankspeaker
   - 许可证: 许可证未声明
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/grok-rate-limit-display/main.js`
 - `grok_trash_cleanup`: Grok 废纸篓一键清空 — 在 deleted-conversations 页面右上角提供“清空废纸篓”按钮（不可恢复）

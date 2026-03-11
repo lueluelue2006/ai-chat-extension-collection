@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.6.13
-- Generated: 2026-03-11 21:30
+- Version: 2.6.14
+- Generated: 2026-03-11 23:18
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -137,7 +137,7 @@
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED (allFrames): `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/genspark-moa-image-autosettings/main.js`
 - `genspark_credit_balance`: Genspark 积分余量 — 悬停小蓝点显示积分信息（可刷新/折叠/拖动）
-  - 作者: LinuxDo 悟空
+  - 作者: 悟空(linux.do)
   - 许可证: 许可证未声明
   - 注入: document_end / ISOLATED: `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/genspark-credit-balance/main.js`
 - `genspark_codeblock_fold`: Genspark 长代码块折叠 — 自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）

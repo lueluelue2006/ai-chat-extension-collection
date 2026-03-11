@@ -218,7 +218,7 @@
       name: 'ChatGPT 用量统计',
       sub: '仅记录用量（不在页面注入悬浮窗）；Deep/Legacy Research 不计入；在配置页查看/导入/导出/清空，并支持旧版月度 HTML 报告',
       hotkeys: [],
-      authors: ['tizee@Github'],
+      authors: ['GitHub tizee'],
       license: 'MIT',
       upstream: 'https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor'
     },

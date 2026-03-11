@@ -49,20 +49,20 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 | 方向 | 内容 |
 | --- | --- |
-| GPT 优先 | ChatGPT 是主战场：QuickNav、模型/推理切换、Tab queue、用量统计、导出、消息树、下载修复、搜索联动都先围绕 GPT 工作流设计 |
+| GPT 优先 | ChatGPT 是主战场：QuickNav、Tab queue、消息树 / 对话导出 / 分叉编辑、用量统计、模型 / 推理切换、下载修复、搜索联动都先围绕 GPT 工作流设计 |
+| 核心效率流 | QuickNav 导航、Tab queue 队列化交互、结构化对话工具、集中配置管理构成最核心的日常工作流 |
 | 多站点补充覆盖 | 在 Google 搜索、Genspark、Grok、Gemini、Kimi、Qwen、DeepSeek、文心一言、GLM 上复用成熟输入增强与导航能力 |
-| 高频效率流 | `⌘/Ctrl+Enter`、问 GPT 跳转、队列化交互、阅读效率增强、集中配置管理 |
 | 公开分发方式 | 面向非开发者只发布 `dist.zip`，公开仓库保留源码与维护脚本 |
 
 ## GPT 核心能力
 
 | 能力 | 说明 |
 | --- | --- |
-| QuickNav | 对话级导航、标记、跳转和阅读效率增强，属于最核心的 GPT 工作流层 |
-| 模型 / 推理切换 | `⌘O / ⌘J`、Meta 能力控制、Thinking / Pro / Instant 相关交互优化 |
 | Tab queue | 面向 ChatGPT 的队列化消息流，支持多条排队、回收、删除、暂停与恢复 |
-| 用量统计 | 按模型与共享配额追踪 GPT 使用情况，支持导出 / 导入与本地保留 |
+| QuickNav | 对话级导航、标记、跳转和阅读效率增强，属于最核心的 GPT 工作流层 |
 | 对话结构工具 | 对话导出、消息树、分叉编辑、下载修复、引用与复制增强 |
+| 用量统计 | 按模型与共享配额追踪 GPT 使用情况，支持导出 / 导入与本地保留 |
+| 模型 / 推理切换 | `⌘O / ⌘J`、Meta 能力控制、Thinking / Pro / Instant 相关交互优化 |
 | Google 搜索联动 | 在 Google 搜索结果页一键跳到 ChatGPT，并以 `web search:` 形式直接发问 |
 
 ## 支持站点
@@ -71,7 +71,7 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| ChatGPT | QuickNav、`⌘O / ⌘J`、Tab queue、用量统计、导出、消息树、分叉编辑、下载修复 | 最高优先级维护 |
+| ChatGPT | Tab queue、QuickNav、消息树 / 对话导出 / 分叉编辑、用量统计、`⌘O / ⌘J`、下载修复 | 最高优先级维护 |
 | Google 搜索 | 搜索页一键问 GPT，直接跳到 ChatGPT Thinking 工作流 | 最高优先级维护 |
 
 ### 其他站点补充覆盖
@@ -168,24 +168,24 @@ AI捷径
 |    |____ 隐藏免责声明/提示条
 |
 |____ ChatGPT
-|    |____ QuickNav
 |    |____ ChatGPT Tab 队列发送
-|    |____ OpenAI 新模型横幅提示（默认添加了 GPT-5.3）
-|    |____ ChatGPT 性能优化（默认全启动）
-|    |____ ChatGPT 推理强度/模型 快捷切换（⌘O/⌘J）
-|    |____ ⌘Enter 发送（Enter 换行）
-|    |____ ChatGPT 朗读速度控制器（默认 1.8x）
-|    |____ ChatGPT 用量统计（仅在配置页面显示）
-|    |____ ChatGPT 回复计时器（右下角极小的一个计时器）
-|    |____ ChatGPT 下载修复（by @pengzhile）
-|    |____ ChatGPT 回复粗体高亮（Lite）
-|    |____ 快捷深度搜索（译/搜/思）
-|    |____ ChatGPT 隐藏点赞/点踩（by @zhong_little）
-|    |____ ChatGPT TeX Copy & Quote（公式复制+修复引用）
+|    |____ QuickNav
+|    |____ ChatGPT 消息树
 |    |____ ChatGPT 对话导出
 |    |____ ChatGPT 消息分叉编辑（可加图）
 |    |____ Canvas Enhancements
-|    |____ ChatGPT 消息树
+|    |____ ChatGPT 用量统计（仅在配置页面显示）
+|    |____ ChatGPT 推理强度/模型 快捷切换（⌘O/⌘J）
+|    |____ 快捷深度搜索（译/搜/思）
+|    |____ OpenAI 新模型横幅提示（默认添加了 GPT-5.3）
+|    |____ ChatGPT 性能优化（默认全启动）
+|    |____ ChatGPT 下载修复（by @pengzhile）
+|    |____ ChatGPT TeX Copy & Quote（公式复制+修复引用）
+|    |____ ⌘Enter 发送（Enter 换行）
+|    |____ ChatGPT 朗读速度控制器（默认 1.8x）
+|    |____ ChatGPT 回复计时器（右下角极小的一个计时器）
+|    |____ ChatGPT 回复粗体高亮（Lite）
+|    |____ ChatGPT 隐藏点赞/点踩（by @zhong_little）
 |    |____ ChatGPT 顶部按钮布局修复
 |
 |____ Google 搜索

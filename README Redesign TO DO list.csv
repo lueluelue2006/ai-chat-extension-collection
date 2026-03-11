@@ -1,0 +1,5 @@
+id,task,status,completed_at,notes
+1,梳理 README 首页信息层级并建立任务跟踪,DONE,2026-03-11 18:48,基于 design-director 和 ui-ux-pro-max 完成首页信息架构设计
+2,重构 README 首页结构与文案,DONE,2026-03-11 18:49,首页改为 Hero + badges + 价值概览 + 支持站点 + 安装更新 + 折叠细节
+3,同步版本与自动清单并运行验证,DONE,2026-03-11 18:50,npm run verify 通过并同步到 v2.6.1 构建产物
+4,在真实浏览器中核对 GitHub 风格渲染效果并提交 Git,DONE,2026-03-11 19:07,本地 GitHub Markdown 预览已核对 Hero badges 链接与折叠区渲染

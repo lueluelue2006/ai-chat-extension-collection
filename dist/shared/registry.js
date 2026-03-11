@@ -213,7 +213,7 @@
       name: "ChatGPT \u7528\u91CF\u7EDF\u8BA1",
       sub: "\u4EC5\u8BB0\u5F55\u7528\u91CF\uFF08\u4E0D\u5728\u9875\u9762\u6CE8\u5165\u60AC\u6D6E\u7A97\uFF09\uFF1BDeep/Legacy Research \u4E0D\u8BA1\u5165\uFF1B\u5728\u914D\u7F6E\u9875\u67E5\u770B/\u5BFC\u5165/\u5BFC\u51FA/\u6E05\u7A7A\uFF0C\u5E76\u652F\u6301\u65E7\u7248\u6708\u5EA6 HTML \u62A5\u544A",
       hotkeys: [],
-      authors: ["tizee@Github"],
+      authors: ["GitHub tizee"],
       license: "MIT",
       upstream: "https://github.com/tizee-tampermonkey-scripts/tampermonkey-chatgpt-model-usage-monitor"
     },

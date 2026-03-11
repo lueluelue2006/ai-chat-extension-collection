@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI捷径 设置</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="titleRow">
+        <img class="titleLogo" src="../icons/icon48.png" alt="AI捷径 Logo" />
+        <div class="title">AI捷径 设置</div>
+      </div>
+      <div class="subtitle">按网站管理脚本、查看模块状态，并编辑每个模块的细项设置。</div>
+      <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
+        <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">浅色</button>
+        <button class="themeToggleBtn" id="themeDark" type="button" aria-label="暗色">深色</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="card">
+        <div class="cardTitle">总开关</div>
+        <label class="toggle">
+          <input type="checkbox" id="enabled" />
+          <span>启用扩展（所有模块）</span>
+        </label>
+        <div class="hint">保存后会自动生效到已打开页面；若要彻底移除已注入内容，仍需手动刷新对应页面。</div>
+        <div class="hint">安装路径必须是 <code>dist/</code> 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。</div>
+      </section>
+
+      <section class="card configCard">
+        <div class="sectionHead">
+          <div class="sectionCopy">
+            <div class="sectionEyebrow">Script Control</div>
+            <div class="cardTitle">按网站管理脚本</div>
+            <div class="sectionText">先选网站，再选脚本并编辑细项设置。页面内所有变更都会直接写回当前配置。</div>
+          </div>
+        </div>
+        <section class="shortcutProfileCard" aria-label="键盘能力与快捷键策略">
+          <div class="shortcutProfileHead">
+            <div>
+              <div class="shortcutProfileTitle">键盘能力</div>
+              <div class="shortcutProfileText" id="metaKeyProfileState">自动检测当前键盘能力。</div>
+            </div>
+            <div class="shortcutProfilePill" id="metaKeyProfilePill">检测中</div>
+          </div>
+          <div class="shortcutProfileOptions" role="radiogroup" aria-label="Meta 键能力">
+            <label class="shortcutProfileOption">
+              <input type="radio" name="metaKeyMode" id="metaKeyModeAuto" value="auto" />
+              <span>自动</span>
+            </label>
+            <label class="shortcutProfileOption">
+              <input type="radio" name="metaKeyMode" id="metaKeyModeHasMeta" value="has_meta" />
+              <span>我有 Meta 键</span>
+            </label>
+            <label class="shortcutProfileOption">
+              <input type="radio" name="metaKeyMode" id="metaKeyModeNoMeta" value="no_meta" />
+              <span>我没有 Meta 键</span>
+            </label>
+          </div>
+          <div class="shortcutProfileHint" id="metaKeyProfileHint">
+            无 Meta 键时，依赖 ⌘ 的快捷键会默认停用；<code>Ctrl+S / T / Y / Z</code> 这类冲突型快捷键也会默认停用。
+          </div>
+        </section>
+        <div class="triGrid" role="group" aria-label="页面、脚本与脚本设置">
+          <div class="triCol" aria-label="页面">
+            <div class="triHead">
+              <div class="triTitleRow">
+                <div class="triTitle">网站</div>
+                <div class="triCount" id="siteListCount">0</div>
+              </div>
+              <div class="triNote" id="siteListNote">按站点切换。</div>
+            </div>
+            <input class="triSearch" id="siteSearch" type="search" placeholder="搜索页面…" />
+            <div class="triList" id="siteList"></div>
+          </div>
+          <div class="triCol" aria-label="脚本">
+            <div class="triHead">
+              <div class="triTitleRow">
+                <div class="triTitle">脚本</div>
+                <div class="triCount" id="moduleListCount">0</div>
+              </div>
+              <div class="triNote" id="moduleListNote">选择网站后查看该站点脚本。</div>
+            </div>
+            <input class="triSearch" id="moduleSearch" type="search" placeholder="搜索脚本…" />
+            <div class="triList" id="moduleList"></div>
+          </div>
+          <div class="triCol" aria-label="脚本设置">
+            <div class="triHead">
+              <div class="triTitleRow">
+                <div class="triTitle">设置</div>
+              </div>
+              <div class="triNote">右侧面板显示模块说明、开关和额外操作。</div>
+            </div>
+            <div class="triPanelShell">
+              <div class="panelShellHeader">
+                <div class="panelShellTopRow">
+                  <div class="panelShellEyebrow">正在配置</div>
+                  <div class="panelInfo" id="panelInfoWrap" hidden>
+                    <button class="panelInfoBtn" id="panelInfoBtn" type="button" aria-label="查看模块信息">i</button>
+                    <div class="panelInfoCard" id="panelInfoCard" role="tooltip" aria-hidden="true"></div>
+                  </div>
+                </div>
+                <div class="panelShellTitle" id="panelSelectionTitle">未选择脚本</div>
+                <div class="panelShellSub" id="panelSelectionSub">选择中间脚本后加载对应设置面板。</div>
+                <div class="panelShellMeta" id="panelSelectionMeta" hidden></div>
+              </div>
+              <div class="triPanel" id="moduleSettings"></div>
+            </div>
+          </div>
+        </div>
+        <div class="hint">提示：设置变更会自动生效；关闭某个模块后，已打开页面一般仍需刷新才会完全停用。</div>
+      </section>
+
+      <section class="card" aria-label="OpenAI 新模型监控">
+        <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
+        <div class="hint">
+          默认每 1 小时请求一次下方每个 URL（目前仅支持 developers.openai.com/images/api/models/icons/...）；只要检测到可用资源（非 404）就会提醒你（系统通知 + 扩展角标 + ChatGPT 页内横幅）。要停止提醒，请删除全部 URL 并保存（空列表会停用检测/提醒；横幅不会被点击关闭）。
+        </div>
+        <div class="alertBox" id="gpt53AlertBox" hidden>
+          <div class="alertTitle">OpenAI 新模型提示</div>
+          <div class="alertText" id="gpt53AlertText"></div>
+          <div class="actions">
+            <button class="btn secondary" id="gpt53MarkRead" type="button">清除角标（不停止提醒）</button>
+          </div>
+        </div>
+        <textarea class="codeBox" id="gpt53Urls" rows="7" spellcheck="false" placeholder="每行一个：https://developers.openai.com/images/api/models/icons/..."></textarea>
+        <div class="actions">
+          <button class="btn secondary" id="gpt53Save" type="button">保存列表</button>
+          <button class="btn secondary" id="gpt53Refresh" type="button">查看状态</button>
+          <button class="btn" id="gpt53Run" type="button">立即检测</button>
+        </div>
+        <div class="gpt53Status" id="gpt53Status">（未检测）</div>
+      </section>
+
+      <section class="actions">
+        <button class="btn secondary" id="restoreDefault" type="button">恢复默认</button>
+        <button class="btn danger" id="factoryReset" type="button">恢复出厂（清空所有数据）</button>
+        <button class="btn" id="reinjectNow" type="button">重新注入已打开页面</button>
+        <button class="btn secondary" id="openRepo" type="button">仓库链接</button>
+      </section>
+
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="../shared/registry.js"></script>
+    <script src="../shared/chatgpt-usage-monitor-utils.js"></script>
+    <script src="./options.js"></script>
+  </body>
+</html>

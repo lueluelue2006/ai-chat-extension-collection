@@ -49,8 +49,8 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 | 方向 | 内容 |
 | --- | --- |
-| GPT 优先 | ChatGPT 是主战场：QuickNav、Tab queue、消息树 / 对话导出 / 分叉编辑、用量统计、模型 / 推理切换、下载修复、搜索联动都先围绕 GPT 工作流设计 |
-| 核心效率流 | QuickNav 导航、Tab queue 队列化交互、结构化对话工具、集中配置管理构成最核心的日常工作流 |
+| GPT 优先 | ChatGPT 是主战场：QuickNav、消息树 / 对话导出 / 分叉编辑、Tab queue、用量统计、模型 / 推理切换、下载修复、搜索联动都先围绕 GPT 工作流设计 |
+| 核心效率流 | QuickNav 导航、结构化对话工具、Tab queue 队列化交互、集中配置管理构成最核心的日常工作流 |
 | 多站点补充覆盖 | 在 Google 搜索、Genspark、Grok、Gemini、Kimi、Qwen、DeepSeek、文心一言、GLM 上复用成熟输入增强与导航能力 |
 | 公开分发方式 | 面向非开发者只发布 `dist.zip`，公开仓库保留源码与维护脚本 |
 
@@ -58,9 +58,9 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 | 能力 | 说明 |
 | --- | --- |
-| Tab queue | 面向 ChatGPT 的队列化消息流，支持多条排队、回收、删除、暂停与恢复 |
 | QuickNav | 对话级导航、标记、跳转和阅读效率增强，属于最核心的 GPT 工作流层 |
 | 对话结构工具 | 对话导出、消息树、分叉编辑、下载修复、引用与复制增强 |
+| Tab queue | 面向 ChatGPT 的队列化消息流，支持多条排队、回收、删除、暂停与恢复 |
 | 用量统计 | 按模型与共享配额追踪 GPT 使用情况，支持导出 / 导入与本地保留 |
 | 模型 / 推理切换 | `⌘O / ⌘J`、Meta 能力控制、Thinking / Pro / Instant 相关交互优化 |
 | Google 搜索联动 | 在 Google 搜索结果页一键跳到 ChatGPT，并以 `web search:` 形式直接发问 |
@@ -71,7 +71,7 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| ChatGPT | Tab queue、QuickNav、消息树 / 对话导出 / 分叉编辑、用量统计、`⌘O / ⌘J`、下载修复 | 最高优先级维护 |
+| ChatGPT | QuickNav、消息树 / 对话导出 / 分叉编辑、Tab queue、用量统计、`⌘O / ⌘J`、下载修复 | 最高优先级维护 |
 | Google 搜索 | 搜索页一键问 GPT，直接跳到 ChatGPT Thinking 工作流 | 最高优先级维护 |
 
 ### 其他站点补充覆盖
@@ -168,11 +168,11 @@ AI捷径
 |    |____ 隐藏免责声明/提示条
 |
 |____ ChatGPT
-|    |____ ChatGPT Tab 队列发送
 |    |____ QuickNav
 |    |____ ChatGPT 消息树
 |    |____ ChatGPT 对话导出
 |    |____ ChatGPT 消息分叉编辑（可加图）
+|    |____ ChatGPT Tab 队列发送
 |    |____ Canvas Enhancements
 |    |____ ChatGPT 用量统计（仅在配置页面显示）
 |    |____ ChatGPT 推理强度/模型 快捷切换（⌘O/⌘J）

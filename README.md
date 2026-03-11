@@ -9,11 +9,21 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
-  <img src="https://img.shields.io/badge/sites-10-4cc9f0" alt="Sites">
-  <img src="https://img.shields.io/badge/modules-29-72efdd" alt="Modules">
-  <img src="https://img.shields.io/badge/content%20defs-59-90be6d" alt="Content defs">
-  <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-8ac926" alt="License">
+  <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
+    <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
+  </a>
+  <a href="#支持站点">
+    <img src="https://img.shields.io/badge/sites-10-4cc9f0" alt="Sites">
+  </a>
+  <a href="./docs/scripts-inventory.md">
+    <img src="https://img.shields.io/badge/modules-29-72efdd" alt="Modules">
+  </a>
+  <a href="./docs/scripts-inventory.md">
+    <img src="https://img.shields.io/badge/content%20defs-59-90be6d" alt="Content defs">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-8ac926" alt="License">
+  </a>
 </p>
 
 <p align="center">

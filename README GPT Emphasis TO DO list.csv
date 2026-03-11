@@ -1,0 +1,5 @@
+id,task,status,completed_at,notes
+1,梳理当前 README 中 GPT 露出不足与新信息层级,DONE,2026-03-11 19:13,确认问题在于首屏与支持站点表把 GPT 和其他站点写成同权
+2,重构 README 首页为 GPT 优先叙事,DONE,2026-03-11 19:14,已改成 GPT 主战场与其他站点补充覆盖的双层结构
+3,同步版本并运行验证,DONE,2026-03-11 19:15,npm run verify 通过并同步到 v2.6.2 构建产物
+4,在真实浏览器中复核新版 README 渲染并提交 Git,DONE,2026-03-11 19:16,本地 GitHub Markdown 预览已确认 GPT Hero 与 GPT 主战场分层

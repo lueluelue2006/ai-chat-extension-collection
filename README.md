@@ -159,6 +159,7 @@ AI捷径
 |
 |____ ChatGPT
 |    |____ QuickNav
+|    |____ ChatGPT Tab 队列发送
 |    |____ OpenAI 新模型横幅提示（默认添加了 GPT-5.3）
 |    |____ ChatGPT 性能优化（默认全启动）
 |    |____ ChatGPT 推理强度/模型 快捷切换（⌘O/⌘J）
@@ -173,8 +174,9 @@ AI捷径
 |    |____ ChatGPT TeX Copy & Quote（公式复制+修复引用）
 |    |____ ChatGPT 对话导出
 |    |____ ChatGPT 消息分叉编辑（可加图）
+|    |____ Canvas Enhancements
 |    |____ ChatGPT 消息树
-|    |____ ChatGPT 侧边栏顶部按钮修复
+|    |____ ChatGPT 顶部按钮布局修复
 |
 |____ Google 搜索
 |    |____ Google 搜索问 GPT

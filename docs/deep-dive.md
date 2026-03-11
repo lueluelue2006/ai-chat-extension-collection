@@ -67,7 +67,7 @@
 - `buildContentScriptDefs(registry)`：生成“内容脚本注册定义”（每条定义包含 `id/siteId/moduleId/matches/js/css/runAt/world/allFrames`）
 - 关键常量：
   - `ISOLATED_BRIDGE_FILES = ['content/aishortcuts-scope.js', 'content/aishortcuts-bridge.js']`
-  - `MAIN_BRIDGE_FILES = ['content/aishortcuts-scope-main.js', 'content/aishortcuts-bridge-main.js']`
+  - `MAIN_BRIDGE_FILES = ['shared/i18n.js', 'content/aishortcuts-scope-main.js', 'content/aishortcuts-bridge-main.js', 'content/aishortcuts-i18n-main.js']`
   - `QUICKNAV_KERNEL_FILES = ['runtime-guards.js', 'route-watch.js', 'scrolllock-bridge.js', 'observer-refresh.js']`
   - `CHATGPT_FETCH_HUB_CONSUMER_FILES = ['chatgpt-fetch-hub/main.js', 'chatgpt-fetch-hub/consumer-base.js']`
   - `MAIN_GUARD_FILE = 'content/scroll-guard-main.js'`（MAIN world 滚动拦截器）
@@ -77,11 +77,14 @@
   - `auto`：按当前设备环境推断是否有 Meta 键（当前实现把 macOS 视为有 Meta 键，Windows/Linux 视为无 Meta 键）
   - `has_meta` / `no_meta`：允许用户在 Options 页手动覆盖
   - 受影响模块目前有 `chatgpt_thinking_toggle`、`qwen_thinking_toggle`、`chatgpt_quick_deep_search`、`chatgpt_tab_queue`（仅 `Ctrl+C` 清空输入框受 Meta 能力约束）
+- 顶层界面语言：`settings.localeMode = auto | zh_cn | en`
+  - `auto`：仅浏览器明确为简体中文时使用中文；其他语言或无法判断时默认英文
+  - `zh_cn` / `en`：允许用户在 Options 页手动覆盖
 
 QuickNav 当前注入顺序（核心口径）：
 
 - ISOLATED：`aishortcuts-scope.js` -> `aishortcuts-bridge.js` ->（站点前置文件）-> `aishortcuts-kernel/*` -> 站点 `*-quicknav.js`
-- MAIN（scroll guard）：`aishortcuts-scope-main.js` -> `aishortcuts-bridge-main.js` -> `scroll-guard-main.js`
+- MAIN（scroll guard）：`shared/i18n.js` -> `aishortcuts-scope-main.js` -> `aishortcuts-bridge-main.js` -> `aishortcuts-i18n-main.js` -> `scroll-guard-main.js`
 
 结论：**新增/改站点或模块**，大概率只需要改 `shared/registry.ts` + `shared/injections.ts`，再跑维护脚本同步 `manifest.source.json` 与文档（见第 9 节）。
 
@@ -470,6 +473,8 @@ Turn 筛选策略（维护重点）：
 
 - 主入口：编辑型三栏布局（站点/模块/设置）+ 模块设置面板路由（`renderModuleSettings(...)`）
 - 设置操作：`AISHORTCUTS_GET_SETTINGS`、`AISHORTCUTS_PATCH_SETTINGS`、`AISHORTCUTS_RESET_DEFAULTS`
+- 语言：新增 `localeMode` 顶层设置，支持 `auto / zh_cn / en`；Options 会按该设置对静态壳层、注册表展示文本和异步渲染的模块面板文案做统一本地化
+  - 站点页的动态脚本链也会先经过隔离世界 locale bridge，把解析后的 locale 同步到 DOM，并对扩展自有 UI 根节点做本地化；MAIN world 文案则通过 `shared/i18n.js + aishortcuts-i18n-main` 覆盖系统对话框
 - OpenAI 资源监控：通过 `AISHORTCUTS_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当前仅接受 `https://developers.openai.com/images/api/models/icons/...` 资源地址，默认每小时轮询一组内置模型图标 URL。当资源可访问时会在 `chatgpt.com` 显示页内横幅。若需停止提醒，清空 URL 列表并保存即可（`MARK_READ` 只清未读标记）
 - 横幅“打开配置”动作：内容脚本通过 `AISHORTCUTS_OPEN_OPTIONS_PAGE` 交给 SW 调扩展 API 打开配置页（优先 `chrome.tabs.create(optionsUrl)`，失败再 fallback `chrome.runtime.openOptionsPage()`）；该消息为低风险动作，SW 端不再对 sender 做额外拦截，避免不同实例字段差异导致误判。
 

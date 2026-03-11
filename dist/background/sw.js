@@ -6,7 +6,7 @@
   let sharedConfigLoaded = false;
 
   try {
-    importScripts('../shared/registry.js', '../shared/injections.js');
+    importScripts('../shared/i18n.js', '../shared/registry.js', '../shared/injections.js');
     registry = globalThis.AISHORTCUTS_REGISTRY || null;
     injections = globalThis.AISHORTCUTS_INJECTIONS || null;
     sharedConfigLoaded =

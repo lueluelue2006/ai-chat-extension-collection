@@ -39,6 +39,18 @@
   let observer = null;
   let ensureTimer = 0;
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseLocale() {
+    return /^zh/i.test(getUiLocale());
+  }
+
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -153,7 +165,9 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     const query = readCurrentQuery();
     const disabled = !query;
     button.disabled = disabled;
-    button.title = disabled ? '先在 Google 搜索框里输入问题' : '用 ChatGPT 5.4 Thinking 继续问这个搜索词';
+    button.title = disabled
+      ? (isChineseLocale() ? '先在 Google 搜索框里输入问题' : 'Enter a query in Google first')
+      : (isChineseLocale() ? '用 ChatGPT 5.4 Thinking 继续问这个搜索词' : 'Continue this search in ChatGPT 5.4 Thinking');
   }
 
   function bindInputSync(button) {
@@ -171,7 +185,7 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     const button = document.createElement('button');
     button.type = 'button';
     button.setAttribute(BUTTON_ATTR, '1');
-    button.innerHTML = '<span class="__aichatGoogleAskIcon">G</span><span>问 GPT</span>';
+    button.innerHTML = `<span class="__aichatGoogleAskIcon">G</span><span>${isChineseLocale() ? '问 GPT' : 'Ask GPT'}</span>`;
     button.addEventListener(
       'click',
       (event) => {

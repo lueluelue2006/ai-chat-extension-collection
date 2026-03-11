@@ -111,6 +111,31 @@
   const CHATGPT_NAV_SELF_HEAL_TIMER_INSTALLED_LEGACY_KEY = '__cgptNavSelfHealTimerInstalled';
   const CHATGPT_NAV_ALLOW_SCROLL_KEY = '__quicknavChatgptNavAllowScrollV1';
   const CHATGPT_NAV_ALLOW_SCROLL_LEGACY_KEY = '__cgptNavAllowScroll';
+  const AISHORTCUTS_I18N = globalThis.AISHORTCUTS_I18N || null;
+
+  function getQuickNavLocale() {
+    try {
+      const raw = String(document.documentElement?.dataset?.aichatLocale || '').trim();
+      if (raw) return raw;
+    } catch {}
+    try {
+      if (AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.resolveLocale === 'function') {
+        return AISHORTCUTS_I18N.resolveLocale('auto', navigator);
+      }
+    } catch {}
+    return 'zh-CN';
+  }
+
+  function qnT(text) {
+    const raw = String(text ?? '');
+    if (!raw) return raw;
+    try {
+      if (AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.translateText === 'function') {
+        return AISHORTCUTS_I18N.translateText(raw, getQuickNavLocale());
+      }
+    } catch {}
+    return raw;
+  }
 
   function readRuntimeGuardFlag(primaryKey, legacyKey) {
     try {
@@ -2715,19 +2740,19 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     nav.innerHTML = `
       <div class="compact-header">
         <div class="compact-actions">
-          <button class="compact-toggle" type="button" title="收起/展开"><span class="toggle-text">−</span></button>
-          <button class="compact-refresh" type="button" title="刷新对话列表">⟳</button>
-          <button class="compact-lock" type="button" title="阻止新回复自动滚动">🔐</button>
-          <button class="compact-star" type="button" title="仅显示收藏">☆</button>
-          <button class="compact-tree" type="button" title="分支 / 对话树">树<span class="tree-count" aria-hidden="true"></span></button>
+          <button class="compact-toggle" type="button" title="${escapeAttr(qnT('收起/展开'))}"><span class="toggle-text">−</span></button>
+          <button class="compact-refresh" type="button" title="${escapeAttr(qnT('刷新对话列表'))}">⟳</button>
+          <button class="compact-lock" type="button" title="${escapeAttr(qnT('阻止新回复自动滚动'))}">🔐</button>
+          <button class="compact-star" type="button" title="${escapeAttr(qnT('仅显示收藏'))}">☆</button>
+          <button class="compact-tree" type="button" title="${escapeAttr(qnT('分支 / 对话树'))}">${escapeHtml(qnT('树'))}<span class="tree-count" aria-hidden="true"></span></button>
         </div>
       </div>
-      <div class="compact-list" role="listbox" aria-label="对话项"></div>
+      <div class="compact-list" role="listbox" aria-label="${escapeAttr(qnT('对话项'))}"></div>
       <div class="compact-footer">
-        <button class="nav-btn" type="button" id="cgpt-nav-top" title="回到顶部">⤒</button>
-        <button class="nav-btn arrow" type="button" id="cgpt-nav-prev" title="上一条（Cmd+↑ / Alt+↑）">↑</button>
-        <button class="nav-btn arrow" type="button" id="cgpt-nav-next" title="下一条（Cmd+↓ / Alt+↓）">↓</button>
-        <button class="nav-btn" type="button" id="cgpt-nav-bottom" title="回到底部">⤓</button>
+        <button class="nav-btn" type="button" id="cgpt-nav-top" title="${escapeAttr(qnT('回到顶部'))}">⤒</button>
+        <button class="nav-btn arrow" type="button" id="cgpt-nav-prev" title="${escapeAttr(qnT('上一条（Cmd+↑ / Alt+↑）'))}">↑</button>
+        <button class="nav-btn arrow" type="button" id="cgpt-nav-next" title="${escapeAttr(qnT('下一条（Cmd+↓ / Alt+↓）'))}">↓</button>
+        <button class="nav-btn" type="button" id="cgpt-nav-bottom" title="${escapeAttr(qnT('回到底部'))}">⤓</button>
       </div>
     `;
     // Apply saved position before attaching to DOM to avoid sync layout work during startup.

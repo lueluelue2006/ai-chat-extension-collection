@@ -356,7 +356,7 @@
       name: 'Genspark 积分余量',
       sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）',
       hotkeys: [],
-      authors: ['LinuxDo 悟空'],
+      authors: ['悟空(linux.do)'],
       license: '许可证未声明'
     },
     genspark_codeblock_fold: {

@@ -351,7 +351,7 @@
       name: "Genspark \u79EF\u5206\u4F59\u91CF",
       sub: "\u60AC\u505C\u5C0F\u84DD\u70B9\u663E\u793A\u79EF\u5206\u4FE1\u606F\uFF08\u53EF\u5237\u65B0/\u6298\u53E0/\u62D6\u52A8\uFF09",
       hotkeys: [],
-      authors: ["LinuxDo \u609F\u7A7A"],
+      authors: ["\u609F\u7A7A(linux.do)"],
       license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     genspark_codeblock_fold: {

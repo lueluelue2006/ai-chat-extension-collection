@@ -37,6 +37,8 @@
   ·
   <a href="./docs/scripts-inventory.md">脚本清单</a>
   ·
+  <a href="./CREDITS.md">致谢</a>
+  ·
   <a href="./docs/deep-dive.md">架构文档</a>
 </p>
 
@@ -115,6 +117,7 @@ AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
 
 - [架构与核心链路](./docs/deep-dive.md)
 - [脚本清单与注入定义](./docs/scripts-inventory.md)
+- [致谢与外部来源](./CREDITS.md)
 - [ChatGPT 站点研究](./docs/chatgpt-site-research.md)
 
 ## 开发者工作流

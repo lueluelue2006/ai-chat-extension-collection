@@ -113,7 +113,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     quicknav: {
       id: "quicknav",
@@ -132,7 +132,7 @@
       sub: "\u79BB\u5C4F\u865A\u62DF\u5316 + CSS contain",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     openai_new_model_banner: {
       id: "openai_new_model_banner",
@@ -141,7 +141,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_thinking_toggle: {
       id: "chatgpt_thinking_toggle",
@@ -158,7 +158,7 @@
         forceKey: "chatgpt_thinking_toggle_hotkeys_force"
       },
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     cmdenter_send: {
       id: "cmdenter_send",
@@ -167,7 +167,7 @@
       defaultEnabled: true,
       hotkeys: ["\u2318Enter", "Ctrl+Enter"],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     qwen_thinking_toggle: {
       id: "qwen_thinking_toggle",
@@ -181,7 +181,7 @@
         forceKey: "qwen_thinking_toggle_hotkeys_force"
       },
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     grok_rate_limit_display: {
       id: "grok_rate_limit_display",
@@ -189,7 +189,7 @@
       sub: "\u4EC5\u663E\u793A all \u79EF\u5206\u4F59\u91CF\uFF08\u53D1\u9001\u540E\u66F4\u65B0\uFF09",
       hotkeys: [],
       authors: ["Blankspeaker\uFF08\u539F\u59CB\u811A\u672C\uFF1B\u79FB\u690D\u81EA CursedAtom \u7684 chrome \u6269\u5C55\uFF09", "lueluelue2006\uFF08MV3 \u96C6\u6210\uFF09"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     grok_trash_cleanup: {
       id: "grok_trash_cleanup",
@@ -198,7 +198,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_readaloud_speed_controller: {
       id: "chatgpt_readaloud_speed_controller",
@@ -206,7 +206,7 @@
       sub: "\u63A7\u5236 ChatGPT \u6717\u8BFB\u97F3\u9891\u64AD\u653E\u901F\u5EA6\uFF080.01\u2013100x\uFF09",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_usage_monitor: {
       id: "chatgpt_usage_monitor",
@@ -223,7 +223,7 @@
       sub: "\u7EDF\u8BA1\u4ECE\u53D1\u9001\u5230\u56DE\u590D\u5B8C\u6210\u7684\u8017\u65F6\uFF08\u53F3\u4E0B\u89D2\u6781\u7B80\u6570\u5B57\uFF09",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_download_file_fix: {
       id: "chatgpt_download_file_fix",
@@ -231,7 +231,7 @@
       sub: "\u4FEE\u590D\u6587\u4EF6\u4E0B\u8F7D\u5931\u8D25\uFF08sandbox_path \u89E3\u7801\uFF09",
       hotkeys: [],
       authors: ["pengzhile(linux.do)"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     chatgpt_strong_highlight_lite: {
       id: "chatgpt_strong_highlight_lite",
@@ -239,7 +239,7 @@
       sub: "\u9AD8\u4EAE\u7C97\u4F53 + \u9690\u85CF\u514D\u8D23\u58F0\u660E",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_quick_deep_search: {
       id: "chatgpt_quick_deep_search",
@@ -253,7 +253,7 @@
         forceKey: "chatgpt_quick_deep_search_hotkeys_force"
       },
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_tab_queue: {
       id: "chatgpt_tab_queue",
@@ -268,14 +268,15 @@
         profile: "requires_meta_key"
       },
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_hide_feedback_buttons: {
       id: "chatgpt_hide_feedback_buttons",
       name: "ChatGPT \u9690\u85CF\u70B9\u8D5E/\u70B9\u8E29",
       sub: "\u9690\u85CF\u56DE\u590D\u4E0B\u65B9\u53CD\u9988\u6309\u94AE\uFF08\u{1F44D}/\u{1F44E}\uFF09",
       hotkeys: [],
-      authors: ["zhong_little(linux.do)"]
+      authors: ["zhong_little(linux.do)"],
+      license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     chatgpt_tex_copy_quote: {
       id: "chatgpt_tex_copy_quote",
@@ -293,7 +294,7 @@
       hotkeys: [],
       menuPreview: ["\u5BFC\u51FA\u4E3A Markdown", "\u5BFC\u51FA\u4E3A HTML"],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_image_message_edit: {
       id: "chatgpt_image_message_edit",
@@ -301,7 +302,7 @@
       sub: "\u7ED9\u7528\u6237\u6D88\u606F\u589E\u52A0\u201C\u5206\u53C9\u7F16\u8F91\u201D\u6309\u94AE\uFF1A\u5728\u8F93\u5165\u6846\u91CC\u7F16\u8F91\u5E76\u53EF\u8865\u56FE/\u6587\u4EF6\uFF1B\u4E0E\u539F\u751F\u7F16\u8F91\u5171\u5B58",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_canvas_enhancements: {
       id: "chatgpt_canvas_enhancements",
@@ -309,7 +310,7 @@
       sub: "\u5728 Writing/Canvas \u5361\u7247\u5DE6\u4E0A\u89D2\u663E\u793A Canvas ID\uFF08512xx\uFF09/ textdoc Canvas \u77ED\u7F16\u53F7\uFF085\u4F4D\uFF09\uFF0C\u4E0D\u8986\u76D6\u539F\u751F\u884C\u4E3A",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_message_tree: {
       id: "chatgpt_message_tree",
@@ -318,7 +319,7 @@
       hotkeys: [],
       menuPreview: ["\u5BFC\u51FA\u5B8C\u6574\u6811\u4E3A JSON"],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     chatgpt_sidebar_header_fix: {
       id: "chatgpt_sidebar_header_fix",
@@ -326,7 +327,7 @@
       sub: "\u4FEE\u590D\u4FA7\u8FB9\u680F\u9876\u90E8\u6309\u94AE\u4EA4\u6362\uFF1B\u5E76\u5C06\u53F3\u4E0A\u89D2\u7FA4\u804A/\u4E34\u65F6\u804A\u5929\u6309\u94AE\u79FB\u5230\u6A21\u578B\u9009\u62E9\u5668\u53F3\u4FA7",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     google_ask_gpt: {
       id: "google_ask_gpt",
@@ -335,7 +336,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     genspark_moa_image_autosettings: {
       id: "genspark_moa_image_autosettings",
@@ -343,7 +344,7 @@
       sub: "\u8FDB\u5165\u7ED8\u56FE\u9875\u81EA\u52A8\u6253\u5F00 Setting\uFF0C\u5E76\u9009\u62E9 2K \u753B\u8D28",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     genspark_credit_balance: {
       id: "genspark_credit_balance",
@@ -351,7 +352,7 @@
       sub: "\u60AC\u505C\u5C0F\u84DD\u70B9\u663E\u793A\u79EF\u5206\u4FE1\u606F\uFF08\u53EF\u5237\u65B0/\u6298\u53E0/\u62D6\u52A8\uFF09",
       hotkeys: [],
       authors: ["LinuxDo \u609F\u7A7A\uFF08\u539F\u59CB\u811A\u672C\uFF09", "lueluelue2006\uFF08MV3 \u96C6\u6210\uFF09"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "\u8BB8\u53EF\u8BC1\u672A\u58F0\u660E"
     },
     genspark_codeblock_fold: {
       id: "genspark_codeblock_fold",
@@ -359,7 +360,7 @@
       sub: "\u81EA\u52A8\u6298\u53E0\u957F\u4EE3\u7801\u5757\u5E76\u63D0\u4F9B \u5C55\u5F00/\u6536\u8D77 \u6309\u94AE\uFF08\u4EC5 AI Chat \u9875\uFF09",
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     genspark_inline_upload_fix: {
       id: "genspark_inline_upload_fix",
@@ -367,7 +368,7 @@
       sub: "\u4FEE\u590D\u6D88\u606F\u7F16\u8F91\uFF08\u94C5\u7B14\uFF09\u91CC\u7684\u9644\u4EF6\u4E0A\u4F20\uFF1ACmd+V \u7C98\u8D34\u56FE\u7247/\u6587\u4EF6\uFF1B\u{1F4CE}\u6253\u5F00\u6587\u4EF6\u9009\u62E9\u5668",
       hotkeys: [],
       authors: ["lueluelue2006\uFF08\u539F\u59CB\u811A\u672C / MV3 \u96C6\u6210\uFF09"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     },
     genspark_force_sonnet45_thinking: {
       id: "genspark_force_sonnet45_thinking",
@@ -376,7 +377,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
-      license: "\u672A\u6807\u6CE8\uFF08\u5185\u90E8\u811A\u672C\uFF09"
+      license: "GPL-3.0-or-later"
     }
   };
   const MODULE_ID_ALIASES = Object.freeze({

@@ -118,7 +118,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
 	    quicknav: {
 	      id: 'quicknav',
@@ -137,7 +137,7 @@
       sub: '离屏虚拟化 + CSS contain',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     openai_new_model_banner: {
       id: 'openai_new_model_banner',
@@ -146,7 +146,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
@@ -163,7 +163,7 @@
         forceKey: 'chatgpt_thinking_toggle_hotkeys_force'
       },
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     cmdenter_send: {
       id: 'cmdenter_send',
@@ -172,7 +172,7 @@
       defaultEnabled: true,
       hotkeys: ['⌘Enter', 'Ctrl+Enter'],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     qwen_thinking_toggle: {
       id: 'qwen_thinking_toggle',
@@ -186,7 +186,7 @@
         forceKey: 'qwen_thinking_toggle_hotkeys_force'
       },
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     grok_rate_limit_display: {
       id: 'grok_rate_limit_display',
@@ -194,7 +194,7 @@
       sub: '仅显示 all 积分余量（发送后更新）',
       hotkeys: [],
       authors: ["Blankspeaker（原始脚本；移植自 CursedAtom 的 chrome 扩展）", 'lueluelue2006（MV3 集成）'],
-      license: '未标注（内部脚本）'
+      license: '许可证未声明'
     },
     grok_trash_cleanup: {
       id: 'grok_trash_cleanup',
@@ -203,7 +203,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_readaloud_speed_controller: {
       id: 'chatgpt_readaloud_speed_controller',
@@ -211,7 +211,7 @@
       sub: '控制 ChatGPT 朗读音频播放速度（0.01–100x）',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_usage_monitor: {
       id: 'chatgpt_usage_monitor',
@@ -228,7 +228,7 @@
       sub: '统计从发送到回复完成的耗时（右下角极简数字）',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_download_file_fix: {
       id: 'chatgpt_download_file_fix',
@@ -236,7 +236,7 @@
       sub: '修复文件下载失败（sandbox_path 解码）',
       hotkeys: [],
       authors: ['pengzhile(linux.do)'],
-      license: '未标注（内部脚本）'
+      license: '许可证未声明'
     },
     chatgpt_strong_highlight_lite: {
       id: 'chatgpt_strong_highlight_lite',
@@ -244,7 +244,7 @@
       sub: '高亮粗体 + 隐藏免责声明',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_quick_deep_search: {
       id: 'chatgpt_quick_deep_search',
@@ -258,7 +258,7 @@
         forceKey: 'chatgpt_quick_deep_search_hotkeys_force'
       },
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_tab_queue: {
       id: 'chatgpt_tab_queue',
@@ -273,14 +273,15 @@
         profile: 'requires_meta_key'
       },
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_hide_feedback_buttons: {
       id: 'chatgpt_hide_feedback_buttons',
       name: 'ChatGPT 隐藏点赞/点踩',
       sub: '隐藏回复下方反馈按钮（👍/👎）',
       hotkeys: [],
-      authors: ['zhong_little(linux.do)']
+      authors: ['zhong_little(linux.do)'],
+      license: '许可证未声明'
     },
     chatgpt_tex_copy_quote: {
       id: 'chatgpt_tex_copy_quote',
@@ -298,7 +299,7 @@
       hotkeys: [],
       menuPreview: ['导出为 Markdown', '导出为 HTML'],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_image_message_edit: {
       id: 'chatgpt_image_message_edit',
@@ -306,7 +307,7 @@
       sub: '给用户消息增加“分叉编辑”按钮：在输入框里编辑并可补图/文件；与原生编辑共存',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_canvas_enhancements: {
       id: 'chatgpt_canvas_enhancements',
@@ -314,7 +315,7 @@
       sub: '在 Writing/Canvas 卡片左上角显示 Canvas ID（512xx）/ textdoc Canvas 短编号（5位），不覆盖原生行为',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_message_tree: {
       id: 'chatgpt_message_tree',
@@ -323,7 +324,7 @@
       hotkeys: [],
       menuPreview: ['导出完整树为 JSON'],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     chatgpt_sidebar_header_fix: {
       id: 'chatgpt_sidebar_header_fix',
@@ -331,7 +332,7 @@
       sub: '修复侧边栏顶部按钮交换；并将右上角群聊/临时聊天按钮移到模型选择器右侧',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     google_ask_gpt: {
       id: 'google_ask_gpt',
@@ -340,7 +341,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     genspark_moa_image_autosettings: {
       id: 'genspark_moa_image_autosettings',
@@ -348,7 +349,7 @@
       sub: '进入绘图页自动打开 Setting，并选择 2K 画质',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     genspark_credit_balance: {
       id: 'genspark_credit_balance',
@@ -356,7 +357,7 @@
       sub: '悬停小蓝点显示积分信息（可刷新/折叠/拖动）',
       hotkeys: [],
       authors: ['LinuxDo 悟空（原始脚本）', 'lueluelue2006（MV3 集成）'],
-      license: '未标注（内部脚本）'
+      license: '许可证未声明'
     },
     genspark_codeblock_fold: {
       id: 'genspark_codeblock_fold',
@@ -364,7 +365,7 @@
       sub: '自动折叠长代码块并提供 展开/收起 按钮（仅 AI Chat 页）',
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     genspark_inline_upload_fix: {
       id: 'genspark_inline_upload_fix',
@@ -372,7 +373,7 @@
       sub: '修复消息编辑（铅笔）里的附件上传：Cmd+V 粘贴图片/文件；📎打开文件选择器',
       hotkeys: [],
       authors: ['lueluelue2006（原始脚本 / MV3 集成）'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     },
     genspark_force_sonnet45_thinking: {
       id: 'genspark_force_sonnet45_thinking',
@@ -381,7 +382,7 @@
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
-      license: '未标注（内部脚本）'
+      license: 'GPL-3.0-or-later'
     }
   };
 

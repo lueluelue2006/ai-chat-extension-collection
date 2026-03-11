@@ -5,7 +5,7 @@
 <h1 align="center">AI捷径 (AI Shortcuts)</h1>
 
 <p align="center">
-  一个面向多 AI 站点的 Chrome Manifest V3 扩展：把常用增强脚本收进同一套可维护的模块系统。
+  一个以 ChatGPT / GPT 工作流为核心、并向其他主流 AI 站点扩展的 Chrome Manifest V3 增强套件。
 </p>
 
 <p align="center">
@@ -21,6 +21,8 @@
   ·
   <a href="#快速安装非开发者">快速安装</a>
   ·
+  <a href="#gpt-核心能力">GPT 核心能力</a>
+  ·
   <a href="#支持站点">支持站点</a>
   ·
   <a href="./docs/scripts-inventory.md">脚本清单</a>
@@ -32,26 +34,40 @@
 
 ## 项目概览
 
+AI捷径首先服务的是 **ChatGPT / GPT 重度用户**。
+核心设计目标不是“尽量兼容更多站”，而是先把 ChatGPT 的高频效率流做深做稳，再把成熟能力扩展到其他主流 AI 站点。
+
 | 方向 | 内容 |
 | --- | --- |
-| 多站点统一增强 | 一个扩展主体，统一承载 ChatGPT、Google 搜索、Genspark、Grok、Gemini、Kimi、Qwen、DeepSeek、文心一言、GLM 等站点脚本 |
-| 高频效率流 | QuickNav、`⌘/Ctrl+Enter`、模型/推理切换、问 GPT 跳转、导出、计时、用量统计 |
-| 配置与维护 | 弹窗快速开关、配置页集中管理、模块注册表与注入定义统一维护 |
+| GPT 优先 | ChatGPT 是主战场：QuickNav、模型/推理切换、Tab queue、用量统计、导出、消息树、下载修复、搜索联动都先围绕 GPT 工作流设计 |
+| 多站点补充覆盖 | 在 Google 搜索、Genspark、Grok、Gemini、Kimi、Qwen、DeepSeek、文心一言、GLM 上复用成熟输入增强与导航能力 |
+| 高频效率流 | `⌘/Ctrl+Enter`、问 GPT 跳转、队列化交互、阅读效率增强、集中配置管理 |
 | 公开分发方式 | 面向非开发者只发布 `dist.zip`，公开仓库保留源码与维护脚本 |
 
-## 核心能力
+## GPT 核心能力
 
-- **ChatGPT 工具集**：QuickNav、模型/推理切换、问 GPT 跳转、用量统计、对话导出、消息树、分叉编辑、下载修复。
-- **跨站点输入增强**：多站点统一支持 `⌘/Ctrl+Enter`、队列化交互和阅读效率增强。
-- **Google 搜索联动**：在搜索结果页一键跳到 ChatGPT 5.4 Thinking，直接发起 `web search:` 提问。
-- **可维护架构**：`shared/` 作为模块注册与注入定义真相源，`docs/scripts-inventory.md` 自动生成。
+| 能力 | 说明 |
+| --- | --- |
+| QuickNav | 对话级导航、标记、跳转和阅读效率增强，属于最核心的 GPT 工作流层 |
+| 模型 / 推理切换 | `⌘O / ⌘J`、Meta 能力控制、Thinking / Pro / Instant 相关交互优化 |
+| Tab queue | 面向 ChatGPT 的队列化消息流，支持多条排队、回收、删除、暂停与恢复 |
+| 用量统计 | 按模型与共享配额追踪 GPT 使用情况，支持导出 / 导入与本地保留 |
+| 对话结构工具 | 对话导出、消息树、分叉编辑、下载修复、引用与复制增强 |
+| Google 搜索联动 | 在 Google 搜索结果页一键跳到 ChatGPT，并以 `web search:` 形式直接发问 |
 
 ## 支持站点
 
+### GPT 主战场
+
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| ChatGPT | QuickNav、`⌘O / ⌘J`、用量统计、导出、消息树 | 持续维护 |
-| Google 搜索 | 搜索页一键问 GPT | 持续维护 |
+| ChatGPT | QuickNav、`⌘O / ⌘J`、Tab queue、用量统计、导出、消息树、分叉编辑、下载修复 | 最高优先级维护 |
+| Google 搜索 | 搜索页一键问 GPT，直接跳到 ChatGPT Thinking 工作流 | 最高优先级维护 |
+
+### 其他站点补充覆盖
+
+| 站点 | 代表能力 | 状态 |
+| --- | --- | --- |
 | Genspark | QuickNav、绘图默认设置、积分余量、长代码块折叠 | 持续维护 |
 | Grok | QuickNav、额度显示、废纸篓一键清空 | 持续维护 |
 | Gemini App | QuickNav、`⌘/Ctrl+Enter` | 持续维护 |

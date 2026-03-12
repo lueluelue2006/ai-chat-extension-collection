@@ -380,7 +380,7 @@
     if (!elGpt53Status) return;
     elGpt53Status.textContent = '';
     if (!resp || resp.ok !== true) {
-      elGpt53Status.textContent = '（无响应）';
+      elGpt53Status.textContent = localeText('（无响应）', '(no response)');
       return;
     }
     const alarm = resp.alarm && typeof resp.alarm === 'object' ? resp.alarm : null;
@@ -541,13 +541,13 @@
       const cellResult = document.createElement('div');
       if (available === true) {
         cellResult.className = 'gpt53ResultOk';
-        cellResult.textContent = '可用';
+        cellResult.textContent = localeText('可用', 'Available');
       } else if (available === false) {
         cellResult.className = 'gpt53ResultBad';
-        cellResult.textContent = '不可用';
+        cellResult.textContent = localeText('不可用', 'Unavailable');
       } else {
         cellResult.className = 'gpt53ResultUnknown';
-        cellResult.textContent = '未知';
+        cellResult.textContent = localeText('未知', 'Unknown');
       }
 
       const cellWhen = document.createElement('div');
@@ -576,7 +576,8 @@
     const last = events.slice(-3);
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
     const more = events.length > 3 ? `…+${events.length - 3}` : '';
-    const msg = parts.length ? `${parts.join('，')}${more}` : '';
+    const joiner = isChineseUi() ? '，' : ', ';
+    const msg = parts.length ? `${parts.join(joiner)}${more}` : '';
     elGpt53AlertText.textContent = localeText(
       `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`,
       `${unread} monitored resources are reachable (each check will alert again): ${msg}`

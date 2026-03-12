@@ -309,7 +309,8 @@
     const last = events.slice(-3);
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
     const more = events.length > 3 ? `…+${events.length - 3}` : '';
-    const msg = parts.length ? `${parts.join('，')}${more}` : '';
+    const joiner = /^zh/i.test(resolveUiLocale()) ? '，' : ', ';
+    const msg = parts.length ? `${parts.join(joiner)}${more}` : '';
     elGpt53AlertText.textContent = /^zh/i.test(resolveUiLocale())
       ? `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`
       : `${unread} monitored resources are reachable: ${msg}`;
@@ -841,7 +842,11 @@
     ensureLocaleObserver();
     elAuthor.textContent = AUTHOR;
     elVersion.textContent = getRuntimeVersion() || 'unknown';
-    setStatus('就绪\n非开发者用户请优先去 Releases 下载 dist.zip；检查更新只比对仓库 main 分支版本，可能会早于 Releases 发布，不会自动更新。');
+    setStatus(
+      /^zh/i.test(resolveUiLocale())
+        ? '就绪\n非开发者用户请优先去 Releases 下载 dist.zip；检查更新只比对仓库 main 分支版本，可能会早于 Releases 发布，不会自动更新。'
+        : 'Ready\nIf you are not a developer, download dist.zip from Releases first. Update checks only compare against the version on main, which can appear before a Release is published. It does not auto-update the extension.'
+    );
     void getSettings()
       .then((settings) => {
         currentLocaleMode = String(settings?.localeMode || 'auto');
@@ -978,7 +983,7 @@
           const patch = buildPatchFromSettingsDiff(settings, draft);
           if (!patch.length) return;
 
-          setStatus('正在保存…');
+          setStatus(/^zh/i.test(resolveUiLocale()) ? '正在保存…' : 'Saving…');
           try {
             settings = await patchSettings(patch);
           } catch (e) {
@@ -986,7 +991,7 @@
             return;
           }
 
-          setStatus('已保存', 'ok');
+          setStatus(/^zh/i.test(resolveUiLocale()) ? '已保存' : 'Saved.', 'ok');
           renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
           localizeBody();
           queueMenuRefresh(300);
@@ -995,12 +1000,17 @@
 
       async function onRunMenu(cmd) {
         try {
-          setStatus(`正在执行：${cmd.name}…`);
+          setStatus(/^zh/i.test(resolveUiLocale()) ? `正在执行：${cmd.name}…` : `Running: ${cmd.name}…`);
           const resp = await tabsSendMessage(tabId, { type: 'AISHORTCUTS_RUN_MENU', id: cmd.id });
-          if (resp && resp.ok === true) setStatus(`已执行：${cmd.name}`, 'ok');
-          else setStatus(`执行失败：${resp?.error || 'unknown'}`, 'err');
+          if (resp && resp.ok === true) setStatus(/^zh/i.test(resolveUiLocale()) ? `已执行：${cmd.name}` : `Completed: ${cmd.name}`, 'ok');
+          else setStatus(/^zh/i.test(resolveUiLocale()) ? `执行失败：${resp?.error || 'unknown'}` : `Run failed: ${resp?.error || 'unknown'}`, 'err');
         } catch (e) {
-          setStatus(`执行失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+          setStatus(
+            /^zh/i.test(resolveUiLocale())
+              ? `执行失败：${e instanceof Error ? e.message : String(e)}`
+              : `Run failed: ${e instanceof Error ? e.message : String(e)}`,
+            'err'
+          );
         }
       }
 

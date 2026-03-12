@@ -1198,10 +1198,10 @@
   // src/runtimeMode.js
   // 扩展版固定为 options-only：网页端只采集，不渲染悬浮面板。
   var IN_PAGE_MONITOR_UI_ENABLED = false;
-  const __aichatI18nApi = globalThis.AISHORTCUTS_I18N || null;
-  const __aichatUsageMonitorUtilsApi = globalThis.__aichatChatGPTUsageMonitorUtilsV1__ || null;
-  const __aichatSettingsStorageKey = "aichat_ai_shortcuts_settings_v1";
-  let __aichatUsageMonitorLocaleMode = "auto";
+  var __aichatI18nApi = globalThis.AISHORTCUTS_I18N || null;
+  var __aichatUsageMonitorUtilsApi = globalThis.__aichatChatGPTUsageMonitorUtilsV1__ || null;
+  var __aichatSettingsStorageKey = "aichat_ai_shortcuts_settings_v1";
+  var __aichatUsageMonitorLocaleMode = "auto";
   const __aichatUsageMonitorLocalMap = {
     "ChatGPT 用量统计": "ChatGPT Usage Monitor",
     "用量统计": "Usage Monitor",

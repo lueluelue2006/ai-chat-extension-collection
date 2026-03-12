@@ -33,6 +33,7 @@
   const PIN_SEGMENT_TEXT_MIN = 4;
   // 存储键与检查点状态
   const STORE_NS = 'cgpt-quicknav';
+  const SETTINGS_KEY = 'aichat_ai_shortcuts_settings_v1';
   const QUICKNAV_SITE_ID = 'chatgpt';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
@@ -112,8 +113,12 @@
   const CHATGPT_NAV_ALLOW_SCROLL_KEY = '__quicknavChatgptNavAllowScrollV1';
   const CHATGPT_NAV_ALLOW_SCROLL_LEGACY_KEY = '__cgptNavAllowScroll';
   const AISHORTCUTS_I18N = globalThis.AISHORTCUTS_I18N || null;
+  let quicknavLocaleMode = 'auto';
+  let quicknavResolvedLocale = '';
+  let removeQuicknavLocaleStorageListener = null;
 
   function getQuickNavLocale() {
+    if (quicknavResolvedLocale) return quicknavResolvedLocale;
     try {
       const raw = String(document.documentElement?.dataset?.aichatLocale || '').trim();
       if (raw) return raw;
@@ -135,6 +140,48 @@
       }
     } catch {}
     return raw;
+  }
+
+  function syncQuickNavLocaleFromSettings(settings) {
+    try {
+      const nextMode =
+        AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.normalizeLocaleMode === 'function'
+          ? AISHORTCUTS_I18N.normalizeLocaleMode(settings?.localeMode, 'auto')
+          : 'auto';
+      const nextLocale =
+        AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.resolveLocale === 'function'
+          ? AISHORTCUTS_I18N.resolveLocale(nextMode, navigator)
+          : 'en';
+      const changed = quicknavLocaleMode !== nextMode || quicknavResolvedLocale !== nextLocale;
+      quicknavLocaleMode = nextMode;
+      quicknavResolvedLocale = nextLocale;
+      if (changed) {
+        const ui = document.getElementById('cgpt-compact-nav')?._ui;
+        if (ui) refreshQuickNavLocaleUi(ui);
+      }
+    } catch {}
+  }
+
+  function installQuickNavLocaleSync() {
+    if (typeof chrome === 'undefined' || !chrome?.storage?.local || !chrome?.storage?.onChanged) return;
+    try {
+      chrome.storage.local.get({ [SETTINGS_KEY]: null }, (items) => {
+        void chrome.runtime?.lastError;
+        syncQuickNavLocaleFromSettings(items?.[SETTINGS_KEY] || null);
+      });
+    } catch {}
+    try {
+      const onStorage = (changes, areaName) => {
+        if (areaName !== 'local' || !changes?.[SETTINGS_KEY]) return;
+        syncQuickNavLocaleFromSettings(changes[SETTINGS_KEY].newValue || null);
+      };
+      chrome.storage.onChanged.addListener(onStorage);
+      removeQuicknavLocaleStorageListener = () => {
+        try {
+          chrome.storage.onChanged.removeListener(onStorage);
+        } catch {}
+      };
+    } catch {}
   }
 
   function readRuntimeGuardFlag(primaryKey, legacyKey) {
@@ -1255,6 +1302,10 @@
     try {
       if (runtimeScope && typeof runtimeScope.dispose === 'function') runtimeScope.dispose();
     } catch {}
+    try {
+      removeQuicknavLocaleStorageListener?.();
+    } catch {}
+    removeQuicknavLocaleStorageListener = null;
 
     writeRuntimeGuardFlag(CHATGPT_ROUTE_WATCHER_INSTALLED_KEY, CHATGPT_ROUTE_WATCHER_INSTALLED_LEGACY_KEY, false);
     try { window.__cgptRouteWatcherPollTimerV2 = 0; } catch {}
@@ -1268,6 +1319,8 @@
       dispose: disposeQuicknavRuntime
     })
   );
+
+  installQuickNavLocaleSync();
 
   function isChatRoute() {
     try {
@@ -5107,7 +5160,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const count = favSet ? favSet.size : 0;
       starBtn.classList.toggle('active', !!filterFav);
       starBtn.textContent = filterFav ? '★' : '☆';
-      starBtn.title = (filterFav ? '显示全部（当前仅收藏）' : '仅显示收藏') + (count ? `（${count}）` : '');
+      starBtn.title = qnT((filterFav ? '显示全部（当前仅收藏）' : '仅显示收藏') + (count ? `（${count}）` : ''));
     } catch {}
   }
 
@@ -5116,15 +5169,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const btn = ui.nav.querySelector('.compact-tree');
       if (!btn) return;
       const badge = btn.querySelector('.tree-count');
-      const refreshHint = 'Option+点击=强制刷新';
+      const refreshHint = qnT('Option+点击=强制刷新');
       const hasSummary = !!(treeSummary && typeof treeSummary === 'object' && treeSummary.stats && typeof treeSummary.stats === 'object');
       if (!hasSummary) {
         try { btn.removeAttribute('data-count'); } catch {}
         if (badge) badge.textContent = '';
         if (!getConversationIdFromUrl()) {
-          btn.title = '分支 / 对话树（仅对话页可用）';
+          btn.title = qnT('分支 / 对话树（仅对话页可用）');
         } else {
-          btn.title = treeSummaryPendingReqId ? `分支 / 对话树（加载中…，${refreshHint}）` : `分支 / 对话树（点击加载，${refreshHint}）`;
+          btn.title = qnT(treeSummaryPendingReqId ? `分支 / 对话树（加载中…，${refreshHint}）` : `分支 / 对话树（点击加载，${refreshHint}）`);
         }
         return;
       }
@@ -5132,7 +5185,41 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const count = Math.max(0, Number(treeSummary?.stats?.branchCount) || 0);
       btn.setAttribute('data-count', String(count));
       if (badge) badge.textContent = count ? String(count) : '';
-      btn.title = count ? `分支 / 对话树（分支点：${count}，${refreshHint}）` : `分支 / 对话树（当前对话无分支，${refreshHint}）`;
+      btn.title = qnT(count ? `分支 / 对话树（分支点：${count}，${refreshHint}）` : `分支 / 对话树（当前对话无分支，${refreshHint}）`);
+    } catch {}
+  }
+
+  function refreshQuickNavLocaleUi(ui) {
+    try {
+      const nav = ui?.nav;
+      if (!nav) return;
+      const toggleBtn = nav.querySelector('.compact-toggle');
+      const refreshBtn = nav.querySelector('.compact-refresh');
+      const treeBtn = nav.querySelector('.compact-tree');
+      const list = nav.querySelector('.compact-list');
+      const topBtn = nav.querySelector('#cgpt-nav-top');
+      const prevBtn = nav.querySelector('#cgpt-nav-prev');
+      const nextBtn = nav.querySelector('#cgpt-nav-next');
+      const bottomBtn = nav.querySelector('#cgpt-nav-bottom');
+
+      if (toggleBtn) toggleBtn.title = qnT('收起/展开');
+      if (refreshBtn) refreshBtn.title = qnT('刷新对话列表 (Shift+点击 或 右键 = 强制重新扫描)');
+      if (list) list.setAttribute('aria-label', qnT('对话项'));
+      if (topBtn) topBtn.title = qnT('回到顶部');
+      if (prevBtn) prevBtn.title = qnT('上一条（Cmd+↑ / Alt+↑）');
+      if (nextBtn) nextBtn.title = qnT('下一条（Cmd+↓ / Alt+↓）');
+      if (bottomBtn) bottomBtn.title = qnT('回到底部');
+      if (treeBtn) {
+        const firstTextNode = Array.from(treeBtn.childNodes || []).find((node) => node?.nodeType === Node.TEXT_NODE);
+        if (firstTextNode) firstTextNode.nodeValue = qnT('树');
+      }
+      try {
+        const empty = nav.querySelector('.compact-empty');
+        if (empty) empty.textContent = qnT(filterFav ? '暂无收藏' : '暂无对话');
+      } catch {}
+      updateStarBtnState(ui);
+      updateScrollLockBtnState();
+      updateTreeBtnState(ui);
     } catch {}
   }
 
@@ -6054,7 +6141,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const btn = nav?.querySelector('.compact-lock');
     if (!btn) return;
     btn.classList.toggle('active', scrollLockEnabled);
-    btn.title = scrollLockEnabled ? '已锁定自动滚动（点击关闭）' : '阻止新回复自动滚动';
+    btn.title = qnT(scrollLockEnabled ? '已锁定自动滚动（点击关闭）' : '阻止新回复自动滚动');
   }
 
   function setScrollLockEnabled(on, ui) {

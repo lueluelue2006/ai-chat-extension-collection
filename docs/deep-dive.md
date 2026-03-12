@@ -313,6 +313,9 @@ Turn 筛选策略（维护重点）：
   - `cgpt-quicknav:scroll-lock`  
   - `cgpt-quicknav:cp:${location.pathname}`（📌检查点）  
   - `cgpt-quicknav:fav:${location.pathname}` / `cgpt-quicknav:fav-filter:${location.pathname}`（收藏与过滤）
+- 语言同步：
+  - QuickNav 会额外读取扩展设置 `aichat_ai_shortcuts_settings_v1.localeMode`，在 ISOLATED world 里直接刷新自身文案，避免路由切换或页面晚挂载时遗漏英文状态。
+  - 英文模式下，紧凑树按钮使用 `🌳`，空态使用 `No conversations yet`。
 - 📌检查点定位策略（稳定性与体积平衡）：
   - 主锚点：段级上下文 `ctx = { p, s, y }`
     - `p`：节点路径（相对当前 turn）

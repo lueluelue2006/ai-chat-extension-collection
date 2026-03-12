@@ -347,6 +347,10 @@
     return /^zh/i.test(resolveUiLocale());
   }
 
+  function localeText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   function wrapAge(ageText) {
     const text = String(ageText || '').trim();
     if (!text) return '';
@@ -439,7 +443,7 @@
     const pushLine = (label, value) => {
       const line = document.createElement('div');
       const strong = document.createElement('strong');
-      strong.textContent = `${label}：`;
+      strong.textContent = isChineseUi() ? `${label}：` : `${label}: `;
       line.appendChild(strong);
       line.appendChild(document.createTextNode(String(value || '')));
       summary.appendChild(line);
@@ -447,27 +451,27 @@
 
     const interval = Number(view.alarm?.periodInMinutes) || 60;
     const monitorDetail = (() => {
-      if (!view.globalEnabled) return '关闭（扩展总开关已关闭）';
-      if (!view.monitorEnabled && view.monitorReason === 'no_urls') return '关闭（URL 列表为空）';
-      if (!view.monitorEnabled) return '关闭';
+      if (!view.globalEnabled) return localeText('关闭（扩展总开关已关闭）', 'Off (extension master switch is off)');
+      if (!view.monitorEnabled && view.monitorReason === 'no_urls') return localeText('关闭（URL 列表为空）', 'Off (URL list is empty)');
+      if (!view.monitorEnabled) return localeText('关闭', 'Off');
       return isChineseUi() ? `开启（每 ${formatMonitorIntervalMinutes(interval)}）` : `On (every ${formatMonitorIntervalMinutes(interval)})`;
     })();
-    pushLine('监控', monitorDetail);
+    pushLine(localeText('监控', 'Monitor'), monitorDetail);
 
     if (view.monitorEnabled && view.alarm?.scheduledAt) {
-      pushLine('下次', `${view.alarm.scheduledAt}${wrapAge(view.alarm.nextIn)}`);
+      pushLine(localeText('下次', 'Next'), `${view.alarm.scheduledAt}${wrapAge(view.alarm.nextIn)}`);
     } else if (!view.monitorEnabled) {
-      pushLine('下次', '（未启用）');
+      pushLine(localeText('下次', 'Next'), localeText('（未启用）', '(disabled)'));
     } else {
-      pushLine('下次', '（未知）');
+      pushLine(localeText('下次', 'Next'), localeText('（未知）', '(unknown)'));
     }
 
     const checkedAtText = view.state?.checkedAtText || '';
     const checkedAgo = view.state?.checkedAgo || '';
     if (checkedAtText) {
-      pushLine('上次', `${checkedAtText}${formatAgo(checkedAgo)}`);
+      pushLine(localeText('上次', 'Last'), `${checkedAtText}${formatAgo(checkedAgo)}`);
     } else {
-      pushLine('上次', '（未检测）');
+      pushLine(localeText('上次', 'Last'), localeText('（未检测）', '(not checked)'));
     }
 
     elGpt53Status.appendChild(summary);
@@ -478,7 +482,7 @@
       empty.style.marginTop = '10px';
       empty.style.color = 'var(--muted)';
       empty.style.fontSize = '12px';
-      empty.textContent = '（URL 列表为空）';
+      empty.textContent = localeText('（URL 列表为空）', '(URL list is empty)');
       elGpt53Status.appendChild(empty);
       return;
     }
@@ -488,7 +492,9 @@
 
     const header = document.createElement('div');
     header.className = 'gpt53TableHeader';
-    header.innerHTML = '<div>资源</div><div>状态</div><div>结果</div><div>上次</div>';
+    header.innerHTML = isChineseUi()
+      ? '<div>资源</div><div>状态</div><div>结果</div><div>上次</div>'
+      : '<div>Resource</div><div>Status</div><div>Result</div><div>Last</div>';
     table.appendChild(header);
 
     for (const it of resultsList) {
@@ -839,33 +845,42 @@
 
   function getMetaKeyModeLabel(mode) {
     const normalized = normalizeMetaKeyMode(mode, META_KEY_MODE_AUTO);
-    if (normalized === META_KEY_MODE_HAS_META) return '有 Meta 键';
-    if (normalized === META_KEY_MODE_NO_META) return '无 Meta 键';
-    return '自动';
+    if (normalized === META_KEY_MODE_HAS_META) return localeText('有 Meta 键', 'Meta key');
+    if (normalized === META_KEY_MODE_NO_META) return localeText('无 Meta 键', 'No Meta key');
+    return localeText('自动', 'Auto');
   }
 
   function getMetaKeyProfileSummary(settings = currentSettings) {
     const mode = getMetaKeyMode(settings);
     const hasMetaKey = getEffectiveHasMetaKey(settings);
-    const effectiveLabel = hasMetaKey ? '有 Meta 键' : '无 Meta 键';
+    const effectiveLabel = hasMetaKey ? localeText('有 Meta 键', 'Meta key') : localeText('无 Meta 键', 'No Meta key');
     const detectedOsLabel =
       DETECTED_DEVICE_CONTEXT.os === 'mac' ? 'macOS' : DETECTED_DEVICE_CONTEXT.os === 'win' ? 'Windows' : DETECTED_DEVICE_CONTEXT.os === 'linux' ? 'Linux' : '未知环境';
 
     if (mode === META_KEY_MODE_AUTO) {
       return {
-        pill: `自动 · ${effectiveLabel}`,
-        state: `当前按“${effectiveLabel}”处理快捷键。`,
-        hint: `自动检测基于当前设备环境：${detectedOsLabel}。无 Meta 键时，依赖 ⌘ 的快捷键会默认停用；Ctrl+S / T / Y / Z 这类冲突型快捷键也会默认停用。`
+        pill: localeText(`自动 · ${effectiveLabel}`, `Auto · ${effectiveLabel}`),
+        state: localeText(`当前按“${effectiveLabel}”处理快捷键。`, `Hotkeys are currently handled as if a ${effectiveLabel.toLowerCase()} is available.`),
+        hint: localeText(
+          `自动检测基于当前设备环境：${detectedOsLabel}。无 Meta 键时，依赖 ⌘ 的快捷键会默认停用；Ctrl+S / T / Y / Z 这类冲突型快捷键也会默认停用。`,
+          `Automatic detection uses the current device environment: ${detectedOsLabel}. Without a Meta key, ⌘-based hotkeys are disabled by default; Ctrl+S / T / Y / Z conflict-prone hotkeys are also disabled.`
+        )
       };
     }
 
     return {
       pill: getMetaKeyModeLabel(mode),
-      state: `你已手动指定为“${effectiveLabel}”。`,
+      state: localeText(`你已手动指定为“${effectiveLabel}”。`, `You manually set this device as ${effectiveLabel.toLowerCase()}.`),
       hint:
         mode === META_KEY_MODE_HAS_META
-          ? '会按带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认可用，Ctrl 冲突型快捷键不再默认停用。'
-          : '会按不带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认停用，Ctrl+S / T / Y / Z 这类冲突型快捷键也默认停用。'
+          ? localeText(
+              '会按带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认可用，Ctrl 冲突型快捷键不再默认停用。',
+              'Hotkeys are handled as if a Meta key is available. ⌘-based modules stay enabled by default, and the conflicting Ctrl hotkeys are no longer disabled.'
+            )
+          : localeText(
+              '会按不带 Meta 键的键盘处理快捷键策略。依赖 ⌘ 的模块默认停用，Ctrl+S / T / Y / Z 这类冲突型快捷键也默认停用。',
+              'Hotkeys are handled as if no Meta key is available. ⌘-based modules are disabled by default, and Ctrl+S / T / Y / Z are also disabled to avoid conflicts.'
+            )
     };
   }
 
@@ -968,23 +983,37 @@
     const mode = getMetaKeyMode();
     const forceKey = String(state?.policy?.forceKey || '').trim();
     const canForce = !!forceKey;
-    const prefix =
-      mode === META_KEY_MODE_AUTO
-        ? '当前自动判定为“无 Meta 键”。'
-        : '当前键盘能力已设为“无 Meta 键”。';
+    const prefix = mode === META_KEY_MODE_AUTO
+      ? localeText('当前自动判定为“无 Meta 键”。', 'Auto mode currently treats this device as having no Meta key.')
+      : localeText('当前键盘能力已设为“无 Meta 键”。', 'Keyboard capability is currently set to “no Meta key”.');
 
     if (state.profile === 'requires_meta_key') {
       if (state.forceEnabled) {
-        return `${prefix} 这组快捷键原本依赖 Meta 键，你已强制保留；如果你的键盘没有可用的 Meta 映射，它仍可能无法触发。`;
+        return localeText(
+          `${prefix} 这组快捷键原本依赖 Meta 键，你已强制保留；如果你的键盘没有可用的 Meta 映射，它仍可能无法触发。`,
+          `${prefix} These hotkeys originally depend on a Meta key. You kept them force-enabled, but they still may not trigger if no usable Meta mapping exists.`
+        );
       }
       return canForce
-        ? `${prefix} 这组快捷键依赖 Meta 键，因此默认停用；若你实际有映射后的 Meta 键，可在详情里强制开启。`
-        : `${prefix} 这组快捷键依赖 Meta 键，因此当前不会生效；如果你的设备其实有可用的 Meta 键，请把右上角键盘能力切回“自动”或“我有 Meta 键”。`;
+        ? localeText(
+            `${prefix} 这组快捷键依赖 Meta 键，因此默认停用；若你实际有映射后的 Meta 键，可在详情里强制开启。`,
+            `${prefix} These hotkeys depend on a Meta key, so they are disabled by default. If you actually have a mapped Meta key, you can force-enable them in the details panel.`
+          )
+        : localeText(
+            `${prefix} 这组快捷键依赖 Meta 键，因此当前不会生效；如果你的设备其实有可用的 Meta 键，请把右上角键盘能力切回“自动”或“我有 Meta 键”。`,
+            `${prefix} These hotkeys depend on a Meta key and will not work. If your device really has a usable Meta key, switch the keyboard capability to “Auto” or “I have a Meta key”.`
+          );
     }
 
     return state.forceEnabled
-      ? `${prefix} 这组 Ctrl 快捷键在无 Meta 键设备上容易与浏览器或系统快捷键冲突，你已强制保留。`
-      : `${prefix} 这组 Ctrl 快捷键在无 Meta 键设备上容易与浏览器或系统快捷键冲突，因此默认停用。`;
+      ? localeText(
+          `${prefix} 这组 Ctrl 快捷键在无 Meta 键设备上容易与浏览器或系统快捷键冲突，你已强制保留。`,
+          `${prefix} This Ctrl hotkey group often conflicts with browser or system shortcuts on keyboards without a Meta key, and you have kept it force-enabled.`
+        )
+      : localeText(
+          `${prefix} 这组 Ctrl 快捷键在无 Meta 键设备上容易与浏览器或系统快捷键冲突，因此默认停用。`,
+          `${prefix} This Ctrl hotkey group often conflicts with browser or system shortcuts on keyboards without a Meta key, so it is disabled by default.`
+        );
   }
 
   function createModuleHotkeyWarningIndicator(state) {
@@ -1010,7 +1039,10 @@
 
     const title = document.createElement('div');
     title.className = 'hotkeyPolicyNoteTitle';
-    title.textContent = state.forceEnabled ? '快捷键已强制保留' : '快捷键当前默认停用';
+    title.textContent = localeText(
+      state.forceEnabled ? '快捷键已强制保留' : '快捷键当前默认停用',
+      state.forceEnabled ? 'Hotkeys are force-enabled' : 'Hotkeys are currently disabled by default'
+    );
 
     const text = document.createElement('div');
     text.className = 'hotkeyPolicyNoteText';
@@ -1024,10 +1056,15 @@
 
   function confirmForceEnableHotkeys(state) {
     if (!state?.profileBlocked) return true;
-    const message =
-      state.profile === 'requires_meta_key'
-        ? '当前配置按“无 Meta 键”处理。强制开启后，若你的键盘没有可用的 Meta 键或映射，⌘O / ⌘J 仍可能无法使用。\n\n确定继续强制开启吗？'
-        : '当前配置按“无 Meta 键”处理。强制开启后，Ctrl+S / Ctrl+T / Ctrl+Y / Ctrl+Z 可能与浏览器或系统快捷键冲突。\n\n确定继续强制开启吗？';
+    const message = state.profile === 'requires_meta_key'
+      ? localeText(
+          '当前配置按“无 Meta 键”处理。强制开启后，若你的键盘没有可用的 Meta 键或映射，⌘O / ⌘J 仍可能无法使用。\n\n确定继续强制开启吗？',
+          'The current configuration treats this keyboard as having no Meta key. If you force-enable it, ⌘O / ⌘J may still fail if your keyboard has no usable Meta mapping.\n\nContinue anyway?'
+        )
+      : localeText(
+          '当前配置按“无 Meta 键”处理。强制开启后，Ctrl+S / Ctrl+T / Ctrl+Y / Ctrl+Z 可能与浏览器或系统快捷键冲突。\n\n确定继续强制开启吗？',
+          'The current configuration treats this keyboard as having no Meta key. If you force-enable it, Ctrl+S / Ctrl+T / Ctrl+Y / Ctrl+Z may conflict with browser or system shortcuts.\n\nContinue anyway?'
+        );
     return window.confirm(message);
   }
 
@@ -1117,13 +1154,13 @@
 
     const heading = document.createElement('div');
     heading.className = 'triEmptyTitle';
-    heading.textContent = title;
+    heading.textContent = translateText(title);
     wrap.appendChild(heading);
 
     if (detail) {
       const text = document.createElement('div');
       text.className = 'triEmptyDetail';
-      text.textContent = detail;
+      text.textContent = translateText(detail);
       wrap.appendChild(text);
     }
 
@@ -1556,7 +1593,7 @@
       const hotkeysText = formatHotkeys(def.hotkeys);
       const hotkeys = document.createElement('div');
       hotkeys.className = 'triSub triHotkeys';
-      hotkeys.textContent = hotkeysText ? `快捷键：${hotkeysText}` : '';
+      hotkeys.textContent = hotkeysText ? localeText(`快捷键：${hotkeysText}`, `Hotkeys: ${hotkeysText}`) : '';
 
       btn.appendChild(nameRow);
       btn.appendChild(sub);
@@ -1593,13 +1630,13 @@
   function addPanelTitle(title, subtitle) {
     const h = document.createElement('div');
     h.className = 'panelTitle';
-    h.textContent = title;
+    h.textContent = translateText(title);
     elModuleSettings.appendChild(h);
 
     if (subtitle) {
       const s = document.createElement('div');
       s.className = 'panelSubtitle';
-      s.textContent = subtitle;
+      s.textContent = translateText(subtitle);
       elModuleSettings.appendChild(s);
     }
   }
@@ -1610,9 +1647,9 @@
     const license = typeof def?.license === 'string' ? def.license.trim() : '';
     const upstream = typeof def?.upstream === 'string' ? def.upstream.trim() : '';
     const entries = [];
-    if (authors.length) entries.push({ label: '作者', text: authors.join(' / ') });
-    if (license) entries.push({ label: '许可', text: license });
-    if (upstream) entries.push({ label: '上游', url: upstream });
+    if (authors.length) entries.push({ label: localeText('作者', 'Author'), text: authors.join(' / ') });
+    if (license) entries.push({ label: localeText('许可', 'License'), text: license });
+    if (upstream) entries.push({ label: localeText('上游', 'Upstream'), url: upstream });
     return entries;
   }
 
@@ -1633,7 +1670,7 @@
 
       const key = document.createElement('div');
       key.className = 'panelInfoKey';
-      key.textContent = String(entry.label || '').trim();
+      key.textContent = translateText(String(entry.label || '').trim());
 
       const val = document.createElement('div');
       val.className = 'panelInfoVal';
@@ -1649,7 +1686,7 @@
         });
         val.appendChild(link);
       } else {
-        val.textContent = String(entry.text || '').trim();
+        val.textContent = translateText(String(entry.text || '').trim());
       }
 
       row.appendChild(key);
@@ -1674,7 +1711,7 @@
     for (const item of list) {
       const chip = document.createElement('span');
       chip.className = 'panelShellChip';
-      chip.textContent = item;
+      chip.textContent = translateText(item);
       elPanelSelectionMeta.appendChild(chip);
     }
 
@@ -4346,9 +4383,10 @@
 
   btnFactoryReset?.addEventListener('click', () => {
     const run = async () => {
-      const ok = window.confirm(
+      const ok = window.confirm(localeText(
         '将清空扩展的所有设置与缓存（storage/local/sync/session、已注册内容脚本等），并自动重新加载扩展。\n\n确定要恢复出厂吗？',
-      );
+        'This will clear all extension settings and caches (storage/local/sync/session, registered content scripts, and more), then reload the extension automatically.\n\nContinue with factory reset?'
+      ));
       if (!ok) return;
 
       setStatus('正在清空所有数据（恢复出厂）…');

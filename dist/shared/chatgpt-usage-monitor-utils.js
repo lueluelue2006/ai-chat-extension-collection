@@ -25,6 +25,55 @@
   });
   const LEGACY_NOMINAL_UNLIMITED_QUOTA = 10000;
   const LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE = 'hour3';
+  const WEEKDAY_NAMES_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const WEEKDAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function normalizeLocale(locale) {
+    const raw = String(locale || '').trim();
+    if (/^zh/i.test(raw)) return 'zh-CN';
+    if (/^en/i.test(raw)) return 'en';
+    try {
+      const docLang = String(globalThis?.document?.documentElement?.lang || '').trim();
+      if (/^zh/i.test(docLang)) return 'zh-CN';
+      if (/^en/i.test(docLang)) return 'en';
+    } catch {}
+    try {
+      const nav = typeof navigator === 'object' && navigator ? navigator : null;
+      const candidates = [];
+      if (nav && typeof nav.language === 'string') candidates.push(nav.language);
+      if (nav && Array.isArray(nav.languages)) candidates.push(...nav.languages);
+      if (candidates.some((item) => /^zh(?:-|_|$)/i.test(String(item || '').trim()))) return 'zh-CN';
+    } catch {}
+    return 'en';
+  }
+
+  function isChineseLocale(locale) {
+    return /^zh/i.test(normalizeLocale(locale));
+  }
+
+  function t(locale, zh, en) {
+    return isChineseLocale(locale) ? zh : en;
+  }
+
+  function weekdayName(dayIndex, locale) {
+    return (isChineseLocale(locale) ? WEEKDAY_NAMES_ZH : WEEKDAY_NAMES_EN)[dayIndex] || '';
+  }
+
+  function formatLocaleDate(value, locale, options) {
+    try {
+      return new Date(value).toLocaleDateString(normalizeLocale(locale), options);
+    } catch {
+      return new Date(value).toLocaleDateString(isChineseLocale(locale) ? 'zh-CN' : 'en-US', options);
+    }
+  }
+
+  function formatLocaleDateTime(value, locale, options) {
+    try {
+      return new Date(value).toLocaleString(normalizeLocale(locale), options);
+    } catch {
+      return new Date(value).toLocaleString(isChineseLocale(locale) ? 'zh-CN' : 'en-US', options);
+    }
+  }
 
   function tsOf(req) {
     if (typeof req === 'number') return req;
@@ -59,7 +108,7 @@
     return true;
   }
 
-  function summarizeImport(importedData) {
+  function summarizeImport(importedData, { locale = 'zh-CN' } = {}) {
     const models = importedData && importedData.models && typeof importedData.models === 'object' ? importedData.models : {};
     const entries = Object.entries(models);
     const modelCount = entries.length;
@@ -68,10 +117,14 @@
     for (const [k, m] of entries) {
       const c = Array.isArray(m?.requests) ? m.requests.length : 0;
       totalRequests += c;
-      if (c > 0) detail.push(`${k}: ${c}条`);
+      if (c > 0) detail.push(`${k}: ${c} ${t(locale, '条', c === 1 ? 'record' : 'records')}`);
     }
-    const head = `共 ${modelCount} 个模型，${totalRequests} 条请求记录`;
-    if (detail.length <= 8) return `${head}\n\n模型详情:\n${detail.join('\n')}`;
+    const head = t(
+      locale,
+      `共 ${modelCount} 个模型，${totalRequests} 条请求记录`,
+      `${modelCount} models, ${totalRequests} request records`
+    );
+    if (detail.length <= 8) return `${head}\n\n${t(locale, '模型详情', 'Model details')}:\n${detail.join('\n')}`;
     return head;
   }
 
@@ -147,7 +200,8 @@
       now = new Date(),
       preferredOrder = [],
       knownModelKeys = [],
-      unknownMergeTarget = 'gpt-5-3-instant'
+      unknownMergeTarget = 'gpt-5-3-instant',
+      locale = 'zh-CN'
     } = {}
   ) {
     const current = now instanceof Date ? now : new Date(now);
@@ -165,8 +219,8 @@
       const dayStart = todayStart - (29 - i) * TIME_WINDOWS.daily;
       const date = new Date(dayStart);
       report.dailyData.push({
-        date: date.toLocaleDateString('zh-CN'),
-        dayOfWeek: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()],
+        date: formatLocaleDate(date, locale),
+        dayOfWeek: weekdayName(date.getDay(), locale),
         models: {},
         total: 0,
         dayStart,
@@ -233,25 +287,48 @@
     {
       now = Date.now(),
       preferredOrder = [],
-      knownModelKeys = []
+      knownModelKeys = [],
+      locale = 'zh-CN'
     } = {}
   ) {
     const report = buildLegacyMonthlyReport(usageData, {
       now,
       preferredOrder,
       knownModelKeys,
-      unknownMergeTarget: 'gpt-5-3-instant'
+      unknownMergeTarget: 'gpt-5-3-instant',
+      locale
     });
     const sortedModelKeys = preferredOrder
       .filter((modelKey) => report.modelBreakdown[modelKey])
       .concat(Object.keys(report.modelBreakdown).filter((key) => !preferredOrder.includes(key)));
+    const lang = isChineseLocale(locale) ? 'zh-CN' : 'en';
+    const pageTitle = t(locale, 'ChatGPT 一个月用量分析报告', 'ChatGPT Monthly Usage Report');
+    const dateRangeLabel = t(locale, '分析时间段', 'Report range');
+    const generatedAtLabel = t(locale, '生成时间', 'Generated at');
+    const totalRequestsLabel = t(locale, '总请求数', 'Total requests');
+    const last30DaysLabel = t(locale, '最近30天', 'Last 30 days');
+    const averageDailyLabel = t(locale, '日均使用', 'Average daily usage');
+    const activeDaysAverageLabel = t(locale, '活跃天数平均', 'Average across active days');
+    const peakDayLabel = t(locale, '使用高峰日', 'Peak day');
+    const activeModelsLabel = t(locale, '活跃模型数', 'Active models');
+    const withRecordsLabel = t(locale, '有使用记录', 'With recorded usage');
+    const dailyTrendLabel = t(locale, '每日使用趋势', 'Daily usage trend');
+    const modelDistributionLabel = t(locale, '模型使用分布', 'Model distribution');
+    const detailedTableLabel = t(locale, '详细数据表', 'Detailed table');
+    const dateLabel = t(locale, '日期', 'Date');
+    const weekdayLabel = t(locale, '星期', 'Weekday');
+    const requestCountLabel = t(locale, '总请求数', 'Total requests');
+    const todayLabel = t(locale, '今天', 'Today');
+    const totalLabel = t(locale, '总计', 'Total');
+    const footerLabel = t(locale, '此报告由 ChatGPT 用量统计脚本自动生成', 'This report was generated automatically by the ChatGPT usage monitor.');
+    const dailyChartLabel = t(locale, '每日请求数', 'Daily requests');
     const html = `
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChatGPT 一个月用量分析报告 - ${new Date(now).toLocaleDateString('zh-CN')}</title>
+<title>${pageTitle} - ${formatLocaleDate(now, locale)}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
 <style>
     body {
@@ -359,50 +436,50 @@
 </head>
 <body>
 <div class="container">
-    <h1>ChatGPT 一个月用量分析报告</h1>
-    <p class="info-text">分析时间段: ${report.dailyData[0].date} 至 ${report.dailyData[29].date}</p>
-    <p class="info-text">生成时间: ${new Date(now).toLocaleString('zh-CN')}</p>
+    <h1>${pageTitle}</h1>
+    <p class="info-text">${dateRangeLabel}: ${report.dailyData[0].date} - ${report.dailyData[29].date}</p>
+    <p class="info-text">${generatedAtLabel}: ${formatLocaleDateTime(now, locale)}</p>
 
     <div class="summary-cards">
         <div class="card">
-            <h3>总请求数</h3>
+            <h3>${totalRequestsLabel}</h3>
             <div class="value">${report.totalRequests}</div>
-            <div class="subtext">最近30天</div>
+            <div class="subtext">${last30DaysLabel}</div>
         </div>
         <div class="card">
-            <h3>日均使用</h3>
+            <h3>${averageDailyLabel}</h3>
             <div class="value">${report.averageDaily}</div>
-            <div class="subtext">活跃天数平均</div>
+            <div class="subtext">${activeDaysAverageLabel}</div>
         </div>
         <div class="card">
-            <h3>使用高峰日</h3>
+            <h3>${peakDayLabel}</h3>
             <div class="value" style="font-size: 20px;">${report.peakDay || 'N/A'}</div>
         </div>
         <div class="card">
-            <h3>活跃模型数</h3>
+            <h3>${activeModelsLabel}</h3>
             <div class="value">${sortedModelKeys.length}</div>
-            <div class="subtext">有使用记录</div>
+            <div class="subtext">${withRecordsLabel}</div>
         </div>
     </div>
 
-    <h2>每日使用趋势</h2>
+    <h2>${dailyTrendLabel}</h2>
     <div class="chart-container daily">
         <canvas id="dailyChart"></canvas>
     </div>
 
-    <h2>模型使用分布</h2>
+    <h2>${modelDistributionLabel}</h2>
     <div class="chart-container pie">
         <canvas id="modelChart"></canvas>
     </div>
 
-    <h2>详细数据表</h2>
+    <h2>${detailedTableLabel}</h2>
     <div class="table-container">
         <table>
             <thead>
                 <tr>
-                    <th>日期</th>
-                    <th>星期</th>
-                    <th>总请求数</th>
+                    <th>${dateLabel}</th>
+                    <th>${weekdayLabel}</th>
+                    <th>${requestCountLabel}</th>
                     ${sortedModelKeys.map((model) => `<th>${model}</th>`).join('')}
                 </tr>
             </thead>
@@ -412,7 +489,7 @@
                   const isWeekStart = new Date(day.dayStart).getDay() === 1;
                   return `
                     <tr ${isToday ? 'style="background: rgba(245, 158, 11, 0.1);"' : ''} ${isWeekStart && !isToday ? 'class="week-separator"' : ''}>
-                        <td>${day.date} ${isToday ? '<span style="color: #f59e0b;">(今天)</span>' : ''}</td>
+                        <td>${day.date} ${isToday ? `<span style="color: #f59e0b;">(${todayLabel})</span>` : ''}</td>
                         <td>${day.dayOfWeek}</td>
                         <td class="highlight">${day.total}</td>
                         ${sortedModelKeys.map((model) => `<td>${day.models[model] || 0}</td>`).join('')}
@@ -422,7 +499,7 @@
             </tbody>
             <tfoot>
                 <tr style="background: #1a1b1e; font-weight: bold;">
-                    <td colspan="2">总计</td>
+                    <td colspan="2">${totalLabel}</td>
                     <td class="highlight">${report.totalRequests}</td>
                     ${sortedModelKeys.map((model) => `<td>${report.modelBreakdown[model] || 0}</td>`).join('')}
                 </tr>
@@ -431,7 +508,7 @@
     </div>
 
     <div class="footer">
-        <p>此报告由 ChatGPT 用量统计脚本自动生成</p>
+        <p>${footerLabel}</p>
     </div>
 </div>
 
@@ -443,9 +520,9 @@
     new Chart(dailyCtx, {
         type: 'line',
         data: {
-            labels: ${JSON.stringify(report.dailyData.map((d, i) => i === 29 ? d.date + ' (今天)' : d.date))},
+            labels: ${JSON.stringify(report.dailyData.map((d, i) => i === 29 ? `${d.date} (${todayLabel})` : d.date))},
             datasets: [{
-                label: '每日请求数',
+                label: ${JSON.stringify(dailyChartLabel)},
                 data: ${JSON.stringify(report.dailyData.map((d) => d.total))},
                 borderColor: '#f59e0b',
                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -560,6 +637,7 @@
   const api = Object.freeze({
     TIME_WINDOWS,
     tsOf,
+    normalizeLocale,
     validateImportedData,
     summarizeImport,
     mergeUsageData,

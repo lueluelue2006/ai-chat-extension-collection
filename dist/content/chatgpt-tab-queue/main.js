@@ -51,6 +51,32 @@
     replyRenderSettleMs: 900,
     composerMirrorSyncDelayMs: 24
   });
+  const MESSAGES = Object.freeze({
+    composerInterlockToast: { zh: '排队消息正在发出，请稍候再输入。', en: 'A queued message is being sent. Wait a moment before typing.' },
+    manualSendPaused: { zh: '队列已暂停：上一条手动消息仍在发出。', en: 'Queue paused: the previous manual message is still being sent.' },
+    queueSendPaused: { zh: '队列已暂停：上一条排队消息仍在发出。', en: 'Queue paused: the previous queued message is still being sent.' },
+    extendedProPaused: { zh: '队列已暂停：当前处于 Extended Pro。', en: 'Queue paused: Extended Pro is active.' },
+    returnToConversationPaused: { zh: '队列已暂停：请回到原对话后继续自动发送。', en: 'Queue paused: return to the original conversation to continue sending automatically.' },
+    notInConversationPaused: { zh: '队列已暂停：当前不在原对话里。', en: 'Queue paused: you are no longer in the original conversation.' },
+    draftPaused: { zh: '队列已暂停：输入框里有未排队草稿。', en: 'Queue paused: the composer still has an unqueued draft.' },
+    attachmentsPaused: { zh: '队列已暂停：输入框里有未排队附件。', en: 'Queue paused: the composer still has unqueued attachments.' },
+    responseRunningPaused: { zh: '队列已暂停：当前回复仍在进行中。', en: 'Queue paused: the current reply is still running.' },
+    responseSettlingPaused: { zh: '队列已暂停：上一条回复仍在收尾。', en: 'Queue paused: the previous reply is still settling.' },
+    queuedCount: { zh: '已排队 {count} 条', en: '{count} queued' },
+    queueHint: { zh: 'Tab 排队 · ⌥↑ / Alt+↑ 取回最近一条', en: 'Queue with Tab · restore the latest item with ⌥↑ / Alt+↑' },
+    remove: { zh: '删除', en: 'Remove' },
+    removeAria: { zh: '删除这条排队消息', en: 'Remove this queued message' },
+    moreQueued: { zh: '还有 {count} 条待发送', en: '{count} more queued item(s) waiting to send' },
+    removedQueued: { zh: '已删除第 {index} 条排队消息。', en: 'Removed queued item #{index}.' },
+    writeBackFailed: { zh: '排队消息写回输入框失败。', en: 'Failed to restore the queued message into the composer.' },
+    missingSendButton: { zh: '排队消息发送失败：未找到可点击的发送按钮。', en: 'Failed to send the queued message: no clickable send button was found.' },
+    sendUnconfirmed: { zh: '排队消息未拿到真实发送确认，已保留在队列里。', en: 'The queued message was not confirmed as truly sent, so it stayed in the queue.' },
+    restoredLatest: { zh: '已取回最近一条排队消息。', en: 'Restored the latest queued message.' },
+    attachmentsNotSupported: { zh: '当前仅支持纯文本排队。检测到附件时不会加入队列。', en: 'Tab queue currently supports text only. Attachments will not be queued.' },
+    clearFailed: { zh: '加入队列失败：清空输入框未成功。', en: 'Failed to queue the draft because the composer could not be cleared.' },
+    queuedAdded: { zh: '已加入队列：第 {count} 条', en: 'Added to queue: item #{count}' },
+    clearedComposer: { zh: '已清空输入框，可用 Cmd+Z 撤销。', en: 'The composer was cleared. Use Cmd+Z to undo.' }
+  });
 
   const prevState = (() => {
     try {
@@ -131,6 +157,31 @@
     } catch {
       return undefined;
     }
+  }
+
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseLocale(locale = getUiLocale()) {
+    return /^zh/i.test(String(locale || ''));
+  }
+
+  function formatTemplate(template, vars) {
+    let out = String(template || '');
+    if (!vars || typeof vars !== 'object') return out;
+    for (const [key, value] of Object.entries(vars)) out = out.replaceAll(`{${key}}`, String(value ?? ''));
+    return out;
+  }
+
+  function t(key, vars) {
+    const entry = MESSAGES[key];
+    if (!entry) return formatTemplate(String(key || ''), vars);
+    return formatTemplate(isChineseLocale() ? entry.zh : entry.en, vars);
   }
 
   function readBoolDataset(key, fallback = false) {
@@ -1326,7 +1377,7 @@
     if (!interlock) return;
     if (now() - (Number(interlock.noticeShownAt) || 0) < CONFIG.composerInterlockToastCooldownMs) return;
     interlock.noticeShownAt = now();
-    showToast('排队消息正在发出，请稍候再输入。');
+    showToast(t('composerInterlockToast'));
   }
 
   function clearConversationStreamStatusCache() {
@@ -1338,7 +1389,7 @@
 
   function getManualSendInterlockReason() {
     if (!isManualSendInterlockActive() && !isManualSendWarmupActive()) return '';
-    return '队列已暂停：上一条手动消息仍在发出。';
+    return t('manualSendPaused');
   }
 
   async function readConversationStreamStatus(conversationId, options = {}) {
@@ -1830,17 +1881,17 @@
     const manualReason = getManualSendInterlockReason();
     if (manualReason) return manualReason;
     if (isComposerInterlockActive()) {
-      return '队列已暂停：上一条排队消息仍在发出。';
+      return t('queueSendPaused');
     }
     if (!isTabQueueModelActive()) {
-      return '队列已暂停：当前处于 Extended Pro。';
+      return t('extendedProPaused');
     }
     const currentConversationId = getConversationBindingId();
     if (head.conversationId && currentConversationId && head.conversationId !== currentConversationId) {
-      return '队列已暂停：请回到原对话后继续自动发送。';
+      return t('returnToConversationPaused');
     }
     if (head.conversationId && !currentConversationId) {
-      return '队列已暂停：当前不在原对话里。';
+      return t('notInConversationPaused');
     }
     const composerState = getComposerBlockingState({
       composerText: readComposerText(getEditorEl()),
@@ -1848,16 +1899,16 @@
       hasAttachments: hasLikelyComposerAttachments(getComposerForm(getEditorEl()))
     });
     if (composerState.hasDraft) {
-      return '队列已暂停：输入框里有未排队草稿。';
+      return t('draftPaused');
     }
     if (composerState.hasAttachments) {
-      return '队列已暂停：输入框里有未排队附件。';
+      return t('attachmentsPaused');
     }
     if (isCachedCurrentConversationStreamActive(currentConversationId)) {
-      return '队列已暂停：当前回复仍在进行中。';
+      return t('responseRunningPaused');
     }
     if (getLiveReplyRenderWaitMs() > 0) {
-      return '队列已暂停：上一条回复仍在收尾。';
+      return t('responseSettlingPaused');
     }
     return '';
   }
@@ -1882,8 +1933,8 @@
       preview.hidden = true;
       preview.innerHTML = `
         <div class="aichatTabQueueHead">
-          <div class="aichatTabQueueCount">已排队 0 条</div>
-          <div class="aichatTabQueueHint">Tab 排队 · ⌥↑ / Alt+↑ 取回最近一条</div>
+          <div class="aichatTabQueueCount">${t('queuedCount', { count: 0 })}</div>
+          <div class="aichatTabQueueHint">${t('queueHint')}</div>
         </div>
         <div class="aichatTabQueuePaused" hidden></div>
         <div class="aichatTabQueueList"></div>
@@ -1934,7 +1985,7 @@
     const listEl = preview.querySelector('.aichatTabQueueList');
     if (!countEl || !pausedEl || !listEl) return;
 
-    countEl.textContent = `已排队 ${state.queue.length} 条`;
+    countEl.textContent = t('queuedCount', { count: state.queue.length });
     pausedEl.textContent = pausedReason;
     pausedEl.hidden = !pausedReason;
 
@@ -1956,8 +2007,8 @@
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'aichatTabQueueItemRemove';
-      remove.textContent = '删除';
-      remove.setAttribute('aria-label', '删除这条排队消息');
+      remove.textContent = t('remove');
+      remove.setAttribute('aria-label', t('removeAria'));
       remove.addEventListener('click', (event) => {
         try {
           event.preventDefault();
@@ -1975,7 +2026,7 @@
     if (state.queue.length > CONFIG.queuePreviewMaxItems) {
       const more = document.createElement('div');
       more.className = 'aichatTabQueueItem';
-      more.textContent = `还有 ${state.queue.length - CONFIG.queuePreviewMaxItems} 条待发送`;
+      more.textContent = t('moreQueued', { count: state.queue.length - CONFIG.queuePreviewMaxItems });
       listEl.appendChild(more);
     }
 
@@ -2096,7 +2147,7 @@
     refreshPreview();
     refreshReplyRenderSampling();
     if (state.queue.length > 0 && !state.processQueueBusy) scheduleMaybeProcessQueue(0);
-    showToast(`已删除第 ${result.removedIndex + 1} 条排队消息。`);
+    showToast(t('removedQueued', { index: result.removedIndex + 1 }));
     return true;
   }
 
@@ -2392,7 +2443,7 @@
       return false;
     }
     if (!composerReady && !setComposerText(head.text, getActiveEditor())) {
-      showToast('排队消息写回输入框失败。');
+      showToast(t('writeBackFailed'));
       return false;
     }
 
@@ -2434,7 +2485,7 @@
     }
 
     if (!sendButton) {
-      showToast('排队消息发送失败：未找到可点击的发送按钮。');
+      showToast(t('missingSendButton'));
       return false;
     }
 
@@ -2466,7 +2517,7 @@
       if (readComposerText(activeEditor) === head.text) {
         setComposerText('', activeEditor);
       }
-      showToast('排队消息未拿到真实发送确认，已保留在队列里。');
+      showToast(t('sendUnconfirmed'));
       scheduleMaybeProcessQueue(CONFIG.previewRepairIntervalMs);
       return false;
     }
@@ -2525,7 +2576,7 @@
     const editor = getEditorEl();
     if (!editor) return false;
     const ok = setComposerText(item.text, editor);
-    if (ok) showToast('已取回最近一条排队消息。');
+    if (ok) showToast(t('restoredLatest'));
     return ok;
   }
 
@@ -2567,7 +2618,7 @@
         sourceText,
         liveText
       });
-      showToast('当前仅支持纯文本排队。检测到附件时不会加入队列。');
+      showToast(t('attachmentsNotSupported'));
       return false;
     }
 
@@ -2622,7 +2673,7 @@
             sourceDisconnected,
             queuedId: item.id
           });
-          showToast('加入队列失败：清空输入框未成功。');
+          showToast(t('clearFailed'));
           return false;
         }
       }
@@ -2639,7 +2690,7 @@
       queueLength: state.queue.length,
       immediateSend
     });
-    showToast(`已加入队列：第 ${state.queue.length} 条`);
+    showToast(t('queuedAdded', { count: state.queue.length }));
     void maybeProcessQueue({ allowSyncImmediate: immediateSend });
     return !!item;
   }
@@ -2652,7 +2703,7 @@
     const text = readComposerText(editor);
     if (!hasText(text)) return false;
     const ok = setComposerText('', editor);
-    if (ok) showToast('已清空输入框，可用 Cmd+Z 撤销。');
+    if (ok) showToast(t('clearedComposer'));
     return ok;
   }
 

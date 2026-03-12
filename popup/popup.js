@@ -476,6 +476,17 @@
     return SITE_DEFS.find((s) => s.id === siteId) || null;
   }
 
+  function getSiteDisplayMeta(siteIdOrSite) {
+    const site =
+      siteIdOrSite && typeof siteIdOrSite === 'object'
+        ? siteIdOrSite
+        : getSiteDef(siteIdOrSite);
+    return {
+      name: translateText(String(site?.name || '').trim()),
+      sub: translateText(String(site?.sub || '').trim())
+    };
+  }
+
   function getModuleDef(moduleId) {
     return MODULE_DEFS[moduleId] || { name: moduleId, sub: '' };
   }
@@ -486,8 +497,8 @@
 
   function getModuleDisplayMeta(siteId, moduleId) {
     const def = getModuleDef(moduleId);
-    let name = String(def?.name || moduleId || '').trim();
-    const sub = String(def?.sub || '').trim();
+    let name = translateText(String(def?.name || moduleId || '').trim());
+    const sub = translateText(String(def?.sub || '').trim());
     if (siteId === 'chatgpt') name = shortenChatGPTModuleName(name);
     return { name, sub };
   }
@@ -555,13 +566,13 @@
 
     const mainEl = document.createElement('span');
     mainEl.className = 'labelMain';
-    mainEl.textContent = String(main || '');
+    mainEl.textContent = translateText(String(main || ''));
 
     textWrap.appendChild(mainEl);
     if (SHOW_DESCRIPTIONS) {
       const subEl = document.createElement('span');
       subEl.className = 'labelSub';
-      subEl.textContent = String(sub || '');
+      subEl.textContent = translateText(String(sub || ''));
       if (subEl.textContent) textWrap.appendChild(subEl);
     }
 
@@ -576,7 +587,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'rowIconBtn';
-      btn.title = '打开配置（定位到该脚本）';
+      btn.title = translateText('打开配置（定位到该脚本）');
       btn.textContent = '⋯';
       btn.addEventListener('click', (e) => {
         try {
@@ -605,7 +616,7 @@
     group.className = 'toggleGroup';
     const h = document.createElement('div');
     h.className = 'toggleGroupTitle';
-    h.textContent = title;
+    h.textContent = translateText(title);
     group.appendChild(h);
     return group;
   }
@@ -617,7 +628,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'menuBtn';
-      btn.textContent = c.name;
+      btn.textContent = translateText(c.name);
       btn.addEventListener('click', () => {
         Promise.resolve()
           .then(() => onRun(c))
@@ -630,8 +641,8 @@
 
   function mapGroupToModuleId(group, activeSiteId) {
     const g = String(group || '');
-    if (/对话导出/.test(g)) return 'chatgpt_export_conversation';
-    if (/用量统计/.test(g)) return 'chatgpt_usage_monitor';
+    if (/对话导出|Conversation export/i.test(g)) return 'chatgpt_export_conversation';
+    if (/用量统计|Usage monitor/i.test(g)) return 'chatgpt_usage_monitor';
     if (/QuickNav/.test(g)) return 'quicknav';
     // Future: map more groups to module ids here.
     return null;
@@ -676,11 +687,12 @@
 
     const commonDef = getSiteDef('common');
     if (commonDef) {
-      const group = createGroup(`${commonDef.name}（${commonDef.sub}）`);
+      const commonDisplay = getSiteDisplayMeta(commonDef);
+      const group = createGroup(`${commonDisplay.name} (${commonDisplay.sub})`);
       group.appendChild(
         createToggleRow({
-          main: `启用 ${commonDef.name}`,
-          sub: commonDef.sub,
+          main: `启用 ${commonDisplay.name}`,
+          sub: commonDisplay.sub,
           checked: settings?.sites?.common !== false,
           disabled: !settings?.enabled,
           onChange: (v) => onMutate((draft) => { draft.sites.common = !!v; })
@@ -714,11 +726,12 @@
     const siteDef = getSiteDef(activeSiteId);
     if (!siteDef) return;
 
-    const group = createGroup(`${siteDef.name}（${siteDef.sub}）`);
+    const siteDisplay = getSiteDisplayMeta(siteDef);
+    const group = createGroup(`${siteDisplay.name} (${siteDisplay.sub})`);
     group.appendChild(
       createToggleRow({
-        main: `启用 ${siteDef.name}`,
-        sub: siteDef.sub,
+        main: `启用 ${siteDisplay.name}`,
+        sub: siteDisplay.sub,
         checked: settings?.sites?.[activeSiteId] !== false,
         disabled: !settings?.enabled,
         onChange: (v) => onMutate((draft) => { draft.sites[activeSiteId] = !!v; })
@@ -897,7 +910,7 @@
       const activeSiteId = getSiteIdFromUrl(href);
       const siteDef = activeSiteId ? getSiteDef(activeSiteId) : null;
 
-      if (elSiteName) elSiteName.textContent = siteDef ? siteDef.name : '未支持站点';
+      if (elSiteName) elSiteName.textContent = siteDef ? getSiteDisplayMeta(siteDef).name : translateText('未支持站点');
       if (elSiteUrl) elSiteUrl.textContent = href ? href.replace(/^https?:\/\//, '') : '';
 
       let settings = await getSettings();

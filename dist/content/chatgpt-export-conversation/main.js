@@ -11,6 +11,61 @@
   const FILE_SERVICE_PREFIX = 'file-service://';
   const URL_RE = /https?:\/\/[^\s"')<>]+/gi;
   const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico|tiff?)(?:$|[?#])/i;
+  const MESSAGES = Object.freeze({
+    treeTooLarge: {
+      zh: '对话树数据过大（>{size}MB），已停止导出',
+      en: 'The conversation tree is too large (>{size} MB). Export stopped.'
+    },
+    missingConversationId: {
+      zh: '未检测到会话 ID（请打开具体对话再导出）',
+      en: 'Conversation ID was not detected. Open a specific conversation before exporting.'
+    },
+    missingTreeData: {
+      zh: '未拿到会话树数据（mapping 为空）',
+      en: 'Conversation tree data was not available (mapping was empty).'
+    },
+    visibleBranchWarning: {
+      zh: '检测到页面当前可见分支与 current_node 不一致，已按当前可见分支导出。',
+      en: 'The visible branch differed from current_node, so the export used the currently visible branch.'
+    },
+    unresolvedImages: {
+      zh: '节点 {nodeId} 存在未解析图片资源：{ids}',
+      en: 'Node {nodeId} still has unresolved image resources: {ids}'
+    },
+    branchTitle: { zh: '# {date} ChatGPT 当前分支导出', en: '# {date} ChatGPT Current Branch Export' },
+    branchWarnings: { zh: '## 警告', en: '## Warnings' },
+    branchNodeTitle: { zh: '## 节点 {index} · {role}', en: '## Node {index} · {role}' },
+    branchImages: { zh: '### 图片', en: '### Images' },
+    branchLink: { zh: '链接：{url}', en: 'Link: {url}' },
+    branchUnresolvedImageIds: { zh: '> 未解析图片资源 ID：{ids}', en: '> Unresolved image IDs: {ids}' },
+    branchContent: { zh: '### 内容', en: '### Content' },
+    htmlWarningTitle: { zh: '警告', en: 'Warnings' },
+    htmlNodeTitle: { zh: '节点 {index} · {role}', en: 'Node {index} · {role}' },
+    htmlUnresolvedImageIds: { zh: '未解析图片资源 ID：{ids}', en: 'Unresolved image IDs: {ids}' },
+    htmlBranchTitle: { zh: '{date} ChatGPT 当前分支导出', en: '{date} ChatGPT Current Branch Export' },
+    htmlConversationId: { zh: '会话 ID', en: 'Conversation ID' },
+    htmlRootNodeId: { zh: '根节点', en: 'Root node' },
+    htmlCurrentNodeId: { zh: '当前节点', en: 'Current node' },
+    htmlNodeCount: { zh: '节点总数', en: 'Total nodes' },
+    noConversationContent: {
+      zh: '未找到任何对话内容。请确认当前页面有对话。',
+      en: 'No conversation content was found. Make sure the current page contains a conversation.'
+    },
+    noExportableMessages: {
+      zh: '未找到可导出的消息内容。',
+      en: 'No exportable message content was found.'
+    },
+    visibleConversationTitle: {
+      zh: '# {date} ChatGPT对话记录（当前可见）',
+      en: '# {date} ChatGPT Conversation Export (visible branch)'
+    },
+    htmlVisibleConversationTitle: {
+      zh: '{date} ChatGPT对话记录（当前可见）',
+      en: '{date} ChatGPT Conversation Export (visible branch)'
+    },
+    exportMarkdown: { zh: '导出为 Markdown', en: 'Export as Markdown' },
+    exportHtml: { zh: '导出为 HTML', en: 'Export as HTML' }
+  });
 
   function getCore() {
     try {
@@ -37,6 +92,31 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseLocale(locale = getUiLocale()) {
+    return /^zh/i.test(String(locale || ''));
+  }
+
+  function formatTemplate(template, vars) {
+    let out = String(template || '');
+    if (!vars || typeof vars !== 'object') return out;
+    for (const [key, value] of Object.entries(vars)) out = out.replaceAll(`{${key}}`, String(value ?? ''));
+    return out;
+  }
+
+  function t(key, vars) {
+    const entry = MESSAGES[key];
+    if (!entry) return formatTemplate(String(key || ''), vars);
+    return formatTemplate(isChineseLocale() ? entry.zh : entry.en, vars);
   }
 
   const EXPORT_HTML_ALLOWED_GLOBAL_ATTRS = new Set(['dir', 'lang', 'title']);
@@ -385,7 +465,7 @@
       const lenHeader = resp.headers?.get?.('content-length') || '';
       const len = Number(lenHeader);
       if (Number.isFinite(len) && len > MAX_TREE_JSON_BYTES) {
-        throw new Error(`对话树数据过大（>${Math.round(MAX_TREE_JSON_BYTES / 1024 / 1024)}MB），已停止导出`);
+        throw new Error(t('treeTooLarge', { size: Math.round(MAX_TREE_JSON_BYTES / 1024 / 1024) }));
       }
     } catch {}
 
@@ -405,7 +485,7 @@
         received += value.byteLength || 0;
         if (received > MAX_TREE_JSON_BYTES) {
           try { await reader.cancel(); } catch {}
-          throw new Error(`对话树数据过大（>${Math.round(MAX_TREE_JSON_BYTES / 1024 / 1024)}MB），已停止导出`);
+          throw new Error(t('treeTooLarge', { size: Math.round(MAX_TREE_JSON_BYTES / 1024 / 1024) }));
         }
         parts.push(decoder.decode(value, { stream: true }));
       }
@@ -415,7 +495,7 @@
       return JSON.parse(text);
     } catch (e) {
       if (isAbortError(e)) throw e;
-      if (e instanceof Error && /对话树数据过大/.test(e.message)) throw e;
+      if (e instanceof Error && /(对话树数据过大|conversation tree is too large)/i.test(e.message)) throw e;
       return await resp.json();
     }
   }
@@ -897,7 +977,7 @@
 
   async function buildBranchExportPayload() {
     const conversationId = getConversationIdFromUrl();
-    if (!conversationId) return { ok: false, error: '未检测到会话 ID（请打开具体对话再导出）' };
+    if (!conversationId) return { ok: false, error: t('missingConversationId') };
 
     const abortCtrl = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -911,7 +991,7 @@
       ]);
 
       const mapping = data?.mapping && typeof data.mapping === 'object' ? data.mapping : null;
-      if (!mapping) return { ok: false, error: '未拿到会话树数据（mapping 为空）' };
+      if (!mapping) return { ok: false, error: t('missingTreeData') };
 
       const backendCurrentNodeId = typeof data?.current_node === 'string' ? data.current_node : '';
       const rootNodeId = getRootNodeId(mapping) || String(backendCurrentNodeId || '');
@@ -923,7 +1003,7 @@
       const warnings = [];
 
       if (currentNodeId && backendCurrentNodeId && currentNodeId !== backendCurrentNodeId) {
-        warnings.push('检测到页面当前可见分支与 current_node 不一致，已按当前可见分支导出。');
+        warnings.push(t('visibleBranchWarning'));
       }
 
       for (const nodeId of orderedNodeIds) {
@@ -948,7 +1028,7 @@
         }
 
         if (imageResult.unresolvedFileIds.length) {
-          warnings.push(`节点 ${nodeId} 存在未解析图片资源：${imageResult.unresolvedFileIds.join(', ')}`);
+          warnings.push(t('unresolvedImages', { nodeId, ids: imageResult.unresolvedFileIds.join(', ') }));
         }
 
         nodes.push({
@@ -1026,14 +1106,14 @@
   function buildBranchMarkdown(exportData) {
     const date = formatDate(new Date());
     let out = '';
-    out += `# ${date} ChatGPT 当前分支导出\n\n`;
-    out += `- 会话 ID: \`${mdEscapeInline(exportData.conversationId || '')}\`\n`;
-    out += `- 根节点: \`${mdEscapeInline(exportData.rootNodeId || '')}\`\n`;
-    out += `- 当前节点: \`${mdEscapeInline(exportData.currentNodeId || '')}\`\n`;
-    out += `- 节点总数: ${Number(exportData.nodeCount) || 0}\n\n`;
+    out += `${t('branchTitle', { date })}\n\n`;
+    out += `- ${t('htmlConversationId')}: \`${mdEscapeInline(exportData.conversationId || '')}\`\n`;
+    out += `- ${t('htmlRootNodeId')}: \`${mdEscapeInline(exportData.rootNodeId || '')}\`\n`;
+    out += `- ${t('htmlCurrentNodeId')}: \`${mdEscapeInline(exportData.currentNodeId || '')}\`\n`;
+    out += `- ${t('htmlNodeCount')}: ${Number(exportData.nodeCount) || 0}\n\n`;
 
     if (Array.isArray(exportData.warnings) && exportData.warnings.length) {
-      out += '## 警告\n\n';
+      out += `${t('branchWarnings')}\n\n`;
       for (const w of exportData.warnings) out += `- ${mdEscapeInline(w)}\n`;
       out += '\n';
     }
@@ -1041,7 +1121,7 @@
     const nodes = Array.isArray(exportData.nodes) ? exportData.nodes : [];
     for (let i = 0; i < nodes.length; i += 1) {
       const n = nodes[i];
-      out += `## 节点 ${i + 1} · ${roleLabel(n.role)}\n\n`;
+      out += `${t('branchNodeTitle', { index: i + 1, role: roleLabel(n.role) })}\n\n`;
       out += `- nodeId: \`${mdEscapeInline(n.nodeId)}\`\n`;
       out += `- messageId: \`${mdEscapeInline(n.messageId || '')}\`\n`;
       out += `- parent: \`${mdEscapeInline(n.parentNodeId || '')}\`\n`;
@@ -1050,21 +1130,21 @@
       out += `- content_type: \`${mdEscapeInline(n.contentType || '')}\`\n\n`;
 
       if (Array.isArray(n.imageUrls) && n.imageUrls.length) {
-        out += '### 图片\n\n';
+        out += `${t('branchImages')}\n\n`;
         n.imageUrls.forEach((url, idx) => {
           const safe = String(url || '').trim();
           if (!safe) return;
           out += `![node-${i + 1}-img-${idx + 1}](${safe})\n\n`;
-          out += `链接：${safe}\n\n`;
+          out += `${t('branchLink', { url: safe })}\n\n`;
         });
       }
 
       if (Array.isArray(n.unresolvedFileIds) && n.unresolvedFileIds.length) {
-        out += `> 未解析图片资源 ID：${n.unresolvedFileIds.map((x) => `\`${mdEscapeInline(x)}\``).join(', ')}\n\n`;
+        out += `${t('branchUnresolvedImageIds', { ids: n.unresolvedFileIds.map((x) => `\`${mdEscapeInline(x)}\``).join(', ') })}\n\n`;
       }
 
       if (n.text) {
-        out += '### 内容\n\n';
+        out += `${t('branchContent')}\n\n`;
         out += '```text\n';
         out += `${mdEscapeBlock(n.text)}\n`;
         out += '```\n\n';
@@ -1090,11 +1170,11 @@
         .join('');
 
       const unresolved = Array.isArray(n.unresolvedFileIds) && n.unresolvedFileIds.length
-        ? `<p class="warn">未解析图片资源 ID：${escapeHtml(n.unresolvedFileIds.join(', '))}</p>`
+        ? `<p class="warn">${escapeHtml(t('htmlUnresolvedImageIds', { ids: n.unresolvedFileIds.join(', ') }))}</p>`
         : '';
 
       body += `<section class="node">
-  <h2>节点 ${i + 1} · ${escapeHtml(roleLabel(n.role))}</h2>
+  <h2>${escapeHtml(t('htmlNodeTitle', { index: i + 1, role: roleLabel(n.role) }))}</h2>
   <ul class="meta">
     <li><strong>nodeId</strong> <code>${escapeHtml(n.nodeId || '')}</code></li>
     <li><strong>messageId</strong> <code>${escapeHtml(n.messageId || '')}</code></li>
@@ -1110,11 +1190,11 @@
     }
 
     const warnings = Array.isArray(exportData.warnings) && exportData.warnings.length
-      ? `<section class="warnbox"><h2>警告</h2><ul>${exportData.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul></section>`
+      ? `<section class="warnbox"><h2>${escapeHtml(t('htmlWarningTitle'))}</h2><ul>${exportData.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul></section>`
       : '';
 
     return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(isChineseLocale() ? 'zh-CN' : 'en')}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -1139,12 +1219,12 @@
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(date)} ChatGPT 当前分支导出</h1>
+  <h1>${escapeHtml(t('htmlBranchTitle', { date }))}</h1>
   <ul>
-    <li>会话 ID: <code>${escapeHtml(exportData.conversationId || '')}</code></li>
-    <li>根节点: <code>${escapeHtml(exportData.rootNodeId || '')}</code></li>
-    <li>当前节点: <code>${escapeHtml(exportData.currentNodeId || '')}</code></li>
-    <li>节点总数: ${Math.max(0, Number(exportData.nodeCount) || 0)}</li>
+    <li>${escapeHtml(t('htmlConversationId'))}: <code>${escapeHtml(exportData.conversationId || '')}</code></li>
+    <li>${escapeHtml(t('htmlRootNodeId'))}: <code>${escapeHtml(exportData.rootNodeId || '')}</code></li>
+    <li>${escapeHtml(t('htmlCurrentNodeId'))}: <code>${escapeHtml(exportData.currentNodeId || '')}</code></li>
+    <li>${escapeHtml(t('htmlNodeCount'))}: ${Math.max(0, Number(exportData.nodeCount) || 0)}</li>
   </ul>
   ${warnings}
   ${body}
@@ -1302,7 +1382,7 @@
 
   function buildDomMessages() {
     const turns = getTurns();
-    if (!turns.length) return { ok: false, error: '未找到任何对话内容。请确认当前页面有对话。' };
+    if (!turns.length) return { ok: false, error: t('noConversationContent') };
 
     const messages = [];
     for (const turn of turns) {
@@ -1312,7 +1392,7 @@
       if (assistant) messages.push({ role: 'assistant', el: assistant });
     }
 
-    if (!messages.length) return { ok: false, error: '未找到可导出的消息内容。' };
+    if (!messages.length) return { ok: false, error: t('noExportableMessages') };
     return { ok: true, messages };
   }
 
@@ -1324,7 +1404,7 @@
     }
 
     const fileName = convoId ? `chatgpt-${sanitizeFilePart(convoId)}-${date}.md` : `chatgpt-${date}.md`;
-    let out = `# ${date} ChatGPT对话记录（当前可见）\n\n`;
+    let out = `${t('visibleConversationTitle', { date })}\n\n`;
     let userIndex = 1;
     let assistantIndex = 1;
 
@@ -1366,7 +1446,7 @@
     }
 
     const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(isChineseLocale() ? 'zh-CN' : 'en')}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -1387,7 +1467,7 @@
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(date)} ChatGPT对话记录（当前可见）</h1>
+  <h1>${escapeHtml(t('htmlVisibleConversationTitle', { date }))}</h1>
   ${body}
 </body>
 </html>`;
@@ -1434,8 +1514,8 @@
     }
     if (typeof reg !== 'function') return;
 
-    reg('导出为 Markdown', exportBranchAsMarkdown, { moduleId: 'chatgpt_export_conversation' });
-    reg('导出为 HTML', exportBranchAsHtml, { moduleId: 'chatgpt_export_conversation' });
+    reg(t('exportMarkdown'), exportBranchAsMarkdown, { moduleId: 'chatgpt_export_conversation' });
+    reg(t('exportHtml'), exportBranchAsHtml, { moduleId: 'chatgpt_export_conversation' });
   }
 
   if (document.readyState === 'loading') {

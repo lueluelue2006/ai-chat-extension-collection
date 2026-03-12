@@ -405,6 +405,22 @@
     }, Math.max(400, durationMs));
   }
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   function armBench(source = 'unknown') {
     state.benchArmed = true;
     if (state.benchTimer) window.clearTimeout(state.benchTimer);
@@ -412,15 +428,15 @@
       state.benchTimer = 0;
       if (!state.benchArmed) return;
       state.benchArmed = false;
-      toast('测量已取消（超时）');
+      toast(uiText('测量已取消（超时）', 'Measurement cancelled (timed out)'));
     }, 12_000);
-    const mode = state.settings.enabled ? '优化：开' : '优化：关';
-    toast(`已开始测量（${source}｜${mode}）\n请点击“编辑/重试/停止”或在输入框按 Enter`,
+    const mode = state.settings.enabled ? uiText('优化：开', 'Optimization: on') : uiText('优化：关', 'Optimization: off');
+    toast(uiText(`已开始测量（${source}｜${mode}）\n请点击“编辑/重试/停止”或在输入框按 Enter`, `Measurement started (${source} | ${mode})\nClick Edit / Retry / Stop, or press Enter in the composer.`),
       2400,
     );
   }
 
-  function actionLabelFromTarget(target, fallback = '点击') {
+  function actionLabelFromTarget(target, fallback = uiText('点击', 'click')) {
     if (!(target instanceof Element)) return fallback;
     const btn = target.closest('button');
     if (!btn) return fallback;
@@ -429,10 +445,10 @@
     const testid = btn.getAttribute('data-testid') || '';
     const text = (btn.textContent || '').trim();
     const s = `${aria} ${title} ${testid} ${text}`.toLowerCase();
-    if (/edit message|编辑/.test(s)) return '编辑';
-    if (/regenerate|retry|try again|重新生成|重试/.test(s)) return '重试/重新生成';
-    if (/stop generating|stop streaming|停止|pause|continue generating/.test(s)) return '停止/继续';
-    if (/send|发送/.test(s)) return '发送';
+    if (/edit message|编辑/.test(s)) return uiText('编辑', 'Edit');
+    if (/regenerate|retry|try again|重新生成|重试/.test(s)) return uiText('重试/重新生成', 'Retry / Regenerate');
+    if (/stop generating|stop streaming|停止|pause|continue generating/.test(s)) return uiText('停止/继续', 'Stop / Continue');
+    if (/send|发送/.test(s)) return uiText('发送', 'Send');
     return fallback;
   }
 
@@ -555,7 +571,13 @@
         // ignore
       }
 
-      toast(`测量：${label}\n输入到下一帧：${dt}ms\n长任务：${lt}ms（${longTaskCount} 次）`, 3200);
+      toast(
+        uiText(
+          `测量：${label}\n输入到下一帧：${dt}ms\n长任务：${lt}ms（${longTaskCount} 次）`,
+          `Measurement: ${label}\nInput to next frame: ${dt}ms\nLong tasks: ${lt}ms (${longTaskCount})`
+        ),
+        3200,
+      );
     });
   }
 
@@ -991,8 +1013,8 @@
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = UI_TOGGLE_CLASS;
-    toggle.textContent = '性能';
-    toggle.title = 'ChatGPT 性能菜单';
+    toggle.textContent = uiText('性能', 'Perf');
+    toggle.title = uiText('ChatGPT 性能菜单', 'ChatGPT performance menu');
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-haspopup', 'menu');
 
@@ -1000,16 +1022,16 @@
     panel.className = UI_PANEL_CLASS;
     panel.hidden = true;
 
-    const perfBtn = mkBtn('enabled', '性能：开', '切换性能优化总开关');
-    const offBtn = mkBtn('virtualizeOffscreen', '离屏虚拟化：开', '切换离屏虚拟化（长对话更流畅）');
-    const heavyBtn = mkBtn('optimizeHeavyBlocks', '重内容优化：开', '切换重内容优化（pre/table/公式等）');
-    const animBtn = mkBtn('disableAnimations', '动画：开', '切换动画/过渡（关闭可减少卡顿）');
-    const boostBtn = mkBtn('boostDuringInput', '交互加速：开', '输入/编辑时临时收紧预加载，减少点击/发送卡顿');
+    const perfBtn = mkBtn('enabled', uiText('性能：开', 'Performance: on'), uiText('切换性能优化总开关', 'Toggle the overall performance optimization switch'));
+    const offBtn = mkBtn('virtualizeOffscreen', uiText('离屏虚拟化：开', 'Offscreen virtualization: on'), uiText('切换离屏虚拟化（长对话更流畅）', 'Toggle offscreen virtualization for smoother long conversations'));
+    const heavyBtn = mkBtn('optimizeHeavyBlocks', uiText('重内容优化：开', 'Heavy content optimization: on'), uiText('切换重内容优化（pre/table/公式等）', 'Toggle heavy content optimization (pre/table/formulas, etc.)'));
+    const animBtn = mkBtn('disableAnimations', uiText('动画：开', 'Animations: on'), uiText('切换动画/过渡（关闭可减少卡顿）', 'Toggle animations/transitions (turning them off can reduce jank)'));
+    const boostBtn = mkBtn('boostDuringInput', uiText('交互加速：开', 'Interaction boost: on'), uiText('输入/编辑时临时收紧预加载，减少点击/发送卡顿', 'Temporarily tighten preloading while typing/editing to reduce click/send lag'));
 
     const marginRow = document.createElement('div');
     marginRow.className = 'cgptperf-row';
     const marginLabel = document.createElement('span');
-    marginLabel.textContent = '预加载边距';
+    marginLabel.textContent = uiText('预加载边距', 'Preload margin');
     const marginInput = document.createElement('input');
     marginInput.type = 'number';
     marginInput.min = '0';
@@ -1018,21 +1040,21 @@
     marginInput.autocomplete = 'off';
     marginInput.spellcheck = false;
     marginInput.dataset.key = 'rootMarginPx';
-    marginInput.title = '值越大：快速滚动时更不容易出现空白，但性能收益会变小';
+    marginInput.title = uiText('值越大：快速滚动时更不容易出现空白，但性能收益会变小', 'Higher values reduce blank gaps during fast scrolling, but also reduce the performance benefit.');
     marginRow.append(marginLabel, marginInput);
 
     const optsBtn = document.createElement('button');
     optsBtn.type = 'button';
     optsBtn.className = 'cgptperf-secondary';
-    optsBtn.textContent = '选项…';
-    optsBtn.title = '打开扩展选项页';
+    optsBtn.textContent = uiText('选项…', 'Options…');
+    optsBtn.title = uiText('打开扩展选项页', 'Open the extension options page');
 
     const benchBtn = document.createElement('button');
     benchBtn.type = 'button';
     benchBtn.className = 'cgptperf-secondary';
     benchBtn.dataset.action = 'bench';
-    benchBtn.textContent = '测量下一次交互卡顿';
-    benchBtn.title = '点我后：回到页面点击“编辑/重试/停止/发送”或在输入框按 Enter，会弹出耗时（ms）';
+    benchBtn.textContent = uiText('测量下一次交互卡顿', 'Measure next interaction lag');
+    benchBtn.title = uiText('点我后：回到页面点击“编辑/重试/停止/发送”或在输入框按 Enter，会弹出耗时（ms）', 'Click this, then return to the page and trigger Edit / Retry / Stop / Send or press Enter in the composer to see the latency (ms).');
 
     panel.append(perfBtn, offBtn, heavyBtn, animBtn, boostBtn, marginRow, benchBtn, optsBtn);
     wrap.append(toggle, panel);
@@ -1052,7 +1074,7 @@
       if (actionBtn instanceof HTMLButtonElement) {
         const action = actionBtn.dataset.action;
         if (action === 'bench') {
-          armBench('悬浮菜单');
+          armBench(uiText('悬浮菜单', 'Floating menu'));
           closeMenu();
         }
         return;
@@ -1106,11 +1128,11 @@
       const value = state.settings[key];
       const on = !!value;
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      if (key === 'enabled') b.textContent = on ? '性能：开' : '性能：关';
-      if (key === 'virtualizeOffscreen') b.textContent = on ? '离屏虚拟化：开' : '离屏虚拟化：关';
-      if (key === 'optimizeHeavyBlocks') b.textContent = on ? '重内容优化：开' : '重内容优化：关';
-      if (key === 'disableAnimations') b.textContent = on ? '动画：关' : '动画：开';
-      if (key === 'boostDuringInput') b.textContent = on ? '交互加速：开' : '交互加速：关';
+      if (key === 'enabled') b.textContent = on ? uiText('性能：开', 'Performance: on') : uiText('性能：关', 'Performance: off');
+      if (key === 'virtualizeOffscreen') b.textContent = on ? uiText('离屏虚拟化：开', 'Offscreen virtualization: on') : uiText('离屏虚拟化：关', 'Offscreen virtualization: off');
+      if (key === 'optimizeHeavyBlocks') b.textContent = on ? uiText('重内容优化：开', 'Heavy content optimization: on') : uiText('重内容优化：关', 'Heavy content optimization: off');
+      if (key === 'disableAnimations') b.textContent = on ? uiText('动画：关', 'Animations: off') : uiText('动画：开', 'Animations: on');
+      if (key === 'boostDuringInput') b.textContent = on ? uiText('交互加速：开', 'Interaction boost: on') : uiText('交互加速：关', 'Interaction boost: off');
     }
 
     const marginInput = ui.querySelector('input[data-key="rootMarginPx"]');
@@ -1451,7 +1473,7 @@
       if (e.key !== 'Enter') return;
       if (!isTextInputElement(document.activeElement)) return;
       state.lastActionBoostAt = performance.now();
-      runBench('Enter（发送）', { via: 'keydown' });
+      runBench(uiText('Enter（发送）', 'Enter (send)'), { via: 'keydown' });
       scheduleActionBoost(1100);
     };
     document.addEventListener('keydown', state.onKeydown, true);
@@ -1607,7 +1629,7 @@
           if (!settingsEqual(next, state.settings)) applySettings(next);
         }
         if (areaName === 'local' && changes?.[BENCH_KEY]?.newValue) {
-          armBench(changes[BENCH_KEY].newValue?.from || '弹窗/选项');
+          armBench(changes[BENCH_KEY].newValue?.from || uiText('弹窗/选项', 'Popup / options'));
           try {
             chrome.storage.local.remove(BENCH_KEY);
           } catch {

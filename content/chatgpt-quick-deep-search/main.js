@@ -31,6 +31,22 @@
   const STATE_KEY = '__aichat_chatgpt_quick_deep_search_state_v1__';
   const DS_HOTKEYS_KEY = 'aichatQuickDeepSearchHotkeysEnabled';
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   let disposed = false;
   const runtimeDisposers = [];
   const runtimeTimeouts = new Set();
@@ -552,7 +568,7 @@
     // Sending only the prefix is usually accidental and can be confusing.
     try {
       if (!editorText()) {
-        notify('输入为空…（已忽略快捷深度搜索）');
+        notify(uiText('输入为空…（已忽略快捷深度搜索）', 'Input is empty… (deep search hotkey ignored)'));
         return;
       }
     } catch {}
@@ -561,7 +577,7 @@
     try {
       const c = core();
       if (c && typeof c.isGenerating === 'function' && c.isGenerating(editorEl())) {
-        notify('正在生成中…（已忽略快捷深度搜索）');
+        notify(uiText('正在生成中…（已忽略快捷深度搜索）', 'A reply is still generating… (deep search hotkey ignored)'));
         return;
       }
     } catch {}
@@ -615,21 +631,21 @@
           e.preventDefault();
           e.stopPropagation();
           runPrefixThenSend(getTranslatePrefix());
-          notify('快捷键"译"已激活：Ctrl+Y / Ctrl+Z');
+          notify(uiText('快捷键“译”已激活：Ctrl+Y / Ctrl+Z', 'Translate hotkey triggered: Ctrl+Y / Ctrl+Z'));
           return;
         }
         if (key === 's') {
           e.preventDefault();
           e.stopPropagation();
           runPrefixThenSend(PREFIX);
-          notify('快捷键"搜"已激活：Ctrl+S');
+          notify(uiText('快捷键“搜”已激活：Ctrl+S', 'Search hotkey triggered: Ctrl+S'));
           return;
         }
         if (key === 't') {
           e.preventDefault();
           e.stopPropagation();
           runPrefixThenSend(THINK_PREFIX);
-          notify('快捷键"思"已激活：Ctrl+T');
+          notify(uiText('快捷键“思”已激活：Ctrl+T', 'Think hotkey triggered: Ctrl+T'));
         }
       };
     document.addEventListener('keydown', onKeyDown, true);

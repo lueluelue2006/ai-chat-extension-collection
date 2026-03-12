@@ -480,7 +480,10 @@ Turn 筛选策略（维护重点）：
 - 设置操作：`AISHORTCUTS_GET_SETTINGS`、`AISHORTCUTS_PATCH_SETTINGS`、`AISHORTCUTS_RESET_DEFAULTS`
 - 语言：新增 `localeMode` 顶层设置，支持 `auto / zh_cn / en`；Options 会按该设置对静态壳层、注册表展示文本和异步渲染的模块面板文案做统一本地化
   - 站点页的动态脚本链也会先经过隔离世界 locale bridge，把解析后的 locale 同步到 DOM，并对扩展自有 UI 根节点做本地化；MAIN world 文案则通过 `shared/i18n.js + aishortcuts-i18n-main` 覆盖系统对话框
-  - 英文模式目前已实机验证覆盖：`options` 主界面与监控卡片、`popup` 主界面、ChatGPT `QuickNav / Tab queue` 预览、Google 搜索页 `G Ask GPT` 按钮，以及 `chatgpt-usage-monitor` 的导入导出与旧版月报工具链
+  - 英文模式目前已实机验证覆盖：`options` 主界面、全部模块设置面板可见文案、`Usage Monitor` 详情面板与监控卡片、`popup` 主界面与更新状态、ChatGPT `QuickNav / Tab queue` 预览、Google 搜索页 `G Ask GPT` 按钮，以及 `chatgpt-usage-monitor` 的 `Export JSON / Export HTML` 与旧版月报标题；其中最新一轮导出的 JSON 共享组名也已经是英文（例如 `Team instant shared pool`）
+  - `chatgpt-perf` 当前已把悬浮菜单、按钮状态、测速 toast 与测量来源标签全部接入英文路径；配置页里的 `Performance Optimization` 面板也已实机验证为全英文
+  - 非 Genspark 的 QuickNav 克隆页当前已实机验证覆盖：`Qwen`、`GLM (chat.z.ai)`、`DeepSeek`；这些页面里可见扩展节点的按钮/描述文案均为英文或 emoji
+  - `Gemini`、`Kimi`、`Grok` 当前在本轮打开的首页/入口页里没有出现扩展自有可见注入节点，因此这些站点的“英文 UI 是否全部正确”仍属于 `not yet verified`
   - `chatgpt-message-tree` 现已接入独立英文文案：树面板标题、`Simple / Guides / Refresh / Close` 按钮、加载/导出/错误状态与 `Export full tree as JSON` 菜单命令都会随英文模式切换
 - OpenAI 资源监控：通过 `AISHORTCUTS_GPT53_*` 与 SW 交互（探测/通知/标记已读）；当前仅接受 `https://developers.openai.com/images/api/models/icons/...` 资源地址，默认每小时轮询一组内置模型图标 URL。当资源可访问时会在 `chatgpt.com` 显示页内横幅。若需停止提醒，清空 URL 列表并保存即可（`MARK_READ` 只清未读标记）
 - 横幅“打开配置”动作：内容脚本通过 `AISHORTCUTS_OPEN_OPTIONS_PAGE` 交给 SW 调扩展 API 打开配置页（优先 `chrome.tabs.create(optionsUrl)`，失败再 fallback `chrome.runtime.openOptionsPage()`）；该消息为低风险动作，SW 端不再对 sender 做额外拦截，避免不同实例字段差异导致误判。

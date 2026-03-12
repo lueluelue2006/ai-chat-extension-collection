@@ -1,0 +1,7 @@
+id,task,status,completed_at,notes
+1,Audit remaining user-visible Chinese across runtime modules and extension pages,DONE,2026-03-12 04:12,"Top hotspots: shared/i18n.js, content/chatgpt-usage-monitor/main.js, options/options.js, multi-site quicknav clones."
+2,Localize ChatGPT usage monitor UI and exported report strings,DONE,2026-03-12 12:28,"Options usage panel, Export JSON, Export HTML, and the legacy monthly report title now follow localeMode and render in English when localeMode=en."
+3,Localize remaining ChatGPT runtime modules with mixed Chinese text,DONE,2026-03-12 12:34,"Patched explicit bilingual runtime copy in chatgpt-perf, quick deep search, mapping-client, and related status/toast paths so English mode no longer depends on fallback Chinese strings."
+4,Localize remaining non-Genspark site UIs and shared QuickNav clones,DONE,2026-03-12 12:41,"Real-browser coverage confirmed English QuickNav controls on Qwen, GLM, and DeepSeek; Genspark was intentionally excluded from testing per user request."
+5,Run real-browser verification across key pages and supported sites,IN_PROGRESS,,"Verified visible extension UI on options, popup, ChatGPT, Google Search, Qwen, GLM, and DeepSeek; exported usage files are now English. Gemini/Kimi/Grok home pages showed no visible injected nodes in this round, so those site-level UI paths remain not yet verified."
+6,Sync docs, build artifacts, and commit the i18n sweep,IN_PROGRESS,,"Docs and build artifacts have been synced locally; waiting on final browser verification closure before marking the sweep done."

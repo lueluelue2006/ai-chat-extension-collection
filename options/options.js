@@ -577,7 +577,10 @@
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
     const more = events.length > 3 ? `…+${events.length - 3}` : '';
     const msg = parts.length ? `${parts.join('，')}${more}` : '';
-    elGpt53AlertText.textContent = `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`;
+    elGpt53AlertText.textContent = localeText(
+      `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`,
+      `${unread} monitored resources are reachable (each check will alert again): ${msg}`
+    );
     elGpt53AlertBox.hidden = false;
   }
 
@@ -596,13 +599,16 @@
 
   function withRuntimeRecoveryHint(message) {
     const text = String(message || '').trim();
-    if (!text) return '未知错误';
+    if (!text) return localeText('未知错误', 'Unknown error');
     const normalized = text.toLowerCase();
     const likelyServiceWorkerNotReady =
       normalized.includes('receiving end does not exist') ||
       normalized.includes('the message port closed before a response was received');
     if (!likelyServiceWorkerNotReady) return text;
-    return `${text}（扩展后台未就绪：请确认加载的是 dist 目录，并在 chrome://extensions 点一次“重新加载”）`;
+    return localeText(
+      `${text}（扩展后台未就绪：请确认加载的是 dist 目录，并在 chrome://extensions 点一次“重新加载”）`,
+      `${text} (the extension background is not ready: make sure the dist directory is loaded, then click “Reload” once in chrome://extensions)`
+    );
   }
 
   function sendMessage(msg) {
@@ -855,7 +861,13 @@
     const hasMetaKey = getEffectiveHasMetaKey(settings);
     const effectiveLabel = hasMetaKey ? localeText('有 Meta 键', 'Meta key') : localeText('无 Meta 键', 'No Meta key');
     const detectedOsLabel =
-      DETECTED_DEVICE_CONTEXT.os === 'mac' ? 'macOS' : DETECTED_DEVICE_CONTEXT.os === 'win' ? 'Windows' : DETECTED_DEVICE_CONTEXT.os === 'linux' ? 'Linux' : '未知环境';
+      DETECTED_DEVICE_CONTEXT.os === 'mac'
+        ? 'macOS'
+        : DETECTED_DEVICE_CONTEXT.os === 'win'
+          ? 'Windows'
+          : DETECTED_DEVICE_CONTEXT.os === 'linux'
+            ? 'Linux'
+            : localeText('未知环境', 'Unknown environment');
 
     if (mode === META_KEY_MODE_AUTO) {
       return {
@@ -3448,7 +3460,16 @@
         const { usageData } = await loadUsageSnapshot();
         if (!usageData || typeof usageData !== 'object') throw new Error(usageText('暂无可导出的用量数据', 'No usage data is available to export yet.'));
         const normalizedUsageData = normalizeUsageDataForRender(usageData) || usageData;
-        const json = JSON.stringify(normalizedUsageData, null, 2);
+        const exportUsageData = cloneJsonSafe(normalizedUsageData) || normalizedUsageData;
+        try {
+          if (exportUsageData && exportUsageData.sharedQuotaGroups && typeof exportUsageData.sharedQuotaGroups === 'object') {
+            Object.values(exportUsageData.sharedQuotaGroups).forEach((group) => {
+              if (!group || typeof group !== 'object') return;
+              if (typeof group.displayName === 'string') group.displayName = translateText(group.displayName);
+            });
+          }
+        } catch {}
+        const json = JSON.stringify(exportUsageData, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         triggerUsageDownload(blob, `chatgpt-usage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         setStatus(usageText('已导出用量统计数据', 'Usage data exported'), 'ok');
@@ -3673,8 +3694,10 @@
 
     const hint = document.createElement('div');
     hint.className = 'smallHint';
-    hint.textContent =
-      '说明：该模块会在页面主世界（MAIN world）拦截 fetch / XMLHttpRequest 的 GET 请求，仅对 /backend-api/conversation/.../interpreter/download 且包含 sandbox_path 的 URL 进行修复。关闭模块后已打开页面可能需要刷新才会完全停用。';
+    hint.textContent = localeText(
+      '说明：该模块会在页面主世界（MAIN world）拦截 fetch / XMLHttpRequest 的 GET 请求，仅对 /backend-api/conversation/.../interpreter/download 且包含 sandbox_path 的 URL 进行修复。关闭模块后已打开页面可能需要刷新才会完全停用。',
+      'This module intercepts fetch / XMLHttpRequest GET requests in the page MAIN world and only fixes URLs that target /backend-api/conversation/.../interpreter/download and contain sandbox_path. If you disable it, already-open pages may need a refresh to fully stop it.'
+    );
     elModuleSettings.appendChild(hint);
   }
 
@@ -3703,7 +3726,10 @@
 
     const hint = document.createElement('div');
     hint.className = 'smallHint';
-    hint.textContent = '说明：暗色主题下把 .markdown strong 设为亮绿；亮色主题（.light）下设为紫色；并通过 CSS 隐藏底部 “ChatGPT can make mistakes...” 免责声明。';
+    hint.textContent = localeText(
+      '说明：暗色主题下把 .markdown strong 设为亮绿；亮色主题（.light）下设为紫色；并通过 CSS 隐藏底部 “ChatGPT can make mistakes...” 免责声明。',
+      'In dark mode, this module makes .markdown strong bright green; in light mode (.light), it makes it purple. It also hides the bottom “ChatGPT can make mistakes...” disclaimer with CSS.'
+    );
     elModuleSettings.appendChild(hint);
   }
 

@@ -324,7 +324,7 @@
     const el = document.createElement('div');
     el.id = TOAST_ID;
     el.dataset.show = '0';
-    (document.documentElement || document.body).appendChild(el);
+    (document.body || document.documentElement).appendChild(el);
     return el;
   }
 
@@ -1058,7 +1058,7 @@
 
     panel.append(perfBtn, offBtn, heavyBtn, animBtn, boostBtn, marginRow, benchBtn, optsBtn);
     wrap.append(toggle, panel);
-    (document.documentElement || document.body).appendChild(wrap);
+    (document.body || document.documentElement).appendChild(wrap);
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();

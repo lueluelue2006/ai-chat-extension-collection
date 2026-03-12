@@ -67,6 +67,18 @@
     return Date.now();
   }
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function uiText(zh, en) {
+    return /^zh/i.test(getUiLocale()) ? zh : en;
+  }
+
   function pickBottomMostVisible(candidates) {
     const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
     let best = null;
@@ -759,7 +771,7 @@
 
       try {
         notify(
-          'ChatGPT 内存保护：已执行清理',
+          uiText('ChatGPT 内存保护：已执行清理', 'ChatGPT memory guard: cleanup completed'),
           `level=${level} used=${formatMb(sample.used)} (${Math.round(sample.ratio * 100)}%) dom=${Number(sample.dom || 0)} ifr=${Number(sample.iframes || 0)} split=${sample.splitLoaded ? '1' : '0'}`
         );
       } catch {}
@@ -802,8 +814,8 @@
 
       if (level === 'critical') {
         notify(
-          'ChatGPT 内存预警（严重）',
-          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}${isRapidGrowth ? `（2min +${Math.round(growthMb)}MB）` : ''}${isRapidDomGrowth ? `（DOM 2min +${Math.round(domGrowthNodes)}）` : ''}`
+          uiText('ChatGPT 内存预警（严重）', 'ChatGPT memory warning (critical)'),
+          `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}${isRapidGrowth ? uiText(`（2min +${Math.round(growthMb)}MB）`, ` (2 min +${Math.round(growthMb)} MB)`) : ''}${isRapidDomGrowth ? uiText(`（DOM 2min +${Math.round(domGrowthNodes)}）`, ` (DOM 2 min +${Math.round(domGrowthNodes)})`) : ''}`
         );
         emergencyCleanup(level, sample);
         return;
@@ -811,7 +823,7 @@
 
       if (level === 'warning' && levelChanged) {
         notify(
-          'ChatGPT 内存预警',
+          uiText('ChatGPT 内存预警', 'ChatGPT memory warning'),
           `JS heap=${formatMb(sample.used)} / ${formatMb(sample.limit)}`
         );
       }

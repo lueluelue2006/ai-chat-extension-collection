@@ -654,7 +654,7 @@
 
   const __aichatMainMenuRegisterEvent = '__quicknav_menu_bridge_register_main_command_v1__';
   const __aichatMainMenuRunEvent = '__quicknav_menu_bridge_run_main_command_v1__';
-  const __aichatMainMenuGroup = 'ChatGPT 用量统计';
+  const __aichatMainMenuGroup = __aichatUsageT("ChatGPT 用量统计", "ChatGPT Usage Monitor");
   const __aichatMainMenuModuleId = 'chatgpt_usage_monitor';
   const __aichatMainMenuBridgeSource = 'content/menu-bridge.js';
   const __aichatMainMenuSelfSource = 'content/chatgpt-usage-monitor/main.js';
@@ -1192,6 +1192,204 @@
   // src/runtimeMode.js
   // 扩展版固定为 options-only：网页端只采集，不渲染悬浮面板。
   var IN_PAGE_MONITOR_UI_ENABLED = false;
+  const __aichatI18nApi = globalThis.AISHORTCUTS_I18N || null;
+  const __aichatUsageMonitorUtilsApi = globalThis.__aichatChatGPTUsageMonitorUtilsV1__ || null;
+  const __aichatSettingsStorageKey = "aichat_ai_shortcuts_settings_v1";
+  let __aichatUsageMonitorLocaleMode = "auto";
+  const __aichatUsageMonitorLocalMap = {
+    "ChatGPT 用量统计": "ChatGPT Usage Monitor",
+    "用量统计": "Usage Monitor",
+    "导入将合并现有记录与导入文件中的记录。继续吗？": "Importing will merge the current records with the records in the selected file. Continue?",
+    "导入失败：数据格式不正确": "Import failed: invalid data format.",
+    "导入记录摘要": "Import summary",
+    "确认导入这些数据吗？": "Import this data?",
+    "用量记录已成功导入": "Usage records imported successfully.",
+    "用量统计数据已导出": "Usage data exported.",
+    "导入失败：": "Import failed: ",
+    "一周用量分析报告已导出": "Weekly usage analysis exported.",
+    "一个月用量分析报告已导出": "Monthly usage analysis exported.",
+    "由共享组（": "Controlled by shared group (",
+    "）控制": ")",
+    "共享组：": "Shared group: ",
+    "配额": "Quota",
+    "3小时窗口": "3-hour window",
+    "5小时窗口": "5-hour window",
+    "24小时窗口": "24-hour window",
+    "7天窗口": "7-day window",
+    "30天窗口": "30-day window",
+    "删除": "Delete",
+    "不可用": "Unavailable",
+    "滑动窗口跟踪:": "Sliding window tracking:",
+    "模型名称": "Model",
+    "最后使用": "Last used",
+    "使用量": "Usage",
+    "进度": "Progress",
+    "使用模型后才会显示用量统计。": "Usage stats appear after you use a model.",
+    "未配置任何模型，请在设置中添加。": "No models configured. Add one in Settings.",
+    "配置模型映射与配额:": "Configure model mappings and quotas:",
+    "使用像OpenAI一样的滑动时间窗口（统计最近N小时的使用量）": "Track usage with sliding windows similar to OpenAI's rate limits.",
+    "模型ID": "Model ID",
+    "窗口/操作": "Window / actions",
+    "添加模型映射": "Add model mapping",
+    "输入新模型的内部ID（例如：\"o3-mini\"）": "Enter the internal model ID (for example: \"o3-mini\")",
+    "模型映射已存在。": "That model mapping already exists.",
+    "模型 ": "Model ",
+    " 已添加。": " added.",
+    "保存设置": "Save settings",
+    "设置保存成功。": "Settings saved.",
+    "未检测到更改。": "No changes detected.",
+    "清除历史": "Clear history",
+    "确定要清除所有模型的使用历史吗？": "Clear usage history for every model?",
+    "所有模型的使用历史已清除。": "Cleared usage history for all models.",
+    "恢复默认配额": "Restore default quotas",
+    "确定要恢复当前套餐的默认配额设置吗？\n\n这将重置所有模型的配额和时间窗口，但保留使用历史。": "Restore the default quotas for the current plan?\n\nThis resets every model's quota and time window, but keeps usage history.",
+    " 套餐的默认配额设置": " plan default quota settings",
+    "重置所有": "Reset everything",
+    "警告：这将重置所有内容为默认值，包括所有模型配置。确定继续吗？": "Warning: this resets everything to defaults, including all model mappings. Continue?",
+    "所有内容已重置为默认值。": "Everything has been reset to defaults.",
+    "导出一周分析": "Export weekly analysis",
+    "导出一个月分析": "Export monthly analysis",
+    "导出数据": "Export data",
+    "导入数据": "Import data",
+    "导入/导出功能可在不同浏览器间同步用量统计数据": "Import/export lets you sync usage data across browsers.",
+    "套餐设置": "Plan settings",
+    "当前套餐:": "Current plan:",
+    "切换套餐将根据官方限制自动调整所有模型的配额和时间窗口": "Switching plans automatically updates model quotas and time windows to match the selected limits.",
+    " 套餐配置:": " plan configuration:",
+    "未知配置": "Unknown configuration",
+    " (共享)": " (shared)",
+    "当前套餐未包含可用模型": "No available models in the current plan.",
+    "显示选项": "Display options",
+    "面板大小:": "Panel size:",
+    "宽度(px)": "Width (px)",
+    "高度(px)": "Height (px)",
+    "面板大小已更新": "Panel size updated.",
+    "应用": "Apply",
+    "默认": "Default",
+    "提示：也可拖动面板右下角调整大小（最小化状态下不可调整）": "Tip: you can also drag the bottom-right corner to resize the panel (disabled while minimized).",
+    "面板位置:": "Panel position:",
+    "重置": "Reset",
+    "监视器位置已重置": "Monitor position reset.",
+    "进度条样式:": "Progress style:",
+    "点状进度": "Dots",
+    "条状进度": "Bar",
+    "显示窗口重置时间": "Show window reset time",
+    "确定要删除模型 \"": "Delete model \"",
+    "\" 的配置吗？": "\" configuration?",
+    "\" 已删除。": "\" deleted.",
+    "\"。": "\".",
+    "未找到模型 \"": "Model not found: \"",
+    "监视器已重置并重新加载": "Monitor reset and reloaded.",
+    "监视器重置完成。如果没有看到监视器，请刷新页面。": "Monitor reset completed. Refresh the page if you still do not see it.",
+    "用量": "Usage",
+    "设置": "Settings"
+  };
+
+  function __aichatNormalizeUsageMonitorLocaleMode(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (raw === "zh_cn") return "zh_cn";
+    if (raw === "en") return "en";
+    return "auto";
+  }
+  function __aichatResolveUsageMonitorLocale(mode = __aichatUsageMonitorLocaleMode) {
+    if (__aichatI18nApi && typeof __aichatI18nApi.resolveLocale === "function") {
+      try {
+        return __aichatI18nApi.resolveLocale(mode, navigator);
+      } catch {}
+    }
+    const normalizedMode = __aichatNormalizeUsageMonitorLocaleMode(mode);
+    if (normalizedMode === "zh_cn") return "zh-CN";
+    if (normalizedMode === "en") return "en";
+    try {
+      const langs = [];
+      if (typeof navigator?.language === "string") langs.push(navigator.language);
+      if (Array.isArray(navigator?.languages)) langs.push(...navigator.languages);
+      if (langs.some((item) => /^zh(?:-|_|$)/i.test(String(item || "").trim()))) return "zh-CN";
+    } catch {}
+    return "en";
+  }
+  function __aichatIsChineseUsageMonitorUi() {
+    return /^zh/i.test(__aichatResolveUsageMonitorLocale());
+  }
+  function __aichatUsageT(zh, en) {
+    return __aichatIsChineseUsageMonitorUi() ? zh : en;
+  }
+  function __aichatTranslateUsageText(value) {
+    if (value == null) return value;
+    const raw = String(value);
+    if (__aichatIsChineseUsageMonitorUi()) return raw;
+    try {
+      if (__aichatI18nApi && typeof __aichatI18nApi.translateText === "function") {
+        const translated = __aichatI18nApi.translateText(raw, __aichatResolveUsageMonitorLocale());
+        if (translated && translated !== raw) return translated;
+      }
+    } catch {}
+    return __aichatUsageMonitorLocalMap[raw] || raw
+      .replace(/^(.*): (\d+)条记录$/u, (_, model, count) => `${model}: ${count} records`)
+      .replace(/^共 (\d+) 个模型，(\d+) 条请求记录$/u, (_, models, requests) => `${models} models, ${requests} request records`)
+      .replace(/^模型详情:$/u, "Model details:")
+      .replace(/^遗留特殊模型计数: (\d+) \(已不再使用\)$/u, (_, count) => `Legacy special-model count: ${count} (no longer used)`)
+      .replace(/^由共享组（(.+)）控制$/u, (_, group) => `Controlled by shared group (${group})`)
+      .replace(/^共享组：(.+)$/u, (_, group) => `Shared group: ${group}`)
+      .replace(/^模型 "(.+)" 已删除。$/u, (_, model) => `Model "${model}" deleted.`)
+      .replace(/^未找到模型 "(.+)"。$/u, (_, model) => `Model "${model}" not found.`)
+      .replace(/^模型 (.+) 已添加。$/u, (_, model) => `Model ${model} added.`);
+  }
+  function __aichatLocalizeUsageTree(root) {
+    if (!root || __aichatIsChineseUsageMonitorUi()) return;
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+      for (const node of textNodes) {
+        const raw = String(node.nodeValue || "");
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        const translated = __aichatTranslateUsageText(trimmed);
+        if (!translated || translated === trimmed) continue;
+        node.nodeValue = raw.replace(trimmed, translated);
+      }
+      root.querySelectorAll?.("[title],[placeholder],[aria-label]").forEach((el) => {
+        for (const attr of ["title", "placeholder", "aria-label"]) {
+          const raw = el.getAttribute(attr);
+          if (!raw) continue;
+          const translated = __aichatTranslateUsageText(raw);
+          if (translated && translated !== raw) el.setAttribute(attr, translated);
+        }
+      });
+    } catch {}
+  }
+  function __aichatGetUsageSharedGroupName(groupKey) {
+    const group = usageData?.sharedQuotaGroups?.[groupKey];
+    const raw = group?.displayName || groupKey || "";
+    return __aichatTranslateUsageText(raw);
+  }
+  function __aichatSyncUsageMonitorLocaleFromSettings(triggerRefresh = false) {
+    try {
+      chrome.storage.local.get({ [__aichatSettingsStorageKey]: null }, (items) => {
+        const nextMode = __aichatNormalizeUsageMonitorLocaleMode(items?.[__aichatSettingsStorageKey]?.localeMode);
+        const changed = nextMode !== __aichatUsageMonitorLocaleMode;
+        __aichatUsageMonitorLocaleMode = nextMode;
+        if (changed && triggerRefresh) updateUI();
+      });
+    } catch {}
+  }
+  function __aichatInstallUsageMonitorLocaleSync() {
+    __aichatSyncUsageMonitorLocaleFromSettings(false);
+    try {
+      if (!chrome?.storage?.onChanged?.addListener) return;
+      const handler = (changes, areaName) => {
+        if (areaName !== "local" || !changes?.[__aichatSettingsStorageKey]) return;
+        __aichatSyncUsageMonitorLocaleFromSettings(true);
+      };
+      chrome.storage.onChanged.addListener(handler);
+      __aichatAddRuntimeDisposer(() => {
+        try {
+          chrome.storage.onChanged.removeListener(handler);
+        } catch {}
+      });
+    } catch {}
+  }
 
   // src/utils.js
   function formatTimeAgo(timestamp) {
@@ -1439,6 +1637,7 @@
     });
     return refreshUsageData();
   }
+  __aichatInstallUsageMonitorLocaleSync();
 
   // src/ui/toast.js
   let __aichatToastShowTimerId = 0;
@@ -1466,7 +1665,7 @@
     if (existingToast) existingToast.remove();
     const toast = document.createElement("div");
     toast.className = "toast";
-    toast.textContent = message;
+    toast.textContent = __aichatTranslateUsageText(message);
     if (type === "error") {
       toast.style.color = COLORS.danger;
       toast.style.borderColor = COLORS.danger;
@@ -1521,12 +1720,12 @@
     });
     const finalizeTimerId = scopeTimeout(__aichatRouteScope, () => {
       cleanupExport();
-      showToast("用量统计数据已导出");
+      showToast(__aichatUsageT("用量统计数据已导出", "Usage data exported."));
     }, 100);
     if (!finalizeTimerId) cleanupExport();
   }
   function importUsageData() {
-    if (!confirm("导入将合并现有记录与导入文件中的记录。继续吗？")) return;
+    if (!confirm(__aichatUsageT("导入将合并现有记录与导入文件中的记录。继续吗？", "Importing will merge the current records with the records in the selected file. Continue?"))) return;
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "application/json";
@@ -1539,20 +1738,20 @@
         try {
           const importedData = JSON.parse(event.target.result);
           if (!validateImportedData(importedData)) {
-            showToast("导入失败：数据格式不正确", "error");
+            showToast(__aichatUsageT("导入失败：数据格式不正确", "Import failed: invalid data format."), "error");
             return;
           }
           const importSummary = generateImportSummary(importedData);
-          if (!confirm(`导入记录摘要:\\n${importSummary}\\n\\n确认导入这些数据吗？`)) return;
+          if (!confirm(`${__aichatUsageT("导入记录摘要", "Import summary")}:\n${importSummary}\n\n${__aichatUsageT("确认导入这些数据吗？", "Import this data?")}`)) return;
           const currentData = Storage.get();
           const mergedData = mergeUsageData(currentData, importedData);
           Storage.set(mergedData);
           refreshUsageData();
           emitDataChanged();
-          showToast("用量记录已成功导入", "success");
+          showToast(__aichatUsageT("用量记录已成功导入", "Usage records imported successfully."), "success");
         } catch (error) {
           console.error("[monitor] Import error:", error);
-          showToast("导入失败：" + error.message, "error");
+          showToast(__aichatUsageT("导入失败：", "Import failed: ") + error.message, "error");
         } finally {
           document.body.removeChild(input);
         }
@@ -1576,6 +1775,11 @@
     return true;
   }
   function generateImportSummary(importedData) {
+    if (__aichatUsageMonitorUtilsApi && typeof __aichatUsageMonitorUtilsApi.summarizeImport === "function") {
+      try {
+        return __aichatUsageMonitorUtilsApi.summarizeImport(importedData, { locale: __aichatResolveUsageMonitorLocale() });
+      } catch {}
+    }
     let summary = "";
     const modelCount = Object.keys(importedData.models || {}).length;
     let totalRequests = 0;
@@ -1583,14 +1787,14 @@
     Object.entries(importedData.models || {}).forEach(([key, model]) => {
       const count = (model.requests || []).length;
       totalRequests += count;
-      if (count > 0) modelDetails.push(`${key}: ${count}条记录`);
+      if (count > 0) modelDetails.push(`${key}: ${count} ${__aichatUsageT("条记录", count === 1 ? "record" : "records")}`);
     });
-    summary += `共 ${modelCount} 个模型，${totalRequests} 条请求记录\\n`;
+    summary += __aichatUsageT(`共 ${modelCount} 个模型，${totalRequests} 条请求记录\n`, `${modelCount} models, ${totalRequests} request records\n`);
     if (modelDetails.length <= 5) {
-      summary += `\\n模型详情:\\n${modelDetails.join("\\n")}`;
+      summary += `\n${__aichatUsageT("模型详情", "Model details")}:\n${modelDetails.join("\n")}`;
     }
     if (importedData.legacyMiniCount !== void 0 && importedData.legacyMiniCount > 0) {
-      summary += `\\n\\n遗留特殊模型计数: ${importedData.legacyMiniCount} (已不再使用)`;
+      summary += __aichatUsageT(`\n\n遗留特殊模型计数: ${importedData.legacyMiniCount} (已不再使用)`, `\n\nLegacy special-model count: ${importedData.legacyMiniCount} (no longer used)`);
     }
     return summary;
   }
@@ -1695,7 +1899,7 @@
   }
 
 		  #chatUsageMonitor.minimized::before {
-		  content: "次";
+		  content: "${__aichatUsageT("次", "uses")}";
 		  color: white;
 		  position: absolute;
 		  top: 0;
@@ -2775,8 +2979,8 @@
       const dayStart = todayStart - (6 - i) * TIME_WINDOWS.daily;
       const date = new Date(dayStart);
       report.dailyData.push({
-        date: date.toLocaleDateString("zh-CN"),
-        dayOfWeek: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()],
+        date: date.toLocaleDateString(__aichatIsChineseUsageMonitorUi() ? "zh-CN" : "en-US"),
+        dayOfWeek: __aichatUsageT(["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()], ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()]),
         models: {},
         total: 0,
         dayStart,
@@ -2832,8 +3036,8 @@
       const dayStart = todayStart - (29 - i) * TIME_WINDOWS.daily;
       const date = new Date(dayStart);
       report.dailyData.push({
-        date: date.toLocaleDateString("zh-CN"),
-        dayOfWeek: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()],
+        date: date.toLocaleDateString(__aichatIsChineseUsageMonitorUi() ? "zh-CN" : "en-US"),
+        dayOfWeek: __aichatUsageT(["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()], ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()]),
         models: {},
         total: 0,
         dayStart,
@@ -2907,10 +3111,40 @@
       return report;
     }
   }
+  function __aichatLocalizeUsageAnalysisHtml(htmlContent) {
+    if (__aichatIsChineseUsageMonitorUi()) return htmlContent;
+    return String(htmlContent || "")
+      .replace('<html lang="zh-CN">', '<html lang="en">')
+      .replace(/ChatGPT 一周用量分析报告/g, "ChatGPT Weekly Usage Report")
+      .replace(/ChatGPT 一个月用量分析报告/g, "ChatGPT Monthly Usage Report")
+      .replace(/分析时间段:/g, "Report range:")
+      .replace(/生成时间:/g, "Generated at:")
+      .replace(/总请求数/g, "Total requests")
+      .replace(/最近7天/g, "Last 7 days")
+      .replace(/最近30天/g, "Last 30 days")
+      .replace(/日均使用/g, "Average daily usage")
+      .replace(/活跃天数平均/g, "Average across active days")
+      .replace(/使用高峰日/g, "Peak day")
+      .replace(/活跃模型数/g, "Active models")
+      .replace(/有使用记录/g, "With recorded usage")
+      .replace(/每日使用趋势/g, "Daily usage trend")
+      .replace(/模型使用分布/g, "Model distribution")
+      .replace(/详细数据表/g, "Detailed table")
+      .replace(/<th>日期<\/th>/g, "<th>Date</th>")
+      .replace(/<th>星期<\/th>/g, "<th>Weekday</th>")
+      .replace(/总计/g, "Total")
+      .replace(/\(今天\)/g, "(Today)")
+      .replace(/此报告由 ChatGPT 用量统计脚本自动生成/g, "This report was generated automatically by the ChatGPT usage monitor.")
+      .replace(/'每日请求数'/g, "'Daily requests'")
+      .replace(/\/\/ 配置图表默认选项/g, "// Configure chart defaults")
+      .replace(/\/\/ 每日使用趋势图/g, "// Daily usage trend chart")
+      .replace(/\/\/ 模型使用分布饼图/g, "// Model usage distribution chart")
+      .replace(/\/\/ 只显示部分日期标签，避免过于拥挤/g, "// Show a subset of labels to avoid crowding");
+  }
   function exportWeeklyAnalysis() {
     const report = mergeUnknownModelsForHtml(generateWeeklyReport());
     const sortedModelKeys = MODEL_DISPLAY_ORDER.filter((modelKey) => report.modelBreakdown[modelKey]).concat(Object.keys(report.modelBreakdown).filter((key) => !MODEL_DISPLAY_ORDER.includes(key)));
-    const htmlContent = `
+    let htmlContent = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -3201,6 +3435,7 @@
 </body>
 </html>
     `;
+    htmlContent = __aichatLocalizeUsageAnalysisHtml(htmlContent);
     const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3228,14 +3463,14 @@
     });
     const finalizeTimerId = scopeTimeout(__aichatRouteScope, () => {
       cleanupExport();
-      showToast("一周用量分析报告已导出", "success");
+      showToast(__aichatUsageT("一周用量分析报告已导出", "Weekly usage analysis exported."), "success");
     }, 100);
     if (!finalizeTimerId) cleanupExport();
   }
   function exportMonthlyAnalysis() {
     const report = mergeUnknownModelsForHtml(generateMonthlyReport());
     const sortedModelKeys = MODEL_DISPLAY_ORDER.filter((modelKey) => report.modelBreakdown[modelKey]).concat(Object.keys(report.modelBreakdown).filter((key) => !MODEL_DISPLAY_ORDER.includes(key)));
-    const htmlContent = `
+    let htmlContent = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -3551,6 +3786,7 @@
 </body>
 </html>
     `;
+    htmlContent = __aichatLocalizeUsageAnalysisHtml(htmlContent);
     const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3578,7 +3814,7 @@
     });
     const finalizeTimerId = scopeTimeout(__aichatRouteScope, () => {
       cleanupExport();
-      showToast("一个月用量分析报告已导出", "success");
+      showToast(__aichatUsageT("一个月用量分析报告已导出", "Monthly usage analysis exported."), "success");
     }, 100);
     if (!finalizeTimerId) cleanupExport();
   }
@@ -3658,11 +3894,14 @@
     if (model.sharedGroup && usageData.sharedQuotaGroups?.[model.sharedGroup]) {
       quotaInput.value = usageData.sharedQuotaGroups[model.sharedGroup].quota ?? "";
       quotaInput.disabled = true;
-      quotaInput.title = `由共享组（${usageData.sharedQuotaGroups[model.sharedGroup].displayName || model.sharedGroup}）控制`;
+      quotaInput.title = __aichatUsageT(
+        `由共享组（${__aichatGetUsageSharedGroupName(model.sharedGroup)}）控制`,
+        `Controlled by shared group (${__aichatGetUsageSharedGroupName(model.sharedGroup)})`
+      );
     } else {
       quotaInput.value = typeof model.quota === "number" ? model.quota : "";
     }
-    quotaInput.placeholder = "配额";
+    quotaInput.placeholder = __aichatUsageT("配额", "Quota");
     quotaInput.dataset.modelKey = modelKey;
     quotaInput.dataset.field = "quota";
     row.appendChild(quotaInput);
@@ -3679,7 +3918,10 @@
     if (model.sharedGroup && usageData.sharedQuotaGroups?.[model.sharedGroup]) {
       windowSelect.value = usageData.sharedQuotaGroups[model.sharedGroup].windowType || "daily";
       windowSelect.disabled = true;
-      windowSelect.title = `由共享组（${usageData.sharedQuotaGroups[model.sharedGroup].displayName || model.sharedGroup}）控制`;
+      windowSelect.title = __aichatUsageT(
+        `由共享组（${__aichatGetUsageSharedGroupName(model.sharedGroup)}）控制`,
+        `Controlled by shared group (${__aichatGetUsageSharedGroupName(model.sharedGroup)})`
+      );
     } else {
       windowSelect.value = model.windowType || "daily";
     }
@@ -3690,7 +3932,7 @@
     controlsContainer.appendChild(windowSelect);
     const delBtn = document.createElement("button");
     delBtn.className = "btn delete-btn";
-    delBtn.textContent = "删除";
+    delBtn.textContent = __aichatUsageT("删除", "Delete");
     delBtn.addEventListener("click", () => handleDeleteModel(modelKey));
     controlsContainer.appendChild(delBtn);
     row.appendChild(controlsContainer);
@@ -3749,7 +3991,10 @@
     if (model.sharedGroup) {
       sharedColor = SHARED_GROUP_COLORS[model.sharedGroup] || COLORS.warning;
       modelName.style.color = sharedColor;
-      modelName.title = `共享组：${usageData.sharedQuotaGroups?.[model.sharedGroup]?.displayName || model.sharedGroup}`;
+      modelName.title = __aichatUsageT(
+        `共享组：${__aichatGetUsageSharedGroupName(model.sharedGroup)}`,
+        `Shared group: ${__aichatGetUsageSharedGroupName(model.sharedGroup)}`
+      );
     }
     modelNameContainer.appendChild(modelName);
     const windowBadge = document.createElement("span");
@@ -3763,7 +4008,7 @@
     row.appendChild(lastUpdateValue);
     const usageValue = document.createElement("div");
     if (sharedColor) usageValue.style.color = sharedColor;
-    const quotaDisplay = quota === 0 ? "不可用" : String(quota ?? "不可用");
+    const quotaDisplay = quota === 0 ? __aichatUsageT("不可用", "Unavailable") : String(quota ?? __aichatUsageT("不可用", "Unavailable"));
     usageValue.textContent = `${count} / ${quotaDisplay}`;
     if (windowEndInfo && usageData.showWindowResetTime) {
       const windowInfoEl = document.createElement("div");
@@ -3774,7 +4019,7 @@
     row.appendChild(usageValue);
     const progressCell = document.createElement("div");
     if (quota === 0) {
-      progressCell.textContent = "不可用";
+      progressCell.textContent = __aichatUsageT("不可用", "Unavailable");
       progressCell.style.color = COLORS.disabled;
       progressCell.style.fontStyle = "italic";
     } else {
@@ -3886,6 +4131,7 @@
       emptyState.textContent = Object.keys(usageData.models || {}).length > 0 ? "使用模型后才会显示用量统计。" : "未配置任何模型，请在设置中添加。";
       container.appendChild(emptyState);
     }
+    __aichatLocalizeUsageTree(container);
   }
   function updateSettingsContent(container) {
     container.innerHTML = "";
@@ -3931,7 +4177,7 @@
     addBtn.textContent = "添加模型映射";
     addBtn.style.marginTop = "20px";
     addBtn.addEventListener("click", () => {
-      const rawId = prompt('输入新模型的内部ID（例如："o3-mini"）');
+      const rawId = prompt(__aichatUsageT('输入新模型的内部ID（例如："o3-mini"）', 'Enter the internal model ID (for example: "o3-mini")'));
       const newModelID = rawId ? rawId.trim() : "";
       if (!newModelID) return;
       let added = false;
@@ -3941,11 +4187,11 @@
         added = true;
       });
       if (!added) {
-        alert("模型映射已存在。");
+        alert(__aichatUsageT("模型映射已存在。", "That model mapping already exists."));
         return;
       }
       updateUI();
-      showToast(`模型 ${newModelID} 已添加。`, "success");
+      showToast(__aichatUsageT(`模型 ${newModelID} 已添加。`, `Model ${newModelID} added.`), "success");
     });
     container.appendChild(addBtn);
     const saveBtn = document.createElement("button");
@@ -3978,9 +4224,9 @@
       });
       if (hasChanges) {
         updateUI();
-        showToast("设置保存成功。");
+        showToast(__aichatUsageT("设置保存成功。", "Settings saved."));
       } else {
-        showToast("未检测到更改。", "warning");
+        showToast(__aichatUsageT("未检测到更改。", "No changes detected."), "warning");
       }
     });
     container.appendChild(saveBtn);
@@ -3989,7 +4235,7 @@
     clearBtn.textContent = "清除历史";
     clearBtn.style.marginLeft = STYLE.spacing.sm;
     clearBtn.addEventListener("click", () => {
-      if (!confirm("确定要清除所有模型的使用历史吗？")) return;
+      if (!confirm(__aichatUsageT("确定要清除所有模型的使用历史吗？", "Clear usage history for every model?"))) return;
       updateUsageData((data) => {
         Object.values(data.models).forEach((model) => {
           if (Array.isArray(model.requests)) model.requests = [];
@@ -4001,7 +4247,7 @@
         }
       });
       updateUI();
-      showToast("所有模型的使用历史已清除。");
+      showToast(__aichatUsageT("所有模型的使用历史已清除。", "Cleared usage history for all models."));
     });
     container.appendChild(clearBtn);
     const resetQuotaBtn = document.createElement("button");
@@ -4010,11 +4256,11 @@
     resetQuotaBtn.style.marginLeft = STYLE.spacing.sm;
     resetQuotaBtn.style.color = COLORS.warning;
     resetQuotaBtn.addEventListener("click", () => {
-      if (!confirm("确定要恢复当前套餐的默认配额设置吗？\n\n这将重置所有模型的配额和时间窗口，但保留使用历史。")) return;
+      if (!confirm(__aichatUsageT("确定要恢复当前套餐的默认配额设置吗？\n\n这将重置所有模型的配额和时间窗口，但保留使用历史。", "Restore the default quotas for the current plan?\n\nThis resets every model's quota and time window, but keeps usage history."))) return;
       const currentPlan = refreshUsageData().planType || "team";
       applyPlanConfig(currentPlan);
       updateUI();
-      showToast(`已恢复 ${PLAN_CONFIGS[currentPlan].name} 套餐的默认配额设置`, "success");
+      showToast(__aichatUsageT(`已恢复 ${PLAN_CONFIGS[currentPlan].name} 套餐的默认配额设置`, `Restored default quota settings for ${PLAN_CONFIGS[currentPlan].name}.`), "success");
     });
     container.appendChild(resetQuotaBtn);
     const resetAllBtn = document.createElement("button");
@@ -4023,14 +4269,14 @@
     resetAllBtn.style.marginLeft = STYLE.spacing.sm;
     resetAllBtn.style.color = COLORS.danger;
     resetAllBtn.addEventListener("click", () => {
-      if (!confirm("警告：这将重置所有内容为默认值，包括所有模型配置。确定继续吗？")) return;
+      if (!confirm(__aichatUsageT("警告：这将重置所有内容为默认值，包括所有模型配置。确定继续吗？", "Warning: this resets everything to defaults, including all model mappings. Continue?"))) return;
       const freshDefaults = JSON.parse(JSON.stringify(defaultUsageData));
       Storage.set(freshDefaults);
       refreshUsageData();
       const planToApply = usageData.planType || "team";
       applyPlanConfig(planToApply);
       updateUI();
-      showToast("所有内容已重置为默认值。", "warning");
+      showToast(__aichatUsageT("所有内容已重置为默认值。", "Everything has been reset to defaults."), "warning");
     });
     container.appendChild(resetAllBtn);
     const weeklyAnalysisBtn = document.createElement("button");
@@ -4126,9 +4372,7 @@
     planTypeSelect.addEventListener("change", () => {
       const newPlan = planTypeSelect.value;
       const currentPlan = refreshUsageData().planType || "team";
-      if (!confirm(`确定要切换到 ${PLAN_CONFIGS[newPlan].name} 套餐吗？
-
-这将更新所有模型的配额和时间窗口设置。`)) {
+      if (!confirm(__aichatUsageT(`确定要切换到 ${PLAN_CONFIGS[newPlan].name} 套餐吗？\n\n这将更新所有模型的配额和时间窗口设置。`, `Switch to the ${PLAN_CONFIGS[newPlan].name} plan?\n\nThis updates the quota and time window settings for every model.`))) {
         planTypeSelect.value = currentPlan;
         return;
       }
@@ -4137,7 +4381,7 @@
       });
       applyPlanConfig(newPlan);
       updateUI();
-      showToast(`已切换到 ${PLAN_CONFIGS[newPlan].name} 套餐`, "success");
+      showToast(__aichatUsageT(`已切换到 ${PLAN_CONFIGS[newPlan].name} 套餐`, `Switched to the ${PLAN_CONFIGS[newPlan].name} plan.`), "success");
       try {
         window.dispatchEvent(new CustomEvent(__aichatUsageMonitorPlanChangedEvent, { detail: { planType: newPlan } }));
       } catch {}
@@ -4168,18 +4412,18 @@
     planDetailsList.style.fontSize = STYLE.textSize.xs;
     planDetailsList.style.color = COLORS.secondaryText;
     planDetailsList.style.lineHeight = "1.4";
-    const windowTextOf = (windowType) => windowType === "hour3" ? "3小时" : windowType === "hour5" ? "5小时" : windowType === "daily" ? "24小时" : windowType === "weekly" ? "7天" : windowType === "monthly" ? "30天" : "";
+    const windowTextOf = (windowType) => windowType === "hour3" ? __aichatUsageT("3小时", "3 hours") : windowType === "hour5" ? __aichatUsageT("5小时", "5 hours") : windowType === "daily" ? __aichatUsageT("24小时", "24 hours") : windowType === "weekly" ? __aichatUsageT("7天", "7 days") : windowType === "monthly" ? __aichatUsageT("30天", "30 days") : "";
     const visibleModels = Object.entries(currentPlanConfig.models).filter(([_, cfg]) => isAvailableUsageConfig(cfg, currentPlanConfig.sharedQuotaGroups));
     const detailsText = visibleModels.map(([model, cfg]) => {
       if (cfg.sharedGroup) {
         const group = currentPlanConfig.sharedQuotaGroups?.[cfg.sharedGroup];
-        if (!group) return `• ${displayModelName(model)}: 未知配置`;
-        const quotaText2 = `${group.quota}次/${windowTextOf(group.windowType)}`;
-        return `• ${displayModelName(model)}: ${quotaText2} (共享)`;
+        if (!group) return __aichatUsageT(`• ${displayModelName(model)}: 未知配置`, `• ${displayModelName(model)}: unknown configuration`);
+        const quotaText2 = __aichatUsageT(`${group.quota}次/${windowTextOf(group.windowType)}`, `${group.quota} / ${windowTextOf(group.windowType)}`);
+        return __aichatUsageT(`• ${displayModelName(model)}: ${quotaText2} (共享)`, `• ${displayModelName(model)}: ${quotaText2} (shared)`);
       }
-      const quotaText = `${cfg.quota}次/${windowTextOf(cfg.windowType)}`;
+      const quotaText = __aichatUsageT(`${cfg.quota}次/${windowTextOf(cfg.windowType)}`, `${cfg.quota} / ${windowTextOf(cfg.windowType)}`);
       return `• ${displayModelName(model)}: ${quotaText}`;
-    }).join("\n") || "当前套餐未包含可用模型";
+    }).join("\n") || __aichatUsageT("当前套餐未包含可用模型", "No available models in the current plan.");
     planDetailsList.textContent = detailsText;
     planDetailsList.style.whiteSpace = "pre-line";
     planDetailsContainer.appendChild(planDetailsList);
@@ -4266,7 +4510,7 @@
         monitor.style.height = `${h}px`;
       }
 
-      showToast("面板大小已更新", "success");
+      showToast(__aichatUsageT("面板大小已更新", "Panel size updated."), "success");
     }
 
     const applySizeBtn = document.createElement("button");
@@ -4332,7 +4576,7 @@
           monitor.style.height = `${nextData.size.height}px`;
         }
       }
-      showToast("监视器位置已重置", "success");
+      showToast(__aichatUsageT("监视器位置已重置", "Monitor position reset."), "success");
     });
     panelPositionContainer.appendChild(resetPositionBtn);
     optionsContainer.appendChild(panelPositionContainer);
@@ -4404,9 +4648,10 @@
     showResetTimeContainer.appendChild(checkboxWrapper);
     optionsContainer.appendChild(showResetTimeContainer);
     container.appendChild(optionsContainer);
+    __aichatLocalizeUsageTree(container);
   }
   function handleDeleteModel(modelKey) {
-    if (!confirm(`确定要删除模型 "${modelKey}" 的配置吗？`)) return;
+    if (!confirm(__aichatUsageT(`确定要删除模型 "${modelKey}" 的配置吗？`, `Delete model "${modelKey}" configuration?`))) return;
     let removed = false;
     updateUsageData((data) => {
       if (data.models[modelKey]) {
@@ -4416,9 +4661,9 @@
     });
     if (removed) {
       updateUI();
-      showToast(`模型 "${modelKey}" 已删除。`);
+      showToast(__aichatUsageT(`模型 "${modelKey}" 已删除。`, `Model "${modelKey}" deleted.`));
     } else {
-      showToast(`未找到模型 "${modelKey}"。`, "warning");
+      showToast(__aichatUsageT(`未找到模型 "${modelKey}"。`, `Model "${modelKey}" not found.`), "warning");
     }
   }
 
@@ -5011,17 +5256,17 @@
 	    const minimizeBtn = document.createElement("div");
 	    minimizeBtn.className = "minimize-btn";
 	    minimizeBtn.innerHTML = "−";
-    minimizeBtn.title = "最小化监视器";
+    minimizeBtn.title = __aichatUsageT("最小化监视器", "Minimize monitor");
     minimizeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       requestMonitorMinimized(true);
     });
     header.appendChild(minimizeBtn);
     const usageTabBtn = document.createElement("button");
-    usageTabBtn.innerHTML = `<span>用量</span>`;
+    usageTabBtn.innerHTML = `<span>${__aichatUsageT("用量", "Usage")}</span>`;
     usageTabBtn.classList.add("active");
     const settingsTabBtn = document.createElement("button");
-    settingsTabBtn.innerHTML = `<span>设置</span>`;
+    settingsTabBtn.innerHTML = `<span>${__aichatUsageT("设置", "Settings")}</span>`;
     header.appendChild(usageTabBtn);
     header.appendChild(settingsTabBtn);
     container.appendChild(header);
@@ -5266,7 +5511,7 @@
 	                updateUI();
 	              } catch {}
 	              try {
-	                showToast(`已切换到 ${PLAN_CONFIGS[nextPlan].name} 套餐`, "success");
+	                showToast(__aichatUsageT(`已切换到 ${PLAN_CONFIGS[nextPlan].name} 套餐`, `Switched to the ${PLAN_CONFIGS[nextPlan].name} plan.`), "success");
 	              } catch {}
 	              scheduleInitialize(0);
 	            }
@@ -5349,9 +5594,9 @@
           monitor.style.setProperty("bottom", "100px", "important");
           monitor.style.setProperty("right", "auto", "important");
           monitor.style.setProperty("top", "auto", "important");
-          showToast("监视器已重置并重新加载", "success");
+          showToast(__aichatUsageT("监视器已重置并重新加载", "Monitor reset and reloaded."), "success");
         } else {
-          alert("监视器重置完成。如果没有看到监视器，请刷新页面。");
+          alert(__aichatUsageT("监视器重置完成。如果没有看到监视器，请刷新页面。", "Monitor reset completed. Refresh the page if you still do not see it."));
         }
       }, 500);
     }

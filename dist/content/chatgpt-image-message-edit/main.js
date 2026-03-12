@@ -54,6 +54,18 @@
     cleanup: null
   };
 
+  function isChineseLocale() {
+    try {
+      return /^zh/i.test(String(document.documentElement?.dataset?.aichatLocale || 'en'));
+    } catch {
+      return false;
+    }
+  }
+
+  function uiText(zh, en) {
+    return isChineseLocale() ? zh : en;
+  }
+
   try {
     Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
   } catch {
@@ -433,7 +445,7 @@
       el.id = 'aichat-img-edit-banner';
       el.innerHTML = `
         <span class="msg"></span>
-        <button type="button" class="cancel">取消</button>
+        <button type="button" class="cancel">${uiText('取消', 'Cancel')}</button>
       `;
       el.querySelector('button.cancel')?.addEventListener('click', () => cancelEditMode());
       document.documentElement.appendChild(el);
@@ -545,7 +557,7 @@
 
     const elapsed = now() - Number(req.requestedAt || 0);
     if (elapsed > AUTO_BRANCH_SEND_TIMEOUT_MS) {
-      setBanner('消息编辑模式：自动分叉发送超时；请再点一次发送（或点取消恢复正常发送）');
+      setBanner(uiText('消息编辑模式：自动分叉发送超时；请再点一次发送（或点取消恢复正常发送）', 'Edit mode: auto-send for the fork timed out. Click Send again, or Cancel to return to normal sending.'));
       clearAutoBranchSend();
       return;
     }
@@ -570,13 +582,13 @@
     }
 
     if (!hasDraftForSend()) {
-      setBanner('消息编辑模式：已结束当前回复，但未检测到可发送内容；请继续编辑后发送（取消=恢复正常发送）');
+      setBanner(uiText('消息编辑模式：已结束当前回复，但未检测到可发送内容；请继续编辑后发送（取消=恢复正常发送）', 'Edit mode: the current reply was stopped, but there is no sendable draft yet. Continue editing and send again, or Cancel to return to normal sending.'));
       clearAutoBranchSend();
       return;
     }
 
     if (clickSendButtonOnce()) {
-      setBanner('消息编辑模式：已自动分叉发送（若失败可继续编辑后重试 / 或点取消恢复正常发送）');
+      setBanner(uiText('消息编辑模式：已自动分叉发送（若失败可继续编辑后重试 / 或点取消恢复正常发送）', 'Edit mode: the forked send was triggered automatically. If it fails, keep editing and retry, or Cancel to return to normal sending.'));
       clearAutoBranchSend();
       return;
     }
@@ -600,7 +612,7 @@
       lastStopAt: 0,
       reason: String(reason || 'send-intent')
     };
-    setBanner('消息编辑模式：检测到回复仍在生成，正在自动结束并分叉发送…');
+    setBanner(uiText('消息编辑模式：检测到回复仍在生成，正在自动结束并分叉发送…', 'Edit mode: a reply is still running, so it will be stopped automatically before the forked send.'));
     scheduleAutoBranchSendTick(0);
     return true;
   }
@@ -779,31 +791,31 @@
       sourceMessageId: userMsg.dataset?.messageId || ''
     };
 
-    setBanner('消息编辑模式：正在准备…');
+    setBanner(uiText('消息编辑模式：正在准备…', 'Edit mode: preparing…'));
 
     clearComposerText();
     setComposerText(extractUserText(userMsg));
 
     if (!hasImages) {
-      setBanner('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
+      setBanner(uiText('消息编辑模式：已把原文填入输入框；你可以添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）', 'Edit mode: the original text has been copied into the composer. You can add images/files, and the next send will fork from this message. If a reply is still running, one Send click will stop it and send the fork automatically. Cancel returns to normal sending.'));
       focusComposer();
       return;
     }
 
     const files = await fetchImagesAsFiles(userMsg);
     if (!files.length) {
-      setBanner('消息编辑模式：未能读取原图；你可以手动添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
+      setBanner(uiText('消息编辑模式：未能读取原图；你可以手动添加图片/文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）', 'Edit mode: the original images could not be restored automatically. Add images/files manually, and the next send will fork from this message. If a reply is still running, one Send click will stop it and send the fork automatically. Cancel returns to normal sending.'));
       focusComposer();
       return;
     }
 
-    setBanner(`消息编辑模式：正在载入原图（${files.length} 张）…`);
+    setBanner(uiText(`消息编辑模式：正在载入原图（${files.length} 张）…`, `Edit mode: loading ${files.length} original image(s)…`));
     await sleep(50);
     const ok = attachFilesToComposer(files);
     if (!ok) {
-      setBanner('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
+      setBanner(uiText('消息编辑模式：未找到上传入口，请在输入框右侧点“添加文件/图片”手动上传；下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）', 'Edit mode: the upload entry was not found. Use “Add files and more” beside the composer to upload manually. The next send will fork from this message. If a reply is still running, one Send click will stop it and send the fork automatically. Cancel returns to normal sending.'));
     } else {
-      setBanner('消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）');
+      setBanner(uiText('消息编辑模式：已载入原图；你可以继续编辑/粘贴图片/上传文件，下一次发送会从该条消息处分叉（若当前仍在回复，点一次发送会自动结束并分叉发送；取消=恢复正常发送）', 'Edit mode: the original images were loaded. Keep editing, paste images, or upload files, and the next send will fork from this message. If a reply is still running, one Send click will stop it and send the fork automatically. Cancel returns to normal sending.'));
     }
 
     focusComposer();
@@ -830,7 +842,7 @@
       btn.dataset.aichatImgEdit = '1';
       btn.className = copyBtn.className || '';
       btn.setAttribute('aria-label', 'QuickNav edit');
-      btn.setAttribute('title', 'QuickNav 编辑（可加图/文件，分叉编辑）');
+      btn.setAttribute('title', uiText('QuickNav 编辑（可加图/文件，分叉编辑）', 'QuickNav edit (fork with images/files)'));
       btn.innerHTML = buildPencilSvg();
       btn.addEventListener(
         'click',
@@ -1324,7 +1336,7 @@
             if (ok) {
               cancelEditMode();
             } else {
-              setBanner('消息编辑模式：发送失败（仍在编辑模式，可修改后再发 / 或点取消恢复正常发送）');
+              setBanner(uiText('消息编辑模式：发送失败（仍在编辑模式，可修改后再发 / 或点取消恢复正常发送）', 'Edit mode: send failed. You are still in edit mode, so adjust the draft and send again, or Cancel to return to normal sending.'));
             }
           } catch {}
         }

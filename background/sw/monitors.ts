@@ -42,6 +42,23 @@
   let initialized = false;
   let alarmListenerInstalled = false;
 
+  function getUiLocale(settings: any = null) {
+    try {
+      const mode = String(settings?.localeMode || 'auto');
+      const i18n = (globalThis as any).AISHORTCUTS_I18N;
+      if (i18n && typeof i18n.resolveLocale === 'function') return String(i18n.resolveLocale(mode, globalThis.navigator) || 'en');
+    } catch {}
+    return 'en';
+  }
+
+  function isChineseLocale(locale: string) {
+    return /^zh/i.test(String(locale || ''));
+  }
+
+  function monitorText(settings: any, zh: string, en: string) {
+    return isChineseLocale(getUiLocale(settings)) ? zh : en;
+  }
+
   async function getGpt53Alerts() {
     try {
       const items = await ns.chrome.storageGet('local', { [GPT53_MONITOR.alertKey]: null });
@@ -115,20 +132,21 @@
       const status = Number(ev?.status) || 0;
       const u = new URL(url);
       const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
-      return status ? `${name}（${status}）` : name;
+      return status ? `${name} (${status})` : name;
     } catch {
       const status = Number(ev?.status) || 0;
-      return status ? `（${status}）` : '';
+      return status ? `(${status})` : '';
     }
   }
 
-  function buildGpt53AlertMessage(alerts: any) {
+  function buildGpt53AlertMessage(alerts: any, settings: any = null) {
     const events = Array.isArray(alerts?.events) ? alerts.events : [];
     if (!events.length) return '';
     const last = events.slice(-3);
     const parts = last.map((x: any) => formatGpt53AlertLine(x)).filter(Boolean);
-    const more = events.length > 3 ? `…+${events.length - 3}` : '';
-    return parts.length ? `${parts.join('，')}${more}` : '';
+    const more = events.length > 3 ? ` …+${events.length - 3}` : '';
+    const separator = isChineseLocale(getUiLocale(settings)) ? '，' : ', ';
+    return parts.length ? `${parts.join(separator)}${more}` : '';
   }
 
   function normalizeGpt53ProbeUrls(input: any) {
@@ -282,8 +300,9 @@
 
       if (!availableNow.length) return;
 
-      const msg = buildGpt53AlertMessage(nextAlerts);
-      const title = 'OpenAI 新模型提示';
+      const settings = await ns.storage.getSettings();
+      const msg = buildGpt53AlertMessage(nextAlerts, settings);
+      const title = monitorText(settings, 'OpenAI 新模型提示', 'OpenAI model alert');
 
       try {
         if (silent) return;
@@ -293,8 +312,12 @@
           title,
           message:
             availableNow.length === 1
-              ? `检测到资源可访问：${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
-              : `检测到 ${availableNow.length} 个资源可访问：${msg}`,
+              ? monitorText(
+                  settings,
+                  `检测到资源可访问：${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`,
+                  `A monitored resource is now reachable: ${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
+                )
+              : monitorText(settings, `检测到 ${availableNow.length} 个资源可访问：${msg}`, `${availableNow.length} monitored resources are now reachable: ${msg}`),
           priority: 2
         });
       } catch {}

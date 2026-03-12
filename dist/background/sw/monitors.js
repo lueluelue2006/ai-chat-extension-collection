@@ -35,6 +35,21 @@
   ];
   let initialized = false;
   let alarmListenerInstalled = false;
+  function getUiLocale(settings = null) {
+    try {
+      const mode = String(settings?.localeMode || "auto");
+      const i18n = globalThis.AISHORTCUTS_I18N;
+      if (i18n && typeof i18n.resolveLocale === "function") return String(i18n.resolveLocale(mode, globalThis.navigator) || "en");
+    } catch {
+    }
+    return "en";
+  }
+  function isChineseLocale(locale) {
+    return /^zh/i.test(String(locale || ""));
+  }
+  function monitorText(settings, zh, en) {
+    return isChineseLocale(getUiLocale(settings)) ? zh : en;
+  }
   async function getGpt53Alerts() {
     try {
       const items = await ns.chrome.storageGet("local", { [GPT53_MONITOR.alertKey]: null });
@@ -105,19 +120,20 @@
       const status = Number(ev?.status) || 0;
       const u = new URL(url);
       const name = String(u.pathname || "").split("/").filter(Boolean).slice(-1)[0] || u.hostname;
-      return status ? `${name}\uFF08${status}\uFF09` : name;
+      return status ? `${name} (${status})` : name;
     } catch {
       const status = Number(ev?.status) || 0;
-      return status ? `\uFF08${status}\uFF09` : "";
+      return status ? `(${status})` : "";
     }
   }
-  function buildGpt53AlertMessage(alerts) {
+  function buildGpt53AlertMessage(alerts, settings = null) {
     const events = Array.isArray(alerts?.events) ? alerts.events : [];
     if (!events.length) return "";
     const last = events.slice(-3);
     const parts = last.map((x) => formatGpt53AlertLine(x)).filter(Boolean);
-    const more = events.length > 3 ? `\u2026+${events.length - 3}` : "";
-    return parts.length ? `${parts.join("\uFF0C")}${more}` : "";
+    const more = events.length > 3 ? ` \u2026+${events.length - 3}` : "";
+    const separator = isChineseLocale(getUiLocale(settings)) ? "\uFF0C" : ", ";
+    return parts.length ? `${parts.join(separator)}${more}` : "";
   }
   function normalizeGpt53ProbeUrls(input) {
     if (input == null) return [...GPT53_MONITOR.defaultUrls];
@@ -255,15 +271,20 @@
       await setGpt53Alerts(nextAlerts);
       setActionBadge(unread);
       if (!availableNow.length) return;
-      const msg = buildGpt53AlertMessage(nextAlerts);
-      const title = "OpenAI \u65B0\u6A21\u578B\u63D0\u793A";
+      const settings = await ns.storage.getSettings();
+      const msg = buildGpt53AlertMessage(nextAlerts, settings);
+      const title = monitorText(settings, "OpenAI \u65B0\u6A21\u578B\u63D0\u793A", "OpenAI model alert");
       try {
         if (silent) return;
         await ns.chrome.notificationsCreate(`${GPT53_MONITOR.notifyId}_${checkedAt}`, {
           type: "basic",
           iconUrl: chrome.runtime.getURL("icons/icon128.png"),
           title,
-          message: availableNow.length === 1 ? `\u68C0\u6D4B\u5230\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}` : `\u68C0\u6D4B\u5230 ${availableNow.length} \u4E2A\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${msg}`,
+          message: availableNow.length === 1 ? monitorText(
+            settings,
+            `\u68C0\u6D4B\u5230\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`,
+            `A monitored resource is now reachable: ${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
+          ) : monitorText(settings, `\u68C0\u6D4B\u5230 ${availableNow.length} \u4E2A\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${msg}`, `${availableNow.length} monitored resources are now reachable: ${msg}`),
           priority: 2
         });
       } catch {

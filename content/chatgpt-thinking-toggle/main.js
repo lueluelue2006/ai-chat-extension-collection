@@ -204,6 +204,18 @@ button.${HINT_CLASS}::after {
     }
   }
 
+  function isChineseLocale() {
+    try {
+      return /^zh/i.test(String(document.documentElement?.dataset?.aichatLocale || 'en'));
+    } catch {
+      return false;
+    }
+  }
+
+  function uiText(zh, en) {
+    return isChineseLocale() ? zh : en;
+  }
+
   function isCfChallengeActive() {
     try {
       const until = Number(window[CF_CHALLENGE_UNTIL_KEY] || 0) || 0;
@@ -218,7 +230,7 @@ button.${HINT_CLASS}::after {
     const nowMs = Date.now();
     if (nowMs - lastCfToastAt < 2000) return;
     lastCfToastAt = nowMs;
-    showToast('Cloudflare 验证中：已暂时停用快捷键切换，请稍后再试');
+    showToast(uiText('Cloudflare 验证中：已暂时停用快捷键切换，请稍后再试', 'Cloudflare verification is in progress. Hotkey switching is temporarily disabled.'));
   }
 
   function pulseOnce(el, rgb) {
@@ -508,9 +520,9 @@ button.${HINT_CLASS}::after {
           if (!effortInfo || !respOk) return;
 
           const suffix = effortInfo.model ? ` (${effortInfo.model})` : '';
-          if (effortInfo.mode === 'thinking') showToast(`发送成功：thinking ${effortInfo.effort}${suffix}`);
-          else if (effortInfo.mode === 'pro') showToast(`发送成功：pro ${effortInfo.effort}${suffix}`);
-          else showToast(`发送成功：thinking_effort=${effortInfo.effort}${suffix}`);
+          if (effortInfo.mode === 'thinking') showToast(uiText(`发送成功：thinking ${effortInfo.effort}${suffix}`, `Sent successfully: thinking ${effortInfo.effort}${suffix}`));
+          else if (effortInfo.mode === 'pro') showToast(uiText(`发送成功：pro ${effortInfo.effort}${suffix}`, `Sent successfully: pro ${effortInfo.effort}${suffix}`));
+          else showToast(uiText(`发送成功：thinking_effort=${effortInfo.effort}${suffix}`, `Sent successfully: thinking_effort=${effortInfo.effort}${suffix}`));
         } catch {
           // ignore
         }
@@ -1201,13 +1213,13 @@ button.${HINT_CLASS}::after {
           : await findEffortPill();
       cachedEffortPill = pill;
       if (!pill) {
-        warn('没找到推理强度选择器（可能当前模型/页面不支持）');
+        warn('Reasoning effort selector not found (the current model/page may not support it).');
         return;
       }
 
       const opened = await openThinkingMenu(pill);
       if (!opened) {
-        warn('打开推理强度菜单失败');
+        warn('Failed to open the reasoning effort menu.');
         return;
       }
 
@@ -1219,14 +1231,14 @@ button.${HINT_CLASS}::after {
           return null;
         }, 520, 20);
         if (!menu) {
-          warn('没找到推理强度菜单');
+          warn('The reasoning effort menu was not found.');
           return;
         }
 
         const effort = getEffortItems(menu);
         const items = effort.items;
         if (!items.length) {
-          warn('推理强度菜单里没有可切换项');
+          warn('The reasoning effort menu does not contain a switchable target.');
           return;
         }
 
@@ -1257,7 +1269,7 @@ button.${HINT_CLASS}::after {
 
         const target = targetIdx >= 0 ? items[targetIdx] : null;
         if (!(target instanceof Element)) {
-          warn('无法确定推理强度目标项');
+          warn('Could not determine the target reasoning effort item.');
           return;
         }
 
@@ -1265,7 +1277,7 @@ button.${HINT_CLASS}::after {
         didToggle = true;
         const label = getMenuItemLabel(target, `L${targetIdx + 1}`);
         const isHigh = targetIdx === highIdx || targetIdx === proHighIdx || targetIdx === items.length - 1;
-        info(`推理强度切换成功（${route} -> ${label}）`);
+        info(`Reasoning effort switched successfully (${route} -> ${label})`);
         try {
           pill.title = label;
         } catch (_) {
@@ -1279,7 +1291,7 @@ button.${HINT_CLASS}::after {
       }
     } catch (err) {
       log(err);
-      error('切换失败', err);
+      error('Toggle failed', err);
     } finally {
       busy = false;
     }
@@ -1357,11 +1369,11 @@ button.${HINT_CLASS}::after {
           );
         });
       }
-      info('模型菜单选项未就绪，忽略本次切换');
+      info('Model menu options are not ready yet; skipping this toggle.');
       return false;
     } catch (err) {
       log(err);
-      error('切换模型失败', err);
+      error('Model toggle failed', err);
       return false;
     } finally {
       if (didToggle) await restoreComposerFocusToEnd();

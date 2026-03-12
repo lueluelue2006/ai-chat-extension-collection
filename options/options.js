@@ -314,7 +314,8 @@
     const n = Number(ms);
     if (!Number.isFinite(n) || n <= 0) return '';
     try {
-      return new Date(n).toLocaleString();
+      const locale = resolveUiLocale();
+      return new Date(n).toLocaleString(/^zh/i.test(String(locale || '')) ? 'zh-CN' : 'en-US');
     } catch {
       return String(n);
     }
@@ -333,12 +334,29 @@
 
   function formatMonitorIntervalMinutes(value) {
     const minutes = Number(value);
-    if (!Number.isFinite(minutes) || minutes <= 0) return '未知';
+    if (!Number.isFinite(minutes) || minutes <= 0) return translateText('未知');
     if (minutes % 60 === 0) {
       const hours = minutes / 60;
-      return hours === 1 ? '1 小时' : `${hours} 小时`;
+      if (/^zh/i.test(resolveUiLocale())) return hours === 1 ? '1 小时' : `${hours} 小时`;
+      return hours === 1 ? '1 hour' : `${hours} hours`;
     }
-    return `${minutes} 分钟`;
+    return /^zh/i.test(resolveUiLocale()) ? `${minutes} 分钟` : `${minutes} minutes`;
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(resolveUiLocale());
+  }
+
+  function wrapAge(ageText) {
+    const text = String(ageText || '').trim();
+    if (!text) return '';
+    return isChineseUi() ? `（${text}）` : `(${text})`;
+  }
+
+  function formatAgo(ageText) {
+    const text = String(ageText || '').trim();
+    if (!text) return '';
+    return isChineseUi() ? `（${text} 前）` : `(${text} ago)`;
   }
 
   function formatGpt53AlertLine(ev) {
@@ -347,10 +365,10 @@
       const status = Number(ev?.status) || 0;
       const u = new URL(url);
       const name = String(u.pathname || '').split('/').filter(Boolean).slice(-1)[0] || u.hostname;
-      return status ? `${name}（${status}）` : name;
+      return status ? `${name}${isChineseUi() ? `（${status}）` : ` (${status})`}` : name;
     } catch {
       const status = Number(ev?.status) || 0;
-      return status ? `（${status}）` : '';
+      return status ? (isChineseUi() ? `（${status}）` : ` (${status})`) : '';
     }
   }
 
@@ -432,12 +450,12 @@
       if (!view.globalEnabled) return '关闭（扩展总开关已关闭）';
       if (!view.monitorEnabled && view.monitorReason === 'no_urls') return '关闭（URL 列表为空）';
       if (!view.monitorEnabled) return '关闭';
-      return `开启（每 ${formatMonitorIntervalMinutes(interval)}）`;
+      return isChineseUi() ? `开启（每 ${formatMonitorIntervalMinutes(interval)}）` : `On (every ${formatMonitorIntervalMinutes(interval)})`;
     })();
     pushLine('监控', monitorDetail);
 
     if (view.monitorEnabled && view.alarm?.scheduledAt) {
-      pushLine('下次', `${view.alarm.scheduledAt}${view.alarm.nextIn ? `（${view.alarm.nextIn}）` : ''}`);
+      pushLine('下次', `${view.alarm.scheduledAt}${wrapAge(view.alarm.nextIn)}`);
     } else if (!view.monitorEnabled) {
       pushLine('下次', '（未启用）');
     } else {
@@ -447,7 +465,7 @@
     const checkedAtText = view.state?.checkedAtText || '';
     const checkedAgo = view.state?.checkedAgo || '';
     if (checkedAtText) {
-      pushLine('上次', `${checkedAtText}${checkedAgo ? `（${checkedAgo} 前）` : ''}`);
+      pushLine('上次', `${checkedAtText}${formatAgo(checkedAgo)}`);
     } else {
       pushLine('上次', '（未检测）');
     }
@@ -527,7 +545,7 @@
       }
 
       const cellWhen = document.createElement('div');
-      cellWhen.textContent = checkedAgo ? `${checkedAgo} 前` : checkedAtText ? checkedAtText : '—';
+      cellWhen.textContent = checkedAgo ? (isChineseUi() ? `${checkedAgo} 前` : `${checkedAgo} ago`) : checkedAtText ? checkedAtText : '—';
 
       row.appendChild(cellName);
       row.appendChild(cellStatus);
@@ -1062,17 +1080,29 @@
     return String(name || '').replace(/^ChatGPT\s+/i, '').trim();
   }
 
+  function getSiteDisplayMeta(siteIdOrSite) {
+    const site =
+      siteIdOrSite && typeof siteIdOrSite === 'object'
+        ? siteIdOrSite
+        : getSite(siteIdOrSite);
+    return {
+      name: translateText(String(site?.name || '').trim()),
+      sub: translateText(String(site?.sub || '').trim())
+    };
+  }
+
   function getModuleDisplayMeta(siteId, moduleId) {
     const def = MODULES?.[moduleId];
-    let name = String(def?.name || moduleId || '').trim();
-    const sub = String(def?.sub || '').trim();
+    let name = translateText(String(def?.name || moduleId || '').trim());
+    const sub = translateText(String(def?.sub || '').trim());
     if (siteId === 'chatgpt') name = shortenChatGPTModuleName(name);
     return { name, sub };
   }
 
   function setNodeText(node, text) {
     if (!node) return;
-    node.textContent = text == null ? '' : String(text).trim();
+    const raw = text == null ? '' : String(text).trim();
+    node.textContent = translateText(raw);
   }
 
   function formatCountLabel(visible, total) {
@@ -1112,11 +1142,15 @@
     setNodeText(elSiteListCount, formatCountLabel(visibleSites.length, totalSites));
     setNodeText(elModuleListCount, formatCountLabel(visibleModules.length, siteModules.length));
     setNodeText(elSiteListNote, siteSearchText ? `筛出 ${visibleSites.length} 个网站。` : '按站点切换。');
-    setNodeText(elModuleListNote, site ? `${site.name} · ${site.sub || '当前站点脚本清单'}` : '选择网站后查看该站点脚本。');
+    const siteDisplay = getSiteDisplayMeta(site);
+    setNodeText(
+      elModuleListNote,
+      site ? `${siteDisplay.name} · ${siteDisplay.sub || '当前站点脚本清单'}` : '选择网站后查看该站点脚本。'
+    );
     setPanelHeaderContent({
       title: display.name || '未选择脚本',
       subtitle: site && moduleDef ? display.sub || '编辑该模块的详细配置。' : '选择中间脚本后加载对应设置面板。',
-      chips: moduleDef ? [site?.name || '', isModuleEnabled(siteId, moduleId) ? '已启用' : '已停用', hotkeysText] : [],
+      chips: moduleDef ? [siteDisplay.name || '', isModuleEnabled(siteId, moduleId) ? '已启用' : '已停用', hotkeysText] : [],
       infoEntries: moduleDef ? getPanelInfoEntries(moduleId) : []
     });
   }
@@ -1432,6 +1466,7 @@
     }
 
     for (const s of filteredSites) {
+      const display = getSiteDisplayMeta(s);
       const siteEnabled = isSiteEnabled(s.id);
       const row = document.createElement('div');
       row.className = 'triRow' + (s.id === activeSiteId ? ' selected' : '') + (siteEnabled ? '' : ' is-disabled');
@@ -1442,11 +1477,11 @@
 
       const name = document.createElement('div');
       name.className = 'triName';
-      name.textContent = s.name;
+      name.textContent = display.name || s.name;
 
       const sub = document.createElement('div');
       sub.className = 'triSub';
-      sub.textContent = s.sub;
+      sub.textContent = display.sub || s.sub;
 
       btn.appendChild(name);
       btn.appendChild(sub);
@@ -1667,7 +1702,7 @@
     setPanelHeaderContent({
       title: display.name || String(title || '').trim() || moduleId,
       subtitle: String(subtitle || '').trim() || display.sub || '编辑该模块的详细配置。',
-      chips: [site?.name || '', isModuleEnabled(selectedSiteId, moduleId) ? '已启用' : '已停用', hotkeysText],
+      chips: [getSiteDisplayMeta(site).name || '', isModuleEnabled(selectedSiteId, moduleId) ? '已启用' : '已停用', hotkeysText],
       infoEntries: getPanelInfoEntries(moduleId)
     });
   }

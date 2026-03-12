@@ -2538,16 +2538,20 @@
   }
 
   async function renderChatGPTUsageMonitorModuleSettings(siteId, token) {
+    const usageText = (zh, en) => localeText(zh, en);
     addModuleHeader(
       'chatgpt_usage_monitor',
-      'ChatGPT 用量统计',
-      '在配置页展示“油猴同款”用量面板（含滑动窗口与进度条）；数据来自 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。'
+      usageText('ChatGPT 用量统计', 'Usage Monitor'),
+      usageText(
+        '在配置页展示“油猴同款”用量面板（含滑动窗口与进度条）；数据来自 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。',
+        'Shows the Tampermonkey-style usage panel in Options, including sliding windows and progress bars. Data comes from storage.local and appears after you send messages on chatgpt.com.'
+      )
     );
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
     const leftInject = document.createElement('span');
-    leftInject.textContent = '启用该模块注入';
+    leftInject.textContent = usageText('启用该模块注入', 'Enable this module injection');
     const inputInject = document.createElement('input');
     inputInject.type = 'checkbox';
     inputInject.checked = isModuleEnabled(siteId, 'chatgpt_usage_monitor');
@@ -2567,7 +2571,10 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；为稳定与性能考虑，不在 chatgpt.com 页面注入用量面板，仅在本配置页展示。';
+      usageText(
+        '说明：该模块在页面主世界（MAIN world）拦截 fetch，并从 /backend-api/* 的请求与 SSE metadata 推断最终模型路由；为稳定与性能考虑，不在 chatgpt.com 页面注入用量面板，仅在本配置页展示。',
+        'This module intercepts fetch in the page MAIN world and infers the final model route from /backend-api/* requests plus SSE metadata. For stability and performance, it does not inject the usage panel on chatgpt.com itself; it is shown only in this settings page.'
+      );
     elModuleSettings.appendChild(hint);
 
     let planType;
@@ -2578,18 +2585,21 @@
       planType = CGPT_USAGE_MONITOR_PLAN_DEFAULT;
       const err = document.createElement('div');
       err.className = 'smallHint';
-      err.textContent = `读取套餐设置失败：${e instanceof Error ? e.message : String(e)}`;
+      err.textContent = usageText('读取套餐设置失败：', 'Failed to read the saved plan: ') + (e instanceof Error ? e.message : String(e));
       elModuleSettings.appendChild(err);
     }
     if (token !== renderSeq) return;
 
     addPanelDivider();
-    addPanelTitle('套餐（Plan）', '默认 Team；配置页与页面统计逻辑会自动保持一致（写入 storage.sync）。');
+    addPanelTitle(
+      usageText('套餐（Plan）', 'Plan'),
+      usageText('默认 Team；配置页与页面统计逻辑会自动保持一致（写入 storage.sync）。', 'Default is Team. The settings page and page-side usage logic stay in sync automatically through storage.sync.')
+    );
 
     const rowPlan = document.createElement('label');
     rowPlan.className = 'formRow';
     const leftPlan = document.createElement('span');
-    leftPlan.textContent = '默认套餐';
+    leftPlan.textContent = usageText('默认套餐', 'Default plan');
     const selectPlan = document.createElement('select');
     for (const [key, label] of CGPT_USAGE_MONITOR_PLAN_OPTIONS) {
       const opt = document.createElement('option');
@@ -2603,21 +2613,24 @@
       if (next === planType) return;
       if (
         !confirm(
-          `切换套餐为 ${CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === next)?.[1] || next}？\n\n提示：切换套餐会按官方限制自动调整所有模型的配额和时间窗口设置（会保留使用历史）。`
+          usageText(
+            `切换套餐为 ${CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === next)?.[1] || next}？\n\n提示：切换套餐会按官方限制自动调整所有模型的配额和时间窗口设置（会保留使用历史）。`,
+            `Switch the plan to ${CGPT_USAGE_MONITOR_PLAN_OPTIONS.find(([k]) => k === next)?.[1] || next}?\n\nThis will update quotas and window limits to match the official plan while keeping usage history.`
+          )
         )
       ) {
         selectPlan.value = planType;
         return;
       }
       selectPlan.disabled = true;
-      setStatus('正在保存套餐设置…');
+      setStatus(usageText('正在保存套餐设置…', 'Saving plan setting…'));
       try {
         planType = await saveCgptUsageMonitorPlanType(next);
         selectPlan.value = planType;
-        setStatus('套餐设置已保存', 'ok');
+        setStatus(usageText('套餐设置已保存', 'Plan setting saved'), 'ok');
       } catch (e) {
         selectPlan.value = planType;
-        setStatus(`套餐设置保存失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        setStatus(`${usageText('套餐设置保存失败：', 'Failed to save the plan setting: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         selectPlan.disabled = false;
       }
@@ -2628,13 +2641,16 @@
 
     // Usage dashboard viewer (options-only).
     addPanelDivider();
-    addPanelTitle('用量面板', '展示效果与油猴脚本一致；数据存储在扩展 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。');
+    addPanelTitle(
+      usageText('用量面板', 'Usage panel'),
+      usageText('展示效果与油猴脚本一致；数据存储在扩展 storage.local（需在 chatgpt.com 发送消息后才会产生记录）。', 'Matches the legacy userscript panel. Data is stored in extension storage.local and appears after messages are sent on chatgpt.com.')
+    );
     const usagePanelNotice = document.createElement('div');
     usagePanelNotice.className = 'cgptUsageEmpty';
-    usagePanelNotice.textContent = '正在初始化用量面板…';
+    usagePanelNotice.textContent = usageText('正在初始化用量面板…', 'Initializing the usage panel…');
     elModuleSettings.appendChild(usagePanelNotice);
     const setUsagePanelNotice = (message) => {
-      usagePanelNotice.textContent = String(message || '').trim() || '用量面板暂不可用。';
+      usagePanelNotice.textContent = String(message || '').trim() || usageText('用量面板暂不可用。', 'The usage panel is temporarily unavailable.');
     };
     const clearUsagePanelNotice = () => {
       try {
@@ -2655,8 +2671,13 @@
       }
     })();
     if (!usageUtils) {
-      setUsagePanelNotice('内部错误：用量统计工具库未加载（shared/chatgpt-usage-monitor-utils.js）。请尝试在 chrome://extensions 重新加载当前扩展。');
-      setStatus('用量统计工具库缺失，无法导入/合并/展示数据', 'err');
+      setUsagePanelNotice(
+        usageText(
+          '内部错误：用量统计工具库未加载（shared/chatgpt-usage-monitor-utils.js）。请尝试在 chrome://extensions 重新加载当前扩展。',
+          'Internal error: the usage monitor utility bundle was not loaded (shared/chatgpt-usage-monitor-utils.js). Try reloading the current extension in chrome://extensions.'
+        )
+      );
+      setStatus(usageText('用量统计工具库缺失，无法导入/合并/展示数据', 'The usage monitor utility bundle is missing, so import/merge/render is unavailable.'), 'err');
       return;
     }
     const { TIME_WINDOWS, tsOf, validateImportedData, summarizeImport, mergeUsageData, createLegacyMonthlyUsageReportHtml } = usageUtils;
@@ -2902,7 +2923,7 @@
         const timer = setTimeout(() => {
           if (settled) return;
           settled = true;
-          reject(new Error(`读取 storage.local 超时（>${timeoutMs}ms）`));
+          reject(new Error(usageText(`读取 storage.local 超时（>${timeoutMs}ms）`, `Timed out while reading storage.local (> ${timeoutMs}ms)`)));
         }, timeoutMs);
         try {
           chrome.storage.local.get(fallback, (items) => {
@@ -2932,6 +2953,7 @@
         planType: String(res?.[PLAN_TYPE_GM_KEY] || '').trim()
       };
     };
+    const usageLocale = /^zh/i.test(resolveUiLocale()) ? 'zh-CN' : 'en';
 
     const dash = document.createElement('div');
     dash.className = 'cgptUsageDash';
@@ -2944,7 +2966,7 @@
 
     const dashTitle = document.createElement('div');
     dashTitle.className = 'cgptUsageDashTitle';
-    dashTitle.textContent = 'ChatGPT 用量监视器';
+    dashTitle.textContent = usageText('ChatGPT 用量监视器', 'ChatGPT Usage Monitor');
     dashHeader.appendChild(dashTitle);
 
     const dashContent = document.createElement('div');
@@ -2956,7 +2978,7 @@
     dashContent.appendChild(usagePane);
     const loadingState = document.createElement('div');
     loadingState.className = 'cgptUsageEmpty';
-    loadingState.textContent = '正在读取本地用量数据…';
+    loadingState.textContent = usageText('正在读取本地用量数据…', 'Reading local usage data…');
     usagePane.appendChild(loadingState);
     const ensureUsagePanelVisible = (reason) => {
       try {
@@ -2990,7 +3012,10 @@
           fallback.className = 'cgptUsageEmpty';
           elModuleSettings.appendChild(fallback);
         }
-        fallback.textContent = `用量面板渲染异常（${String(reason || 'unknown')}）：attached=${attached ? '1' : '0'} / dashVisible=${dashVisible ? '1' : '0'} / paneVisible=${paneVisible ? '1' : '0'}，请点击“刷新数据”重试。`;
+        fallback.textContent = usageText(
+          `用量面板渲染异常（${String(reason || 'unknown')}）：attached=${attached ? '1' : '0'} / dashVisible=${dashVisible ? '1' : '0'} / paneVisible=${paneVisible ? '1' : '0'}，请点击“刷新数据”重试。`,
+          `The usage panel did not render correctly (${String(reason || 'unknown')}): attached=${attached ? '1' : '0'} / dashVisible=${dashVisible ? '1' : '0'} / paneVisible=${paneVisible ? '1' : '0'}. Click “Refresh data” to try again.`
+        );
         return false;
       } catch {
         return false;
@@ -3003,7 +3028,7 @@
         if (hasChildren || hasText) return false;
         const fallback = document.createElement('div');
         fallback.className = 'cgptUsageEmpty';
-        fallback.textContent = String(message || '').trim() || '用量面板当前无可视内容，请点击“刷新数据”重试。';
+        fallback.textContent = String(message || '').trim() || usageText('用量面板当前无可视内容，请点击“刷新数据”重试。', 'The usage panel is currently blank. Click “Refresh data” to try again.');
         usagePane.appendChild(fallback);
         return true;
       } catch {
@@ -3017,37 +3042,37 @@
 
     const settingsHint = document.createElement('div');
     settingsHint.className = 'cgptUsageHint';
-    settingsHint.textContent = '仅本地数据：导入/导出/清空不会影响 ChatGPT 账号。';
+    settingsHint.textContent = usageText('仅本地数据：导入/导出/清空不会影响 ChatGPT 账号。', 'Local data only: import/export/clear never changes your ChatGPT account.');
     dashContent.appendChild(settingsHint);
 
     const btnRefresh = document.createElement('button');
     btnRefresh.type = 'button';
     btnRefresh.className = 'cgptUsageBtn';
-    btnRefresh.textContent = '刷新数据';
+    btnRefresh.textContent = usageText('刷新数据', 'Refresh data');
     settingsActions.appendChild(btnRefresh);
 
     const btnExport = document.createElement('button');
     btnExport.type = 'button';
     btnExport.className = 'cgptUsageBtn';
-    btnExport.textContent = '导出 JSON';
+    btnExport.textContent = usageText('导出 JSON', 'Export JSON');
     settingsActions.appendChild(btnExport);
 
     const btnExportHtml = document.createElement('button');
     btnExportHtml.type = 'button';
     btnExportHtml.className = 'cgptUsageBtn';
-    btnExportHtml.textContent = '导出 HTML';
+    btnExportHtml.textContent = usageText('导出 HTML', 'Export HTML');
     settingsActions.appendChild(btnExportHtml);
 
     const btnImport = document.createElement('button');
     btnImport.type = 'button';
     btnImport.className = 'cgptUsageBtn';
-    btnImport.textContent = '导入 JSON';
+    btnImport.textContent = usageText('导入 JSON', 'Import JSON');
     settingsActions.appendChild(btnImport);
 
     const btnClear = document.createElement('button');
     btnClear.type = 'button';
     btnClear.className = 'cgptUsageBtn cgptUsageBtnDanger';
-    btnClear.textContent = '清空数据';
+    btnClear.textContent = usageText('清空数据', 'Clear data');
     settingsActions.appendChild(btnClear);
 
     const collectSharedGroupUsage = (usageData, groupId, now) => {
@@ -3127,7 +3152,7 @@
       if (model?.sharedGroup) {
         sharedColor = SHARED_GROUP_COLORS[String(model.sharedGroup)] || COLORS.warning;
         modelName.style.color = sharedColor;
-        modelName.title = `共享组：${usageData?.sharedQuotaGroups?.[model.sharedGroup]?.displayName || model.sharedGroup}`;
+        modelName.title = `${usageText('共享组：', 'Shared group: ')}${usageData?.sharedQuotaGroups?.[model.sharedGroup]?.displayName || model.sharedGroup}`;
       }
       modelNameContainer.appendChild(modelName);
 
@@ -3153,7 +3178,8 @@
 
       const usageValue = document.createElement('div');
       if (sharedColor) usageValue.style.color = sharedColor;
-      const quotaDisplay = quota === 0 ? '不可用' : String(quota ?? '不可用');
+      const unavailableText = usageText('不可用', 'Unavailable');
+      const quotaDisplay = quota === 0 ? unavailableText : String(quota ?? unavailableText);
       usageValue.textContent = `${count} / ${quotaDisplay}`;
       if (windowEndInfo && usageData?.showWindowResetTime) {
         const windowInfoEl = document.createElement('div');
@@ -3165,7 +3191,7 @@
 
       const progressCell = document.createElement('div');
       if (quota === 0) {
-        progressCell.textContent = '不可用';
+        progressCell.textContent = unavailableText;
         progressCell.style.color = COLORS.disabled;
         progressCell.style.fontStyle = 'italic';
       } else {
@@ -3255,7 +3281,7 @@
       if (!usageData || typeof usageData !== 'object') {
         const empty = document.createElement('div');
         empty.className = 'cgptUsageEmpty';
-        empty.textContent = '暂无用量记录。打开 chatgpt.com 发送一条消息后才会产生统计数据。';
+        empty.textContent = usageText('暂无用量记录。打开 chatgpt.com 发送一条消息后才会产生统计数据。', 'No usage records yet. Send a message on chatgpt.com first to generate data.');
         usagePane.appendChild(empty);
         return;
       }
@@ -3264,7 +3290,7 @@
       infoSection.className = 'reset-info';
       const windowLegendLabel = document.createElement('span');
       windowLegendLabel.className = 'cgptUsageLegendTitle';
-      windowLegendLabel.textContent = '窗口';
+      windowLegendLabel.textContent = usageText('窗口', 'Window');
       infoSection.appendChild(windowLegendLabel);
       const windowTypes = document.createElement('div');
       windowTypes.className = 'cgptUsageWindowTypes';
@@ -3280,7 +3306,7 @@
 
       const tableHeader = document.createElement('div');
       tableHeader.className = 'table-header';
-      tableHeader.innerHTML = '<div>模型名称</div><div>最后使用</div><div>使用量</div><div>进度</div>';
+      tableHeader.innerHTML = `<div>${usageText('模型名称', 'Model')}</div><div>${usageText('最后使用', 'Last used')}</div><div>${usageText('使用量', 'Usage')}</div><div>${usageText('进度', 'Progress')}</div>`;
       usagePane.appendChild(tableHeader);
 
       const now = Date.now();
@@ -3330,7 +3356,9 @@
         const emptyState = document.createElement('div');
         emptyState.className = 'cgptUsageEmpty';
         emptyState.textContent =
-          Object.keys(usageData?.models || {}).length > 0 ? '使用模型后才会显示用量统计。' : '未配置任何模型，请在设置中添加。';
+          Object.keys(usageData?.models || {}).length > 0
+            ? usageText('使用模型后才会显示用量统计。', 'Usage appears after one of the tracked models is used.')
+            : usageText('未配置任何模型，请在设置中添加。', 'No models are configured yet. Add one in settings first.');
         usagePane.appendChild(emptyState);
       }
     };
@@ -3352,16 +3380,16 @@
         ensureUsagePaneNotBlank();
         ensureUsagePanelVisible('refresh-ok');
         clearInitialRenderWatchdog();
-        if (showStatus) setStatus('已刷新用量数据', 'ok');
+        if (showStatus) setStatus(usageText('已刷新用量数据', 'Usage data refreshed'), 'ok');
       } catch (e) {
         usagePane.textContent = '';
         const errState = document.createElement('div');
         errState.className = 'cgptUsageEmpty';
-        errState.textContent = `读取失败：${e instanceof Error ? e.message : String(e)}`;
+        errState.textContent = `${usageText('读取失败：', 'Read failed: ')}${e instanceof Error ? e.message : String(e)}`;
         usagePane.appendChild(errState);
-        setStatus(`刷新失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        setStatus(`${usageText('刷新失败：', 'Refresh failed: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
-        ensureUsagePaneNotBlank('用量面板未获取到可视内容，请点击“刷新数据”重试。');
+        ensureUsagePaneNotBlank(usageText('用量面板未获取到可视内容，请点击“刷新数据”重试。', 'The usage panel did not produce visible content. Click “Refresh data” to try again.'));
         ensureUsagePanelVisible('refresh-finally');
         btnRefresh.disabled = false;
       }
@@ -3402,9 +3430,9 @@
     try {
       initialRenderWatchdog = setTimeout(() => {
         if (token !== renderSeq) return;
-        const patched = ensureUsagePaneNotBlank('用量面板加载超时，请点击“刷新数据”重试。');
+        const patched = ensureUsagePaneNotBlank(usageText('用量面板加载超时，请点击“刷新数据”重试。', 'The usage panel timed out while loading. Click “Refresh data” to try again.'));
         ensureUsagePanelVisible('watchdog-timeout');
-        if (patched) setStatus('用量面板加载超时，已显示兜底提示', 'err');
+        if (patched) setStatus(usageText('用量面板加载超时，已显示兜底提示', 'The usage panel timed out. A fallback message is now shown.'), 'err');
       }, STORAGE_READ_TIMEOUT_MS + 600);
     } catch {}
     teardownModuleSettingsSideEffects = () => {
@@ -3418,14 +3446,14 @@
       btnExport.disabled = true;
       try {
         const { usageData } = await loadUsageSnapshot();
-        if (!usageData || typeof usageData !== 'object') throw new Error('暂无可导出的用量数据');
+        if (!usageData || typeof usageData !== 'object') throw new Error(usageText('暂无可导出的用量数据', 'No usage data is available to export yet.'));
         const normalizedUsageData = normalizeUsageDataForRender(usageData) || usageData;
         const json = JSON.stringify(normalizedUsageData, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         triggerUsageDownload(blob, `chatgpt-usage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-        setStatus('已导出用量统计数据', 'ok');
+        setStatus(usageText('已导出用量统计数据', 'Usage data exported'), 'ok');
       } catch (e) {
-        setStatus(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        setStatus(`${usageText('导出失败：', 'Export failed: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         btnExport.disabled = false;
       }
@@ -3435,21 +3463,22 @@
       btnExportHtml.disabled = true;
       try {
         const { usageData } = await loadUsageSnapshot();
-        if (!usageData || typeof usageData !== 'object') throw new Error('暂无可导出的用量数据');
+        if (!usageData || typeof usageData !== 'object') throw new Error(usageText('暂无可导出的用量数据', 'No usage data is available to export yet.'));
         const normalizedUsageData = normalizeUsageDataForRender(usageData) || usageData;
         const exportPayload = createLegacyMonthlyUsageReportHtml(normalizedUsageData, {
           now: Date.now(),
+          locale: usageLocale,
           preferredOrder: MODEL_DISPLAY_ORDER,
           knownModelKeys: [...MODEL_DISPLAY_ORDER, ...Object.keys(MODEL_KEY_ALIASES)]
         });
         if (!exportPayload || typeof exportPayload.html !== 'string' || !exportPayload.html.trim()) {
-          throw new Error('旧版 HTML 报告生成失败');
+          throw new Error(usageText('旧版 HTML 报告生成失败', 'Failed to build the legacy HTML report.'));
         }
         const blob = new Blob([exportPayload.html], { type: 'text/html;charset=utf-8' });
         triggerUsageDownload(blob, exportPayload.filename || `chatgpt-monthly-analysis-${new Date().toISOString().replace(/[:.]/g, '-')}.html`);
-        setStatus('已导出旧版月度 HTML 报告', 'ok');
+        setStatus(usageText('已导出旧版月度 HTML 报告', 'Legacy monthly HTML report exported'), 'ok');
       } catch (e) {
-        setStatus(`导出 HTML 失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        setStatus(`${usageText('导出 HTML 失败：', 'HTML export failed: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         btnExportHtml.disabled = false;
       }
@@ -3464,7 +3493,7 @@
         input.id = IMPORT_INPUT_ID;
         input.type = 'file';
         input.accept = 'application/json';
-        input.setAttribute('aria-label', '用量统计导入 JSON');
+        input.setAttribute('aria-label', usageText('用量统计导入 JSON', 'Import usage JSON'));
         // Keep it non-visible but still present in DOM (better accessibility + easier to debug/automate).
         input.style.cssText = 'position:fixed; left:-9999px; top:-9999px; width:1px; height:1px; opacity:0;';
         (document.body || document.documentElement).appendChild(input);
@@ -3479,9 +3508,17 @@
             if (!file) return;
             const text = await file.text();
             const imported = JSON.parse(text);
-            if (!validateImportedData(imported)) throw new Error('数据格式不正确（models/requests/quota/windowType）');
-            const summary = summarizeImport(imported);
-            if (!confirm(`导入将合并现有记录与导入文件中的记录。\n\n${summary}\n\n确认导入吗？`)) return;
+            if (!validateImportedData(imported)) throw new Error(usageText('数据格式不正确（models/requests/quota/windowType）', 'Invalid data format (models/requests/quota/windowType).'));
+            const summary = summarizeImport(imported, { locale: usageLocale });
+            if (
+              !confirm(
+                usageText(
+                  `导入将合并现有记录与导入文件中的记录。\n\n${summary}\n\n确认导入吗？`,
+                  `The import will merge the current records with the records in the selected file.\n\n${summary}\n\nContinue with the import?`
+                )
+              )
+            )
+              return;
 
             const { usageData: current } = await loadUsageSnapshot();
             const merged = mergeUsageData(current, imported);
@@ -3496,10 +3533,10 @@
                 reject(e);
               }
             });
-            setStatus('已导入并合并用量数据（下次打开 chatgpt.com 会自动同步）', 'ok');
+            setStatus(usageText('已导入并合并用量数据（下次打开 chatgpt.com 会自动同步）', 'Usage data imported and merged. It will sync the next time chatgpt.com opens.'), 'ok');
             await refreshDashboard();
           } catch (e) {
-            setStatus(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+            setStatus(`${usageText('导入失败：', 'Import failed: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
           } finally {
             // Allow importing the same file repeatedly.
             try {
@@ -3521,7 +3558,15 @@
     });
 
     btnClear.addEventListener('click', async () => {
-      if (!confirm('确认清空 ChatGPT 用量统计数据？（仅清空扩展存储；不会影响你的 ChatGPT 账号）')) return;
+      if (
+        !confirm(
+          usageText(
+            '确认清空 ChatGPT 用量统计数据？（仅清空扩展存储；不会影响你的 ChatGPT 账号）',
+            'Clear all ChatGPT usage monitor data? This only clears extension storage and does not affect your ChatGPT account.'
+          )
+        )
+      )
+        return;
       btnClear.disabled = true;
       try {
         const keys = await getAllUsageKeys();
@@ -3561,10 +3606,10 @@
           }
         });
 
-        setStatus('已清空用量统计数据', 'ok');
+        setStatus(usageText('已清空用量统计数据', 'Usage data cleared'), 'ok');
         await refreshDashboard();
       } catch (e) {
-        setStatus(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'err');
+        setStatus(`${usageText('清空失败：', 'Clear failed: ')}${e instanceof Error ? e.message : String(e)}`, 'err');
       } finally {
         btnClear.disabled = false;
       }

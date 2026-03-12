@@ -17,6 +17,35 @@
   const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
+  const MESSAGES = Object.freeze({
+    panelTitle: { zh: '对话树', en: 'Conversation Tree' },
+    toggleTitle: { zh: '对话树', en: 'Conversation tree' },
+    simpleTitle: { zh: '隐藏系统/工具/内部节点（简洁）', en: 'Hide system / tool / internal nodes (simple view)' },
+    simpleLabel: { zh: '简洁', en: 'Simple' },
+    guidesTitle: { zh: '彩色对齐竖线（类似 VSCode 缩进线）', en: 'Colored alignment guides (similar to VSCode indent guides)' },
+    guidesLabel: { zh: '彩线', en: 'Guides' },
+    refreshLabel: { zh: '刷新', en: 'Refresh' },
+    closeLabel: { zh: '关闭', en: 'Close' },
+    treeTooLarge: { zh: '对话树数据过大（>{size}MB），为稳定性已跳过加载', en: 'The conversation tree data is too large (>{size} MB), so loading was skipped for stability.' },
+    nodeNotFoundInTree: { zh: '未在树数据中找到该节点', en: 'The node was not found in the tree data.' },
+    turnNotFoundInPage: {
+      zh: '未在页面中找到该节点对应的消息（可能不在当前分支：1/2、2/3 未切换，或系统/内部节点未渲染）',
+      en: 'The message for this node was not found on the page. It may be on a different branch, or be a system/internal node that is not rendered.'
+    },
+    loadedConversation: { zh: '已加载：{id}…', en: 'Loaded: {id}…' },
+    loading: { zh: '加载中…', en: 'Loading…' },
+    loadingReason: { zh: '加载中…（{reason}）', en: 'Loading… ({reason})' },
+    loadFailed: { zh: '加载失败：{message}', en: 'Load failed: {message}' },
+    missingConversationId: { zh: '未检测到会话 ID（请先打开具体对话）', en: 'Conversation ID was not detected. Open a specific conversation first.' },
+    missingFullTreeData: { zh: '未拿到完整消息树数据（可尝试先打开消息树面板再导出）', en: 'The full message tree data was not available. Try opening the tree panel before exporting.' },
+    fileDownloadFailed: { zh: '文件下载失败', en: 'File download failed.' },
+    exportSucceeded: { zh: '已导出完整树：{fileName}', en: 'Exported the full tree: {fileName}' },
+    unknownError: { zh: '未知错误', en: 'Unknown error' },
+    exportFailed: { zh: '导出失败：{message}', en: 'Export failed: {message}' },
+    exportFullTreeJson: { zh: '导出完整树为 JSON', en: 'Export full tree as JSON' },
+    rootLabel: { zh: 'root', en: 'root' },
+    emptyLabel: { zh: '(empty)', en: '(empty)' }
+  });
 
   const BRIDGE_REQ_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_REQUEST';
   const BRIDGE_RES_SUMMARY = 'AISHORTCUTS_CHATGPT_TREE_SUMMARY_RESPONSE';
@@ -41,10 +70,35 @@
 
   const MAIN_MENU_REGISTER_EVENT = '__quicknav_menu_bridge_register_main_command_v1__';
   const MAIN_MENU_RUN_EVENT = '__quicknav_menu_bridge_run_main_command_v1__';
-  const MAIN_MENU_GROUP = 'ChatGPT 消息树';
+  const MAIN_MENU_GROUP = 'ChatGPT Message Tree';
   const MAIN_MENU_MODULE_ID = 'chatgpt_message_tree';
   const MAIN_MENU_BRIDGE_SOURCE = 'content/menu-bridge.js';
   const MAIN_MENU_SELF_SOURCE = 'content/chatgpt-message-tree/main.js';
+
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseLocale(locale = getUiLocale()) {
+    return /^zh/i.test(String(locale || ''));
+  }
+
+  function formatTemplate(template, vars) {
+    let out = String(template || '');
+    if (!vars || typeof vars !== 'object') return out;
+    for (const [key, value] of Object.entries(vars)) out = out.replaceAll(`{${key}}`, String(value ?? ''));
+    return out;
+  }
+
+  function t(key, vars) {
+    const entry = MESSAGES[key];
+    if (!entry) return formatTemplate(String(key || ''), vars);
+    return formatTemplate(isChineseLocale() ? entry.zh : entry.en, vars);
+  }
 
   function getOrCreateBridgeNonce() {
     const fallback = 'quicknav-bridge-fallback';
@@ -589,7 +643,7 @@
       const lenHeader = resp.headers?.get?.('content-length') || '';
       const len = Number(lenHeader);
       if (Number.isFinite(len) && len > MAX_JSON_BYTES) {
-        throw new Error(`对话树数据过大（>${Math.round(MAX_JSON_BYTES / 1024 / 1024)}MB），为稳定性已跳过加载`);
+        throw new Error(t('treeTooLarge', { size: Math.round(MAX_JSON_BYTES / 1024 / 1024) }));
       }
     } catch {}
 
@@ -609,7 +663,7 @@
         received += value.byteLength || 0;
         if (received > MAX_JSON_BYTES) {
           try { await reader.cancel(); } catch {}
-          throw new Error(`对话树数据过大（>${Math.round(MAX_JSON_BYTES / 1024 / 1024)}MB），为稳定性已跳过加载`);
+          throw new Error(t('treeTooLarge', { size: Math.round(MAX_JSON_BYTES / 1024 / 1024) }));
         }
         parts.push(decoder.decode(value, { stream: true }));
       }
@@ -620,7 +674,7 @@
       if (isAbortError(e)) throw e;
       // If streaming parse fails for any reason, fall back to native json() (best-effort).
       // But keep the byte limit guard above to avoid the worst-case.
-      if (e instanceof Error && /对话树数据过大/.test(e.message)) throw e;
+      if (e instanceof Error && /(对话树数据过大|conversation tree data is too large)/i.test(e.message)) throw e;
       try {
         return await resp.json();
       } catch {
@@ -1309,8 +1363,8 @@
       toggle.id = TOGGLE_ID;
       toggle.setAttribute('role', 'button');
       toggle.setAttribute('tabindex', '0');
-      toggle.title = 'Conversation tree';
-      toggle.textContent = 'Tree';
+      toggle.title = t('toggleTitle');
+      toggle.textContent = t('panelTitle');
       toggle.addEventListener('click', () => setOpen(!state.open));
       toggle.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -1329,12 +1383,12 @@
       panel.setAttribute('data-open', '0');
       panel.innerHTML = `
         <div class="hdr">
-          <div class="title">Conversation Tree</div>
+          <div class="title">${t('panelTitle')}</div>
           <div class="spacer"></div>
-          <button type="button" class="toggle simple" title="隐藏系统/工具/内部节点（简洁）">简洁</button>
-          <button type="button" class="toggle guides" title="彩色对齐竖线（类似 VSCode 缩进线）">彩线</button>
-          <button type="button" class="refresh">刷新</button>
-          <button type="button" class="close">关闭</button>
+          <button type="button" class="toggle simple" title="${t('simpleTitle')}">${t('simpleLabel')}</button>
+          <button type="button" class="toggle guides" title="${t('guidesTitle')}">${t('guidesLabel')}</button>
+          <button type="button" class="refresh">${t('refreshLabel')}</button>
+          <button type="button" class="close">${t('closeLabel')}</button>
         </div>
         <div class="body">
           <div class="status"></div>
@@ -1838,7 +1892,7 @@
               const rootId = latest.rootId || getRootId(mapping) || latest.currentId || '';
               const nodeId = resolveNodeIdForMessageId(mapping, targetMsgId);
               if (!mapping || !nodeId) {
-                setStatus('未在树数据中找到该节点');
+                setStatus(t('nodeNotFoundInTree'));
                 reply(false);
                 return;
               }
@@ -1858,7 +1912,7 @@
                 }
               }
 
-              setStatus('未在页面中找到该节点对应的消息（可能不在当前分支：1/2、2/3 未切换，或系统/内部节点未渲染）');
+              setStatus(t('turnNotFoundInPage'));
               reply(false);
             } catch {
               reply(false);
@@ -2201,11 +2255,11 @@
     badge.textContent = role ? role[0].toUpperCase() : '·';
     row.appendChild(badge);
 
-    const text = msg ? extractTextFromMessage(msg) : 'root';
+    const text = msg ? extractTextFromMessage(msg) : t('rootLabel');
     const snippet = formatSnippet(text);
     const label = document.createElement('span');
     label.className = 'label';
-    label.textContent = snippet || '(empty)';
+    label.textContent = snippet || t('emptyLabel');
     if (text && text !== snippet) label.title = text;
     row.appendChild(label);
 
@@ -2257,7 +2311,7 @@
 	            const appeared = await waitForCondition(() => !!findTurnElementByMessageId(msgId), 1800, 60);
 	            if (appeared && scrollToMessageId(msgId)) return;
 	          }
-	          setStatus('未在页面中找到该节点对应的消息（可能不在当前分支：1/2、2/3 未切换，或系统/内部节点未渲染）');
+	          setStatus(t('turnNotFoundInPage'));
 	        };
 	        void run();
 	      });
@@ -2354,7 +2408,7 @@
       ensureStyles(stats.maxDepth);
     } catch {}
     applyPrefsToUi();
-    setStatus(`已加载：${String(cached.conversationId || '').slice(0, 8)}…`);
+    setStatus(t('loadedConversation', { id: String(cached.conversationId || '').slice(0, 8) }));
     setStats(`nodes:${stats.nodeCount} messages:${stats.msgCount} branches:${stats.branchCount} leaves:${stats.leafCount}`);
     renderTree(mapping, rootId, currentId);
   }
@@ -2381,7 +2435,7 @@
 
     setUiHidden(false);
     if (!silent) {
-      setStatus(`加载中…${reason ? `（${reason}）` : ''}`);
+      setStatus(reason ? t('loadingReason', { reason }) : t('loading'));
       setStats('');
       clearTree();
     }
@@ -2409,7 +2463,7 @@
       state.lastData = null;
       clearSummaryCache();
       if (!silent) {
-        setStatus(`加载失败：${e instanceof Error ? e.message : String(e)}`);
+        setStatus(t('loadFailed', { message: e instanceof Error ? e.message : String(e) }));
         setStats('');
         clearTree();
       }
@@ -2420,7 +2474,7 @@
 
   async function ensureConversationDataForExport() {
     const conversationId = getConversationIdFromUrl();
-    if (!conversationId) throw new Error('未检测到会话 ID（请先打开具体对话）');
+    if (!conversationId) throw new Error(t('missingConversationId'));
 
     const cached = state.lastData;
     const age = now() - (Number(state.lastLoadedAt) || 0);
@@ -2449,7 +2503,7 @@
 
     const latest = state.lastData;
     if (!latest || latest.conversationId !== conversationId || !latest.mapping || typeof latest.mapping !== 'object') {
-      throw new Error('未拿到完整消息树数据（可尝试先打开消息树面板再导出）');
+      throw new Error(t('missingFullTreeData'));
     }
     return latest;
   }
@@ -2480,11 +2534,11 @@
       const cid = sanitizeFilePart(payload.conversationId || '');
       const fileName = cid ? `chatgpt-tree-${cid}-${date}.json` : `chatgpt-tree-${date}.json`;
       const ok = downloadText(JSON.stringify(payload, null, 2), fileName, 'application/json;charset=utf-8');
-      if (!ok) throw new Error('文件下载失败');
-      setStatus(`已导出完整树：${fileName}`);
+      if (!ok) throw new Error(t('fileDownloadFailed'));
+      setStatus(t('exportSucceeded', { fileName }));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e || '未知错误');
-      setStatus(`导出失败：${msg}`);
+      const msg = e instanceof Error ? e.message : String(e || t('unknownError'));
+      setStatus(t('exportFailed', { message: msg }));
     } finally {
       dropLastDataIfClosed('menu-export');
     }
@@ -2492,7 +2546,7 @@
 
   function installMainMenuCommands() {
     installMainMenuRunBridge();
-    registerMainMenuCommand('导出完整树为 JSON', () => {
+    registerMainMenuCommand(t('exportFullTreeJson'), () => {
       void exportFullTreeJsonFromMenu();
     });
   }

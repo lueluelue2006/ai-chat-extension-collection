@@ -25,6 +25,7 @@
     guidesTitle: { zh: '彩色对齐竖线（类似 VSCode 缩进线）', en: 'Colored alignment guides (similar to VSCode indent guides)' },
     guidesLabel: { zh: '彩线', en: 'Guides' },
     refreshLabel: { zh: '刷新', en: 'Refresh' },
+    exportLabel: { zh: '导出 JSON', en: 'Export JSON' },
     closeLabel: { zh: '关闭', en: 'Close' },
     treeTooLarge: { zh: '对话树数据过大（>{size}MB），为稳定性已跳过加载', en: 'The conversation tree data is too large (>{size} MB), so loading was skipped for stability.' },
     nodeNotFoundInTree: { zh: '未在树数据中找到该节点', en: 'The node was not found in the tree data.' },
@@ -394,7 +395,7 @@
 
   function dispatchMainMenuRegister(name, handlerKey) {
     try {
-      const detail = { name, handlerKey, group: MAIN_MENU_GROUP, moduleId: MAIN_MENU_MODULE_ID };
+      const detail = { name, handlerKey, group: MAIN_MENU_GROUP, moduleId: MAIN_MENU_MODULE_ID, source: MAIN_MENU_SELF_SOURCE };
       window.dispatchEvent(new CustomEvent(MAIN_MENU_REGISTER_EVENT, { detail }));
     } catch {}
   }
@@ -1388,6 +1389,7 @@
           <button type="button" class="toggle simple" title="${t('simpleTitle')}">${t('simpleLabel')}</button>
           <button type="button" class="toggle guides" title="${t('guidesTitle')}">${t('guidesLabel')}</button>
           <button type="button" class="refresh">${t('refreshLabel')}</button>
+          <button type="button" class="export" title="${t('exportFullTreeJson')}">${t('exportLabel')}</button>
           <button type="button" class="close">${t('closeLabel')}</button>
         </div>
         <div class="body">
@@ -1399,6 +1401,9 @@
       panel.querySelector('button.simple')?.addEventListener('click', () => setPref('simpleMode', !state.prefs?.simpleMode));
       panel.querySelector('button.guides')?.addEventListener('click', () => setPref('guides', !state.prefs?.guides));
       panel.querySelector('button.refresh')?.addEventListener('click', () => scheduleRefresh(50, 'manual'));
+      panel.querySelector('button.export')?.addEventListener('click', () => {
+        void exportFullTreeJsonFromMenu();
+      });
       panel.querySelector('button.close')?.addEventListener('click', () => setOpen(false));
       docEl.appendChild(panel);
     }

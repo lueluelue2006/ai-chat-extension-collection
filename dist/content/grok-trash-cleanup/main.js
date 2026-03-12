@@ -202,6 +202,22 @@
   let routePollTimer = 0;
   let lastRouteKey = '';
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   async function fetchDeletedConversations(pageSize = PAGE_SIZE) {
     const safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(200, Math.floor(pageSize))) : PAGE_SIZE;
     const url = new URL('/rest/app-chat/conversations/deleted', location.origin);
@@ -211,7 +227,7 @@
       credentials: 'include',
       cache: 'no-store'
     });
-    if (!res.ok) throw new Error(`获取废纸篓失败（HTTP ${res.status}）`);
+    if (!res.ok) throw new Error(uiText(`获取废纸篓失败（HTTP ${res.status}）`, `Failed to fetch deleted conversations (HTTP ${res.status})`));
     const data = await res.json();
     return Array.isArray(data?.conversations) ? data.conversations : [];
   }
@@ -224,7 +240,7 @@
       method: 'DELETE',
       credentials: 'include'
     });
-    if (!res.ok) throw new Error(`彻底删除失败（HTTP ${res.status}）`);
+    if (!res.ok) throw new Error(uiText(`彻底删除失败（HTTP ${res.status}）`, `Permanent delete failed (HTTP ${res.status})`));
     return true;
   }
 
@@ -235,7 +251,7 @@
     let anyFound = false;
 
     try {
-      if (typeof onStatus === 'function') onStatus('正在清理…');
+      if (typeof onStatus === 'function') onStatus(uiText('正在清理…', 'Cleaning up…'));
       while (round < MAX_ROUNDS) {
         round++;
         const list = await fetchDeletedConversations(PAGE_SIZE);
@@ -253,7 +269,7 @@
             }
           } catch (err) {
             totalFailed++;
-            console.warn('彻底删除单条废纸篓会话失败:', id, err);
+            console.warn(uiText('彻底删除单条废纸篓会话失败:', 'Permanent delete failed for one trashed conversation:'), id, err);
           }
         }
 
@@ -261,13 +277,13 @@
         if (ids.length < PAGE_SIZE) break;
       }
 
-      if (!anyFound) return '废纸篓为空，无需清理';
+      if (!anyFound) return uiText('废纸篓为空，无需清理', 'Trash is already empty.');
       return totalFailed > 0
-        ? `废纸篓清理完成：成功 ${totalSuccess} 条，失败 ${totalFailed} 条`
-        : `废纸篓清理完成：已彻底删除 ${totalSuccess} 条`;
+        ? uiText(`废纸篓清理完成：成功 ${totalSuccess} 条，失败 ${totalFailed} 条`, `Trash cleanup finished: ${totalSuccess} deleted, ${totalFailed} failed.`)
+        : uiText(`废纸篓清理完成：已彻底删除 ${totalSuccess} 条`, `Trash cleanup finished: permanently deleted ${totalSuccess}.`);
     } catch (e) {
-      console.error('一键清空废纸篓失败:', e);
-      return `清空废纸篓失败：${e?.message || e}`;
+      console.error(uiText('一键清空废纸篓失败:', 'Trash cleanup failed:'), e);
+      return uiText(`清空废纸篓失败：${e?.message || e}`, `Trash cleanup failed: ${e?.message || e}`);
     }
   }
 
@@ -352,7 +368,7 @@
       const btn = document.createElement('button');
       btn.id = BTN_ID;
       btn.type = 'button';
-      btn.textContent = '一键清空废纸篓';
+      btn.textContent = uiText('一键清空废纸篓', 'Clear trash');
       btn.style.padding = '8px 14px';
       btn.style.borderRadius = '10px';
       btn.style.border = '1px solid rgba(255,255,255,0.2)';
@@ -378,13 +394,13 @@
         if (!isDeletedConversationsPath()) return;
         const ok = typeof confirm !== 'function'
           ? true
-          : confirm('确认彻底清空废纸篓？该操作不可恢复。');
+          : confirm(uiText('确认彻底清空废纸篓？该操作不可恢复。', 'Clear the trash permanently? This cannot be undone.'));
         if (!ok) return;
         btn.disabled = true;
         btn.style.opacity = '0.65';
         try {
           const result = await clearDeletedConversations((msg) => setStatus(msg, 'normal'));
-          const isError = /失败/.test(String(result || ''));
+          const isError = isChineseUi() ? /失败/.test(String(result || '')) : /failed/i.test(String(result || ''));
           setStatus(result, isError ? 'error' : 'ok');
         } finally {
           btn.disabled = false;

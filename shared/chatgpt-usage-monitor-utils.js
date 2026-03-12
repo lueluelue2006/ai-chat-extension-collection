@@ -33,6 +33,16 @@
     if (/^zh/i.test(raw)) return 'zh-CN';
     if (/^en/i.test(raw)) return 'en';
     try {
+      const resolved = globalThis?.AISHORTCUTS_I18N?.resolveUiLocale?.();
+      if (/^zh/i.test(String(resolved || '').trim())) return 'zh-CN';
+      if (/^en/i.test(String(resolved || '').trim())) return 'en';
+    } catch {}
+    try {
+      const datasetLocale = String(globalThis?.document?.documentElement?.dataset?.aichatLocale || '').trim();
+      if (/^zh/i.test(datasetLocale)) return 'zh-CN';
+      if (/^en/i.test(datasetLocale)) return 'en';
+    } catch {}
+    try {
       const docLang = String(globalThis?.document?.documentElement?.lang || '').trim();
       if (/^zh/i.test(docLang)) return 'zh-CN';
       if (/^en/i.test(docLang)) return 'en';
@@ -108,7 +118,7 @@
     return true;
   }
 
-  function summarizeImport(importedData, { locale = 'zh-CN' } = {}) {
+  function summarizeImport(importedData, { locale = '' } = {}) {
     const models = importedData && importedData.models && typeof importedData.models === 'object' ? importedData.models : {};
     const entries = Object.entries(models);
     const modelCount = entries.length;
@@ -201,7 +211,7 @@
       preferredOrder = [],
       knownModelKeys = [],
       unknownMergeTarget = 'gpt-5-3-instant',
-      locale = 'zh-CN'
+      locale = ''
     } = {}
   ) {
     const current = now instanceof Date ? now : new Date(now);
@@ -288,7 +298,7 @@
       now = Date.now(),
       preferredOrder = [],
       knownModelKeys = [],
-      locale = 'zh-CN'
+      locale = ''
     } = {}
   ) {
     const report = buildLegacyMonthlyReport(usageData, {

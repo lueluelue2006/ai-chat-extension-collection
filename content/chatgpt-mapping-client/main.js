@@ -27,6 +27,22 @@
     return Date.now();
   }
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   function toFinitePositiveInt(value, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -163,14 +179,14 @@
 
   async function readJsonWithLimit(resp, maxJsonBytes, maxMessagePrefix) {
     const capBytes = toFinitePositiveInt(maxJsonBytes, DEFAULT_MAX_JSON_BYTES);
-    const msgPrefix = String(maxMessagePrefix || '对话树数据过大');
+    const msgPrefix = String(maxMessagePrefix || uiText('对话树数据过大', 'Conversation tree payload is too large'));
     const capMb = Math.max(1, Math.round(capBytes / 1024 / 1024));
 
     try {
       const lenHeader = resp.headers?.get?.('content-length') || '';
       const len = Number(lenHeader);
       if (Number.isFinite(len) && len > capBytes) {
-        throw new Error(`${msgPrefix}（>${capMb}MB），已停止加载`);
+        throw new Error(uiText(`${msgPrefix}（>${capMb}MB），已停止加载`, `${msgPrefix} (>${capMb} MB), loading was stopped.`));
       }
     } catch (error) {
       if (error instanceof Error && error.message) throw error;
@@ -193,7 +209,7 @@
         try {
           await reader.cancel();
         } catch {}
-        throw new Error(`${msgPrefix}（>${capMb}MB），已停止加载`);
+        throw new Error(uiText(`${msgPrefix}（>${capMb}MB），已停止加载`, `${msgPrefix} (>${capMb} MB), loading was stopped.`));
       }
       chunks.push(decoder.decode(value, { stream: true }));
     }
@@ -206,7 +222,7 @@
     const signal = options.signal || null;
     const maxJsonBytes = toFinitePositiveInt(options.maxJsonBytes, DEFAULT_MAX_JSON_BYTES);
     const id = String(conversationId || '').trim() || getConversationIdFromUrl(location.href);
-    if (!id) throw new Error('未找到 conversation_id');
+    if (!id) throw new Error(uiText('未找到 conversation_id', 'conversation_id was not found'));
 
     const auth = await getAuthContext({ signal });
     const headers = buildHeaders(auth);
@@ -220,7 +236,7 @@
       throw new Error(`HTTP ${resp.status} ${text ? `(${text.slice(0, 120)})` : ''}`.trim());
     }
 
-    return await readJsonWithLimit(resp, maxJsonBytes, '对话树数据过大');
+    return await readJsonWithLimit(resp, maxJsonBytes, uiText('对话树数据过大', 'Conversation tree payload is too large'));
   }
 
   const api = Object.freeze({

@@ -1288,7 +1288,36 @@
     "监视器已重置并重新加载": "Monitor reset and reloaded.",
     "监视器重置完成。如果没有看到监视器，请刷新页面。": "Monitor reset completed. Refresh the page if you still do not see it.",
     "用量": "Usage",
-    "设置": "Settings"
+    "设置": "Settings",
+    "宽度(px)": "Width (px)",
+    "高度(px)": "Height (px)",
+    "显示选项": "Display options",
+    "点状进度": "Dots",
+    "条状进度": "Bar",
+    "导出一周分析": "Export weekly analysis",
+    "导出一个月分析": "Export monthly analysis",
+    "导出数据": "Export data",
+    "导入数据": "Import data",
+    "套餐设置": "Plan settings",
+    "切换套餐将根据官方限制自动调整所有模型的配额和时间窗口": "Switching plans automatically updates model quotas and time windows to match the selected limits.",
+    "当前套餐:": "Current plan:",
+    "面板大小:": "Panel size:",
+    "面板位置:": "Panel position:",
+    "提示：也可拖动面板右下角调整大小（最小化状态下不可调整）": "Tip: you can also drag the bottom-right corner to resize the panel (disabled while minimized).",
+    "配置模型映射与配额:": "Configure model mappings and quotas:",
+    "使用像OpenAI一样的滑动时间窗口（统计最近N小时的使用量）": "Track usage with sliding windows similar to OpenAI's rate limits.",
+    "模型ID": "Model ID",
+    "窗口/操作": "Window / actions",
+    "共享组：": "Shared group: ",
+    "由共享组（": "Controlled by shared group (",
+    "）控制": ")",
+    "滑动窗口跟踪:": "Sliding window tracking:",
+    "模型名称": "Model",
+    "最后使用": "Last used",
+    "使用量": "Usage",
+    "进度": "Progress",
+    "使用模型后才会显示用量统计。": "Usage stats appear after you use a model.",
+    "未配置任何模型，请在设置中添加。": "No models configured. Add one in Settings."
   };
 
   function __aichatNormalizeUsageMonitorLocaleMode(value) {
@@ -1335,11 +1364,21 @@
       .replace(/^共 (\d+) 个模型，(\d+) 条请求记录$/u, (_, models, requests) => `${models} models, ${requests} request records`)
       .replace(/^模型详情:$/u, "Model details:")
       .replace(/^遗留特殊模型计数: (\d+) \(已不再使用\)$/u, (_, count) => `Legacy special-model count: ${count} (no longer used)`)
+      .replace(/^(.+)思考共用池$/u, (_, plan) => `${plan} thinking shared pool`)
+      .replace(/^(.+)即时共用池$/u, (_, plan) => `${plan} instant shared pool`)
+      .replace(/^(.+)高级共用池$/u, (_, plan) => `${plan} premium shared pool`)
       .replace(/^由共享组（(.+)）控制$/u, (_, group) => `Controlled by shared group (${group})`)
       .replace(/^共享组：(.+)$/u, (_, group) => `Shared group: ${group}`)
+      .replace(/^(.+) 套餐配置:$/u, (_, plan) => `${plan} plan configuration:`)
+      .replace(/^已恢复 (.+) 套餐的默认配额设置$/u, (_, plan) => `Restored default quota settings for ${plan}.`)
+      .replace(/^已切换到 (.+) 套餐$/u, (_, plan) => `Switched to the ${plan} plan.`)
+      .replace(/^确定要切换到 (.+) 套餐吗？$/u, (_, plan) => `Switch to the ${plan} plan?`)
       .replace(/^模型 "(.+)" 已删除。$/u, (_, model) => `Model "${model}" deleted.`)
       .replace(/^未找到模型 "(.+)"。$/u, (_, model) => `Model "${model}" not found.`)
-      .replace(/^模型 (.+) 已添加。$/u, (_, model) => `Model ${model} added.`);
+      .replace(/^模型 (.+) 已添加。$/u, (_, model) => `Model ${model} added.`)
+      .replace(/^• (.+): 未知配置$/u, (_, model) => `• ${model}: unknown configuration`)
+      .replace(/^• (.+): (.+) \(共享\)$/u, (_, model, quota) => `• ${model}: ${quota} (shared)`)
+      .replace(/^• (.+): (.+)$/u, (_, model, quota) => `• ${model}: ${quota}`);
   }
   function __aichatLocalizeUsageTree(root) {
     if (!root || __aichatIsChineseUsageMonitorUi()) return;
@@ -1697,7 +1736,17 @@
   // src/features/importExport.js
   function exportUsageData() {
     const data = Storage.get();
-    const exportData = { ...data };
+    const exportData = JSON.parse(JSON.stringify(data || {}));
+    try {
+      if (exportData.sharedQuotaGroups && typeof exportData.sharedQuotaGroups === "object") {
+        Object.values(exportData.sharedQuotaGroups).forEach((group) => {
+          if (!group || typeof group !== "object") return;
+          if (typeof group.displayName === "string") {
+            group.displayName = __aichatTranslateUsageText(group.displayName);
+          }
+        });
+      }
+    } catch {}
     const jsonData = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonData], { type: "application/json" });
     const url = URL.createObjectURL(blob);

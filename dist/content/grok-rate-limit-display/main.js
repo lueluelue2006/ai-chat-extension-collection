@@ -38,6 +38,24 @@
   let floatingRoot = null;
   let panel = null;
 
+  function isChineseUi() {
+    try {
+      const htmlLang = String(document.documentElement?.lang || '').trim();
+      if (/^zh/i.test(htmlLang)) return true;
+    } catch {}
+    try {
+      const langs = [];
+      if (typeof navigator?.language === 'string') langs.push(navigator.language);
+      if (Array.isArray(navigator?.languages)) langs.push(...navigator.languages);
+      return langs.some((item) => /^zh(?:-|_|$)/i.test(String(item || '').trim()));
+    } catch {}
+    return false;
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   function toFiniteNumber(value) {
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
@@ -186,13 +204,13 @@
 
     if (state === 'loading') {
       panel.style.opacity = '0.78';
-      panel.title = '额度刷新中…';
+      panel.title = uiText('额度刷新中…', 'Refreshing quota…');
     } else if (state === 'error') {
       panel.style.opacity = '0.94';
-      panel.title = '额度刷新失败';
+      panel.title = uiText('额度刷新失败', 'Failed to refresh quota');
     } else {
       panel.style.opacity = '0.96';
-      panel.title = 'all 积分余量';
+      panel.title = uiText('all 积分余量', 'all quota balance');
     }
   }
 

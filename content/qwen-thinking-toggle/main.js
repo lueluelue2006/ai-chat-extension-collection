@@ -28,6 +28,22 @@
   let initialThinkingBootstrapStarted = false;
   let hotkeysEnabled = true;
 
+  function getUiLocale() {
+    try {
+      return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
+    } catch {
+      return 'en';
+    }
+  }
+
+  function isChineseUi() {
+    return /^zh/i.test(getUiLocale());
+  }
+
+  function uiText(zh, en) {
+    return isChineseUi() ? zh : en;
+  }
+
   function normalizeMetaKeyMode(mode) {
     const value = String(mode || '').trim().toLowerCase();
     if (value === 'auto' || value === 'has_meta' || value === 'no_meta') return value;
@@ -318,7 +334,7 @@
 
     const popup = await openModelPopup();
     if (!popup) {
-      showToast('Qwen: 找不到模型菜单');
+      showToast(uiText('Qwen：找不到模型菜单', 'Qwen: model menu not found'));
       return;
     }
 
@@ -331,14 +347,14 @@
       null;
 
     if (!pick) {
-      showToast('Qwen: 未找到目标模型');
+      showToast(uiText('Qwen：未找到目标模型', 'Qwen: target model not found'));
       return;
     }
 
     try {
       pick.click();
     } catch {
-      showToast('Qwen: 切换模型失败');
+      showToast(uiText('Qwen：切换模型失败', 'Qwen: failed to switch model'));
       return;
     }
 
@@ -348,7 +364,7 @@
       return '';
     }, 1200, 30);
 
-    showToast(`Qwen: 模型 → ${after || target.want}`);
+    showToast(uiText(`Qwen：模型 → ${after || target.want}`, `Qwen: model → ${after || target.want}`));
   }
 
   function getModeSelectRoot() {
@@ -609,7 +625,7 @@
     return { popup, options };
   }
 
-  async function applyModeChange(root, option, beforeText, fallbackWant, toastPrefix = 'Qwen: 模式 → ') {
+  async function applyModeChange(root, option, beforeText, fallbackWant, toastPrefix = uiText('Qwen：模式 → ', 'Qwen: mode → ')) {
     if (!(root instanceof Element) || !(option instanceof Element)) return false;
 
     try {
@@ -624,7 +640,7 @@
       return '';
     }, 800, 30);
 
-    const fallbackLabel = getOptionText(option) || modeLabel(fallbackWant) || '目标模式';
+    const fallbackLabel = getOptionText(option) || modeLabel(fallbackWant) || uiText('目标模式', 'target mode');
     if (toastPrefix) showToast(`${toastPrefix}${after || fallbackLabel}`);
     return true;
   }
@@ -651,27 +667,27 @@
   async function toggleThinkingFast() {
     const root = getModeSelectRoot();
     if (!root) {
-      showToast('Qwen: 找不到模式选择器');
+      showToast(uiText('Qwen：找不到模式选择器', 'Qwen: mode selector not found'));
       return;
     }
 
     const before = getCurrentModeText(root);
     const { options } = await openModePopupAndListOptions(root);
     if (!options.length) {
-      showToast('Qwen: 打开模式菜单失败');
+      showToast(uiText('Qwen：打开模式菜单失败', 'Qwen: failed to open the mode menu'));
       return;
     }
 
     const { option, want } = pickModeOption(options, before);
 
     if (!option) {
-      showToast('Qwen: 未找到可切换模式');
+      showToast(uiText('Qwen：未找到可切换模式', 'Qwen: no switchable mode found'));
       return;
     }
 
     const switched = await applyModeChange(root, option, before, want);
     if (!switched) {
-      showToast('Qwen: 切换模式失败');
+      showToast(uiText('Qwen：切换模式失败', 'Qwen: failed to switch mode'));
       return;
     }
     await focusQwenComposerToEnd();
@@ -715,7 +731,7 @@
         else if (action === 'toggle_model') await toggleModel();
       } catch (err) {
         const detail = err && typeof err.message === 'string' ? err.message : '';
-        showToast(`Qwen: 操作失败${detail ? `（${detail}）` : ''}`);
+        showToast(uiText(`Qwen：操作失败${detail ? `（${detail}）` : ''}`, `Qwen: action failed${detail ? ` (${detail})` : ''}`));
       } finally {
         busy = false;
       }

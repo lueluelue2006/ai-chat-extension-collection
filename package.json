@@ -1,6 +1,6 @@
 {
   "name": "quicknav-mv3",
-  "version": "2.6.16",
+  "version": "2.6.17",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",

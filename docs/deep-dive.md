@@ -209,7 +209,8 @@ QuickNav 注入顺序（实现细节）已经收敛到 `shared/injections.ts`，
   - `AISHORTCUTS_RUN_MENU` → 执行某个 `id`
 
 MAIN world 菜单桥（关键）：MAIN world 不能把函数引用交给 ISOLATED，所以 `menu-bridge.js` 通过 `CustomEvent` 做“注册 key / 执行 key”的单向桥接。
-从 2026-03-05 的安全收口开始，这条桥不再只看 `group + handlerKeyPrefix`；注册侧还会校验调用栈里的扩展脚本来源，执行侧也只接受由 `content/menu-bridge.js` 触发的 run 事件，避免页面脚本伪造同名 `CustomEvent` 混入弹窗菜单。
+从 2026-03-05 的安全收口开始，这条桥不再只看 `group + handlerKeyPrefix`；注册侧还会校验扩展脚本来源，执行侧也只接受由 `content/menu-bridge.js` 触发的 run 事件，避免页面脚本伪造同名 `CustomEvent` 混入弹窗菜单。
+- 2026-03-12 起，MAIN world 注册事件会显式携带 `moduleId + source`，桥接层优先用显式来源做白名单判断，只把调用栈探测当 fallback，避免消息树/用量统计在英文模式或异步回调下丢失菜单命令。
 
 ### 5.4 Scroll Guard：MAIN world 防自动滚动 + 路由广播
 
@@ -377,7 +378,8 @@ Turn 筛选策略（维护重点）：
 - QuickNav 桥协议：`AISHORTCUTS_CHATGPT_TREE_*`（summary/toggle/open/close/refresh/navigate）
 - 缓存回收：关闭时主动丢弃大 mapping（避免常驻占用）
 - 凭据边界：auth/session 缓存放在闭包内 `authCache`，`window.__aichat_chatgpt_message_tree_state__` 不再暴露 `token/accountId/deviceId`
-- 菜单导出：提供“导出完整树为 JSON”（整棵 mapping + 统计）
+- 导出：在面板头部提供 `Export JSON`，并保留主菜单命令“导出完整树为 JSON”（整棵 mapping + 统计）
+  - `menu-bridge` 的 MAIN-world 白名单现在按 `moduleId + handlerKeyPrefix + sourceIncludes` 验证，不再把本地化后的 `group` 文案当成唯一准入条件，避免英文模式下消息树导出命令被桥接层误拦截。
 
 ### 6.4 thinking toggle（`content/chatgpt-thinking-toggle/main.js` + `content/chatgpt-thinking-toggle/config-bridge.js`）
 

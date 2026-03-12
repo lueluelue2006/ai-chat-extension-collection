@@ -17,11 +17,13 @@
   const MAIN_WORLD_ALLOWLIST = Object.freeze([
     // Only a few scripts run in MAIN world and need this bridge. Keep it tight to reduce page spoofing.
     Object.freeze({
+      moduleId: 'chatgpt_usage_monitor',
       group: 'ChatGPT 用量统计',
       handlerKeyPrefix: 'chatgpt_usage_monitor:',
       sourceIncludes: 'content/chatgpt-usage-monitor/main.js'
     }),
     Object.freeze({
+      moduleId: 'chatgpt_message_tree',
       group: 'ChatGPT 消息树',
       handlerKeyPrefix: 'chatgpt_message_tree:',
       sourceIncludes: 'content/chatgpt-message-tree/main.js'
@@ -139,14 +141,22 @@
     return tail || p;
   }
 
-  function getMainWorldAllowRule(group, handlerKey, callerSource) {
+  function getMainWorldAllowRule(group, moduleId, handlerKey, callerSource) {
     const normalizedGroup = String(group || '').trim();
+    const normalizedModuleId = String(moduleId || '').trim();
     const normalizedHandlerKey = String(handlerKey || '').trim();
     const normalizedCallerSource = String(callerSource || '').trim();
-    if (!normalizedGroup || !normalizedHandlerKey || !normalizedCallerSource) return null;
+    if (!normalizedHandlerKey || !normalizedCallerSource) return null;
     return (
       MAIN_WORLD_ALLOWLIST.find((rule) => {
-        if (!rule || rule.group !== normalizedGroup) return false;
+        if (!rule) return false;
+        const allowedModuleId = String(rule.moduleId || '').trim();
+        const allowedGroup = String(rule.group || '').trim();
+        if (allowedModuleId) {
+          if (!normalizedModuleId || allowedModuleId !== normalizedModuleId) return false;
+        } else if (allowedGroup !== normalizedGroup) {
+          return false;
+        }
         const prefix = String(rule.handlerKeyPrefix || '');
         const sourceIncludes = String(rule.sourceIncludes || '');
         if (!prefix || !normalizedHandlerKey.startsWith(prefix)) return false;
@@ -158,12 +168,14 @@
 
   function readMenuMetadata(rawMetadata) {
     const meta = rawMetadata && typeof rawMetadata === 'object' ? rawMetadata : null;
-    if (!meta) return { group: '', moduleId: '' };
+    if (!meta) return { group: '', moduleId: '', source: '' };
     const group = String(meta.group || '').trim();
     const moduleId = String(meta.moduleId || '').trim();
+    const source = String(meta.source || '').trim();
     return {
       group: group.length <= 120 ? group : group.slice(0, 120),
-      moduleId: moduleId.length <= 120 ? moduleId : moduleId.slice(0, 120)
+      moduleId: moduleId.length <= 120 ? moduleId : moduleId.slice(0, 120),
+      source: source.length <= 240 ? source : source.slice(0, 240)
     };
   }
 
@@ -205,10 +217,11 @@
         const handlerKey = String(d.handlerKey || '').trim();
         const group = String(d.group || 'Main').trim() || 'Main';
         const moduleId = String(d.moduleId || '').trim();
-        const callerSource = getCallerSource();
+        const detailSource = String(d.source || '').trim();
+        const callerSource = detailSource || getCallerSource();
         if (!name || !handlerKey) return;
-        if (name.length > 120 || handlerKey.length > 240 || group.length > 120 || moduleId.length > 120) return;
-        if (!getMainWorldAllowRule(group, handlerKey, callerSource)) return;
+        if (name.length > 120 || handlerKey.length > 240 || group.length > 120 || moduleId.length > 120 || callerSource.length > 240) return;
+        if (!getMainWorldAllowRule(group, moduleId, handlerKey, callerSource)) return;
 
         const runProxy = () => {
           try {

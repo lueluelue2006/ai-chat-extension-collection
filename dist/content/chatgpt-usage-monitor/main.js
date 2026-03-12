@@ -676,7 +676,13 @@
   __aichatAddRuntimeDisposer(__aichatReleaseMainMenuHandlers);
 
   function __aichatDispatchMainMenuRegister(name, handlerKey) {
-    const detail = { name, handlerKey, group: __aichatMainMenuGroup, moduleId: __aichatMainMenuModuleId };
+    const detail = {
+      name,
+      handlerKey,
+      group: __aichatMainMenuGroup,
+      moduleId: __aichatMainMenuModuleId,
+      source: __aichatMainMenuSelfSource
+    };
     try {
       window.dispatchEvent(new CustomEvent(__aichatMainMenuRegisterEvent, { detail }));
     } catch {}

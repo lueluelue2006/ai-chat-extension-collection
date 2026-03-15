@@ -30,6 +30,7 @@
   const ROOT_HEAVY_ATTR = 'data-cgptperf-heavy';
   const ROOT_NOANIM_ATTR = 'data-cgptperf-noanim';
   const ROOT_FIND_ATTR = 'data-cgptperf-find';
+  const MIN_TURNS_FOR_VIRTUALIZATION = 6;
 
   const OFFSCREEN_CLASS = 'cgptperf-offscreen';
   const INTRINSIC_VAR = '--cgptperf-intrinsic-size';
@@ -140,33 +141,47 @@
     return active;
   }
 
-	  function collectBudgetSnapshot(totalArticles, force = false) {
-	    const now = nowPerf();
-	    const prev = state.budgetSnapshot;
-	    const articleChanged = !prev || prev.totalArticles !== totalArticles;
-	    const staleByTime = now - state.budgetSnapshotAt > 1800;
+  function getBudgetScopeRoot() {
+    if (state.containerEl instanceof HTMLElement) return state.containerEl;
+    const main = document.querySelector('main');
+    return main instanceof HTMLElement ? main : document.body;
+  }
+
+  function collectBudgetSnapshot(totalArticles, force = false) {
+    const now = nowPerf();
+    const prev = state.budgetSnapshot;
+    const articleChanged = !prev || prev.totalArticles !== totalArticles;
+    const staleByTime = now - state.budgetSnapshotAt > 1800;
     const shouldRefresh = force || articleChanged || state.structureDirty || staleByTime;
 
     if (!shouldRefresh && prev) return prev;
 
-	    let domNodes = prev?.domNodes ?? 0;
-	    let katexNodes = prev?.katexNodes ?? 0;
-	    try {
-	      state.kpi.domQueryOps += 1;
-	      domNodes = document.getElementsByTagName('*').length;
-	    } catch {
-	      // ignore
-	    }
+    if (!force && totalArticles < MIN_TURNS_FOR_VIRTUALIZATION) {
+      const snap = { totalArticles, domNodes: 0, katexNodes: 0, ts: Date.now() };
+      state.budgetSnapshot = snap;
+      state.budgetSnapshotAt = now;
+      return snap;
+    }
+
+    const scopeRoot = getBudgetScopeRoot();
+    let domNodes = prev?.domNodes ?? 0;
+    let katexNodes = prev?.katexNodes ?? 0;
+    try {
+      state.kpi.domQueryOps += 1;
+      domNodes = scopeRoot?.getElementsByTagName?.('*')?.length ?? document.getElementsByTagName('*').length;
+    } catch {
+      // ignore
+    }
     // KaTeX query is relatively expensive; only refresh when the conversation has enough turns
     // or we explicitly force a refresh.
-	    if (force || articleChanged || totalArticles >= 10) {
-	      try {
-	        state.kpi.domQueryOps += 1;
-	        katexNodes = document.querySelectorAll('.katex-display, mjx-container').length;
-	      } catch {
-	        // ignore
-	      }
-	    }
+    if (force || articleChanged || totalArticles >= 10) {
+      try {
+        state.kpi.domQueryOps += 1;
+        katexNodes = scopeRoot?.querySelectorAll?.('.katex-display, mjx-container')?.length ?? document.querySelectorAll('.katex-display, mjx-container').length;
+      } catch {
+        // ignore
+      }
+    }
 
     const snap = { totalArticles, domNodes, katexNodes, ts: Date.now() };
     state.budgetSnapshot = snap;
@@ -695,6 +710,16 @@
     }
   }
 
+  function shouldVirtualizeContainer(container = state.containerEl) {
+    if (!(container instanceof HTMLElement)) return false;
+    try {
+      state.kpi.domQueryOps += 1;
+      return container.querySelectorAll(':scope > article').length >= MIN_TURNS_FOR_VIRTUALIZATION;
+    } catch {
+      return false;
+    }
+  }
+
   function attachIo() {
     if (state.io) return;
 
@@ -704,6 +729,10 @@
       (entries) => {
         for (const entry of entries) {
           const h = entry?.boundingClientRect?.height;
+          if (!shouldVirtualizeContainer()) {
+            clearOffscreen(entry.target, h);
+            continue;
+          }
           if (entry.isIntersecting) clearOffscreen(entry.target, h);
           else setOffscreen(entry.target, h);
         }
@@ -1301,19 +1330,31 @@
     else setTimeout(run, 0);
   }
 
-	  function applyVirtualizationNow(marginPx) {
-	    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-	    const container = state.containerEl;
-	    if (!(container instanceof HTMLElement)) return;
+  function applyVirtualizationNow(marginPx) {
+    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+    const container = state.containerEl;
+    if (!(container instanceof HTMLElement)) return;
 	    try {
 	      state.kpi.domQueryOps += 1;
 	      state.kpi.turnScanCount += 1;
 	    } catch {
 	      // ignore
-	    }
-	    const articles = container.querySelectorAll(':scope > article');
-	    const total = articles.length;
-	    if (!total) return;
+    }
+    const articles = container.querySelectorAll(':scope > article');
+    const total = articles.length;
+    if (!total) return;
+
+    if (total < MIN_TURNS_FOR_VIRTUALIZATION) {
+      state.reconcileToken += 1;
+      state.reconcileArticles = null;
+      state.budgetLevel = 0;
+      state.lastVisibleFirst = 0;
+      state.lastVisibleLast = total - 1;
+      state.lastVisibleTotal = total;
+      state.structureDirty = false;
+      for (let i = 0; i < total; i += 1) clearOffscreen(articles[i]);
+      return;
+    }
 
     const topBound = -marginPx;
     const bottomBound = window.innerHeight + marginPx;

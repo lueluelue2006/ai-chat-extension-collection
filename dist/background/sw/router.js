@@ -74,7 +74,6 @@
     };
   }
   const ROUTER_HANDLER_ORDER = [
-    "handleMemtestMessage",
     "handleBootstrapMessage",
     "handleSettingsMessage",
     "handleGpt53Message",

@@ -3085,13 +3085,30 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (state.destroyed || state.userAdjusting) return;
       updateObservedElements();
 
+      const viewportWidth = Math.max(window.visualViewport?.width || 0, window.innerWidth || 0, document.documentElement?.clientWidth || 0);
+      const baseRect = nav.getBoundingClientRect();
+      let navRect = baseRect;
+
       if (state.defaultMode && !state.followLeft && !state.followRight) {
         const defaultPos = getDefaultNavPosition(nav);
         state.manual = defaultPos;
         applyNavPosition(nav, defaultPos);
+        if (baseRect && Number.isFinite(baseRect.width) && Number.isFinite(baseRect.height)) {
+          const top = Number.isFinite(defaultPos.top) ? defaultPos.top : baseRect.top;
+          const right = Number.isFinite(defaultPos.right) ? defaultPos.right : clampNavRight(DEFAULT_NAV_RIGHT, nav);
+          const left = Number.isFinite(defaultPos.left)
+            ? defaultPos.left
+            : Math.max(0, viewportWidth - right - baseRect.width);
+          navRect = {
+            left,
+            right: left + baseRect.width,
+            top,
+            bottom: top + baseRect.height,
+            width: baseRect.width,
+            height: baseRect.height
+          };
+        }
       }
-
-      const navRect = nav.getBoundingClientRect();
       try {
         const panel = state.rightEl ? getVisibleRect(state.rightEl, 0) : null;
         if (nav && nav.dataset) {
@@ -4050,13 +4067,32 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const list = ui.nav.querySelector('.compact-list');
     if (!list) return;
     const updateScrollbarState = () => {
+      if (!list.isConnected) return;
       const hasScroll = list.scrollHeight > list.clientHeight + 1;
+      const prev = list._qnScrollState || null;
+      if (
+        prev &&
+        prev.hasScroll === hasScroll &&
+        Math.abs((prev.scrollHeight || 0) - list.scrollHeight) <= 1 &&
+        Math.abs((prev.clientHeight || 0) - list.clientHeight) <= 1
+      ) {
+        return;
+      }
+      list._qnScrollState = {
+        hasScroll,
+        scrollHeight: list.scrollHeight,
+        clientHeight: list.clientHeight
+      };
       list.classList.toggle('has-scroll', hasScroll);
       ui.nav.classList.toggle('cgpt-has-scrollbar', hasScroll);
     };
     const queueScrollbarState = () => {
       const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
-      raf(() => updateScrollbarState());
+      if (list._qnScrollbarRaf) return;
+      list._qnScrollbarRaf = raf(() => {
+        list._qnScrollbarRaf = 0;
+        updateScrollbarState();
+      });
     };
     const removed = runCheckpointGC(false);
     if (removed) { saveCPSet(); }
@@ -5711,11 +5747,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 	          // Check computed overflow first, then do layout reads only when needed.
 	          const oy = getComputedStyle(el).overflowY;
 	          if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
-	            if (el.scrollHeight > el.clientHeight + 1) {
-	              __cgptChatScrollContainer = el;
-	              __cgptChatScrollContainerTs = Date.now();
-	              return el;
-	            }
+	            __cgptChatScrollContainer = el;
+	            __cgptChatScrollContainerTs = Date.now();
+	            return el;
 	          }
 	        } catch {}
 	        el = el.parentElement;
@@ -6868,17 +6902,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!list) return;
 
     const n = list.querySelector(`.compact-item[data-id="${id}"]`);
-    // 过滤模式下可能找不到对应项：清掉旧高亮，避免残留
-    list.querySelectorAll('.compact-item.active').forEach((node) => {
-      node.classList.remove('active');
-    });
+    const prevNode = list._qnActiveNode || null;
+    if (prevNode && prevNode !== n) prevNode.classList.remove('active');
     if (!n) return;
 
-    n.classList.add('active');
-    const r = n.getBoundingClientRect();
-    const lr = list.getBoundingClientRect();
-    if (r.top < lr.top) list.scrollTop += (r.top - lr.top - 4);
-    else if (r.bottom > lr.bottom) list.scrollTop += (r.bottom - lr.bottom + 4);
+    if (n !== prevNode) n.classList.add('active');
+    list._qnActiveNode = n;
+    if (list._qnActiveMeasureRaf) cancelAnimationFrame(list._qnActiveMeasureRaf);
+    list._qnActiveMeasureRaf = requestAnimationFrame(() => {
+      list._qnActiveMeasureRaf = 0;
+      if (!n.isConnected || !list.isConnected) return;
+      const r = n.getBoundingClientRect();
+      const lr = list.getBoundingClientRect();
+      if (r.top < lr.top) list.scrollTop += (r.top - lr.top - 4);
+      else if (r.bottom > lr.bottom) list.scrollTop += (r.bottom - lr.bottom + 4);
+    });
   }
 
   function jumpActiveBy(delta) {

@@ -27,6 +27,12 @@
     return Date.now();
   }
 
+  let editorCache = {
+    at: 0,
+    routeKey: '',
+    el: null
+  };
+
   function pickBottomMostVisible(candidates) {
     const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
     let best = null;
@@ -36,8 +42,7 @@
         if (!el || !el.getBoundingClientRect) continue;
         const r = el.getBoundingClientRect();
         if (r.width < 8 || r.height < 8) continue;
-        const cs = getComputedStyle(el);
-        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+        if (r.bottom <= 0 || r.top >= (window.innerHeight || document.documentElement?.clientHeight || 0)) continue;
         const score = Number(r.bottom) || 0;
         if (score >= bestScore) {
           bestScore = score;
@@ -108,25 +113,50 @@
   }
 
   function getEditorEl() {
+    const route = getRoute();
+    const routeKey = `${route.pathname}::${route.conversationId || ''}`;
+    try {
+      if (
+        editorCache.el &&
+        editorCache.el.isConnected &&
+        editorCache.routeKey === routeKey &&
+        (now() - editorCache.at) < 250
+      ) {
+        return editorCache.el;
+      }
+    } catch {}
+
+    let found = null;
     try {
       const list = Array.from(document.querySelectorAll('.ProseMirror[contenteditable="true"]'));
       const pm = pickBottomMostVisible(list);
-      if (pm) return pm;
+      if (pm) found = pm;
     } catch {}
-    try {
-      const list = Array.from(document.querySelectorAll('#prompt-textarea[contenteditable="true"]'));
-      const el = pickBottomMostVisible(list);
-      if (el) return el;
-    } catch {}
-    try {
-      const el = document.querySelector('#prompt-textarea');
-      if (el) return el;
-    } catch {}
-    try {
-      const el = document.querySelector('textarea[name="prompt-textarea"]');
-      if (el) return el;
-    } catch {}
-    return null;
+    if (!found) {
+      try {
+        const list = Array.from(document.querySelectorAll('#prompt-textarea[contenteditable="true"]'));
+        const el = pickBottomMostVisible(list);
+        if (el) found = el;
+      } catch {}
+    }
+    if (!found) {
+      try {
+        const el = document.querySelector('#prompt-textarea');
+        if (el) found = el;
+      } catch {}
+    }
+    if (!found) {
+      try {
+        const el = document.querySelector('textarea[name="prompt-textarea"]');
+        if (el) found = el;
+      } catch {}
+    }
+    editorCache = {
+      at: now(),
+      routeKey,
+      el: found || null
+    };
+    return found || null;
   }
 
   function getComposerForm(editorEl) {

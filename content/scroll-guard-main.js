@@ -506,6 +506,9 @@
 
   let __cachedScroller = null;
   let __cachedScrollerAt = 0;
+  let __cachedScrollerRect = null;
+  let __cachedScrollerRectAt = 0;
+  const __targetRectCache = new WeakMap();
 
   function clearScrollerMarker() {
     try {
@@ -570,6 +573,25 @@
       return se ? se.scrollTop : (window.scrollY || 0);
     }
     return el.scrollTop || 0;
+  }
+
+  function readRectCached(el, ttl = 16) {
+    if (!el || !el.getBoundingClientRect) return null;
+    const ts = now();
+    if (el === __cachedScroller) {
+      if (__cachedScrollerRect && (ts - __cachedScrollerRectAt) <= ttl) return __cachedScrollerRect;
+      const rect = el.getBoundingClientRect();
+      __cachedScrollerRect = rect;
+      __cachedScrollerRectAt = ts;
+      return rect;
+    }
+    try {
+      const cached = __targetRectCache.get(el);
+      if (cached && (ts - cached.at) <= ttl) return cached.rect;
+    } catch {}
+    const rect = el.getBoundingClientRect();
+    try { __targetRectCache.set(el, { rect, at: ts }); } catch {}
+    return rect;
   }
 
   function getBaselineTop(scroller) {
@@ -672,7 +694,8 @@
     const sc = getChatScroller();
     if (!sc || !target || !target.getBoundingClientRect) return false;
 
-    const r = target.getBoundingClientRect();
+    const r = readRectCached(target);
+    if (!r) return false;
     if (isWindowScroller(sc)) {
       // Only block downward scroll.
       const bottom = (window.innerHeight || 0) - 4;
@@ -685,7 +708,8 @@
       return false;
     }
 
-    const sr = sc.getBoundingClientRect();
+    const sr = readRectCached(sc);
+    if (!sr) return false;
     // Only block if target is below the visible viewport of scroller.
     return r.bottom > sr.bottom + 1;
   }

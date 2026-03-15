@@ -30,7 +30,6 @@
   const ROOT_HEAVY_ATTR = 'data-cgptperf-heavy';
   const ROOT_NOANIM_ATTR = 'data-cgptperf-noanim';
   const ROOT_FIND_ATTR = 'data-cgptperf-find';
-  const MIN_TURNS_FOR_VIRTUALIZATION = 6;
 
   const OFFSCREEN_CLASS = 'cgptperf-offscreen';
   const INTRINSIC_VAR = '--cgptperf-intrinsic-size';
@@ -89,6 +88,7 @@
     lastVisibleFirst: -1,
     lastVisibleLast: -1,
     lastVisibleTotal: 0,
+    virtualizationActive: false,
     structureDirty: true,
     lastGeneratingCheckAt: 0,
     generatingCached: false,
@@ -155,13 +155,6 @@
     const shouldRefresh = force || articleChanged || state.structureDirty || staleByTime;
 
     if (!shouldRefresh && prev) return prev;
-
-    if (!force && totalArticles < MIN_TURNS_FOR_VIRTUALIZATION) {
-      const snap = { totalArticles, domNodes: 0, katexNodes: 0, ts: Date.now() };
-      state.budgetSnapshot = snap;
-      state.budgetSnapshotAt = now;
-      return snap;
-    }
 
     const scopeRoot = getBudgetScopeRoot();
     let domNodes = prev?.domNodes ?? 0;
@@ -710,16 +703,6 @@
     }
   }
 
-  function shouldVirtualizeContainer(container = state.containerEl) {
-    if (!(container instanceof HTMLElement)) return false;
-    try {
-      state.kpi.domQueryOps += 1;
-      return container.querySelectorAll(':scope > article').length >= MIN_TURNS_FOR_VIRTUALIZATION;
-    } catch {
-      return false;
-    }
-  }
-
   function attachIo() {
     if (state.io) return;
 
@@ -729,7 +712,7 @@
       (entries) => {
         for (const entry of entries) {
           const h = entry?.boundingClientRect?.height;
-          if (!shouldVirtualizeContainer()) {
+          if (!state.virtualizationActive) {
             clearOffscreen(entry.target, h);
             continue;
           }
@@ -1344,28 +1327,27 @@
     const total = articles.length;
     if (!total) return;
 
-    if (total < MIN_TURNS_FOR_VIRTUALIZATION) {
-      state.reconcileToken += 1;
-      state.reconcileArticles = null;
-      state.budgetLevel = 0;
-      state.lastVisibleFirst = 0;
-      state.lastVisibleLast = total - 1;
-      state.lastVisibleTotal = total;
-      state.structureDirty = false;
-      for (let i = 0; i < total; i += 1) clearOffscreen(articles[i]);
-      return;
-    }
-
     const topBound = -marginPx;
     const bottomBound = window.innerHeight + marginPx;
     const first = findFirstIndexByBottom(articles, topBound);
     const last = findLastIndexByTop(articles, bottomBound);
+    const hiddenCount = Math.max(0, first) + Math.max(0, total - last - 1);
     const unchangedWindow =
       first === state.lastVisibleFirst && last === state.lastVisibleLast && total === state.lastVisibleTotal;
     if (unchangedWindow && !state.structureDirty) return;
     state.lastVisibleFirst = first;
     state.lastVisibleLast = last;
     state.lastVisibleTotal = total;
+    state.virtualizationActive = hiddenCount >= 2;
+
+    if (!state.virtualizationActive) {
+      state.reconcileToken += 1;
+      state.reconcileArticles = null;
+      state.budgetLevel = 0;
+      state.structureDirty = false;
+      for (let i = 0; i < total; i += 1) clearOffscreen(articles[i]);
+      return;
+    }
 
     const generating = isGeneratingResponse();
     const wasStructureDirty = state.structureDirty;

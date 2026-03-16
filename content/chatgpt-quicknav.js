@@ -17,6 +17,8 @@
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
   const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
   const BOUNDARY_EPS = 28;
+  const HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS = 220;
+  const HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS = 320;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEFAULT_NAV_TOP = 1;
   const DEFAULT_NAV_RIGHT = 1;
@@ -6806,7 +6808,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     });
   }
 
+  function shouldThrottleActiveTracking() {
+    try {
+      if (document.documentElement?.dataset?.cgptperfHeavy === '1') return true;
+    } catch {}
+    return cacheIndex.length >= 12;
+  }
+
   function scheduleActiveUpdateDebounced(delay = 90) {
+    if (shouldThrottleActiveTracking()) {
+      delay = Math.max(Number(delay) || 0, HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+    }
     if (activeUpdateTimer) cancelScopedTimeout(activeUpdateTimer);
     activeUpdateTimer = scopeTimeout(conversationScope, () => {
       activeUpdateTimer = 0;
@@ -6826,6 +6838,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const y = getAnchorY();
     const xs = [Math.floor(window.innerWidth * 0.40), Math.floor(window.innerWidth * 0.60)];
     let activeEl = null;
+    const heavyTracking = shouldThrottleActiveTracking();
 
     for (const x of xs) {
       const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : []);
@@ -6839,12 +6852,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (activeEl) break;
     }
 
-    const nearNext = findNearNextTop(y, BOUNDARY_EPS);
-    if (nearNext) activeEl = nearNext;
+    if (!(activeEl && activeEl.id === currentActiveId)) {
+      const nearNext = findNearNextTop(y, BOUNDARY_EPS);
+      if (nearNext) activeEl = nearNext;
+    }
 
     if (!activeEl) {
       const sinceScroll = Date.now() - (lastScrollTs || 0);
-      if (sinceScroll < 160) return;
+      const minDelay = heavyTracking ? HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS : 160;
+      if (sinceScroll < minDelay) return;
       const turns = qsTurns();
       for (const t of turns) { const r = t.getBoundingClientRect(); if (r.bottom >= y) { activeEl = t; break; } }
       if (!activeEl && turns.length) activeEl = turns[0];

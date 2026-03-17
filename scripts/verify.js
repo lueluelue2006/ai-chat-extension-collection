@@ -399,6 +399,135 @@ function summarizeInjectionStats(reg, defs) {
   };
 }
 
+function verifyChatgptNativeEditCmdEnterFallback() {
+  const abs = path.join(ROOT, 'content/chatgpt-cmdenter-send/main.js');
+  const priorGlobals = {
+    Element: global.Element,
+    HTMLButtonElement: global.HTMLButtonElement,
+    window: global.window,
+    document: global.document
+  };
+
+  class FakeElement {
+    constructor(tagName, { attrs = {}, className = '', text = '', disabled = false } = {}) {
+      this.tagName = String(tagName || '').toUpperCase();
+      this.nodeType = 1;
+      this._attrs = { ...attrs };
+      this.className = className || String(attrs.class || '');
+      this.textContent = text;
+      this.innerText = text;
+      this.disabled = !!disabled;
+      this.children = [];
+      this.parentElement = null;
+      this.isContentEditable = false;
+    }
+
+    append(...children) {
+      for (const child of children) {
+        if (!child) continue;
+        child.parentElement = this;
+        this.children.push(child);
+      }
+      return this;
+    }
+
+    getAttribute(name) {
+      return this._attrs?.[name] ?? null;
+    }
+
+    querySelector(selector) {
+      return this.querySelectorAll(selector)[0] || null;
+    }
+
+    querySelectorAll(selector) {
+      const selectors = String(selector || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const out = [];
+      const walk = (node) => {
+        for (const child of node.children || []) {
+          if (selectors.some((sel) => matchesSelector(child, sel))) out.push(child);
+          walk(child);
+        }
+      };
+      walk(this);
+      return out;
+    }
+
+    closest(selector) {
+      let node = this;
+      while (node) {
+        if (matchesSelector(node, selector)) return node;
+        node = node.parentElement || null;
+      }
+      return null;
+    }
+  }
+
+  function matchesSelector(node, selector) {
+    const sel = String(selector || '').trim();
+    if (!sel) return false;
+    if (sel === 'article') return node.tagName === 'ARTICLE';
+    if (sel === 'form') return node.tagName === 'FORM';
+    if (sel === 'button') return node.tagName === 'BUTTON';
+    if (sel === 'textarea') return node.tagName === 'TEXTAREA';
+    if (sel === 'textarea[name="prompt-textarea"]') return node.tagName === 'TEXTAREA' && node.getAttribute('name') === 'prompt-textarea';
+    if (sel === '#prompt-textarea') return node.getAttribute('id') === 'prompt-textarea';
+    if (sel === '.ProseMirror[contenteditable="true"]') {
+      return /\bProseMirror\b/.test(String(node.className || '')) && node.getAttribute('contenteditable') === 'true';
+    }
+    if (sel === 'button[data-testid="send-button"]') {
+      return node.tagName === 'BUTTON' && node.getAttribute('data-testid') === 'send-button';
+    }
+    if (sel === 'button#composer-submit-button') {
+      return node.tagName === 'BUTTON' && node.getAttribute('id') === 'composer-submit-button';
+    }
+    return false;
+  }
+
+  try {
+    global.Element = FakeElement;
+    global.HTMLButtonElement = FakeElement;
+    global.window = undefined;
+    global.document = {};
+    delete global.__aichat_cmdenter_send_installed__;
+    delete require.cache[require.resolve(abs)];
+    const api = require(abs);
+
+    const article = new FakeElement('article');
+    const textarea = new FakeElement('textarea', { text: 'edited text' });
+    textarea.value = 'edited text';
+    const cancel = new FakeElement('button', { text: 'Cancel' });
+    const send = new FakeElement('button', { text: 'Send' });
+    article.append(textarea, cancel, send);
+
+    const prompt = api.getChatGPTPromptElementFrom(textarea);
+    if (prompt !== textarea) {
+      return { ok: false, reason: 'native_edit_prompt_not_detected' };
+    }
+
+    const sendButton = api.getChatgptSendButtonNear(textarea);
+    if (sendButton !== send) {
+      return { ok: false, reason: 'native_edit_send_button_not_found' };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    delete require.cache[require.resolve(abs)];
+    delete global.__aichat_cmdenter_send_installed__;
+    global.Element = priorGlobals.Element;
+    global.HTMLButtonElement = priorGlobals.HTMLButtonElement;
+    global.window = priorGlobals.window;
+    global.document = priorGlobals.document;
+  }
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -518,6 +647,14 @@ function main() {
     return;
   }
   console.log(`Content runtime file coverage: OK (${orphanCheck.referencedCount}/${orphanCheck.sourceCount} referenced)`);
+
+  const nativeEditCheck = verifyChatgptNativeEditCmdEnterFallback();
+  if (!nativeEditCheck.ok) {
+    console.error(`ChatGPT native edit Cmd+Enter support: FAIL (${nativeEditCheck.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT native edit Cmd+Enter support: OK');
 
   console.log('Integrated repo checks: OK');
 }

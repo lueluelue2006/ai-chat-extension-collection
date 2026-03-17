@@ -244,6 +244,18 @@
       if (byName) return byName;
     } catch {}
 
+    // Native "Edit message" mode uses a plain textarea inside the message article,
+    // outside the normal composer form. Keep this scoped to articles that expose
+    // the expected Cancel / Send controls so we don't grab unrelated textareas.
+    try {
+      const byTextarea = target.closest('textarea');
+      const article = byTextarea?.closest?.('article');
+      const buttons = article ? Array.from(article.querySelectorAll('button')) : [];
+      const hasCancel = buttons.some((btn) => /^(cancel|取消)$/i.test(String(btn.innerText || btn.textContent || '').trim()));
+      const hasSend = buttons.some((btn) => /^(send|发送)$/i.test(String(btn.innerText || btn.textContent || '').trim()));
+      if (byTextarea && article && hasCancel && hasSend) return byTextarea;
+    } catch {}
+
     // #prompt-textarea might be a textarea or a wrapper; accept only when it looks editable.
     try {
       const byId = target.closest('#prompt-textarea');
@@ -1106,9 +1118,24 @@
   function getChatgptSendButtonNear(promptEl) {
     const form = promptEl?.closest?.('form') || null;
     const button = form?.querySelector('button[data-testid="send-button"], button#composer-submit-button') || null;
-    if (!isButtonLikeElement(button) || button.disabled) return null;
-    if (isStopButton(button)) return null;
-    return button;
+    if (isButtonLikeElement(button) && !button.disabled && !isStopButton(button) && isSendLikeControl(button)) return button;
+
+    // ChatGPT native edit mode uses an article-local "Send" button outside the composer form.
+    try {
+      const article = promptEl?.closest?.('article') || null;
+      if (article) {
+        const candidates = Array.from(article.querySelectorAll('button'));
+        for (const candidate of candidates) {
+          if (!isButtonLikeElement(candidate) || candidate.disabled) continue;
+          if (isStopButton(candidate)) continue;
+          const label = String(candidate.innerText || candidate.textContent || '').trim();
+          if (!/^(send|发送)$/i.test(label)) continue;
+          return candidate;
+        }
+      }
+    } catch {}
+
+    return isButtonLikeElement(button) && !button.disabled && !isStopButton(button) && isSendLikeControl(button) ? button : null;
   }
 
   function hasChatgptAttachmentPreview(promptEl) {
@@ -1429,6 +1456,7 @@
     bootstrapInitialModelPresetForSite,
     collectEventProbeTargets,
     decideQwenSendMethod,
+    getChatGPTPromptElementFrom,
     getErnieComposerScopeFromPrompt,
     getErnieCurrentModelText,
     getErnieModelMenuOption,

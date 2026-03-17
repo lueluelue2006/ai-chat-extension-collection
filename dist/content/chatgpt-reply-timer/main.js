@@ -53,7 +53,8 @@
       bootstrapTimer: 0,
       bootstrapAttempts: 0,
       routeUnsub: null,
-      lastGenerating: false
+      lastGenerating: false,
+      healthCheckAt: 0
     },
     ui: { el: null, tickId: 0, hideTimer: 0, resilienceMo: null, resilienceTimer: 0 },
     run: {
@@ -144,6 +145,19 @@
     return '';
   }
 
+  function isSteerTurnUrl(url) {
+    if (!url) return false;
+    return /\/backend-api\/f\/steer_turn(?:\?|$)/.test(String(url));
+  }
+
+  function isConversationRoute() {
+    try {
+      return /^\/c\/[a-z0-9-]+$/i.test(String(location.pathname || ''));
+    } catch {
+      return false;
+    }
+  }
+
   function shouldTrackReplyTimer(options = {}) {
     const payloadModel = String(options.payloadModel || '');
     const modelLabel = String(options.modelLabel || readCurrentModelLabel() || '');
@@ -191,10 +205,11 @@
           color: rgba(255,255,255,0.92);
           user-select: none;
           pointer-events: none;
+          display: none;
           opacity: 0;
           transition: opacity 120ms linear;
         }
-        #${EL_ID}[data-visible="1"]{ opacity: 1; }
+        #${EL_ID}[data-visible="1"]{ display: block; opacity: 1; }
         #${EL_ID}[data-status="running"]{ color: rgba(251, 191, 36, 0.95); }
         #${EL_ID}[data-status="done"]{ color: rgba(167, 243, 208, 0.95); }
         #${EL_ID}[data-status="error"]{ color: rgba(252, 165, 165, 0.95); }
@@ -283,6 +298,9 @@
     const el = ensureEl();
     if (!el) return;
 
+    maybeRefreshGeneratingObserver();
+    maybeFinalizeSettledRun();
+
     if (!shouldTrackReplyTimer()) {
       state.run.active = null;
       state.run.last = null;
@@ -351,14 +369,28 @@
       firstByteAt: null,
       doneAt: null,
       outcome: null,
-      source: 'hub'
+      source: String(ctx?.source || 'hub'),
+      pendingDone: null
     };
     state.runsByRequestId.set(id, run);
     pruneRuns();
     state.run.active = run;
+    state.run.last = null;
+    state.gen.lastGenerating = true;
     startUiLoop();
     render();
     return run;
+  }
+
+  function finalizeRun(run, doneAt, outcome) {
+    if (!run || run.doneAt) return;
+    run.doneAt = Number.isFinite(doneAt) ? doneAt : now();
+    run.outcome = String(outcome || 'complete');
+    run.pendingDone = null;
+    state.run.last = run;
+    if (state.run.active && state.run.active.id === run.id) state.run.active = null;
+    render();
+    scheduleHideAfterDone();
   }
 
   function finalizeRunFromCtx(ctx) {
@@ -367,36 +399,42 @@
     const run = state.runsByRequestId.get(id);
     if (!run || run.doneAt) return;
 
-    const doneAt = Number(ctx?.stream?.doneAt);
-    run.doneAt = Number.isFinite(doneAt) ? doneAt : now();
-
     const sawDone = ctx?.stream?.sawDone === true;
     const hasError = !!ctx?.stream?.error;
-    run.outcome = hasError ? 'error' : sawDone ? 'complete' : 'ended';
+    const outcome = hasError ? 'error' : sawDone ? 'complete' : 'ended';
+    const doneAt = Number(ctx?.stream?.doneAt);
 
-    state.run.last = run;
-    if (state.run.active && state.run.active.id === run.id) state.run.active = null;
+    if (isGeneratingNow()) {
+      run.pendingDone = {
+        doneAt: Number.isFinite(doneAt) ? doneAt : now(),
+        outcome
+      };
+      state.gen.lastGenerating = true;
+      startUiLoop();
+      render();
+      return;
+    }
 
-    render();
-    scheduleHideAfterDone();
+    finalizeRun(run, now(), outcome);
   }
 
-  function startRunLocal(reason = '') {
+  function startAuxRun(id, startedAt, source, reason = '') {
     try {
-      const existing = state.run.active;
-      if (existing && !existing.doneAt) return existing;
       const run = {
-        id: `dom:${now().toString(16)}:${Math.random().toString(16).slice(2)}`,
-        startedAt: now(),
+        id: String(id || `${source}:${now().toString(16)}:${Math.random().toString(16).slice(2)}`),
+        startedAt: Number.isFinite(startedAt) ? startedAt : now(),
         firstByteAt: null,
         doneAt: null,
         outcome: null,
-        source: 'dom',
-        reason: String(reason || '')
+        source: String(source || 'dom'),
+        reason: String(reason || ''),
+        pendingDone: null
       };
       state.runsByRequestId.set(run.id, run);
       pruneRuns();
       state.run.active = run;
+      state.run.last = null;
+      state.gen.lastGenerating = true;
       startUiLoop();
       render();
       return run;
@@ -405,17 +443,22 @@
     }
   }
 
-  function finalizeActiveRunLocal(outcome = 'complete') {
+  function startRunLocal(reason = '') {
+    try {
+      const existing = state.run.active;
+      if (existing && !existing.doneAt) return existing;
+      return startAuxRun('', now(), 'dom', reason);
+    } catch {
+      return null;
+    }
+  }
+
+  function finalizeActiveAuxRun(outcome = 'complete') {
     try {
       const run = state.run.active;
       if (!run || run.doneAt) return;
-      if (run.source === 'hub') return;
-      run.doneAt = now();
-      run.outcome = String(outcome || 'complete');
-      state.run.last = run;
-      state.run.active = null;
-      render();
-      scheduleHideAfterDone();
+      if (run.source === 'hub' && !run.pendingDone) return;
+      finalizeRun(run, now(), outcome);
     } catch {}
   }
 
@@ -454,6 +497,20 @@
       const maybeUnsub = registerConsumer(CONSUMER_KEY, {
         // Run very late: read final outgoing payload after model/effort rewrites.
         priority: 250,
+        beforeFetch: (ctx) => {
+          try {
+            if (state.__installed !== true) return;
+            const method = String(ctx?.method || '').toUpperCase();
+            const url = String(ctx?.url || '');
+            if (method !== 'POST' || !isSteerTurnUrl(url)) return;
+            state.usingHub = true;
+            if (!shouldTrackReplyTimer()) {
+              clearReplyTimerDisplay();
+              return;
+            }
+            startAuxRun(String(ctx?.id || ''), Number(ctx?.startedAt) || now(), 'steer', 'steer_turn');
+          } catch {}
+        },
         onConversationStart: (ctx) => {
           try {
             if (state.__installed !== true) return;
@@ -492,7 +549,6 @@
 
   function checkGeneratingTransition() {
     try {
-      if (state.usingHub) return;
       if (!shouldTrackReplyTimer()) {
         clearReplyTimerDisplay();
         state.gen.lastGenerating = false;
@@ -502,8 +558,37 @@
       const prev = !!state.gen.lastGenerating;
       state.gen.lastGenerating = generating;
 
-      if (generating && !prev) startRunLocal('generating');
-      else if (!generating && prev) finalizeActiveRunLocal('complete');
+      if (generating && !prev) {
+        const active = state.run.active;
+        if (!active || active.doneAt || active.pendingDone) startAuxRun('', now(), 'dom', 'generating');
+        return;
+      }
+
+      if (!generating && prev) {
+        const active = state.run.active;
+        if (active?.pendingDone) finalizeRun(active, now(), active.pendingDone.outcome || 'complete');
+        else finalizeActiveAuxRun('complete');
+      }
+    } catch {}
+  }
+
+  function maybeRefreshGeneratingObserver() {
+    try {
+      const t = now();
+      if (t - Number(state.gen.healthCheckAt || 0) < 400) return;
+      state.gen.healthCheckAt = t;
+      if (state.gen.root?.isConnected) return;
+      if (ensureGeneratingObserver()) return;
+      ensureGeneratingBootstrap();
+    } catch {}
+  }
+
+  function maybeFinalizeSettledRun() {
+    try {
+      const run = state.run.active;
+      if (!run || run.doneAt || !run.pendingDone) return;
+      if (isGeneratingNow()) return;
+      finalizeRun(run, now(), run.pendingDone.outcome || 'complete');
     } catch {}
   }
 
@@ -530,6 +615,7 @@
     } catch {}
     state.gen.bootstrapTimer = 0;
     state.gen.bootstrapAttempts = 0;
+    state.gen.healthCheckAt = 0;
   }
 
   function ensureGeneratingObserver() {
@@ -596,6 +682,7 @@
         state.gen.routeUnsub = core.onRouteChange(() => {
           try {
             detachGeneratingObserver();
+            if (!isConversationRoute() && !isGeneratingNow()) clearReplyTimerDisplay();
             ensureGeneratingBootstrap();
           } catch {}
         });
@@ -613,6 +700,7 @@
             if (!href || href === last) return;
             last = href;
             detachGeneratingObserver();
+            if (!isConversationRoute() && !isGeneratingNow()) clearReplyTimerDisplay();
             ensureGeneratingBootstrap();
           } catch {}
         }, 1500);

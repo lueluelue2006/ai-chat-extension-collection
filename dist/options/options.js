@@ -44,7 +44,6 @@
   const elLocaleToggle = document.getElementById('localeToggle');
   const btnLocaleToggleZh = document.getElementById('localeToggleZh');
   const btnLocaleToggleEn = document.getElementById('localeToggleEn');
-  const btnLocaleAutoBadge = document.getElementById('localeAutoBadge');
   const I18N = (() => {
     try {
       return globalThis.AISHORTCUTS_I18N || null;
@@ -919,20 +918,6 @@
         mode === LOCALE_MODE_AUTO
           ? (!isZh ? 'Auto mode · currently English' : 'Switch to English')
           : (active ? 'Current: English' : 'Switch to English');
-    }
-
-    if (btnLocaleAutoBadge) {
-      const autoActive = mode === LOCALE_MODE_AUTO;
-      btnLocaleAutoBadge.classList.toggle('active', autoActive);
-      btnLocaleAutoBadge.setAttribute('aria-pressed', autoActive ? 'true' : 'false');
-      btnLocaleAutoBadge.textContent = 'AUTO';
-      btnLocaleAutoBadge.title = autoActive
-        ? (isZh
-            ? '自动模式：当前按浏览器语言使用中文。'
-            : 'Auto mode: currently using English from the browser language.')
-        : (isZh
-            ? '切回自动模式（仅浏览器为简体中文时显示中文，否则默认英文）。'
-            : 'Switch back to Auto mode (Chinese only for Simplified Chinese browsers; English otherwise).');
     }
   }
 
@@ -4419,12 +4404,6 @@
   btnLocaleToggleEn?.addEventListener('click', () => {
     patchQuickNavSettings((next) => {
       next.localeMode = LOCALE_MODE_EN;
-    });
-  });
-
-  btnLocaleAutoBadge?.addEventListener('click', () => {
-    patchQuickNavSettings((next) => {
-      next.localeMode = LOCALE_MODE_AUTO;
     });
   });
 

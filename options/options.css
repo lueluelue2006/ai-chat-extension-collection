@@ -264,7 +264,7 @@ a {
 .localeToggleWrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
 }
 
 .localeToggle {
@@ -282,28 +282,14 @@ a {
   text-transform: uppercase;
 }
 
-.localeAutoBadge {
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-outline);
-  border-radius: 999px;
-  background: var(--panelStrong);
-  color: var(--muted);
-  cursor: pointer;
-  font: 600 11px/1 var(--font-mono);
-  letter-spacing: 0.08em;
-}
-
 .themeToggleBtn:hover,
-.localeToggleBtn:hover,
-.localeAutoBadge:hover {
+.localeToggleBtn:hover {
   color: var(--text);
   background: var(--panelSoft);
 }
 
 .themeToggleBtn.active,
-.localeToggleBtn.active,
-.localeAutoBadge.active {
+.localeToggleBtn.active {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--border-outline) 72%);
   background: var(--accentSoft);
   color: var(--accentStrong);
@@ -311,7 +297,6 @@ a {
 
 .themeToggleBtn:focus-visible,
 .localeToggleBtn:focus-visible,
-.localeAutoBadge:focus-visible,
 .triBtn:focus-visible,
 .btn:focus-visible,
 .menuPreviewBtn:focus-visible,

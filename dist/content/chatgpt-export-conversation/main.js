@@ -6,6 +6,7 @@
   Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
 
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
+  const GRAPH_API_KEY = '__aichat_chatgpt_conversation_graph_v1__';
   const DOM_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"]';
   const MAX_TREE_JSON_BYTES = 6 * 1024 * 1024;
   const FILE_SERVICE_PREFIX = 'file-service://';
@@ -83,6 +84,14 @@
       }
     } catch {}
     return null;
+  }
+
+  function getConversationGraphApi() {
+    try {
+      const api = globalThis[GRAPH_API_KEY];
+      if (api && typeof api === 'object' && typeof api.getRootNodeId === 'function') return api;
+    } catch {}
+    throw new Error('ChatGPT conversation graph API is unavailable');
   }
 
   function escapeHtml(input) {
@@ -501,14 +510,7 @@
   }
 
   function getRootNodeId(mapping) {
-    if (!mapping || typeof mapping !== 'object') return '';
-    if (mapping['client-created-root']) return 'client-created-root';
-    for (const [k, v] of Object.entries(mapping)) {
-      if (!v) continue;
-      const parent = v.parent;
-      if (!parent || !Object.prototype.hasOwnProperty.call(mapping, parent)) return k;
-    }
-    return Object.keys(mapping)[0] || '';
+    return getConversationGraphApi().getRootNodeId(mapping);
   }
 
   function normalizeRole(role, nodeId) {
@@ -813,50 +815,11 @@
   }
 
   function buildNodeVisitOrder(mapping, rootId) {
-    const out = [];
-    const seen = new Set();
-
-    const walk = (nodeId, depth = 0) => {
-      const id = String(nodeId || '');
-      if (!id || seen.has(id) || depth > 6000) return;
-      seen.add(id);
-      out.push(id);
-      const node = mapping?.[id] || null;
-      const children = Array.isArray(node?.children) ? node.children : [];
-      for (const childId of children) walk(childId, depth + 1);
-    };
-
-    if (rootId) walk(rootId, 0);
-
-    for (const id of Object.keys(mapping || {})) {
-      if (!seen.has(id)) walk(id, 0);
-    }
-
-    return out;
+    return getConversationGraphApi().buildNodeVisitOrder(mapping, rootId);
   }
 
   function computeDepthByParent(nodeId, mapping, cache = new Map()) {
-    const id = String(nodeId || '');
-    if (!id) return 0;
-    if (cache.has(id)) return cache.get(id);
-
-    let depth = 0;
-    const local = new Set([id]);
-    let cur = id;
-    let guard = 0;
-
-    while (guard < 4096) {
-      guard += 1;
-      const node = mapping?.[cur] || null;
-      const parent = typeof node?.parent === 'string' ? node.parent : '';
-      if (!parent || local.has(parent)) break;
-      local.add(parent);
-      depth += 1;
-      cur = parent;
-    }
-
-    cache.set(id, depth);
-    return depth;
+    return getConversationGraphApi().computeDepthByParent(nodeId, mapping, cache);
   }
 
   function getTurnMessageId(turnEl) {
@@ -885,94 +848,33 @@
   }
 
   function buildMessageIdNodeIdIndex(mapping) {
-    const idx = new Map();
-    if (!mapping || typeof mapping !== 'object') return idx;
-    try {
-      for (const [nodeId, node] of Object.entries(mapping)) {
-        const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
-        if (!mid || idx.has(mid)) continue;
-        idx.set(mid, nodeId);
-      }
-    } catch {}
-    return idx;
+    return getConversationGraphApi().buildMessageIdNodeIdIndex(mapping);
   }
 
   function resolveNodeIdForMessageId(mapping, messageId, lookupState) {
-    const id = String(messageId || '').trim();
-    if (!id || !mapping || typeof mapping !== 'object') return '';
-    try {
-      if (Object.prototype.hasOwnProperty.call(mapping, id)) return id;
-    } catch {}
-    const state = lookupState && typeof lookupState === 'object' ? lookupState : null;
-    const quickIdx = state?.messageIdToNodeId instanceof Map ? state.messageIdToNodeId : null;
-    if (quickIdx) {
-      return String(quickIdx.get(id) || '');
-    }
-    try {
-      for (const [nodeId, node] of Object.entries(mapping)) {
-        const mid = typeof node?.message?.id === 'string' ? node.message.id : '';
-        if (mid === id) return nodeId;
-      }
-    } catch {}
-    if (state) {
-      try {
-        state.messageIdToNodeId = buildMessageIdNodeIdIndex(mapping);
-        return String(state.messageIdToNodeId.get(id) || '');
-      } catch {}
-    }
-    return '';
+    return getConversationGraphApi().resolveNodeIdForMessageId(mapping, messageId, lookupState);
   }
 
   function resolveVisibleCurrentNodeId(mapping, fallbackCurrentNodeId) {
-    const fallback = String(fallbackCurrentNodeId || '');
-    try {
-      const turns = getTurns();
-      if (!Array.isArray(turns) || !turns.length) return fallback;
-      const seen = new Set();
-      const messageIds = [];
-      const lookupState = { messageIdToNodeId: null };
-      for (const turn of turns) {
-        const id = getTurnMessageId(turn);
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        messageIds.push(id);
+    return getConversationGraphApi().resolveVisibleCurrentNodeId(mapping, fallbackCurrentNodeId, {
+      getVisibleMessageIds: () => {
+        const turns = getTurns();
+        if (!Array.isArray(turns) || !turns.length) return [];
+        const ids = [];
+        const seen = new Set();
+        for (const turn of turns) {
+          const id = getTurnMessageId(turn);
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          ids.push(id);
+        }
+        return ids;
       }
-
-      for (let i = messageIds.length - 1; i >= 0; i -= 1) {
-        const nodeId = resolveNodeIdForMessageId(mapping, messageIds[i], lookupState);
-        if (nodeId) return nodeId;
-      }
-    } catch {}
-    return fallback;
+    });
   }
 
   function getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId) {
-    const rootId = String(rootNodeId || '');
-    const currentId = String(currentNodeId || '');
-    const fallbackId = currentId || rootId;
-    if (!fallbackId || !mapping || typeof mapping !== 'object') return [];
-
-    const seen = new Set();
-    const path = [];
-    let cur = fallbackId;
-    let guard = 0;
-
-    while (cur && guard < 4096 && !seen.has(cur)) {
-      guard += 1;
-      seen.add(cur);
-      path.unshift(cur);
-      if (cur === rootId) break;
-      const node = mapping?.[cur] || null;
-      const parent = typeof node?.parent === 'string' ? node.parent : '';
-      if (!parent || !mapping?.[parent]) break;
-      cur = parent;
-    }
-
-    if (rootId && mapping?.[rootId] && path[0] !== rootId) {
-      path.unshift(rootId);
-    }
-
-    return path.filter((id, idx, arr) => id && arr.indexOf(id) === idx);
+    return getConversationGraphApi().getCurrentBranchNodeIds(mapping, rootNodeId, currentNodeId);
   }
 
   async function buildBranchExportPayload() {

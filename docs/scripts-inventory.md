@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 2.6.28
-- Generated: 2026-03-16 01:53
+- Version: 2.6.29
+- Generated: 2026-03-17 02:57
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -94,7 +94,7 @@
 - `chatgpt_export_conversation`: ChatGPT 对话导出（新版 UI） — 按页面当前可见分支导出（会话 mapping，含图片链接）；不可判定时回退 current_node，再兜底当前可见导出
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
-  - 注入: document_end / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-mapping-client/main.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`
+  - 注入: document_end / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-conversation-graph.js`, `content/chatgpt-mapping-client/main.js`, `content/menu-bridge.js`, `content/chatgpt-export-conversation/main.js`
 - `chatgpt_image_message_edit`: ChatGPT 消息分叉编辑（可加图） — 给用户消息增加“分叉编辑”按钮：在输入框里编辑并可补图/文件；与原生编辑共存
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
@@ -106,7 +106,7 @@
 - `chatgpt_message_tree`: ChatGPT 消息树 — 显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
-  - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
+  - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/chatgpt-core-main.js`, `content/chatgpt-conversation-graph.js`, `content/chatgpt-mapping-client/main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-message-tree/main.js`
 - `chatgpt_sidebar_header_fix`: ChatGPT 顶部按钮布局修复 — 修复侧边栏顶部按钮交换；并将右上角群聊/临时聊天按钮移到模型选择器右侧
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later

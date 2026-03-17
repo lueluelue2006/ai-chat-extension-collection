@@ -15,6 +15,7 @@
   const PANEL_ID = '__aichat_chatgpt_message_tree_panel_v1__';
   const PREFS_KEY = '__aichat_chatgpt_message_tree_prefs_v1__';
   const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
+  const GRAPH_API_KEY = '__aichat_chatgpt_conversation_graph_v1__';
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
   const MESSAGES = Object.freeze({
@@ -99,6 +100,14 @@
     const entry = MESSAGES[key];
     if (!entry) return formatTemplate(String(key || ''), vars);
     return formatTemplate(isChineseLocale() ? entry.zh : entry.en, vars);
+  }
+
+  function getConversationGraphApi() {
+    try {
+      const api = globalThis[GRAPH_API_KEY];
+      if (api && typeof api === 'object' && typeof api.createDisplayGraph === 'function') return api;
+    } catch {}
+    throw new Error('ChatGPT conversation graph API is unavailable');
   }
 
   function getOrCreateBridgeNonce() {
@@ -1085,6 +1094,17 @@
     return null;
   }
 
+  function buildDisplayGraph(mapping, rootId, currentId) {
+    const api = getConversationGraphApi();
+    return api.createDisplayGraph(mapping, {
+      rootId,
+      currentId,
+      isNodeHidden,
+      extractText: extractTextFromMessage,
+      formatSnippet: (text) => formatSnippet(text, 96)
+    });
+  }
+
   function getResponseSwitcherButtons(turnEl) {
     const el = turnEl && turnEl.nodeType === 1 ? turnEl : null;
     if (!el) return null;
@@ -1691,64 +1711,36 @@
         return { ...state.lastSummary, isOpen: !!state.open };
       }
 
-      const mapping = cached.mapping;
-      const rootNodeId = cached.rootId;
-      const effectiveCurrentNodeId = getEffectiveCurrentId(mapping, cached.currentId);
-      const stats = computeDisplayStats(mapping, rootNodeId);
-
-      const pathNodeSet = computeVisiblePathSet(mapping, cached.currentId);
-      const pathIds = Array.from(pathNodeSet).map((id) => {
-        const node = mapping?.[id];
-        return typeof node?.message?.id === 'string' ? node.message.id : String(id || '');
-      });
-
-      const visited = new Set();
+      const graph = buildDisplayGraph(cached.mapping, cached.rootId, cached.currentId);
+      const stats = graph.stats;
+      const pathIds = graph.pathMsgIds;
       const nodes = {};
-
-      function walk(nodeId, guard) {
-        const id = String(nodeId || '');
-        if (!id) return;
-        if (visited.has(id)) return;
-        if ((guard || 0) > 4096) return;
-        visited.add(id);
-
-        const node = mapping?.[id] || null;
-        const msg = node?.message || null;
-        const msgId = typeof msg?.id === 'string' ? msg.id : id;
-        const role = msg?.author?.role ? String(msg.author.role) : id === 'client-created-root' ? 'root' : '';
-        const text = msg ? extractTextFromMessage(msg) : id === 'client-created-root' ? 'root' : '';
-        const snippet = formatSnippet(text, 96);
-
-        const childNodeIds = getDisplayChildren(id, mapping);
-        const children = childNodeIds.map((cid) => {
-          const cnode = mapping?.[cid];
-          return typeof cnode?.message?.id === 'string' ? cnode.message.id : String(cid || '');
-        });
-
-        nodes[msgId] = { role, snippet, children, childrenCount: children.length };
-
-        for (const childId of childNodeIds) walk(childId, (guard || 0) + 1);
+      for (const [msgId, entry] of Object.entries(graph.nodesByMessageId || {})) {
+        nodes[msgId] = {
+          role: String(entry?.role || ''),
+          snippet: String(entry?.snippet || ''),
+          children: Array.isArray(entry?.childrenMsgIds) ? entry.childrenMsgIds.slice() : [],
+          childrenCount: Math.max(0, Number(entry?.childrenCount) || 0),
+          nodeId: String(entry?.nodeId || ''),
+          parentNodeId: String(entry?.parentNodeId || ''),
+          parentMsgId: String(entry?.parentMsgId || ''),
+          depth: Math.max(0, Number(entry?.depth) || 0),
+          isCurrent: !!entry?.isCurrent,
+          isOnPath: !!entry?.isOnPath
+        };
       }
 
-      walk(rootNodeId, 0);
-
-      const rootMsgId = (() => {
-        const rootNode = mapping?.[rootNodeId];
-        return typeof rootNode?.message?.id === 'string' ? rootNode.message.id : String(rootNodeId || '');
-      })();
-      const currentMsgId = (() => {
-        const curNode = mapping?.[effectiveCurrentNodeId];
-        return typeof curNode?.message?.id === 'string' ? curNode.message.id : String(effectiveCurrentNodeId || '');
-      })();
-
       const summary = {
-        v: 1,
+        v: 2,
         builtAt: now(),
         conversationId: cached.conversationId || '',
         isOpen: !!state.open,
-        rootId: rootMsgId,
-        currentId: currentMsgId,
+        rootId: graph.rootMsgId,
+        currentId: graph.currentMsgId,
+        rootNodeId: graph.rootNodeId,
+        currentNodeId: graph.effectiveCurrentNodeId,
         stats,
+        pathMsgIds: pathIds.slice(),
         pathIds,
         nodes
       };
@@ -2281,10 +2273,10 @@
     ensureUi();
     if (!state.treeEl) return;
     state.treeEl.textContent = '';
-
-	    const effectiveCurrent = getEffectiveCurrentId(mapping, currentId);
-	    const pathSet = computeVisiblePathSet(mapping, currentId);
-	    const visited = new Set();
+    const graph = buildDisplayGraph(mapping, rootId, currentId);
+    const effectiveCurrent = graph.effectiveCurrentNodeId;
+    const pathSet = graph.pathNodeSet;
+    const visited = new Set();
 
     function bindNodeNavigate({ nodeId, node, clickableEl, isDetailsNode }) {
       const msgId = typeof node?.message?.id === 'string' ? node.message.id : nodeId === 'client-created-root' ? '' : nodeId;
@@ -2326,7 +2318,8 @@
 		      if (!nodeId || visited.has(nodeId)) return null;
 		      visited.add(nodeId);
 		      const node = mapping?.[nodeId] || null;
-		      const children = getDisplayChildren(nodeId, mapping);
+		      const graphNode = graph.nodesByNodeId?.[nodeId] || null;
+		      const children = graphNode?.childrenNodeIds || graph.getDisplayChildren(nodeId) || [];
       const isBranch = children.length > 1;
       const isCurrent = nodeId === effectiveCurrent;
       const isOnPath = pathSet.has(nodeId);
@@ -2370,36 +2363,6 @@
     setSelectedNodeId(effectiveCurrent);
   }
 
-  function computeDisplayStats(mapping, rootId) {
-    const visited = new Set();
-    let nodeCount = 0;
-    let msgCount = 0;
-    let branchCount = 0;
-    let leafCount = 0;
-    let maxDepth = 0;
-
-    function walk(id, depth, guard) {
-      const nodeId = String(id || '');
-      if (!nodeId) return;
-      if (visited.has(nodeId)) return;
-      if ((guard || 0) > 4096) return;
-      visited.add(nodeId);
-
-      const node = mapping?.[nodeId] || null;
-      nodeCount++;
-      if (node?.message) msgCount++;
-      maxDepth = Math.max(maxDepth, Math.max(0, Math.floor(Number(depth) || 0)));
-
-      const children = getDisplayChildren(nodeId, mapping);
-      if (children.length > 1) branchCount++;
-      if (children.length === 0) leafCount++;
-      for (const c of children) walk(c, (depth || 0) + 1, (guard || 0) + 1);
-    }
-
-    walk(rootId, 0, 0);
-    return { nodeCount, msgCount, branchCount, leafCount, maxDepth };
-  }
-
   function renderFromCache() {
     const cached = state.lastData;
     if (!cached || !cached.mapping || typeof cached.mapping !== 'object') return;
@@ -2407,7 +2370,7 @@
     const rootId = cached.rootId;
     const currentId = cached.currentId;
 
-    const stats = computeDisplayStats(mapping, rootId);
+    const stats = buildDisplayGraph(mapping, rootId, currentId).stats;
     try {
       // Ensure we have enough guide rails for this conversation depth before rendering.
       ensureStyles(stats.maxDepth);
@@ -2517,7 +2480,7 @@
     const mapping = cached?.mapping && typeof cached.mapping === 'object' ? cached.mapping : {};
     const currentNodeId = String(cached?.currentId || '');
     const rootNodeId = String(cached?.rootId || getRootId(mapping) || currentNodeId || '');
-    const stats = computeDisplayStats(mapping, rootNodeId);
+    const stats = buildDisplayGraph(mapping, rootNodeId, currentNodeId).stats;
     return {
       version: 1,
       exportedAt: new Date().toISOString(),

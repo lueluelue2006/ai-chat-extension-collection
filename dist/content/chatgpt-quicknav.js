@@ -1384,7 +1384,13 @@
 
           treeSummary = summary;
           treePanelOpen = !!summary?.isOpen;
-          setBoundedTreePathSet(Array.isArray(summary?.pathIds) ? summary.pathIds : []);
+          setBoundedTreePathSet(
+            Array.isArray(summary?.pathMsgIds)
+              ? summary.pathMsgIds
+              : Array.isArray(summary?.pathIds)
+                ? summary.pathIds
+                : []
+          );
 
           const ui = document.getElementById('cgpt-compact-nav')?._ui;
           if (ui) {
@@ -1461,6 +1467,14 @@
         treeSummaryReqTimer = 0;
         requestTreeSummary();
       }, Math.max(0, Number(delay) || 0));
+    } catch {}
+  }
+
+  function maybeRefreshTreeSummary(delay = 320) {
+    try {
+      if (!getConversationIdFromUrl()) return;
+      if (!treePanelOpen && !(treeSummary && typeof treeSummary === 'object')) return;
+      scheduleTreeSummaryRequest(delay);
     } catch {}
   }
 
@@ -3812,7 +3826,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (!nodes || typeof nodes !== 'object') return null;
       const node = nodes[id];
       if (!node || typeof node !== 'object') return null;
-      const children = Array.isArray(node.children) ? node.children.filter((x) => typeof x === 'string' && x) : [];
+      const rawChildren = Array.isArray(node.childrenMsgIds)
+        ? node.childrenMsgIds
+        : Array.isArray(node.children)
+          ? node.children
+          : [];
+      const children = rawChildren.filter((x) => typeof x === 'string' && x);
       const count = Math.max(0, Number(node.childrenCount) || children.length);
       return { count, children, role: String(node.role || ''), snippet: String(node.snippet || '') };
     } catch {
@@ -5451,6 +5470,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
         const delay = isLongChat ? (hasStop ? 420 : 140) : 80;
         scheduleRefresh(ui, { delay, soft: useSoft });
+        maybeRefreshTreeSummary(delay + 180);
       }, target, {
         childList: true,
         subtree: observeSubtree
@@ -5499,6 +5519,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
       if (!hasStop && count === lastDomTurnCount) return;
       scheduleRefresh(ui, { force: hasStop, soft: !hasStop && (lastDomTurnCount || 0) > 120 });
+      maybeRefreshTreeSummary(hasStop ? 360 : 520);
     }, 10000);
     ui._forceRefreshTimer = forceRefreshTimer;
   }

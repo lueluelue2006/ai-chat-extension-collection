@@ -41,16 +41,10 @@
   const inputMetaKeyModeAuto = document.getElementById('metaKeyModeAuto');
   const inputMetaKeyModeHasMeta = document.getElementById('metaKeyModeHasMeta');
   const inputMetaKeyModeNoMeta = document.getElementById('metaKeyModeNoMeta');
-  const elLocaleModeTitle = document.getElementById('localeModeTitle');
-  const elLocaleModeState = document.getElementById('localeModeState');
-  const elLocaleModePill = document.getElementById('localeModePill');
-  const elLocaleModeHint = document.getElementById('localeModeHint');
-  const inputLocaleModeAuto = document.getElementById('localeModeAuto');
-  const inputLocaleModeZhCn = document.getElementById('localeModeZhCn');
-  const inputLocaleModeEn = document.getElementById('localeModeEn');
-  const elLocaleModeAutoLabel = document.getElementById('localeModeAutoLabel');
-  const elLocaleModeZhCnLabel = document.getElementById('localeModeZhCnLabel');
-  const elLocaleModeEnLabel = document.getElementById('localeModeEnLabel');
+  const elLocaleToggle = document.getElementById('localeToggle');
+  const btnLocaleToggleZh = document.getElementById('localeToggleZh');
+  const btnLocaleToggleEn = document.getElementById('localeToggleEn');
+  const btnLocaleAutoBadge = document.getElementById('localeAutoBadge');
   const I18N = (() => {
     try {
       return globalThis.AISHORTCUTS_I18N || null;
@@ -897,44 +891,48 @@
     };
   }
 
-  function renderLocaleModeCard() {
+  function renderLocaleModeToggle() {
     const mode = getLocaleMode();
     const locale = resolveUiLocale();
     const isZh = /^zh/i.test(String(locale || ''));
-
-    if (inputLocaleModeAuto) inputLocaleModeAuto.checked = mode === LOCALE_MODE_AUTO;
-    if (inputLocaleModeZhCn) inputLocaleModeZhCn.checked = mode === LOCALE_MODE_ZH_CN;
-    if (inputLocaleModeEn) inputLocaleModeEn.checked = mode === LOCALE_MODE_EN;
-
-    if (elLocaleModeTitle) elLocaleModeTitle.textContent = translateText('界面语言', locale);
-    if (elLocaleModeAutoLabel) elLocaleModeAutoLabel.textContent = translateText('自动', locale);
-    if (elLocaleModeZhCnLabel) elLocaleModeZhCnLabel.textContent = translateText('简体中文', locale);
-    if (elLocaleModeEnLabel) elLocaleModeEnLabel.textContent = 'English';
-
-    if (elLocaleModePill) {
-      if (mode === LOCALE_MODE_AUTO) elLocaleModePill.textContent = isZh ? 'Auto · 简体中文' : 'Auto · English';
-      else elLocaleModePill.textContent = mode === LOCALE_MODE_ZH_CN ? '简体中文' : 'English';
+    if (elLocaleToggle) {
+      const label = isZh ? 'Switch UI language to English' : '切换界面语言到中文';
+      elLocaleToggle.setAttribute('aria-label', label);
+      elLocaleToggle.title = label;
     }
 
-    if (elLocaleModeState) {
-      if (mode === LOCALE_MODE_AUTO) {
-        elLocaleModeState.textContent = isZh
-          ? '当前按浏览器语言自动使用简体中文。'
-          : 'The UI is currently using English based on your browser language.';
-      } else if (mode === LOCALE_MODE_ZH_CN) {
-        elLocaleModeState.textContent = '你已手动指定为简体中文。';
-      } else {
-        elLocaleModeState.textContent = 'You manually set the UI language to English.';
-      }
-    }
-
-    if (elLocaleModeHint) {
-      elLocaleModeHint.textContent =
+    if (btnLocaleToggleZh) {
+      const active = mode === LOCALE_MODE_ZH_CN || (mode === LOCALE_MODE_AUTO && isZh);
+      btnLocaleToggleZh.classList.toggle('active', active);
+      btnLocaleToggleZh.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btnLocaleToggleZh.title =
         mode === LOCALE_MODE_AUTO
-          ? '自动模式下，仅浏览器为简体中文时使用中文版；其他语言或无法判断时默认英文。'
-          : mode === LOCALE_MODE_ZH_CN
-            ? '所有扩展页面和支持双语的脚本 UI 都会优先显示中文。'
-            : 'Extension pages and supported in-page script UIs will prefer English.';
+          ? (isZh ? 'Auto mode · currently Chinese' : '切换为简体中文')
+          : (active ? '当前：简体中文' : '切换为简体中文');
+    }
+
+    if (btnLocaleToggleEn) {
+      const active = mode === LOCALE_MODE_EN || (mode === LOCALE_MODE_AUTO && !isZh);
+      btnLocaleToggleEn.classList.toggle('active', active);
+      btnLocaleToggleEn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btnLocaleToggleEn.title =
+        mode === LOCALE_MODE_AUTO
+          ? (!isZh ? 'Auto mode · currently English' : 'Switch to English')
+          : (active ? 'Current: English' : 'Switch to English');
+    }
+
+    if (btnLocaleAutoBadge) {
+      const autoActive = mode === LOCALE_MODE_AUTO;
+      btnLocaleAutoBadge.classList.toggle('active', autoActive);
+      btnLocaleAutoBadge.setAttribute('aria-pressed', autoActive ? 'true' : 'false');
+      btnLocaleAutoBadge.textContent = 'AUTO';
+      btnLocaleAutoBadge.title = autoActive
+        ? (isZh
+            ? '自动模式：当前按浏览器语言使用中文。'
+            : 'Auto mode: currently using English from the browser language.')
+        : (isZh
+            ? '切回自动模式（仅浏览器为简体中文时显示中文，否则默认英文）。'
+            : 'Switch back to Auto mode (Chinese only for Simplified Chinese browsers; English otherwise).');
     }
   }
 
@@ -4372,7 +4370,7 @@
 
     if (elEnabled) elEnabled.checked = !!currentSettings?.enabled;
     renderMetaKeyProfileCard();
-    renderLocaleModeCard();
+    renderLocaleModeToggle();
     renderConfigContext(siteId, moduleId);
     renderSites(siteId);
     renderModules(siteId, moduleId);
@@ -4412,15 +4410,23 @@
     });
   }
 
-  for (const input of [inputLocaleModeAuto, inputLocaleModeZhCn, inputLocaleModeEn]) {
-    input?.addEventListener('change', () => {
-      if (!input.checked) return;
-      const nextMode = normalizeLocaleMode(input.value, LOCALE_MODE_AUTO);
-      patchQuickNavSettings((next) => {
-        next.localeMode = nextMode;
-      });
+  btnLocaleToggleZh?.addEventListener('click', () => {
+    patchQuickNavSettings((next) => {
+      next.localeMode = LOCALE_MODE_ZH_CN;
     });
-  }
+  });
+
+  btnLocaleToggleEn?.addEventListener('click', () => {
+    patchQuickNavSettings((next) => {
+      next.localeMode = LOCALE_MODE_EN;
+    });
+  });
+
+  btnLocaleAutoBadge?.addEventListener('click', () => {
+    patchQuickNavSettings((next) => {
+      next.localeMode = LOCALE_MODE_AUTO;
+    });
+  });
 
   elSiteSearch?.addEventListener('input', () => {
     siteSearchText = normalizeSearchText(elSiteSearch.value);

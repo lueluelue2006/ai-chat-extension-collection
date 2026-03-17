@@ -603,6 +603,25 @@ button.${HINT_CLASS}::after {
     return null;
   }
 
+  function readComposerModeLabel() {
+    try {
+      const root = getComposerRoot();
+      const buttons = Array.from(root?.querySelectorAll?.("button[aria-haspopup='menu'],button") || []);
+      for (const button of buttons) {
+        if (!(button instanceof HTMLElement)) continue;
+        const text = String(button.innerText || button.textContent || '').trim();
+        const aria = String(button.getAttribute('aria-label') || '').trim();
+        const combined = normalizeText(`${text} ${aria}`);
+        if (!combined) continue;
+        if (combined.includes('thinking') || combined.includes('思考') || combined.includes('推理')) return text || aria;
+        if (combined === 'pro' || combined.startsWith('pro ') || combined.includes(' extended pro') || combined.includes(' standard pro')) return text || aria;
+      }
+    } catch (_) {
+      // ignore
+    }
+    return '';
+  }
+
   function focusComposerEditorToEnd(editor) {
     const target = editor instanceof HTMLElement ? editor : getComposerEditor();
     if (!(target instanceof HTMLElement)) return false;
@@ -846,7 +865,13 @@ button.${HINT_CLASS}::after {
     const t = normalizeText(text);
     if (!t) return false;
     if (t.includes('5.2')) return true;
+    if (t.includes('5.4')) return true;
+    if (t.includes('5.3')) return true;
     if (t.includes('gpt')) return true;
+    if (t === 'thinking' || t.startsWith('thinking')) return true;
+    if (t === 'pro' || t.startsWith('pro')) return true;
+    if (t === 'instant' || t.startsWith('instant')) return true;
+    if (t.startsWith('思考') || t.startsWith('推理') || t.startsWith('专业')) return true;
     if (/\bgpt[-\s]?\d/.test(t)) return true;
     if (/\b\d(?:\.\d)+\b/.test(t)) return true;
     return false;
@@ -960,6 +985,21 @@ button.${HINT_CLASS}::after {
     }
   }
 
+  function findVisibleModelSwitcherItemBySuffix(suffix) {
+    try {
+      const nodes = Array.from(document.querySelectorAll('[data-testid^="model-switcher-"]'));
+      for (const el of nodes) {
+        if (!(el instanceof HTMLElement) || !isVisibleElement(el)) continue;
+        const testId = String(el.getAttribute('data-testid') || '').toLowerCase();
+        if (!testId.endsWith(String(suffix || '').toLowerCase())) continue;
+        return el;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function findVisibleThinkingProItem(mode) {
     if (mode !== 'thinking' && mode !== 'pro') return null;
     const menus = listVisibleMenus();
@@ -970,6 +1010,21 @@ button.${HINT_CLASS}::after {
       if (item instanceof HTMLElement && isVisibleElement(item)) return item;
     }
     return null;
+  }
+
+  function detectCurrentModelMode() {
+    const fromComposer = guessModeFromEffort(readComposerModeLabel());
+    if (fromComposer === 'thinking' || fromComposer === 'pro') return fromComposer;
+
+    const menu = findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent();
+    const selected = menuSelectedMode(menu);
+    if (selected === 'thinking' || selected === 'pro') return selected;
+
+    const thinkingChip = normalizeText(readComposerModeLabel());
+    if (thinkingChip.includes('thinking') || thinkingChip.includes('思考') || thinkingChip.includes('推理')) return 'thinking';
+    if (thinkingChip.includes('pro') || thinkingChip.includes('专业')) return 'pro';
+
+    return preferredModelMode === 'thinking' || preferredModelMode === 'pro' ? preferredModelMode : null;
   }
 
   function findGPT52ModelSelectorTrigger() {
@@ -1311,10 +1366,10 @@ button.${HINT_CLASS}::after {
           continue;
         }
 
-        const triggerLabel = normalizeText(trigger.textContent || trigger.getAttribute('aria-label') || '');
-        const targetMode = triggerLabel.includes('thinking') ? 'pro' : 'thinking';
-        const targetTestId = targetMode === 'pro' ? 'model-switcher-gpt-5-2-pro' : 'model-switcher-gpt-5-2-thinking';
-        const findTargetItem = () => findVisibleByTestId(targetTestId) || findVisibleThinkingProItem(targetMode);
+        const currentMode = detectCurrentModelMode();
+        const targetMode = currentMode === 'pro' ? 'thinking' : 'pro';
+        const findTargetItem = () =>
+          findVisibleModelSwitcherItemBySuffix(targetMode === 'pro' ? '-pro' : 'thinking') || findVisibleThinkingProItem(targetMode);
         const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
         // 如果菜单已打开，直接点；否则打开菜单再点
@@ -1341,11 +1396,9 @@ button.${HINT_CLASS}::after {
         await ensureMenuCollapsed(trigger, getMenu);
 
         const switched = await waitForTruthy(() => {
-          const activeTrigger = findGPT52ModelSelectorTrigger();
-          if (!(activeTrigger instanceof HTMLElement)) return false;
-          const nextLabel = normalizeText(activeTrigger.textContent || activeTrigger.getAttribute('aria-label') || '');
-          return targetMode === 'pro' ? nextLabel.includes('pro') : nextLabel.includes('thinking');
-        }, 240, 20);
+          const nextMode = detectCurrentModelMode();
+          return nextMode === targetMode;
+        }, 1200, 40);
 
         if (!switched && attempt < 2) {
           await sleep(80);

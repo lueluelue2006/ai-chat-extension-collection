@@ -193,6 +193,8 @@
   let __allowUntilDatasetCachedAt = 0;
   let __baselineDatasetCached = null;
   let __baselineDatasetCachedAt = 0;
+  let __perfHotDatasetCached = false;
+  let __perfHotDatasetCachedAt = 0;
 
   function readNumberDataset(key) {
     try {
@@ -249,7 +251,21 @@
     return __baselineDatasetCached;
   }
 
+  function readPerfHotFromDataset(ts = now()) {
+    const last = Number(__perfHotDatasetCachedAt || 0);
+    if (ts - last < 80) return __perfHotDatasetCached;
+    __perfHotDatasetCachedAt = ts;
+    try {
+      const v = document.documentElement?.dataset?.cgptperfHot;
+      __perfHotDatasetCached = v === '1' || v === 'true';
+    } catch {
+      __perfHotDatasetCached = false;
+    }
+    return __perfHotDatasetCached;
+  }
+
   function isAllowed(ts = now()) {
+    if (readPerfHotFromDataset(ts)) return true;
     try {
       syncEnabledFromDataset(ts);
     } catch {}
@@ -551,13 +567,33 @@
     const t = now();
     if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) return __cachedScroller;
     __cachedScrollerAt = t;
-    const sc = getGeminiScroller() || detectChatScrollerFallback();
+    let sc = null;
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__ || null;
+      if (core && typeof core.getChatScrollContainer === 'function') {
+        sc = core.getChatScrollContainer(false);
+      }
+    } catch {}
+    if (!sc) sc = getGeminiScroller() || detectChatScrollerFallback();
     __cachedScroller = sc || null;
     try {
       if (STATE.enabled) refreshScrollerMarker(__cachedScroller);
       else clearScrollerMarker();
     } catch {}
     return __cachedScroller;
+  }
+
+  function isChatgptHeavyStreaming() {
+    try {
+      if (HOST !== 'chatgpt.com') return false;
+      const docEl = document.documentElement;
+      const perfHeavy = docEl?.dataset?.cgptperfHot === '1' || docEl?.dataset?.cgptperfHeavy === '1';
+      if (!perfHeavy) return false;
+      const core = window.__aichat_chatgpt_core_main_v1__ || null;
+      return !!(core && typeof core.isGenerating === 'function' && core.isGenerating());
+    } catch {
+      return false;
+    }
   }
 
   function isWindowScroller(el) {
@@ -631,7 +667,7 @@
     const ts = now();
     // Occasionally refresh the cached scroller in case SPA navigation/hydration replaced it.
     // This also allows switching from an early window-scroller guess to the real nested chat scroller.
-    if (__cachedScroller && __cachedScroller.isConnected && ts - (__cachedScrollerAt || 0) > 1200) {
+    if (!isChatgptHeavyStreaming() && __cachedScroller && __cachedScroller.isConnected && ts - (__cachedScrollerAt || 0) > 1200) {
       try {
         getChatScroller();
       } catch {}
@@ -663,7 +699,7 @@
 
   function shouldBlockWindowScroll(nextTop) {
     const ts = now();
-    if (__cachedScroller && __cachedScroller.isConnected && ts - (__cachedScrollerAt || 0) > 1200) {
+    if (!isChatgptHeavyStreaming() && __cachedScroller && __cachedScroller.isConnected && ts - (__cachedScrollerAt || 0) > 1200) {
       try {
         getChatScroller();
       } catch {}
@@ -690,6 +726,7 @@
   }
 
   function shouldBlockIntoView(target) {
+    if (isChatgptHeavyStreaming()) return false;
     if (isAllowed()) return false;
     const sc = getChatScroller();
     if (!sc || !target || !target.getBoundingClientRect) return false;

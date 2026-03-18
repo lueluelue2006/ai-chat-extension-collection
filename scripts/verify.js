@@ -624,9 +624,12 @@ function verifyChatgptReplyTimerExtendedProGate() {
 function verifyChatgptPerfStructureHardening() {
   const jsSource = readText('content/chatgpt-perf/content.js');
   const cssSource = readText('content/chatgpt-perf/content.css');
+  const coreSource = readText('content/chatgpt-core.js');
+  const quicknavSource = readText('content/chatgpt-quicknav.js');
+  const scrollGuardSource = readText('content/scroll-guard-main.js');
   const failures = [];
 
-  for (const required of ['__aichat_chatgpt_core_v1__', 'cgptperf-turn']) {
+  for (const required of ['__aichat_chatgpt_core_v1__', 'getTurnsSnapshot', 'cgptperf-turn']) {
     if (!jsSource.includes(required) && !cssSource.includes(required)) {
       failures.push(`chatgpt-perf is missing ${required}`);
     }
@@ -635,8 +638,35 @@ function verifyChatgptPerfStructureHardening() {
   if (!jsSource.includes('__aichat_chatgpt_core_v1__')) {
     failures.push('content/chatgpt-perf/content.js is not wired to chatgpt-core');
   }
+  if (!jsSource.includes('getTurnsSnapshot')) {
+    failures.push('content/chatgpt-perf/content.js is missing chatgpt-core turn snapshot usage');
+  }
   if (!jsSource.includes('cgptperf-turn')) {
     failures.push('content/chatgpt-perf/content.js is missing cgptperf-turn class management');
+  }
+  if (!coreSource.includes('getChatScrollContainer')) {
+    failures.push('content/chatgpt-core.js is missing shared chat scroll-container service');
+  }
+  if (!coreSource.includes('getVisibleTurnWindow')) {
+    failures.push('content/chatgpt-core.js is missing shared visible-turn window service');
+  }
+  if (!jsSource.includes('ROOT_HOT_ATTR') || !jsSource.includes('syncTailTurnMetrics')) {
+    failures.push('content/chatgpt-perf/content.js is missing active-tail hot-path coordination');
+  }
+  if (!quicknavSource.includes('getChatScrollContainer?.()')) {
+    failures.push('content/chatgpt-quicknav.js is not reusing chatgpt-core scroll-container service');
+  }
+  if (!quicknavSource.includes('getVisibleTurnWindow')) {
+    failures.push('content/chatgpt-quicknav.js is not using shared visible-turn window service');
+  }
+  if (!quicknavSource.includes('cgptperfHot')) {
+    failures.push('content/chatgpt-quicknav.js is missing cgptperf hot-path throttling');
+  }
+  if (!scrollGuardSource.includes('getChatScrollContainer')) {
+    failures.push('content/scroll-guard-main.js is not reusing chatgpt-core-main scroll-container service');
+  }
+  if (!scrollGuardSource.includes('readPerfHotFromDataset') || !scrollGuardSource.includes('isChatgptHeavyStreaming')) {
+    failures.push('content/scroll-guard-main.js is missing perf hot-path / heavy-streaming bypass');
   }
   if (!cssSource.includes('.cgptperf-turn')) {
     failures.push('content/chatgpt-perf/content.css is missing .cgptperf-turn selectors');
@@ -650,6 +680,11 @@ function verifyChatgptPerfStructureHardening() {
 
   if (cssSource.includes('main article')) {
     failures.push('content/chatgpt-perf/content.css still hard-codes main article selectors');
+  }
+  for (const staleCost of ["scopeRoot?.getElementsByTagName?.('*')?.length", "document.getElementsByTagName('*').length"]) {
+    if (jsSource.includes(staleCost)) {
+      failures.push(`content/chatgpt-perf/content.js still uses conversation-wide DOM counting via ${staleCost}`);
+    }
   }
 
   return {

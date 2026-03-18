@@ -340,6 +340,19 @@
     }
   }
 
+  const chatScrollWatch = (() => ({
+    scroller: null,
+    at: 0
+  }))();
+
+  const visibleTurnsWatch = (() => ({
+    ts: 0,
+    turnsVersion: 0,
+    scroller: null,
+    marginPx: 0,
+    result: null
+  }))();
+
   function getTurnsRoot() {
     try {
       const stable = document.querySelector('[data-testid="conversation-turns"]');
@@ -371,6 +384,16 @@
   }
 
   function getTurnArticles(root) {
+    try {
+      const cachedRoot = turnsWatch.cachedRoot;
+      const cachedTurns = turnsWatch.cachedTurns;
+      const useCached =
+        Array.isArray(cachedTurns) &&
+        cachedTurns.length &&
+        (!root || root === document || root === cachedRoot);
+      if (useCached) return cachedTurns.slice();
+    } catch {}
+
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     try {
       const list = Array.from(scope.querySelectorAll(TURN_SELECTOR));
@@ -385,6 +408,181 @@
       return normalized;
     } catch {}
     return [];
+  }
+
+  function isWindowScroller(el) {
+    const doc = document.documentElement;
+    const se = document.scrollingElement || doc;
+    return !el || el === window || el === document || el === document.body || el === doc || el === se;
+  }
+
+  function isScrollableY(el) {
+    try {
+      if (!(el instanceof Element)) return false;
+      const style = getComputedStyle(el);
+      const oy = String(style?.overflowY || '').toLowerCase();
+      if (!(oy === 'auto' || oy === 'scroll' || oy === 'overlay')) return false;
+      return (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
+    } catch {}
+    return false;
+  }
+
+  function findClosestScrollContainer(start) {
+    let el = start || null;
+    while (el && el !== document.documentElement && el !== document.body) {
+      if (isScrollableY(el)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function getChatScrollContainer(force = false) {
+    const ts = now();
+    if (!force) {
+      try {
+        const cached = chatScrollWatch.scroller;
+        if (cached && cached.isConnected && (ts - chatScrollWatch.at) < 1200) return cached;
+      } catch {}
+    }
+
+    let next = null;
+    try {
+      const main = document.getElementById('main') || document.querySelector('main');
+      const parent = main?.parentElement || null;
+      if (isScrollableY(parent)) next = parent;
+    } catch {}
+
+    if (!next) {
+      try {
+        const root = getTurnsRoot();
+        if (root && root !== document) {
+          next = findClosestScrollContainer(root) || root.parentElement || null;
+        }
+      } catch {}
+    }
+
+    if (!next) {
+      try {
+        const anchor =
+          document.querySelector(TURN_SELECTOR) ||
+          document.querySelector('[data-message-id]') ||
+          document.getElementById('thread') ||
+          document.querySelector('main') ||
+          document.querySelector('[role="main"]') ||
+          document.body;
+        next = findClosestScrollContainer(anchor) || document.scrollingElement || document.documentElement;
+      } catch {
+        next = document.scrollingElement || document.documentElement;
+      }
+    }
+
+    chatScrollWatch.scroller = next || null;
+    chatScrollWatch.at = ts;
+    return next || null;
+  }
+
+  function getScrollerViewportBounds(scroller, marginPx = 0) {
+    const margin = Math.max(0, Number(marginPx) || 0);
+    if (isWindowScroller(scroller)) {
+      return {
+        top: -margin,
+        bottom: (window.innerHeight || 0) + margin
+      };
+    }
+    try {
+      const rect = scroller?.getBoundingClientRect?.();
+      if (rect) {
+        return {
+          top: rect.top - margin,
+          bottom: rect.bottom + margin
+        };
+      }
+    } catch {}
+    return {
+      top: -margin,
+      bottom: (window.innerHeight || 0) + margin
+    };
+  }
+
+  function findFirstVisibleTurnIndex(turns, topBound) {
+    let lo = 0;
+    let hi = turns.length - 1;
+    let ans = turns.length;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const rect = turns[mid]?.getBoundingClientRect?.();
+      if (rect && rect.bottom >= topBound) {
+        ans = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    return ans;
+  }
+
+  function findLastVisibleTurnIndex(turns, bottomBound) {
+    let lo = 0;
+    let hi = turns.length - 1;
+    let ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const rect = turns[mid]?.getBoundingClientRect?.();
+      if (rect && rect.top <= bottomBound) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans;
+  }
+
+  function getVisibleTurnWindow(force = false, marginPx = 0) {
+    const snapshot = getTurnsSnapshot(force);
+    const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
+    const scroller = getChatScrollContainer(force);
+    const margin = Math.max(0, Number(marginPx) || 0);
+    const ts = now();
+    if (
+      !force &&
+      visibleTurnsWatch.result &&
+      visibleTurnsWatch.turnsVersion === Number(snapshot?.turnsVersion || 0) &&
+      visibleTurnsWatch.scroller === scroller &&
+      visibleTurnsWatch.marginPx === margin &&
+      (ts - visibleTurnsWatch.ts) < 80
+    ) {
+      return visibleTurnsWatch.result;
+    }
+
+    const total = turns.length;
+    let first = 0;
+    let last = total - 1;
+    if (total) {
+      const bounds = getScrollerViewportBounds(scroller, margin);
+      first = findFirstVisibleTurnIndex(turns, bounds.top);
+      last = findLastVisibleTurnIndex(turns, bounds.bottom);
+      if (first >= total) first = total - 1;
+      if (last < 0) last = 0;
+      if (last < first) last = first;
+    }
+
+    const result = {
+      root: snapshot?.root || null,
+      scroller: scroller || null,
+      turns,
+      turnsVersion: Number(snapshot?.turnsVersion || 0),
+      total,
+      first,
+      last,
+      visibleTurns: total ? turns.slice(first, last + 1) : []
+    };
+    visibleTurnsWatch.ts = ts;
+    visibleTurnsWatch.turnsVersion = result.turnsVersion;
+    visibleTurnsWatch.scroller = scroller || null;
+    visibleTurnsWatch.marginPx = margin;
+    visibleTurnsWatch.result = result;
+    return result;
   }
 
   function shouldObserveTurnsSubtree(root) {
@@ -414,10 +612,90 @@
       pendingAddedTurns: new Set(),
       bootstrapTimer: 0,
       bootstrapAttempts: 0,
-      routeUnsub: null
+      routeUnsub: null,
+      cachedRoot: null,
+      cachedTurns: [],
+      version: 0
     };
     return st;
   })();
+
+  function refreshTurnsSnapshot(root, { addedHint = null, force = false } = {}) {
+    const nextRoot = root && root !== document ? root : getTurnsRoot();
+    const normalizedRoot = nextRoot && nextRoot !== document ? nextRoot : document;
+    const prevRoot = turnsWatch.cachedRoot;
+    const prevTurns = Array.isArray(turnsWatch.cachedTurns) ? turnsWatch.cachedTurns : [];
+    const prevSet = prevRoot === normalizedRoot ? new Set(prevTurns) : null;
+    const turns = getTurnArticles(normalizedRoot);
+    const turnsSet = new Set(turns);
+    const rootChanged = prevRoot !== normalizedRoot;
+
+    const addedTurns = [];
+    if (Array.isArray(addedHint) && addedHint.length) {
+      for (const item of addedHint) {
+        const turn = normalizeTurnElement(item);
+        if (!turn || !turnsSet.has(turn) || (prevSet && prevSet.has(turn))) continue;
+        addedTurns.push(turn);
+      }
+    }
+    if (!addedTurns.length && prevSet) {
+      for (const turn of turns) {
+        if (!prevSet.has(turn)) addedTurns.push(turn);
+      }
+    }
+
+    const removedTurns = [];
+    if (prevSet) {
+      for (const turn of prevTurns) {
+        if (!turnsSet.has(turn)) removedTurns.push(turn);
+      }
+    }
+
+    let changed = force || rootChanged || prevTurns.length !== turns.length;
+    if (!changed && prevSet) {
+      for (let i = 0; i < turns.length; i += 1) {
+        if (turns[i] !== prevTurns[i]) {
+          changed = true;
+          break;
+        }
+      }
+    } else if (!prevSet && turns.length) {
+      changed = true;
+    }
+
+    if (changed || !Array.isArray(turnsWatch.cachedTurns)) turnsWatch.version += 1;
+    turnsWatch.cachedRoot = normalizedRoot;
+    turnsWatch.cachedTurns = turns;
+
+    return {
+      root: normalizedRoot,
+      turns,
+      turnsVersion: turnsWatch.version,
+      rootChanged,
+      addedTurns,
+      removedTurns
+    };
+  }
+
+  function getTurnsSnapshot(force = false) {
+    const root = turnsWatch.root && turnsWatch.root.isConnected ? turnsWatch.root : getTurnsRoot();
+    if (
+      !force &&
+      turnsWatch.cachedRoot === root &&
+      Array.isArray(turnsWatch.cachedTurns) &&
+      turnsWatch.cachedTurns.length
+    ) {
+      return {
+        root,
+        turns: turnsWatch.cachedTurns,
+        turnsVersion: turnsWatch.version,
+        rootChanged: false,
+        addedTurns: [],
+        removedTurns: []
+      };
+    }
+    return refreshTurnsSnapshot(root, { force });
+  }
 
   function isTurnishNode(node) {
     try {
@@ -572,12 +850,36 @@
           const r = turnsWatch.root && turnsWatch.root.isConnected ? turnsWatch.root : getTurnsRoot();
           const addedTurns = Array.from(turnsWatch.pendingAddedTurns);
           turnsWatch.pendingAddedTurns.clear();
-          emitTurnsChange({ at: now(), reason: 'mutation', turnCount: getTurnArticles(r).length, addedTurns });
+          const snapshot = refreshTurnsSnapshot(r, { addedHint: addedTurns });
+          emitTurnsChange({
+            at: now(),
+            reason: 'mutation',
+            turnCount: snapshot.turns.length,
+            root: snapshot.root,
+            turns: snapshot.turns,
+            turnsVersion: snapshot.turnsVersion,
+            rootChanged: snapshot.rootChanged,
+            addedTurns: snapshot.addedTurns,
+            removedTurns: snapshot.removedTurns
+          });
         }, 60);
       });
       mo.observe(root, { childList: true, subtree: shouldObserveTurnsSubtree(root) });
       turnsWatch.mo = mo;
-      if (emitInitial) emitTurnsChange({ at: now(), reason: 'attach', turnCount: getTurnArticles(root).length });
+      if (emitInitial) {
+        const snapshot = refreshTurnsSnapshot(root, { force: true });
+        emitTurnsChange({
+          at: now(),
+          reason: 'attach',
+          turnCount: snapshot.turns.length,
+          root: snapshot.root,
+          turns: snapshot.turns,
+          turnsVersion: snapshot.turnsVersion,
+          rootChanged: snapshot.rootChanged,
+          addedTurns: snapshot.addedTurns,
+          removedTurns: snapshot.removedTurns
+        });
+      }
     } catch {
       turnsWatch.mo = null;
     }
@@ -953,6 +1255,9 @@
     clickStopButton,
     getTurnsRoot,
     getTurnArticles,
+    getTurnsSnapshot,
+    getChatScrollContainer,
+    getVisibleTurnWindow,
     getTurnSelector: () => TURN_SELECTOR,
     onTurnsChange,
     getTurnRole,

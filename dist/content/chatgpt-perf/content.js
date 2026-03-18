@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.25';
+  const EXT_VERSION = '0.1.27';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -29,6 +29,7 @@
   const ROOT_ENABLED_ATTR = 'data-cgptperf-enabled';
   const ROOT_OFFSCREEN_ATTR = 'data-cgptperf-offscreen';
   const ROOT_HEAVY_ATTR = 'data-cgptperf-heavy';
+  const ROOT_HOT_ATTR = 'data-cgptperf-hot';
   const ROOT_NOANIM_ATTR = 'data-cgptperf-noanim';
   const ROOT_FIND_ATTR = 'data-cgptperf-find';
 
@@ -44,6 +45,22 @@
   const MSG_GET_STATE = 'CGPT_PERF_GET_STATE';
   const FALLBACK_TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
   const FALLBACK_TURN_SELECTOR = `${FALLBACK_TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
+  const HEAVY_BLOCK_SELECTOR = [
+    'pre',
+    'table',
+    '.katex-display',
+    'mjx-container',
+    '.markdown > p',
+    '.markdown > ul',
+    '.markdown > ol',
+    '.markdown > blockquote',
+    '.markdown > h1',
+    '.markdown > h2',
+    '.markdown > h3',
+    '.markdown > h4',
+    '.markdown > h5',
+    '.markdown > h6'
+  ].join(', ');
 
 	  const state = {
 	    settings: { ...DEFAULT_SETTINGS },
@@ -61,8 +78,15 @@
     coreTurnsUnsub: null,
     coreRouteUnsub: null,
     containerEl: null,
+    turnsRoot: null,
+    turnsCache: [],
+    turnsVersion: 0,
     observedTurns: new Set(),
     lastHeights: new WeakMap(),
+    turnMetrics: new Map(),
+    totalTurnDomNodes: 0,
+    totalTurnKatexNodes: 0,
+    totalTurnHeavyBlocks: 0,
     defaultIntrinsic: 420,
     uiCloseHandler: null,
     ioMarginPx: DEFAULT_SETTINGS.rootMarginPx,
@@ -93,6 +117,10 @@
     structureDirty: true,
     lastGeneratingCheckAt: 0,
     generatingCached: false,
+    hotPathActive: false,
+    tailMetricsTimer: 0,
+    activeTailTurn: null,
+    lastTailEstimateAt: 0,
 	    budgetSnapshot: null,
 	    budgetSnapshotAt: 0,
 	    budgetLevel: 0,
@@ -155,14 +183,46 @@
     }
   }
 
-  function getTurnElements(root) {
+  function getCoreTurnsSnapshot(force = false) {
+    try {
+      const core = getChatgptCoreApi();
+      if (typeof core?.getTurnsSnapshot !== 'function') return null;
+      const snapshot = core.getTurnsSnapshot(force);
+      if (!snapshot || typeof snapshot !== 'object') return null;
+      const turns = Array.isArray(snapshot.turns) ? snapshot.turns.filter((item) => item instanceof HTMLElement) : [];
+      const root = snapshot.root instanceof HTMLElement ? snapshot.root : null;
+      return {
+        root,
+        turns,
+        turnsVersion: Number.isFinite(Number(snapshot.turnsVersion)) ? Number(snapshot.turnsVersion) : 0,
+        rootChanged: !!snapshot.rootChanged,
+        addedTurns: Array.isArray(snapshot.addedTurns) ? snapshot.addedTurns.filter((item) => item instanceof HTMLElement) : [],
+        removedTurns: Array.isArray(snapshot.removedTurns) ? snapshot.removedTurns.filter((item) => item instanceof HTMLElement) : []
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function getTurnElements(root, payload = null) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+    const payloadTurns = Array.isArray(payload?.turns) ? payload.turns.filter((item) => item instanceof HTMLElement) : null;
+    if (payloadTurns && payloadTurns.length) return payloadTurns;
+
+    const snapshot = getCoreTurnsSnapshot(false);
+    if (
+      snapshot &&
+      Array.isArray(snapshot.turns) &&
+      snapshot.turns.length &&
+      (!root || root === document || snapshot.root === root)
+    ) {
+      return snapshot.turns;
+    }
+
     try {
       const coreTurns = getChatgptCoreApi()?.getTurnArticles?.(scope);
       if (Array.isArray(coreTurns)) {
-        const turns = coreTurns.filter((item) => item instanceof HTMLElement);
-        for (const turn of turns) markTurnElement(turn);
-        return turns;
+        return coreTurns.filter((item) => item instanceof HTMLElement);
       }
     } catch {
       // ignore
@@ -176,7 +236,6 @@
         const turn = normalizeTurnElement(item);
         if (!(turn instanceof HTMLElement) || seen.has(turn)) continue;
         seen.add(turn);
-        markTurnElement(turn);
         turns.push(turn);
       }
       return turns;
@@ -188,10 +247,161 @@
   function markTurnElement(turnEl) {
     if (!(turnEl instanceof HTMLElement)) return;
     try {
-      turnEl.classList.add(TURN_CLASS);
+      if (!turnEl.classList.contains(TURN_CLASS)) turnEl.classList.add(TURN_CLASS);
     } catch {
       // ignore
     }
+  }
+
+  function setTurnsCache(turns, root = null, version = 0) {
+    state.turnsCache = Array.isArray(turns) ? turns.filter((item) => item instanceof HTMLElement) : [];
+    state.turnsRoot = root instanceof HTMLElement ? root : state.turnsRoot;
+    if (Number.isFinite(Number(version)) && Number(version) > 0) state.turnsVersion = Number(version);
+  }
+
+  function getTailTurn(turns = state.turnsCache) {
+    const list = Array.isArray(turns) ? turns : state.turnsCache;
+    if (!list || !list.length) return null;
+    const tail = list[list.length - 1];
+    return tail instanceof HTMLElement ? tail : null;
+  }
+
+  function measureTurnMetrics(turnEl) {
+    if (!(turnEl instanceof HTMLElement)) return { domNodes: 0, katexNodes: 0, heavyBlocks: 0 };
+    let domNodes = 0;
+    let katexNodes = 0;
+    let heavyBlocks = 0;
+    try {
+      domNodes = turnEl.getElementsByTagName('*').length;
+    } catch {
+      domNodes = 0;
+    }
+    try {
+      katexNodes = turnEl.querySelectorAll('.katex-display, mjx-container').length;
+    } catch {
+      katexNodes = 0;
+    }
+    try {
+      heavyBlocks = turnEl.querySelectorAll(HEAVY_BLOCK_SELECTOR).length;
+    } catch {
+      heavyBlocks = 0;
+    }
+    return { domNodes, katexNodes, heavyBlocks };
+  }
+
+  function setTurnMetrics(turnEl, nextMetrics) {
+    if (!(turnEl instanceof HTMLElement)) return;
+    const prev = state.turnMetrics.get(turnEl);
+    if (prev) {
+      state.totalTurnDomNodes -= Number(prev.domNodes) || 0;
+      state.totalTurnKatexNodes -= Number(prev.katexNodes) || 0;
+      state.totalTurnHeavyBlocks -= Number(prev.heavyBlocks) || 0;
+    }
+    const safe = {
+      domNodes: Math.max(0, Number(nextMetrics?.domNodes) || 0),
+      katexNodes: Math.max(0, Number(nextMetrics?.katexNodes) || 0),
+      heavyBlocks: Math.max(0, Number(nextMetrics?.heavyBlocks) || 0),
+      estimated: !!nextMetrics?.estimated
+    };
+    state.turnMetrics.set(turnEl, safe);
+    state.totalTurnDomNodes += safe.domNodes;
+    state.totalTurnKatexNodes += safe.katexNodes;
+    state.totalTurnHeavyBlocks += safe.heavyBlocks;
+  }
+
+  function dropTurnMetrics(turnEl) {
+    const prev = state.turnMetrics.get(turnEl);
+    if (!prev) return;
+    state.turnMetrics.delete(turnEl);
+    state.totalTurnDomNodes -= Number(prev.domNodes) || 0;
+    state.totalTurnKatexNodes -= Number(prev.katexNodes) || 0;
+    state.totalTurnHeavyBlocks -= Number(prev.heavyBlocks) || 0;
+  }
+
+  function getStreamingTailEstimate(turnEl) {
+    const prev = state.turnMetrics.get(turnEl);
+    let directChildren = 0;
+    let markdownBlocks = 0;
+    let formulaHint = 0;
+    let heavyHint = 0;
+    try {
+      directChildren = Math.max(0, Number(turnEl?.childElementCount) || 0);
+    } catch {}
+    try {
+      const markdown = turnEl?.querySelector?.('.markdown');
+      markdownBlocks = Math.max(0, Number(markdown?.childElementCount) || 0);
+    } catch {}
+    try {
+      formulaHint = turnEl?.querySelector?.('.katex-display, mjx-container') ? 1 : 0;
+    } catch {}
+    try {
+      heavyHint = turnEl?.querySelector?.('pre, table, .markdown > blockquote') ? 1 : 0;
+    } catch {}
+    const shape = Math.max(directChildren, markdownBlocks);
+    const prevDomNodes = Number(prev?.domNodes) || 0;
+    const prevKatexNodes = Number(prev?.katexNodes) || 0;
+    const prevHeavyBlocks = Number(prev?.heavyBlocks) || 0;
+    return {
+      domNodes: Math.max(prevDomNodes, 900 + (shape * 72)),
+      katexNodes: Math.max(prevKatexNodes, formulaHint ? Math.min(48, Math.max(10, 6 + shape)) : Math.min(12, Math.max(2, shape >> 1))),
+      heavyBlocks: Math.max(prevHeavyBlocks, Math.min(40, Math.max(4 + heavyHint, 4 + (shape >> 1)))),
+      estimated: true
+    };
+  }
+
+  function clearTailMetricsTimer() {
+    try {
+      if (state.tailMetricsTimer) window.clearTimeout(state.tailMetricsTimer);
+    } catch {
+      // ignore
+    }
+    state.tailMetricsTimer = 0;
+  }
+
+  function schedulePreciseTailMetrics(turns = null, delayMs = 420) {
+    const tail = getTailTurn(turns);
+    if (!(tail instanceof HTMLElement)) return;
+    state.activeTailTurn = tail;
+    clearTailMetricsTimer();
+    state.tailMetricsTimer = window.setTimeout(() => {
+      state.tailMetricsTimer = 0;
+      if (state.disposed || !tail.isConnected) return;
+      if (isGeneratingResponse(true) && getTailTurn() === tail) {
+        setTurnMetrics(tail, getStreamingTailEstimate(tail));
+        schedulePreciseTailMetrics(state.turnsCache, Math.max(700, delayMs));
+        return;
+      }
+      setTurnMetrics(tail, measureTurnMetrics(tail));
+      state.structureDirty = true;
+      scheduleApplyVirtualizationNow('tail-metrics-idle');
+    }, Math.max(120, Number(delayMs) || 420));
+  }
+
+  function syncTailTurnMetrics(turns, { generating = false, force = false } = {}) {
+    const tail = getTailTurn(turns);
+    const prevTail = state.activeTailTurn;
+    state.activeTailTurn = tail;
+    if (!(tail instanceof HTMLElement)) return;
+    if (generating) {
+      const prev = state.turnMetrics.get(tail);
+      const ts = nowPerf();
+      if (force || !prev || (ts - (state.lastTailEstimateAt || 0)) >= 180 || prevTail !== tail) {
+        setTurnMetrics(tail, getStreamingTailEstimate(tail));
+        state.lastTailEstimateAt = ts;
+      }
+      schedulePreciseTailMetrics(turns, 900);
+      return;
+    }
+    const prev = state.turnMetrics.get(tail);
+    if (force || !prev || prev.estimated) {
+      schedulePreciseTailMetrics(turns, force ? 140 : 420);
+    }
+  }
+
+  function refreshTailTurnMetrics(turns, force = false) {
+    const list = Array.isArray(turns) ? turns : state.turnsCache;
+    if (!list || !list.length) return;
+    syncTailTurnMetrics(list, { generating: isGeneratingResponse(true), force });
   }
 
   function getClosestTurnElement(target) {
@@ -232,12 +442,6 @@
     return active;
   }
 
-  function getBudgetScopeRoot() {
-    if (state.containerEl instanceof HTMLElement) return state.containerEl;
-    const main = document.querySelector('main');
-    return main instanceof HTMLElement ? main : document.body;
-  }
-
   function collectBudgetSnapshot(turnCount, force = false) {
     const now = nowPerf();
     const prev = state.budgetSnapshot;
@@ -247,27 +451,13 @@
 
     if (!shouldRefresh && prev) return prev;
 
-    const scopeRoot = getBudgetScopeRoot();
-    let domNodes = prev?.domNodes ?? 0;
-    let katexNodes = prev?.katexNodes ?? 0;
-    try {
-      state.kpi.domQueryOps += 1;
-      domNodes = scopeRoot?.getElementsByTagName?.('*')?.length ?? document.getElementsByTagName('*').length;
-    } catch {
-      // ignore
-    }
-    // KaTeX query is relatively expensive; only refresh when the conversation has enough turns
-    // or we explicitly force a refresh.
-    if (force || turnCountChanged || turnCount >= 10) {
-      try {
-        state.kpi.domQueryOps += 1;
-        katexNodes = scopeRoot?.querySelectorAll?.('.katex-display, mjx-container')?.length ?? document.querySelectorAll('.katex-display, mjx-container').length;
-      } catch {
-        // ignore
-      }
-    }
+    const generating = isGeneratingResponse(true);
+    syncTailTurnMetrics(state.turnsCache, { generating, force });
 
-    const snap = { turnCount, domNodes, katexNodes, ts: Date.now() };
+    const domNodes = Math.max(0, Number(state.totalTurnDomNodes) || 0);
+    const katexNodes = Math.max(0, Number(state.totalTurnKatexNodes) || 0);
+    const heavyBlocks = Math.max(0, Number(state.totalTurnHeavyBlocks) || 0);
+    const snap = { turnCount, domNodes, katexNodes, heavyBlocks, ts: Date.now() };
     state.budgetSnapshot = snap;
     state.budgetSnapshotAt = now;
     return snap;
@@ -278,13 +468,15 @@
     let level = 0;
     const dom = Number(snapshot.domNodes) || 0;
     const katex = Number(snapshot.katexNodes) || 0;
+    const heavyBlocks = Number(snapshot.heavyBlocks) || 0;
     const turns = Number(snapshot.turnCount) || 0;
 
+    if (dom >= 5000) level += 1;
     if (dom >= 10000) level += 1;
-    if (dom >= 18000) level += 1;
-    if (dom >= 26000) level += 1;
-    if (katex >= 120) level += 1;
-    if (katex >= 220) level += 1;
+    if (heavyBlocks >= 80) level += 1;
+    if (heavyBlocks >= 160) level += 1;
+    if (katex >= 80) level += 1;
+    if (katex >= 160) level += 1;
     if (turns >= 24) level += 1;
     if (turns >= 36) level += 1;
 
@@ -371,6 +563,7 @@
     toggleRootAttr(ROOT_ENABLED_ATTR, s.enabled, '1');
     toggleRootAttr(ROOT_OFFSCREEN_ATTR, s.enabled && s.virtualizeOffscreen, '1');
     toggleRootAttr(ROOT_HEAVY_ATTR, s.enabled && s.optimizeHeavyBlocks, '1');
+    toggleRootAttr(ROOT_HOT_ATTR, !!state.hotPathActive, '1');
     toggleRootAttr(ROOT_NOANIM_ATTR, s.enabled && s.disableAnimations, '1');
   }
 
@@ -401,12 +594,13 @@
 	      state.rootAttrMo = new MutationObserver(onMutate);
 	      state.rootAttrMo.observe(html, {
 	        attributes: true,
-	        attributeFilter: [
-	          ROOT_ATTR,
+        attributeFilter: [
+          ROOT_ATTR,
           ROOT_VER_ATTR,
           ROOT_ENABLED_ATTR,
           ROOT_OFFSCREEN_ATTR,
           ROOT_HEAVY_ATTR,
+          ROOT_HOT_ATTR,
           ROOT_NOANIM_ATTR,
         ],
       });
@@ -436,6 +630,7 @@
       ROOT_ENABLED_ATTR,
       ROOT_OFFSCREEN_ATTR,
       ROOT_HEAVY_ATTR,
+      ROOT_HOT_ATTR,
       ROOT_NOANIM_ATTR,
       ROOT_FIND_ATTR,
     ]) {
@@ -449,7 +644,7 @@
     let turnCount = 0;
     let offscreenCount = 0;
     try {
-      turnCount = getTurnElements(document.querySelector('main')).length;
+      turnCount = state.turnsCache.length || getTurnElements(document.querySelector('main')).length;
       offscreenCount = document.querySelectorAll(`.${TURN_CLASS}.${OFFSCREEN_CLASS}`).length;
     } catch {
       turnCount = 0;
@@ -466,6 +661,9 @@
       turnCount,
       articleCount: turnCount,
       offscreenCount,
+      totalTurnDomNodes: state.totalTurnDomNodes,
+      totalTurnKatexNodes: state.totalTurnKatexNodes,
+      totalTurnHeavyBlocks: state.totalTurnHeavyBlocks,
       boostActive: !!state.boostActive,
       budgetLevel: state.budgetLevel || 0,
       ioMarginPx: state.ioMarginPx,
@@ -720,7 +918,12 @@
     }
   }
 
-  function findTurnsContainer() {
+  function findTurnsContainer(payload = null) {
+    const payloadRoot = payload?.root instanceof HTMLElement ? payload.root : null;
+    if (payloadRoot && (Array.isArray(payload?.turns) ? payload.turns.length : getTurnElements(payloadRoot, payload).length)) {
+      return payloadRoot;
+    }
+    if (state.turnsRoot instanceof HTMLElement && state.turnsRoot.isConnected && state.turnsCache.length) return state.turnsRoot;
     try {
       const core = getChatgptCoreApi();
       if (typeof core?.getTurnsRoot === 'function') {
@@ -768,11 +971,11 @@
     turnEl.classList.add(OFFSCREEN_CLASS);
   }
 
-  function updateDefaultIntrinsic(container) {
+  function updateDefaultIntrinsic(container, turns = null) {
     if (!(container instanceof HTMLElement)) return;
 
-    const turns = getTurnElements(container);
-    if (!turns.length) {
+    const turnList = Array.isArray(turns) ? turns.filter((item) => item instanceof HTMLElement) : getTurnElements(container);
+    if (!turnList.length) {
       state.defaultIntrinsic = clampInt(window.innerHeight * 0.65, 220, 900);
       return;
     }
@@ -785,10 +988,10 @@
 
     const collect = (start, step) => {
       let scanned = 0;
-      for (let i = start; i >= 0 && i < turns.length; i += step) {
+      for (let i = start; i >= 0 && i < turnList.length; i += step) {
         if (scanned >= maxScan) break;
         scanned += 1;
-        const turnEl = turns[i];
+        const turnEl = turnList[i];
         if (!(turnEl instanceof HTMLElement)) continue;
         const rect = turnEl.getBoundingClientRect();
         if (rect.bottom < topBound || rect.top > bottomBound) continue;
@@ -799,7 +1002,7 @@
     };
 
     // Prefer sampling around the current viewport; scan from bottom then top.
-    collect(turns.length - 1, -1);
+    collect(turnList.length - 1, -1);
     if (heights.length < 3) collect(0, 1);
 
     if (heights.length) {
@@ -840,14 +1043,23 @@
     }
     state.io = null;
     state.observedTurns = new Set();
+    clearTailMetricsTimer();
+    state.activeTailTurn = null;
+    state.lastTailEstimateAt = 0;
   }
 
   function syncObservedTurns(turns) {
+    const list = Array.isArray(turns) ? turns : [];
+    const generating = isGeneratingResponse();
+    const tail = getTailTurn(list);
     const next = new Set();
-    for (const turn of Array.isArray(turns) ? turns : []) {
+    for (const turn of list) {
       if (!(turn instanceof HTMLElement)) continue;
       markTurnElement(turn);
       next.add(turn);
+      if (!state.turnMetrics.has(turn) && tail === turn && generating) {
+        setTurnMetrics(turn, getStreamingTailEstimate(turn));
+      }
       if (!state.observedTurns.has(turn)) {
         try {
           state.io?.observe?.(turn);
@@ -871,6 +1083,7 @@
       } catch {
         // ignore
       }
+      dropTurnMetrics(turn);
     }
 
     state.observedTurns = next;
@@ -880,14 +1093,54 @@
     if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
     if (document.visibilityState === 'hidden') return;
 
-    const container = findTurnsContainer();
+    const snapshot = (() => {
+      const payloadTurns = Array.isArray(payload?.turns) ? payload.turns.filter((item) => item instanceof HTMLElement) : null;
+      if (payloadTurns && payloadTurns.length) {
+        return {
+          root: payload?.root instanceof HTMLElement ? payload.root : findTurnsContainer(payload),
+          turns: payloadTurns,
+          turnsVersion: Number.isFinite(Number(payload?.turnsVersion)) ? Number(payload.turnsVersion) : 0,
+          rootChanged: !!payload?.rootChanged,
+          addedTurns: Array.isArray(payload?.addedTurns) ? payload.addedTurns.filter((item) => item instanceof HTMLElement) : [],
+          removedTurns: Array.isArray(payload?.removedTurns) ? payload.removedTurns.filter((item) => item instanceof HTMLElement) : []
+        };
+      }
+      const coreSnapshot = getCoreTurnsSnapshot(false);
+      if (coreSnapshot && coreSnapshot.turns.length) return coreSnapshot;
+      const fallbackRoot = findTurnsContainer(payload);
+      return {
+        root: fallbackRoot,
+        turns: fallbackRoot ? getTurnElements(fallbackRoot, payload) : [],
+        turnsVersion: 0,
+        rootChanged: false,
+        addedTurns: [],
+        removedTurns: []
+      };
+    })();
+    const container = snapshot.root instanceof HTMLElement ? snapshot.root : findTurnsContainer(payload);
     if (!(container instanceof HTMLElement)) return;
 
     const changedContainer = container !== state.containerEl;
+    const versionChanged =
+      Number.isFinite(Number(snapshot.turnsVersion)) &&
+      Number(snapshot.turnsVersion) > 0 &&
+      Number(snapshot.turnsVersion) !== Number(state.turnsVersion || 0);
+    const lengthChanged = snapshot.turns.length !== state.turnsCache.length;
+    const hasStructuralDelta =
+      changedContainer ||
+      !!snapshot.rootChanged ||
+      versionChanged ||
+      lengthChanged ||
+      (Array.isArray(snapshot.addedTurns) && snapshot.addedTurns.length > 0) ||
+      (Array.isArray(snapshot.removedTurns) && snapshot.removedTurns.length > 0);
+    const generating = isGeneratingResponse(true);
+
     setContainerEl(container);
+    setTurnsCache(snapshot.turns, container, snapshot.turnsVersion);
     state.structureDirty = true;
-    if (changedContainer) updateDefaultIntrinsic(container);
-    syncObservedTurns(getTurnElements(container));
+    if (changedContainer) updateDefaultIntrinsic(container, snapshot.turns);
+    if (hasStructuralDelta) syncObservedTurns(snapshot.turns);
+    syncTailTurnMetrics(snapshot.turns, { generating, force: !generating && hasStructuralDelta });
     scheduleApplyVirtualizationNow(reason || String(payload?.reason || 'core-turns'));
   }
 
@@ -929,11 +1182,14 @@
     attachIo();
     ensureTurnsWatch();
 
-    const container = findTurnsContainer();
+    const snapshot = getCoreTurnsSnapshot(false);
+    const container = snapshot?.root instanceof HTMLElement ? snapshot.root : findTurnsContainer();
     if (container instanceof HTMLElement) {
       setContainerEl(container);
-      updateDefaultIntrinsic(container);
-      syncObservedTurns(getTurnElements(container));
+      const turns = snapshot?.turns?.length ? snapshot.turns : getTurnElements(container);
+      setTurnsCache(turns, container, snapshot?.turnsVersion || 0);
+      updateDefaultIntrinsic(container, turns);
+      syncObservedTurns(turns);
       scheduleApplyVirtualizationNow('start');
       return;
     }
@@ -944,8 +1200,10 @@
       const next = findTurnsContainer();
       if (next instanceof HTMLElement) {
         setContainerEl(next);
-        updateDefaultIntrinsic(next);
-        syncObservedTurns(getTurnElements(next));
+        const fallbackTurns = getTurnElements(next);
+        setTurnsCache(fallbackTurns, next, 0);
+        updateDefaultIntrinsic(next, fallbackTurns);
+        syncObservedTurns(fallbackTurns);
         scheduleApplyVirtualizationNow('start-hydration');
         return;
       }
@@ -965,6 +1223,9 @@
     detachIo();
     syncObservedTurns([]);
     setContainerEl(null);
+    state.turnsRoot = null;
+    state.turnsCache = [];
+    state.turnsVersion = 0;
     state.lastVisibleFirst = -1;
     state.lastVisibleLast = -1;
     state.lastVisibleTotal = 0;
@@ -972,6 +1233,12 @@
     state.budgetSnapshot = null;
     state.budgetSnapshotAt = 0;
     state.budgetLevel = 0;
+    state.hotPathActive = false;
+    state.lastTailEstimateAt = 0;
+    state.turnMetrics.clear();
+    state.totalTurnDomNodes = 0;
+    state.totalTurnKatexNodes = 0;
+    state.totalTurnHeavyBlocks = 0;
     document.querySelectorAll(`.${TURN_CLASS}.${OFFSCREEN_CLASS}`).forEach((turn) => clearOffscreen(turn));
   }
 
@@ -1222,14 +1489,17 @@
 
   function restartIo() {
     if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-    const container = state.containerEl || findTurnsContainer();
+    const snapshot = getCoreTurnsSnapshot(false);
+    const container = state.containerEl || snapshot?.root || findTurnsContainer();
     detachIo();
     attachIo();
     state.structureDirty = true;
     if (!container) return;
     setContainerEl(container);
-    updateDefaultIntrinsic(container);
-    syncObservedTurns(getTurnElements(container));
+    const turns = snapshot?.turns?.length && snapshot.root === container ? snapshot.turns : getTurnElements(container);
+    setTurnsCache(turns, container, snapshot?.turnsVersion || 0);
+    updateDefaultIntrinsic(container, turns);
+    syncObservedTurns(turns);
   }
 
   function findFirstIndexByBottom(turns, topBound) {
@@ -1292,6 +1562,13 @@
         const el = list[i];
         if (i < boundFirst || i > boundLast) setOffscreen(el);
         else clearOffscreen(el);
+        const metrics = state.turnMetrics.get(el);
+        if (!metrics || metrics.estimated) {
+          const tail = getTailTurn(list);
+          if (!(tail && tail === el && isGeneratingResponse())) {
+            setTurnMetrics(el, measureTurnMetrics(el));
+          }
+        }
         state.reconcileIdx += 1;
         processed += 1;
         if (deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() < 4) break;
@@ -1322,9 +1599,13 @@
 	    } catch {
 	      // ignore
     }
-    const turns = getTurnElements(container);
+    const turns =
+      state.turnsCache.length && state.turnsRoot === container
+        ? state.turnsCache
+        : getTurnElements(container);
     const total = turns.length;
     if (!total) return;
+    setTurnsCache(turns, container, state.turnsVersion);
 
     const topBound = -marginPx;
     const bottomBound = window.innerHeight + marginPx;
@@ -1343,6 +1624,8 @@
       state.reconcileToken += 1;
       state.reconcileTurns = null;
       state.budgetLevel = 0;
+      state.hotPathActive = false;
+      applyRootAttrs();
       state.structureDirty = false;
       for (let i = 0; i < total; i += 1) clearOffscreen(turns[i]);
       return;
@@ -1351,6 +1634,8 @@
     const generating = isGeneratingResponse();
     const wasStructureDirty = state.structureDirty;
     const budget = collectBudgetSnapshot(total);
+    state.hotPathActive = !!(generating && computeBudgetLevel(budget) >= 2);
+    applyRootAttrs();
     const padItems = computeAdaptivePadItems({ generating, boostActive: state.boostActive, snapshot: budget });
     const start = Math.max(0, first - padItems);
     const end = Math.min(total - 1, last + padItems);

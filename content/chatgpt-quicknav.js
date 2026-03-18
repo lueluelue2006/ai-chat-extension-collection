@@ -19,6 +19,8 @@
   const BOUNDARY_EPS = 28;
   const HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS = 220;
   const HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS = 320;
+  const HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS = 420;
+  const HOT_SCROLL_FALLBACK_SCAN_DELAY_MS = 640;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEFAULT_NAV_TOP = 1;
   const DEFAULT_NAV_RIGHT = 1;
@@ -1106,6 +1108,34 @@
     } catch {}
   }
 
+  function getChatgptCoreApi() {
+    try {
+      const core = globalThis.__aichat_chatgpt_core_v1__ || null;
+      return core && typeof core === 'object' ? core : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isChatgptGenerating() {
+    try {
+      return !!getChatgptCoreApi()?.isGenerating?.();
+    } catch {
+      return false;
+    }
+  }
+
+  function getVisibleTurnWindow(marginPx = 0) {
+    try {
+      const core = getChatgptCoreApi();
+      if (!core || typeof core.getVisibleTurnWindow !== 'function') return null;
+      const snapshot = core.getVisibleTurnWindow(false, marginPx);
+      return snapshot && typeof snapshot === 'object' ? snapshot : null;
+    } catch {
+      return null;
+    }
+  }
+
   let pending = false, rafId = null, idleId = null;
   let forceRefreshTimer = null;
   let lastTurnCount = 0;
@@ -2005,7 +2035,15 @@
 
     // Prefer shared core selector for the modern ChatGPT turn DOM.
     try {
-      const core = globalThis.__aichat_chatgpt_core_v1__;
+      const core = getChatgptCoreApi();
+      if (core && typeof core.getTurnsSnapshot === 'function' && root === document) {
+        const snapshot = core.getTurnsSnapshot(false);
+        const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
+        if (turns.length) {
+          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
+          return turns;
+        }
+      }
       if (core && typeof core.getTurnArticles === 'function') {
         const turns = core.getTurnArticles(root);
         if (Array.isArray(turns) && turns.length) {
@@ -5747,6 +5785,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
 	  function getChatScrollContainer() {
 	    try {
+	      const coreScroller = getChatgptCoreApi()?.getChatScrollContainer?.();
+	      if (coreScroller && coreScroller.nodeType === 1 && coreScroller.isConnected) {
+	        __cgptChatScrollContainer = coreScroller;
+	        __cgptChatScrollContainerTs = Date.now();
+	        return coreScroller;
+	      }
+	    } catch {}
+
+	    try {
 	      // Hot path: reuse the last known scroll container when possible.
 	      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
 	      if (cached && cached.nodeType === 1 && cached.isConnected) {
@@ -6302,6 +6349,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function handleScrollLockMutations(muts, streaming = false) {
     if (!scrollLockEnabled || !muts || !muts.length) return;
     const isStreaming = !!streaming;
+    if (isStreaming && shouldSuspendActiveTracking()) return;
     let relevant = false;
     for (const mut of muts) {
       if (!mut) continue;
@@ -6848,13 +6896,28 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function shouldThrottleActiveTracking() {
     try {
+      if (document.documentElement?.dataset?.cgptperfHot === '1') return true;
       if (document.documentElement?.dataset?.cgptperfHeavy === '1') return true;
     } catch {}
+    if (isChatgptGenerating() && cacheIndex.length >= 8) return true;
     return cacheIndex.length >= 12;
   }
 
+  function shouldSuspendActiveTracking() {
+    try {
+      if (document.documentElement?.dataset?.cgptperfHot === '1') return cacheIndex.length >= 8;
+    } catch {}
+    try {
+      const core = getChatgptCoreApi();
+      if (typeof core?.isGenerating === 'function' && core.isGenerating()) return cacheIndex.length >= 12;
+    } catch {}
+    return false;
+  }
+
   function scheduleActiveUpdateDebounced(delay = 90) {
-    if (shouldThrottleActiveTracking()) {
+    if (shouldSuspendActiveTracking()) {
+      delay = Math.max(Number(delay) || 0, HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+    } else if (shouldThrottleActiveTracking()) {
       delay = Math.max(Number(delay) || 0, HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
     }
     if (activeUpdateTimer) cancelScopedTimeout(activeUpdateTimer);
@@ -6864,7 +6927,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }, delay);
   }
 
-  function scheduleActiveUpdateNow() { requestAnimationFrame(updateActiveFromAnchor); }
+  function scheduleActiveUpdateNow() {
+    if (shouldSuspendActiveTracking()) {
+      scheduleActiveUpdateDebounced(HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+      return;
+    }
+    if (shouldThrottleActiveTracking() && isChatgptGenerating()) {
+      scheduleActiveUpdateDebounced(HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+      return;
+    }
+    requestAnimationFrame(updateActiveFromAnchor);
+  }
 
   function getAnchorY() {
     const h = getFixedHeaderHeight();
@@ -6876,30 +6949,39 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const y = getAnchorY();
     const xs = [Math.floor(window.innerWidth * 0.40), Math.floor(window.innerWidth * 0.60)];
     let activeEl = null;
+    const hotTracking = shouldSuspendActiveTracking();
     const heavyTracking = shouldThrottleActiveTracking();
+    const generating = heavyTracking ? isChatgptGenerating() : false;
+    const candidateTurns = heavyTracking ? getHeavyTrackingCandidates() : null;
+    const sinceScroll = Date.now() - (lastScrollTs || 0);
 
-    for (const x of xs) {
-      const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : []);
-      if (!stack || !stack.length) continue;
-      for (const el of stack) {
-        if (!el) continue;
-        if (el.id === 'cgpt-compact-nav' || (el.closest && el.closest('#cgpt-compact-nav'))) continue;
-        const t = el.closest && el.closest('[data-cgpt-turn="1"]');
-        if (t) { activeEl = t; break; }
+    if (!hotTracking && !generating) {
+      for (const x of xs) {
+        const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : []);
+        if (!stack || !stack.length) continue;
+        for (const el of stack) {
+          if (!el) continue;
+          if (el.id === 'cgpt-compact-nav' || (el.closest && el.closest('#cgpt-compact-nav'))) continue;
+          const t = el.closest && el.closest('[data-cgpt-turn="1"]');
+          if (t) { activeEl = t; break; }
+        }
+        if (activeEl) break;
       }
-      if (activeEl) break;
     }
 
     if (!(activeEl && activeEl.id === currentActiveId)) {
-      const nearNext = findNearNextTop(y, BOUNDARY_EPS);
+      const nearNext = findNearNextTop(y, BOUNDARY_EPS, candidateTurns);
       if (nearNext) activeEl = nearNext;
     }
 
     if (!activeEl) {
-      const sinceScroll = Date.now() - (lastScrollTs || 0);
-      const minDelay = heavyTracking ? HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS : 160;
+      const minDelay = hotTracking
+        ? HOT_SCROLL_FALLBACK_SCAN_DELAY_MS
+        : heavyTracking
+          ? HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS
+          : 160;
       if (sinceScroll < minDelay) return;
-      const turns = qsTurns();
+      const turns = candidateTurns && candidateTurns.length ? candidateTurns : qsTurns();
       for (const t of turns) { const r = t.getBoundingClientRect(); if (r.bottom >= y) { activeEl = t; break; } }
       if (!activeEl && turns.length) activeEl = turns[0];
     }
@@ -6907,9 +6989,65 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (activeEl) setActiveTurn(activeEl.id);
   }
 
-  function findNearNextTop(y, eps) {
+  function getHeavyTrackingCandidates() {
+    const shared = getVisibleTurnWindow(260);
+    if (shared && Array.isArray(shared.turns) && shared.turns.length) {
+      const start = Math.max(0, Number(shared.first || 0) - 2);
+      const end = Math.min(shared.turns.length, Number(shared.last || 0) + 3);
+      const narrowed = [];
+      for (let i = start; i < end; i += 1) {
+        const el = shared.turns[i];
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.classList.contains('cgptperf-offscreen')) continue;
+        narrowed.push(el);
+      }
+      if (narrowed.length) return narrowed;
+      if (Array.isArray(shared.visibleTurns) && shared.visibleTurns.length) {
+        return shared.visibleTurns.filter((el) => el instanceof HTMLElement);
+      }
+    }
+
+    const turns = qsTurns();
+    if (!turns.length) return turns;
+
+    const start = Math.max(0, (currentActiveTurnPos || 0) - 6);
+    const end = Math.min(turns.length, start + 18);
+    const narrowed = [];
+    for (let i = start; i < end; i += 1) {
+      const el = turns[i];
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.classList.contains('cgptperf-offscreen')) continue;
+      narrowed.push(el);
+    }
+    if (narrowed.length) return narrowed;
+
+    const visible = [];
+    for (const el of turns) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.classList.contains('cgptperf-offscreen')) continue;
+      visible.push(el);
+      if (visible.length >= 18) break;
+    }
+    if (visible.length) return visible;
+
+    return turns.slice(start, end);
+  }
+
+  function findNearNextTop(y, eps, turnsOverride = null) {
     const start = Math.max(0, (currentActiveTurnPos || 0) - 3);
     const maxChecks = 30;
+
+    if (Array.isArray(turnsOverride) && turnsOverride.length) {
+      for (let i = 0, checked = 0; i < turnsOverride.length && checked < maxChecks; i += 1, checked += 1) {
+        const el = turnsOverride[i];
+        if (!(el instanceof HTMLElement)) continue;
+        const r = el.getBoundingClientRect();
+        const d = r.top - y;
+        if (d >= 0 && d <= eps) return el;
+        if (r.top > y + eps) break;
+      }
+      return null;
+    }
 
     const ids = Array.isArray(cachedTurnIds) && cachedTurnIds.length ? cachedTurnIds : null;
     // Prefer cached ids to avoid keeping turn DOM nodes alive.

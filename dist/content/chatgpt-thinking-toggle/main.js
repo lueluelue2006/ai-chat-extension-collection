@@ -605,6 +605,15 @@ button.${HINT_CLASS}::after {
 
   function readComposerModeLabel() {
     try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.readComposerModeLabel === 'function') {
+        const label = String(core.readComposerModeLabel() || '').trim();
+        if (label) return label;
+      }
+    } catch (_) {
+      // ignore
+    }
+    try {
       const root = getComposerRoot();
       const buttons = Array.from(root?.querySelectorAll?.("button[aria-haspopup='menu'],button") || []);
       for (const button of buttons) {
@@ -613,7 +622,7 @@ button.${HINT_CLASS}::after {
         const aria = String(button.getAttribute('aria-label') || '').trim();
         const combined = normalizeText(`${text} ${aria}`);
         if (!combined) continue;
-        if (combined.includes('thinking') || combined.includes('思考') || combined.includes('推理')) return text || aria;
+        if (combined.includes('thinking') || combined.includes('思考') || combined.includes('推理') || combined.includes('instant')) return text || aria;
         if (combined === 'pro' || combined.startsWith('pro ') || combined.includes(' extended pro') || combined.includes(' standard pro')) return text || aria;
       }
     } catch (_) {
@@ -958,8 +967,8 @@ button.${HINT_CLASS}::after {
   }
 
   function findVisibleThinkingProMenu() {
-    const thinkingItem = findVisibleByTestId('model-switcher-gpt-5-2-thinking');
-    const proItem = findVisibleByTestId('model-switcher-gpt-5-2-pro');
+    const thinkingItem = findVisibleModelSwitcherItemBySuffix('thinking');
+    const proItem = findVisibleModelSwitcherItemBySuffix('-pro');
     const any = thinkingItem || proItem;
     if (!any) return null;
     return any.closest("[role='menu']") || null;
@@ -1028,6 +1037,16 @@ button.${HINT_CLASS}::after {
   }
 
   function findGPT52ModelSelectorTrigger() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getModelSwitcherButton === 'function') {
+        const button = core.getModelSwitcherButton();
+        if (button instanceof HTMLElement) return button;
+      }
+    } catch (_) {
+      // ignore
+    }
+
     const byTestIdAll = Array.from(document.querySelectorAll("button[data-testid='model-switcher-dropdown-button']"));
     const byTestIdVisible = byTestIdAll.find((el) => el instanceof HTMLElement && isVisibleElement(el));
     if (byTestIdVisible instanceof HTMLElement) return byTestIdVisible;
@@ -1041,6 +1060,9 @@ button.${HINT_CLASS}::after {
   }
 
   function listMaybeThinkingProTriggers() {
+    const direct = findGPT52ModelSelectorTrigger();
+    if (direct instanceof HTMLElement) return [direct];
+
     const primaryNodes = Array.from(
       document.querySelectorAll(
         "button[aria-haspopup='menu'],button[aria-expanded],button[data-state],[role='button'][aria-haspopup='menu'],[role='button'][aria-expanded],[role='button'][data-state]"
@@ -1051,9 +1073,19 @@ button.${HINT_CLASS}::after {
       /** @type {HTMLElement[]} */
       const out = [];
       for (const el of nodes) {
-        const t = normalizeText(el.textContent || '');
-        if (!t.includes('5.2')) continue;
-        if (!t.includes('chatgpt') && !t.includes('gpt') && !t.includes('thinking') && !t.includes('pro')) continue;
+        const testId = normalizeText(el.getAttribute?.('data-testid') || '');
+        const text = normalizeText(el.textContent || '');
+        const aria = normalizeText(el.getAttribute?.('aria-label') || '');
+        const haystack = `${testId} ${text} ${aria}`.trim();
+        if (!haystack) continue;
+        if (
+          !haystack.includes('model selector') &&
+          !haystack.includes('model-switcher') &&
+          !haystack.includes('chatgpt') &&
+          !haystack.includes('gpt')
+        ) {
+          continue;
+        }
         if (!isVisibleElement(el)) continue;
         out.push(el);
       }

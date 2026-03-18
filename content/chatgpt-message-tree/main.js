@@ -15,6 +15,8 @@
   const PANEL_ID = '__aichat_chatgpt_message_tree_panel_v1__';
   const PREFS_KEY = '__aichat_chatgpt_message_tree_prefs_v1__';
   const MSG_HIGHLIGHT_CLASS = '__aichat_chatgpt_message_tree_msg_highlight_v1__';
+  const TURN_HOST_SELECTOR =
+    'section[data-testid^="conversation-turn-"],article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],section[data-testid*="conversation-turn"],article[data-testid*="conversation-turn"],[data-testid*="conversation-turn"]';
   const GRAPH_API_KEY = '__aichat_chatgpt_conversation_graph_v1__';
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
@@ -234,7 +236,7 @@
   try { document.getElementById(PANEL_ID)?.remove?.(); } catch {}
   try { document.getElementById(STYLE_ID)?.remove?.(); } catch {}
   try {
-    document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
+    document.querySelectorAll(`.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
       n.classList.remove(MSG_HIGHLIGHT_CLASS);
     });
   } catch {}
@@ -931,7 +933,7 @@
           opacity: 0.9;
           color: rgba(251,191,36,0.95);
         }
-        article.${MSG_HIGHLIGHT_CLASS}{
+        .${MSG_HIGHLIGHT_CLASS}{
           outline: 3px solid rgba(56,189,248,0.92) !important;
           outline-offset: 4px;
           border-radius: 14px;
@@ -945,7 +947,7 @@
           100%{ box-shadow: 0 0 0 0 rgba(56,189,248,0.0), 0 0 0 0 rgba(56,189,248,0.0); }
         }
         @media (prefers-reduced-motion: reduce){
-          article.${MSG_HIGHLIGHT_CLASS}{ animation: none; }
+          .${MSG_HIGHLIGHT_CLASS}{ animation: none; }
         }
       `;
 
@@ -981,17 +983,15 @@
     const id = String(messageId || '').trim();
     if (!id) return null;
     try {
-      const article = document.querySelector(`article[data-turn-id="${id}"]`);
-      if (article) return article;
+      const turn = document.querySelector(`section[data-turn-id="${id}"], article[data-turn-id="${id}"], [data-turn-id="${id}"]`);
+      if (turn) return turn;
     } catch {}
     try {
       const msg = document.querySelector(`[data-message-id="${id}"]`);
       if (!msg) return null;
       return (
-        msg.closest?.(
-          'article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],article[data-testid*="conversation-turn"],[data-testid*="conversation-turn"]'
-        ) ||
-        msg.closest?.('article') ||
+        msg.closest?.(TURN_HOST_SELECTOR) ||
+        msg.closest?.('section, article') ||
         msg
       );
     } catch {
@@ -1011,11 +1011,11 @@
     if (!element) return;
     clearHighlightTimer();
     try {
-      document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
+      document.querySelectorAll(`.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
         n.classList.remove(MSG_HIGHLIGHT_CLASS);
       });
     } catch {}
-    const article = element.closest?.('article') || element;
+    const article = element.closest?.(TURN_HOST_SELECTOR) || element;
     try {
       article.classList.add(MSG_HIGHLIGHT_CLASS);
       state.highlightTimer = setTimeout(() => {
@@ -1057,7 +1057,7 @@
   function scrollToMessageId(messageId) {
     const el = findTurnElementByMessageId(messageId);
     if (!el) return false;
-    const article = el.closest?.('article') || el;
+    const article = el.closest?.(TURN_HOST_SELECTOR) || el;
     const anchor = findTurnAnchor(article) || article;
     const topMargin = getFixedHeaderHeight();
     try {
@@ -1074,7 +1074,7 @@
     const element = el && el.nodeType === 1 ? el : null;
     if (!element) return '';
     try {
-      const article = element.closest?.('article') || element;
+      const article = element.closest?.(TURN_HOST_SELECTOR) || element;
       const msg = article.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id');
       if (msg) return String(msg);
       const id = article.getAttribute?.('data-turn-id');
@@ -1089,7 +1089,7 @@
       const id = String(raw || '').trim();
       if (!id) continue;
       const el = findTurnElementByMessageId(id);
-      if (el) return el.closest?.('article') || el;
+      if (el) return el.closest?.(TURN_HOST_SELECTOR) || el;
     }
     return null;
   }
@@ -1108,7 +1108,7 @@
   function getResponseSwitcherButtons(turnEl) {
     const el = turnEl && turnEl.nodeType === 1 ? turnEl : null;
     if (!el) return null;
-    const article = el.closest?.('article') || el;
+    const article = el.closest?.(TURN_HOST_SELECTOR) || el;
     const prev =
       article.querySelector?.('button[aria-label="Previous response"]') ||
       article.querySelector?.('button[aria-label*="Previous"][aria-label*="response"]') ||
@@ -2086,7 +2086,7 @@
   function getChatScrollContainer() {
     try {
       const turns = document.querySelector('[data-testid="conversation-turns"]');
-      const msg = document.querySelector('[data-message-id]');
+      const msg = document.querySelector('[data-message-id]') || document.querySelector(TURN_HOST_SELECTOR);
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
       const target = turns || msg || main || document.body;
       const closest = findClosestScrollContainer(target);
@@ -2717,7 +2717,7 @@
     try { document.getElementById(PANEL_ID)?.remove?.(); } catch {}
     try { document.getElementById(STYLE_ID)?.remove?.(); } catch {}
     try {
-      document.querySelectorAll(`article.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
+      document.querySelectorAll(`.${MSG_HIGHLIGHT_CLASS}`).forEach((n) => {
         n.classList.remove(MSG_HIGHLIGHT_CLASS);
       });
     } catch {}

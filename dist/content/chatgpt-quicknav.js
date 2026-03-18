@@ -1112,6 +1112,10 @@
   let lastDomTurnCount = 0;
   let lastDomFirstKey = '';
   let lastDomLastKey = '';
+  const CHATGPT_TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
+  const CHATGPT_TURN_SELECTOR = `${CHATGPT_TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
+  const CHATGPT_DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', CHATGPT_TURN_HOST_SELECTOR);
+  const CHATGPT_WRAPPED_TURN_HOST_SELECTOR = prefixSelectorList(':scope > *', CHATGPT_TURN_HOST_SELECTOR);
   let TURN_SELECTOR = null;
   let scrollTicking = false;
   let activeUpdateTimer = 0;
@@ -1134,6 +1138,15 @@
   const SEND_BURST_TRIGGER_DEDUP_MS = 260;
 
   let __quicknavDisposed = false;
+
+  function prefixSelectorList(prefix, selectorList) {
+    return String(selectorList || '')
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => `${prefix} ${part}`)
+      .join(', ');
+  }
 
   function clearTreeNavigatePending() {
     try {
@@ -1982,7 +1995,7 @@
         if (
           stable &&
           stable.querySelector?.(
-            'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id], [data-message-author-role]'
+            `${CHATGPT_TURN_SELECTOR}, div[data-message-id], [data-message-author-role]`
           )
         ) {
           root = stable;
@@ -1996,7 +2009,7 @@
       if (core && typeof core.getTurnArticles === 'function') {
         const turns = core.getTurnArticles(root);
         if (Array.isArray(turns) && turns.length) {
-          TURN_SELECTOR = 'article[data-testid^="conversation-turn-"]';
+          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
           return turns;
         }
       }
@@ -2012,7 +2025,7 @@
     // 快速返回：没有任何消息时，避免触发大量 fallback 选择器扫描（新会话/加载中常见）
     try {
       const hasAnyTurn = !!root.querySelector(
-        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]'
+        `${CHATGPT_TURN_SELECTOR}, div[data-message-id}`
       );
       if (!hasAnyTurn) {
         const hasRoleMarker = !!root.querySelector('[data-message-author-role]');
@@ -2022,6 +2035,7 @@
 
     const selectors = [
       // 原有选择器
+      'section[data-testid^="conversation-turn-"]',
       'article[data-testid^="conversation-turn-"]',
       '[data-testid^="conversation-turn-"]',
       'div[data-message-id]',
@@ -3852,12 +3866,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!id) return null;
     try {
       const msgEl = document.querySelector(`[data-message-id="${cssEscape(id)}"]`);
-      const art = msgEl ? msgEl.closest('article') : null;
-      if (art) return art;
+      const turn = msgEl ? msgEl.closest(CHATGPT_TURN_HOST_SELECTOR) || msgEl.closest('[data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]') : null;
+      if (turn) return turn;
     } catch {}
     try {
-      const art = document.querySelector(`article[data-turn-id="${cssEscape(id)}"]`);
-      if (art) return art;
+      const turn = document.querySelector(
+        `section[data-turn-id="${cssEscape(id)}"], article[data-turn-id="${cssEscape(id)}"], [data-turn-id="${cssEscape(id)}"]`
+      );
+      if (turn) return turn;
     } catch {}
     return null;
   }
@@ -4685,6 +4701,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const doc = document.scrollingElement || document.documentElement;
     const candidates = [
       document.querySelector('[data-testid="conversation-turns"]')?.parentElement,
+      document.querySelector(CHATGPT_TURN_HOST_SELECTOR)?.parentElement,
       document.querySelector('main'),
       document.querySelector('[role="main"]'),
       doc
@@ -4895,13 +4912,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function scrollToTurn(el) {
-    const article = el?.closest?.('article') || el;
+    const turnHost = el?.closest?.(CHATGPT_TURN_HOST_SELECTOR) || el;
     const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     const allowMs = scrollLockEnabled ? 1800 : 1200;
     markNavScrollIntent(allowMs);
     const isPin = !!(el && el.classList && el.classList.contains('cgpt-pin-anchor'));
-    const target = isPin ? el : article;
+    const target = isPin ? el : turnHost;
     // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
     // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
     scrollToTopOfElement(target, margin, behavior);
@@ -4912,12 +4929,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     // Highlight the whole turn, not just the first paragraph (more obvious).
     try {
-      document.querySelectorAll('article.highlight-pulse').forEach((n) => {
+      document.querySelectorAll(`${CHATGPT_TURN_HOST_SELECTOR}.highlight-pulse`).forEach((n) => {
         n.classList.remove('highlight-pulse');
       });
     } catch {}
-    try { article.classList.add('highlight-pulse'); } catch {}
-    scopeTimeout(conversationScope, () => { try { article.classList.remove('highlight-pulse'); } catch {} }, 2200);
+    try { turnHost.classList.add('highlight-pulse'); } catch {}
+    scopeTimeout(conversationScope, () => { try { turnHost.classList.remove('highlight-pulse'); } catch {} }, 2200);
     scheduleActiveUpdateNow();
   }
 
@@ -5367,12 +5384,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // to ignore streaming text mutations (which can be extremely noisy).
     try {
       if (!target || typeof target.querySelectorAll !== 'function') return true;
-      const deep = target.querySelectorAll('article[data-testid^="conversation-turn-"]').length;
+      const deep = target.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR).length;
       if (!deep) return true;
-      const direct = target.querySelectorAll(':scope > article[data-testid^="conversation-turn-"]').length;
+      const direct = target.querySelectorAll(CHATGPT_DIRECT_TURN_HOST_SELECTOR).length;
       if (direct && direct === deep) return false;
-      // Common wrapper case (:scope > div > article). Still safe to observe `subtree:false`.
-      const wrapped = target.querySelectorAll(':scope > * article[data-testid^="conversation-turn-"]').length;
+      // Common wrapper case (:scope > div > section/article). Still safe to observe `subtree:false`.
+      const wrapped = target.querySelectorAll(CHATGPT_WRAPPED_TURN_HOST_SELECTOR).length;
       if (wrapped && wrapped === deep) return false;
     } catch {}
     return true;
@@ -5754,10 +5771,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 	    } catch {}
 
 	    try {
-	      const anchor =
-	        document.querySelector(
-	          'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], [data-message-id]'
-	        ) ||
+		      const anchor =
+		        document.querySelector(
+		          `${CHATGPT_TURN_SELECTOR}, [data-message-id]`
+		        ) ||
         document.querySelector('main') ||
         document.querySelector('[role="main"]') ||
         document.getElementById('main') ||
@@ -6460,7 +6477,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     let el = node.closest('[data-cgpt-turn="1"]');
     if (el) return el;
     // 兜底：尝试已知选择器
-    el = node.closest('article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],div[data-message-id],div[class*="group"][data-testid]');
+    el = node.closest(`${CHATGPT_TURN_SELECTOR},div[data-message-id],div[class*="group"][data-testid]`);
     return el;
   }
 

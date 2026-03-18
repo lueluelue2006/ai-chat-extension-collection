@@ -7,7 +7,8 @@
 
   const MAPPING_CLIENT_KEY = '__aichat_chatgpt_mapping_client_v1__';
   const GRAPH_API_KEY = '__aichat_chatgpt_conversation_graph_v1__';
-  const DOM_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"]';
+  const DOM_TURN_SELECTOR =
+    'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"]';
   const MAX_TREE_JSON_BYTES = 6 * 1024 * 1024;
   const FILE_SERVICE_PREFIX = 'file-service://';
   const URL_RE = /https?:\/\/[^\s"')<>]+/gi;

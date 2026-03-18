@@ -113,7 +113,16 @@
   }
 
   function readCurrentModelLabel() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.readCurrentModelLabel === 'function') {
+        const label = String(core.readCurrentModelLabel() || '').trim();
+        if (label) return label;
+      }
+    } catch {}
     const selectors = [
+      'button[data-testid="model-switcher-dropdown-button"]',
+      'button[aria-label*="Model selector" i]',
       'button[aria-label*="Model selector, current model is" i]',
       'button[aria-label*="current model is" i]'
     ];
@@ -130,6 +139,13 @@
   }
 
   function readComposerModeLabel() {
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.readComposerModeLabel === 'function') {
+        const label = String(core.readComposerModeLabel() || '').trim();
+        if (label) return label;
+      }
+    } catch {}
     const selectors = ['button[aria-haspopup="menu"]', 'button'];
     try {
       const core = window.__aichat_chatgpt_core_main_v1__;

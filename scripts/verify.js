@@ -528,6 +528,63 @@ function verifyChatgptNativeEditCmdEnterFallback() {
   }
 }
 
+function verifyChatgptTurnHostHardening() {
+  const coreFiles = ['content/chatgpt-core.js', 'content/chatgpt-core-main.js'];
+  const requiredTurnSelector = 'section[data-testid^="conversation-turn-"]';
+  const requiredModelSelector = 'button[data-testid="model-switcher-dropdown-button"]';
+  const failures = [];
+
+  for (const relPath of coreFiles) {
+    const source = readText(relPath);
+    if (!source.includes(requiredTurnSelector)) {
+      failures.push(`${relPath} is missing ${requiredTurnSelector}`);
+    }
+    if (!source.includes(requiredModelSelector)) {
+      failures.push(`${relPath} is missing ${requiredModelSelector}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
+function verifyChatgptModelDetectionHardening() {
+  const checks = [
+    {
+      relPath: 'content/chatgpt-reply-timer/main.js',
+      patterns: ['model-switcher-dropdown-button', 'Model selector']
+    },
+    {
+      relPath: 'content/chatgpt-tab-queue/main.js',
+      patterns: ['model-switcher-dropdown-button', 'Model selector']
+    }
+  ];
+  const failures = [];
+
+  for (const check of checks) {
+    const source = readText(check.relPath);
+    for (const pattern of check.patterns) {
+      if (!source.includes(pattern)) {
+        failures.push(`${check.relPath} is missing ${pattern}`);
+      }
+    }
+  }
+
+  const thinkingToggleSource = readText('content/chatgpt-thinking-toggle/main.js');
+  for (const staleLiteral of ['model-switcher-gpt-5-2-thinking', 'model-switcher-gpt-5-2-pro']) {
+    if (thinkingToggleSource.includes(staleLiteral)) {
+      failures.push(`content/chatgpt-thinking-toggle/main.js still hard-codes ${staleLiteral}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -655,6 +712,22 @@ function main() {
     return;
   }
   console.log('ChatGPT native edit Cmd+Enter support: OK');
+
+  const turnHostHardening = verifyChatgptTurnHostHardening();
+  if (!turnHostHardening.ok) {
+    console.error(`ChatGPT turn host hardening: FAIL (${turnHostHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT turn host hardening: OK');
+
+  const modelDetectionHardening = verifyChatgptModelDetectionHardening();
+  if (!modelDetectionHardening.ok) {
+    console.error(`ChatGPT model detection hardening: FAIL (${modelDetectionHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT model detection hardening: OK');
 
   console.log('Integrated repo checks: OK');
 }

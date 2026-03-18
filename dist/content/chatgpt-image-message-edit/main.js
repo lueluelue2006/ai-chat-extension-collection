@@ -727,7 +727,7 @@
     try {
       let prev = turnEl?.previousElementSibling || null;
       while (prev) {
-        if (prev.tagName === 'ARTICLE') {
+        if (prev.tagName === 'ARTICLE' || prev.tagName === 'SECTION') {
           const assistant = prev.querySelector?.('[data-message-author-role="assistant"][data-message-id]');
           if (assistant && assistant.dataset?.messageId) return assistant.dataset.messageId;
         }
@@ -867,8 +867,10 @@
     }
   }
 
-  const USER_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"][data-turn="user"], article[data-turn="user"]';
-  const ANY_TURN_SELECTOR = 'article[data-testid^="conversation-turn-"], article[data-turn]';
+  const USER_TURN_SELECTOR =
+    'section[data-testid^="conversation-turn-"][data-turn="user"], article[data-testid^="conversation-turn-"][data-turn="user"], section[data-turn="user"], article[data-turn="user"]';
+  const ANY_TURN_SELECTOR =
+    'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"], section[data-turn], article[data-turn]';
 
   function onRouteChange() {
     state.lastHref = location.href;

@@ -5,7 +5,7 @@
   // Goal: reduce duplicated brittle selectors / route polling across ChatGPT-only modules.
 
   const API_KEY = '__aichat_chatgpt_core_v1__';
-  const API_VERSION = 5;
+  const API_VERSION = 6;
   const BRIDGE_CHANNEL = 'quicknav';
   const BRIDGE_V = 1;
   const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
@@ -67,6 +67,24 @@
     return Date.now();
   }
 
+  const TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
+  const TURN_SELECTOR = `${TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
+  const MODEL_SWITCHER_SELECTOR =
+    'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
+  const COMPOSER_MODE_TOKEN_RE =
+    /\b(?:instant|thinking|pro|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
+  const DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', TURN_HOST_SELECTOR);
+  const WRAPPED_TURN_HOST_SELECTOR = prefixSelectorList(':scope > *', TURN_HOST_SELECTOR);
+
+  function prefixSelectorList(prefix, selectorList) {
+    return String(selectorList || '')
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => `${prefix} ${part}`)
+      .join(', ');
+  }
+
   function getUiLocale() {
     try {
       return String(document.documentElement?.dataset?.aichatLocale || navigator.language || 'en').trim() || 'en';
@@ -77,6 +95,19 @@
 
   function uiText(zh, en) {
     return /^zh/i.test(getUiLocale()) ? zh : en;
+  }
+
+  function isVisibleElement(el) {
+    try {
+      if (!el || !el.getBoundingClientRect) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function pickBottomMostVisible(candidates) {
@@ -192,6 +223,46 @@
     }
   }
 
+  function getModelSwitcherButton() {
+    try {
+      const visible = pickBottomMostVisible(Array.from(document.querySelectorAll(MODEL_SWITCHER_SELECTOR)).filter(isVisibleElement));
+      if (visible) return visible;
+    } catch {}
+    try {
+      return document.querySelector(MODEL_SWITCHER_SELECTOR);
+    } catch {
+      return null;
+    }
+  }
+
+  function readCurrentModelLabel() {
+    try {
+      const button = getModelSwitcherButton();
+      const aria = String(button?.getAttribute?.('aria-label') || '').trim();
+      if (aria && /current model is/i.test(aria)) return aria.replace(/^.*current model is\s*/i, '').trim();
+      const text = String(button?.innerText || button?.textContent || '').trim();
+      if (text) return text;
+      return aria;
+    } catch {
+      return '';
+    }
+  }
+
+  function readComposerModeLabel(editorEl) {
+    try {
+      const form = getComposerForm(editorEl);
+      const buttons = Array.from(form?.querySelectorAll?.("button[aria-haspopup='menu'],button") || []);
+      for (const button of buttons) {
+        const text = String(button?.innerText || button?.textContent || '').trim();
+        const aria = String(button?.getAttribute?.('aria-label') || '').trim();
+        const combined = `${text} ${aria}`.trim();
+        if (!combined) continue;
+        if (COMPOSER_MODE_TOKEN_RE.test(combined)) return text || aria;
+      }
+    } catch {}
+    return '';
+  }
+
   function findSendButton(editorEl) {
     const form = getComposerForm(editorEl);
     const root = form || document;
@@ -259,29 +330,39 @@
     }
   }
 
+  function normalizeTurnElement(el) {
+    try {
+      if (!(el instanceof Element)) return null;
+      if (el.matches(TURN_HOST_SELECTOR)) return el;
+      return el.closest?.(TURN_HOST_SELECTOR) || el.closest?.('[data-testid^="conversation-turn-"]') || null;
+    } catch {
+      return null;
+    }
+  }
+
   function getTurnsRoot() {
     try {
       const stable = document.querySelector('[data-testid="conversation-turns"]');
       if (stable) return stable;
     } catch {}
     // Newer ChatGPT builds may not expose a stable `conversation-turns` container.
-    // Fall back to a narrow ancestor derived from the first turn article.
+    // Fall back to a narrow ancestor derived from the first turn host.
     try {
-      const first = document.querySelector('article[data-testid^="conversation-turn-"]');
+      const first = normalizeTurnElement(document.querySelector(TURN_SELECTOR));
       if (first) {
-        // Prefer a list container whose *direct* children are turn articles (cheap + ignores inner streaming mutations).
+        // Prefer a list container whose *direct* children are turn hosts (cheap + ignores inner streaming mutations).
         let cur = first.parentElement;
         const MAX_DEPTH = 12;
         for (let i = 0; cur && cur !== document.body && cur !== document.documentElement && i < MAX_DEPTH; i++) {
           try {
-            if (cur.querySelector?.(':scope > article[data-testid^="conversation-turn-"]')) return cur;
+            if (cur.querySelector?.(DIRECT_TURN_HOST_SELECTOR)) return cur;
           } catch {}
           cur = cur.parentElement;
         }
 
         // Pragmatic fallback: the overall thread container.
         const thread = document.getElementById('thread');
-        if (thread && thread.querySelector?.('article[data-testid^="conversation-turn-"]')) return thread;
+        if (thread && thread.querySelector?.(TURN_SELECTOR)) return thread;
 
         return first.parentElement || document;
       }
@@ -292,12 +373,16 @@
   function getTurnArticles(root) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     try {
-      const list = Array.from(scope.querySelectorAll('article[data-testid^="conversation-turn-"]'));
-      if (list.length) return list;
-    } catch {}
-    try {
-      const list = Array.from(scope.querySelectorAll('[data-testid^="conversation-turn-"]'));
-      return list.filter((n) => n && n.tagName === 'ARTICLE');
+      const list = Array.from(scope.querySelectorAll(TURN_SELECTOR));
+      const normalized = [];
+      const seen = new Set();
+      for (const item of list) {
+        const turn = normalizeTurnElement(item);
+        if (!turn || seen.has(turn)) continue;
+        seen.add(turn);
+        normalized.push(turn);
+      }
+      return normalized;
     } catch {}
     return [];
   }
@@ -305,14 +390,14 @@
   function shouldObserveTurnsSubtree(root) {
     try {
       if (!root || typeof root.querySelectorAll !== 'function') return true;
-      const deep = root.querySelectorAll('article[data-testid^="conversation-turn-"]').length;
+      const deep = root.querySelectorAll(TURN_HOST_SELECTOR).length;
       if (!deep) return true;
-      const direct = root.querySelectorAll(':scope > article[data-testid^="conversation-turn-"]').length;
-      // If all turn articles are direct children, avoid subtree observation to ignore streaming text mutations.
+      const direct = root.querySelectorAll(DIRECT_TURN_HOST_SELECTOR).length;
+      // If all turn hosts are direct children, avoid subtree observation to ignore streaming text mutations.
       if (direct && direct === deep) return false;
-      // Common case: turns are wrapped one level deep (e.g. :scope > div > article).
+      // Common case: turns are wrapped one level deep (e.g. :scope > div > section/article).
       // We can still keep `subtree:false` and just detect wrapper insertions.
-      const wrapped = root.querySelectorAll(':scope > * article[data-testid^="conversation-turn-"]').length;
+      const wrapped = root.querySelectorAll(WRAPPED_TURN_HOST_SELECTOR).length;
       if (wrapped && wrapped === deep) return false;
     } catch {}
     return true;
@@ -337,8 +422,8 @@
   function isTurnishNode(node) {
     try {
       if (!node || !(node instanceof Element)) return false;
-      if (node.matches('article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"]')) return true;
-      if (node.querySelector?.('article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"]')) return true;
+      if (node.matches(TURN_SELECTOR)) return true;
+      if (node.querySelector?.(TURN_SELECTOR)) return true;
     } catch {}
     return false;
   }
@@ -356,14 +441,16 @@
     try {
       if (!node || !(node instanceof Element)) return;
       if (out.size > LIMIT) return;
-      if (node.matches('article[data-testid^="conversation-turn-"]')) {
-        out.add(node);
+      const turn = normalizeTurnElement(node);
+      if (turn) {
+        out.add(turn);
         return;
       }
-      const list = node.querySelectorAll?.('article[data-testid^="conversation-turn-"]');
+      const list = node.querySelectorAll?.(TURN_SELECTOR);
       if (!list || !list.length) return;
       for (const el of Array.from(list)) {
-        out.add(el);
+        const normalized = normalizeTurnElement(el);
+        if (normalized) out.add(normalized);
         if (out.size > LIMIT) break;
       }
     } catch {}
@@ -653,7 +740,7 @@
           dom = document.getElementsByTagName('*').length;
         } catch {}
         try {
-          turns = document.querySelectorAll('article[data-testid^="conversation-turn-"]').length;
+          turns = document.querySelectorAll(TURN_HOST_SELECTOR).length;
         } catch {}
         try {
           iframes = document.getElementsByTagName('iframe').length;
@@ -856,6 +943,9 @@
     getConversationIdFromUrl,
     getEditorEl,
     getComposerForm,
+    getModelSwitcherButton,
+    readCurrentModelLabel,
+    readComposerModeLabel,
     findSendButton,
     findStopButton,
     isGenerating,
@@ -863,6 +953,7 @@
     clickStopButton,
     getTurnsRoot,
     getTurnArticles,
+    getTurnSelector: () => TURN_SELECTOR,
     onTurnsChange,
     getTurnRole,
     getTurnId,

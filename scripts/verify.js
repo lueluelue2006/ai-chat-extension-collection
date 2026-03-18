@@ -585,6 +585,42 @@ function verifyChatgptModelDetectionHardening() {
   };
 }
 
+function verifyChatgptReplyTimerExtendedProGate() {
+  const abs = path.join(ROOT, 'content/chatgpt-reply-timer/main.js');
+  const priorGlobals = {
+    window: global.window,
+    document: global.document
+  };
+
+  try {
+    global.window = undefined;
+    global.document = undefined;
+    delete require.cache[require.resolve(abs)];
+    const api = require(abs);
+    if (!api || typeof api.shouldTrackReplyTimer !== 'function') {
+      return { ok: false, reason: 'reply_timer_test_api_missing' };
+    }
+    const shouldTrack = api.shouldTrackReplyTimer({
+      payloadModel: '',
+      modelLabel: 'ChatGPT',
+      composerModeLabel: 'Extended Pro'
+    });
+    if (shouldTrack !== false) {
+      return { ok: false, reason: 'reply_timer_should_skip_extended_pro_when_model_button_only_reports_chatgpt' };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    delete require.cache[require.resolve(abs)];
+    global.window = priorGlobals.window;
+    global.document = priorGlobals.document;
+  }
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -728,6 +764,14 @@ function main() {
     return;
   }
   console.log('ChatGPT model detection hardening: OK');
+
+  const replyTimerGate = verifyChatgptReplyTimerExtendedProGate();
+  if (!replyTimerGate.ok) {
+    console.error(`ChatGPT reply timer Extended Pro gate: FAIL (${replyTimerGate.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT reply timer Extended Pro gate: OK');
 
   console.log('Integrated repo checks: OK');
 }

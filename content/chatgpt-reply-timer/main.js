@@ -107,6 +107,8 @@
   function isLikelyGptFamilyIdentifier(input) {
     const normalized = normalizeModelToken(input);
     if (!normalized) return false;
+    if (normalized === 'chatgpt') return true;
+    if (normalized.endsWith('-chatgpt')) return true;
     if (normalized.startsWith('gpt-')) return true;
     if (/^\d+(?:\.\d+)?(?:-[a-z0-9.]+)*$/.test(normalized)) return true;
     return false;

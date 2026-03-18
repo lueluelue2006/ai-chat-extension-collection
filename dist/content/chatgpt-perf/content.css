@@ -1,92 +1,107 @@
 /* ChatGPT Perf (Offscreen) - A: scheduling/visibility only */
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn {
   contain: layout paint;
 }
 
 /* Deep Research whitelist:
-   its report panel uses fixed-position overlay; article containment/offscreen virtualization can clip it.
-   Keep this scope minimal: only articles that actually host deep-research iframes. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article:has(iframe[src*='connector_openai_deep_research' i]),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen:has(iframe[src*='connector_openai_deep_research' i]) {
+   its report panel uses fixed-position overlay; turn-host containment/offscreen virtualization can clip it.
+   Keep this scope minimal: only turn hosts that actually contain deep-research iframes. */
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen:has(iframe[src*='connector_openai_deep_research' i]) {
   contain: none !important;
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] main article.cgptperf-offscreen {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen {
   content-visibility: auto;
   contain: layout paint style;
   contain-intrinsic-size: var(--cgptperf-intrinsic-size, 1px 420px);
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main article pre,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main article table {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn pre,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn table {
   contain: layout paint;
   content-visibility: auto;
   contain-intrinsic-size: 1px 700px;
 }
 
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > p,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > ul,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > ol,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > blockquote,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h1,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h2,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h3,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h4,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h5,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .markdown > h6 {
+  contain: layout paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 120px;
+}
+
 /* Copy compatibility: temporarily unfreeze content-visibility so ChatGPT can read the full DOM. */
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'],
-html[data-cgptperf='1'] main article.cgptperf-offscreen[data-cgptperf-copy-unfreeze='1'] {
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'],
+html[data-cgptperf='1'] .cgptperf-turn.cgptperf-offscreen[data-cgptperf-copy-unfreeze='1'] {
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
 
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] pre,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] table,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .katex-display,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] mjx-container,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > p,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > ul,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > ol,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > blockquote,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h1,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h2,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h3,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h4,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h5,
-html[data-cgptperf='1'] main article[data-cgptperf-copy-unfreeze='1'] .markdown > h6 {
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] pre,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] table,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .katex-display,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] mjx-container,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > p,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > ul,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > ol,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > blockquote,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h1,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h2,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h3,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h4,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h5,
+html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h6 {
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
 
 /* Find-in-page compatibility: temporarily unfreeze virtualization so Ctrl/Cmd+F can match far content. */
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article.cgptperf-offscreen {
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn.cgptperf-offscreen {
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
 
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article pre,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article table,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .katex-display,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article mjx-container,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > p,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > ul,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > ol,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > blockquote,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h1,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h2,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h3,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h4,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h5,
-html[data-cgptperf='1'][data-cgptperf-find='1'] main article .markdown > h6 {
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn pre,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn table,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .katex-display,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn mjx-container,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > p,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > ul,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > ol,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > blockquote,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h1,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h2,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h3,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h4,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h5,
+html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h6 {
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
 
 /* KaTeX inline math can break if we apply content-visibility directly on `.katex`.
    Keep light containment for `.katex`, and only use content-visibility for block-ish wrappers. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main article .katex {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .katex {
   contain: layout paint;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main article .katex-display,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main article mjx-container {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn .katex-display,
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn mjx-container {
   contain: layout paint;
   content-visibility: auto;
   contain-intrinsic-size: 1px 60px;
@@ -94,7 +109,7 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] main
 
 /* Some very long display equations overflow horizontally. Since we use `contain: paint` on messages,
    overflowing math would otherwise be clipped; make the KaTeX display block itself horizontally scrollable. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] main article .katex-display > .katex {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn .katex-display > .katex {
   overflow-x: auto;
   overflow-y: hidden;
   contain: layout;
@@ -104,7 +119,7 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] {
   scroll-behavior: auto !important;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :where(body *) {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-thread :where(*) {
   /*
     Force all animations/transitions to 0s for snappier UI.
 
@@ -119,10 +134,10 @@ html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] :wh
 }
 
 /* Deep Research (turn-level): allow minimal durations even before the fullscreen overlay iframe is mounted. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[src*='connector_openai_deep_research' i]),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[title='internal://deep-research']) :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] main article:has(iframe[src*='connector_openai_deep_research' i]) :where(*) {
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']) :where(*),
+html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]) :where(*) {
   animation-duration: 1ms !important;
   transition-duration: 1ms !important;
   animation-delay: 0s !important;

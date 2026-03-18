@@ -1974,12 +1974,12 @@
       {
         key: 'optimizeHeavyBlocks',
         label: '重内容优化（默认开）',
-        title: '对 pre/table/公式等高开销块使用 contain/content-visibility，减少卡顿。'
+        title: '对 pre/table/公式/段落块等高开销内容使用 contain/content-visibility，减少长回复卡顿。'
       },
       {
         key: 'disableAnimations',
         label: '禁用动画/过渡（默认开）',
-        title: '将动画/过渡 duration 置 0，减少合成与重绘开销；外观变化较小。'
+        title: '将对话线程范围内的动画/过渡 duration 置 0，减少合成与重绘开销；避免误伤整个站点页面。'
       },
       {
         key: 'boostDuringInput',

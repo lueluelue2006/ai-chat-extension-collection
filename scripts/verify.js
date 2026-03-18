@@ -621,6 +621,43 @@ function verifyChatgptReplyTimerExtendedProGate() {
   }
 }
 
+function verifyChatgptPerfStructureHardening() {
+  const jsSource = readText('content/chatgpt-perf/content.js');
+  const cssSource = readText('content/chatgpt-perf/content.css');
+  const failures = [];
+
+  for (const required of ['__aichat_chatgpt_core_v1__', 'cgptperf-turn']) {
+    if (!jsSource.includes(required) && !cssSource.includes(required)) {
+      failures.push(`chatgpt-perf is missing ${required}`);
+    }
+  }
+
+  if (!jsSource.includes('__aichat_chatgpt_core_v1__')) {
+    failures.push('content/chatgpt-perf/content.js is not wired to chatgpt-core');
+  }
+  if (!jsSource.includes('cgptperf-turn')) {
+    failures.push('content/chatgpt-perf/content.js is missing cgptperf-turn class management');
+  }
+  if (!cssSource.includes('.cgptperf-turn')) {
+    failures.push('content/chatgpt-perf/content.css is missing .cgptperf-turn selectors');
+  }
+
+  for (const staleLiteral of [":scope > article", "tagName !== 'ARTICLE'", "querySelectorAll('main article')"]) {
+    if (jsSource.includes(staleLiteral)) {
+      failures.push(`content/chatgpt-perf/content.js still hard-codes ${staleLiteral}`);
+    }
+  }
+
+  if (cssSource.includes('main article')) {
+    failures.push('content/chatgpt-perf/content.css still hard-codes main article selectors');
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -772,6 +809,14 @@ function main() {
     return;
   }
   console.log('ChatGPT reply timer Extended Pro gate: OK');
+
+  const perfStructureHardening = verifyChatgptPerfStructureHardening();
+  if (!perfStructureHardening.ok) {
+    console.error(`ChatGPT perf structure hardening: FAIL (${perfStructureHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT perf structure hardening: OK');
 
   console.log('Integrated repo checks: OK');
 }

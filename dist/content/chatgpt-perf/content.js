@@ -7,10 +7,11 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.24';
+  const EXT_VERSION = '0.1.25';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
+  const CHATGPT_CORE_API_KEY = '__aichat_chatgpt_core_v1__';
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -32,6 +33,8 @@
   const ROOT_FIND_ATTR = 'data-cgptperf-find';
 
   const OFFSCREEN_CLASS = 'cgptperf-offscreen';
+  const TURN_CLASS = 'cgptperf-turn';
+  const THREAD_CLASS = 'cgptperf-thread';
   const INTRINSIC_VAR = '--cgptperf-intrinsic-size';
   const UI_ID = 'cgptperf-ui';
   const UI_TOGGLE_CLASS = 'cgptperf-toggle';
@@ -39,6 +42,8 @@
   const TOAST_ID = 'cgptperf-toast';
   const COPY_UNFREEZE_ATTR = 'data-cgptperf-copy-unfreeze';
   const MSG_GET_STATE = 'CGPT_PERF_GET_STATE';
+  const FALLBACK_TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
+  const FALLBACK_TURN_SELECTOR = `${FALLBACK_TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
 
 	  const state = {
 	    settings: { ...DEFAULT_SETTINGS },
@@ -49,17 +54,14 @@
     lastActionBoostAt: 0,
     reconcileToken: 0,
     reconcileIdx: 0,
-    reconcileArticles: null,
+    reconcileTurns: null,
     reconcileFirst: 0,
     reconcileLast: -1,
     io: null,
-    containerMo: null,
-    routeTimer: null,
-    routeUnsub: null,
+    coreTurnsUnsub: null,
+    coreRouteUnsub: null,
     containerEl: null,
-    observed: new WeakSet(),
-    scanScheduled: false,
-    observeQueue: [],
+    observedTurns: new Set(),
     lastHeights: new WeakMap(),
     defaultIntrinsic: 420,
     uiCloseHandler: null,
@@ -82,7 +84,6 @@
     onStorageChanged: null,
     onMessage: null,
     cleanup: null,
-    lastHref: '',
     lastVirtualizeStartAt: 0,
     lastReconcileAt: 0,
     lastVisibleFirst: -1,
@@ -123,6 +124,96 @@
     return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
   }
 
+  function getChatgptCoreApi() {
+    try {
+      const api = globalThis[CHATGPT_CORE_API_KEY];
+      return api && typeof api === 'object' ? api : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getTurnSelector() {
+    try {
+      const selector = getChatgptCoreApi()?.getTurnSelector?.();
+      if (typeof selector === 'string' && selector.trim()) return selector.trim();
+    } catch {
+      // ignore
+    }
+    return FALLBACK_TURN_SELECTOR;
+  }
+
+  function normalizeTurnElement(node) {
+    try {
+      if (!(node instanceof Element)) return null;
+      const selector = getTurnSelector();
+      if (node.matches?.(selector)) return node instanceof HTMLElement ? node : null;
+      const turn = node.closest?.(selector);
+      return turn instanceof HTMLElement ? turn : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getTurnElements(root) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+    try {
+      const coreTurns = getChatgptCoreApi()?.getTurnArticles?.(scope);
+      if (Array.isArray(coreTurns)) {
+        const turns = coreTurns.filter((item) => item instanceof HTMLElement);
+        for (const turn of turns) markTurnElement(turn);
+        return turns;
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const list = Array.from(scope.querySelectorAll(getTurnSelector()));
+      const turns = [];
+      const seen = new Set();
+      for (const item of list) {
+        const turn = normalizeTurnElement(item);
+        if (!(turn instanceof HTMLElement) || seen.has(turn)) continue;
+        seen.add(turn);
+        markTurnElement(turn);
+        turns.push(turn);
+      }
+      return turns;
+    } catch {
+      return [];
+    }
+  }
+
+  function markTurnElement(turnEl) {
+    if (!(turnEl instanceof HTMLElement)) return;
+    try {
+      turnEl.classList.add(TURN_CLASS);
+    } catch {
+      // ignore
+    }
+  }
+
+  function getClosestTurnElement(target) {
+    return normalizeTurnElement(target);
+  }
+
+  function setContainerEl(container) {
+    const next = container instanceof HTMLElement ? container : null;
+    if (state.containerEl === next) return;
+    try {
+      if (state.containerEl instanceof HTMLElement) state.containerEl.classList.remove(THREAD_CLASS);
+    } catch {
+      // ignore
+    }
+    state.containerEl = next;
+    try {
+      if (state.containerEl instanceof HTMLElement) state.containerEl.classList.add(THREAD_CLASS);
+    } catch {
+      // ignore
+    }
+  }
+
 	  function isGeneratingResponse(force = false) {
 	    const now = nowPerf();
 	    if (!force && now - state.lastGeneratingCheckAt < 220) return state.generatingCached;
@@ -147,12 +238,12 @@
     return main instanceof HTMLElement ? main : document.body;
   }
 
-  function collectBudgetSnapshot(totalArticles, force = false) {
+  function collectBudgetSnapshot(turnCount, force = false) {
     const now = nowPerf();
     const prev = state.budgetSnapshot;
-    const articleChanged = !prev || prev.totalArticles !== totalArticles;
+    const turnCountChanged = !prev || prev.turnCount !== turnCount;
     const staleByTime = now - state.budgetSnapshotAt > 1800;
-    const shouldRefresh = force || articleChanged || state.structureDirty || staleByTime;
+    const shouldRefresh = force || turnCountChanged || state.structureDirty || staleByTime;
 
     if (!shouldRefresh && prev) return prev;
 
@@ -167,7 +258,7 @@
     }
     // KaTeX query is relatively expensive; only refresh when the conversation has enough turns
     // or we explicitly force a refresh.
-    if (force || articleChanged || totalArticles >= 10) {
+    if (force || turnCountChanged || turnCount >= 10) {
       try {
         state.kpi.domQueryOps += 1;
         katexNodes = scopeRoot?.querySelectorAll?.('.katex-display, mjx-container')?.length ?? document.querySelectorAll('.katex-display, mjx-container').length;
@@ -176,7 +267,7 @@
       }
     }
 
-    const snap = { totalArticles, domNodes, katexNodes, ts: Date.now() };
+    const snap = { turnCount, domNodes, katexNodes, ts: Date.now() };
     state.budgetSnapshot = snap;
     state.budgetSnapshotAt = now;
     return snap;
@@ -187,7 +278,7 @@
     let level = 0;
     const dom = Number(snapshot.domNodes) || 0;
     const katex = Number(snapshot.katexNodes) || 0;
-    const turns = Number(snapshot.totalArticles) || 0;
+    const turns = Number(snapshot.turnCount) || 0;
 
     if (dom >= 10000) level += 1;
     if (dom >= 18000) level += 1;
@@ -355,13 +446,13 @@
       }
     }
 
-    let articleCount = 0;
+    let turnCount = 0;
     let offscreenCount = 0;
     try {
-      articleCount = document.querySelectorAll('main article').length;
-      offscreenCount = document.querySelectorAll(`main article.${OFFSCREEN_CLASS}`).length;
+      turnCount = getTurnElements(document.querySelector('main')).length;
+      offscreenCount = document.querySelectorAll(`.${TURN_CLASS}.${OFFSCREEN_CLASS}`).length;
     } catch {
-      articleCount = 0;
+      turnCount = 0;
       offscreenCount = 0;
     }
 
@@ -372,7 +463,8 @@
       storageArea: state.storageAreaName,
       settings: state.settings,
       attrs,
-      articleCount,
+      turnCount,
+      articleCount: turnCount,
       offscreenCount,
       boostActive: !!state.boostActive,
       budgetLevel: state.budgetLevel || 0,
@@ -475,25 +567,25 @@
 
   function prepareCopyUnfreeze(target) {
     if (!(target instanceof Element)) return;
-    const article = target.closest('article');
-    if (!(article instanceof HTMLElement)) return;
+    const turnEl = getClosestTurnElement(target);
+    if (!(turnEl instanceof HTMLElement)) return;
 
-    // If an article is accidentally still treated as offscreen, clear it so the DOM is fully copyable.
-    clearOffscreen(article);
+    // If a turn is accidentally still treated as offscreen, clear it so the DOM is fully copyable.
+    clearOffscreen(turnEl);
 
     try {
-      if (article.getAttribute(COPY_UNFREEZE_ATTR) === '1') return;
-      article.setAttribute(COPY_UNFREEZE_ATTR, '1');
+      if (turnEl.getAttribute(COPY_UNFREEZE_ATTR) === '1') return;
+      turnEl.setAttribute(COPY_UNFREEZE_ATTR, '1');
       // Force style recalc so `content-visibility` overrides apply before ChatGPT reads the DOM.
-      article.getBoundingClientRect();
+      turnEl.getBoundingClientRect();
     } catch {
       // ignore
     }
 
     window.setTimeout(() => {
       try {
-        if (!article.isConnected) return;
-        if (article.getAttribute(COPY_UNFREEZE_ATTR) === '1') article.removeAttribute(COPY_UNFREEZE_ATTR);
+        if (!turnEl.isConnected) return;
+        if (turnEl.getAttribute(COPY_UNFREEZE_ATTR) === '1') turnEl.removeAttribute(COPY_UNFREEZE_ATTR);
       } catch {
         // ignore
       }
@@ -628,46 +720,62 @@
     }
   }
 
-  function findArticlesContainer() {
-    const main = document.querySelector('main');
-    if (!main) return null;
-    const firstArticle = main.querySelector('article');
-    const container = firstArticle?.parentElement;
-    if (!(container instanceof HTMLElement)) return null;
-    // Cheap existence check (avoid scanning all children).
+  function findTurnsContainer() {
     try {
-      if (!container.querySelector(':scope > article')) return null;
+      const core = getChatgptCoreApi();
+      if (typeof core?.getTurnsRoot === 'function') {
+        const root = core.getTurnsRoot();
+        if (root instanceof HTMLElement && getTurnElements(root).length) return root;
+      }
     } catch {
-      return null;
+      // ignore
     }
-    return container;
+
+    const main = document.querySelector('main');
+    if (!(main instanceof HTMLElement)) return null;
+    const turns = getTurnElements(main);
+    if (!turns.length) return null;
+
+    const firstTurn = turns[0];
+    let cur = firstTurn?.parentElement || null;
+    for (let depth = 0; cur && cur !== document.body && cur !== document.documentElement && depth < 12; depth += 1) {
+      if (getTurnElements(cur).length) return cur;
+      cur = cur.parentElement;
+    }
+    return firstTurn?.parentElement instanceof HTMLElement ? firstTurn.parentElement : null;
   }
 
-  function clearOffscreen(article, measuredHeight) {
-    if (!(article instanceof HTMLElement)) return;
-    if (!article.classList.contains(OFFSCREEN_CLASS)) return;
+  function clearOffscreen(turnEl, measuredHeight) {
+    if (!(turnEl instanceof HTMLElement)) return;
+    if (!turnEl.classList.contains(OFFSCREEN_CLASS)) return;
 
     const h = Math.round(typeof measuredHeight === 'number' ? measuredHeight : 0);
-    if (h > 0) state.lastHeights.set(article, h);
+    if (h > 0) state.lastHeights.set(turnEl, h);
 
-    article.classList.remove(OFFSCREEN_CLASS);
-    article.style.removeProperty(INTRINSIC_VAR);
+    turnEl.classList.remove(OFFSCREEN_CLASS);
+    turnEl.style.removeProperty(INTRINSIC_VAR);
   }
 
-  function setOffscreen(article, measuredHeight) {
-    if (!(article instanceof HTMLElement)) return;
-    if (article.classList.contains(OFFSCREEN_CLASS)) return;
+  function setOffscreen(turnEl, measuredHeight) {
+    if (!(turnEl instanceof HTMLElement)) return;
+    if (turnEl.classList.contains(OFFSCREEN_CLASS)) return;
 
     const h = Math.round(typeof measuredHeight === 'number' ? measuredHeight : 0);
-    if (h > 0) state.lastHeights.set(article, h);
-    const intrinsic = state.lastHeights.get(article) || state.defaultIntrinsic;
+    if (h > 0) state.lastHeights.set(turnEl, h);
+    const intrinsic = state.lastHeights.get(turnEl) || state.defaultIntrinsic;
 
-    article.style.setProperty(INTRINSIC_VAR, `1px ${intrinsic}px`);
-    article.classList.add(OFFSCREEN_CLASS);
+    turnEl.style.setProperty(INTRINSIC_VAR, `1px ${intrinsic}px`);
+    turnEl.classList.add(OFFSCREEN_CLASS);
   }
 
   function updateDefaultIntrinsic(container) {
     if (!(container instanceof HTMLElement)) return;
+
+    const turns = getTurnElements(container);
+    if (!turns.length) {
+      state.defaultIntrinsic = clampInt(window.innerHeight * 0.65, 220, 900);
+      return;
+    }
 
     const heights = [];
     const topBound = -window.innerHeight * 0.8;
@@ -677,13 +785,12 @@
 
     const collect = (start, step) => {
       let scanned = 0;
-      for (let i = start; i >= 0 && i < container.children.length; i += step) {
+      for (let i = start; i >= 0 && i < turns.length; i += step) {
         if (scanned >= maxScan) break;
         scanned += 1;
-        const el = container.children[i];
-        if (!(el instanceof HTMLElement)) continue;
-        if (el.tagName !== 'ARTICLE') continue;
-        const rect = el.getBoundingClientRect();
+        const turnEl = turns[i];
+        if (!(turnEl instanceof HTMLElement)) continue;
+        const rect = turnEl.getBoundingClientRect();
         if (rect.bottom < topBound || rect.top > bottomBound) continue;
         const h = Math.round(rect.height);
         if (h > 0) heights.push(h);
@@ -692,7 +799,7 @@
     };
 
     // Prefer sampling around the current viewport; scan from bottom then top.
-    collect(container.children.length - 1, -1);
+    collect(turns.length - 1, -1);
     if (heights.length < 3) collect(0, 1);
 
     if (heights.length) {
@@ -724,6 +831,7 @@
     );
   }
 
+
   function detachIo() {
     try {
       state.io?.disconnect();
@@ -731,151 +839,79 @@
       // ignore
     }
     state.io = null;
-    state.observed = new WeakSet();
-    state.observeQueue = [];
+    state.observedTurns = new Set();
   }
 
-  function enqueueArticle(node) {
-    if (!(node instanceof HTMLElement)) return;
-    if (node.tagName !== 'ARTICLE') return;
-    if (state.observed.has(node)) return;
-    state.observed.add(node);
-    state.observeQueue.push(node);
-  }
-
-  function enqueueExistingArticles(container) {
-    if (!(container instanceof HTMLElement)) return;
-    const total = container.children.length;
-    let i = 0;
-
-    const run = (deadline) => {
-      let processed = 0;
-      while (i < total) {
-        enqueueArticle(container.children[i]);
-        i += 1;
-        processed += 1;
-        if (deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() < 5) break;
-        if (!deadline && processed >= 250) break;
-      }
-      scheduleScan();
-      if (i >= total) return;
-      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 1200 });
-      else setTimeout(run, 200);
-    };
-
-    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 1200 });
-    else setTimeout(run, 0);
-  }
-
-  function scheduleScan() {
-    if (state.scanScheduled) return;
-    state.scanScheduled = true;
-
-    const run = (deadline) => {
-      state.scanScheduled = false;
-      if (!state.io) return;
-
-      let processed = 0;
-      while (state.observeQueue.length) {
-        const a = state.observeQueue.pop();
-        if (!a) break;
-        if (!a.isConnected) {
-          try {
-            state.io.unobserve(a);
-          } catch {
-            // ignore
-          }
-          try {
-            state.observed.delete(a);
-          } catch {
-            // ignore
-          }
-          continue;
-        }
+  function syncObservedTurns(turns) {
+    const next = new Set();
+    for (const turn of Array.isArray(turns) ? turns : []) {
+      if (!(turn instanceof HTMLElement)) continue;
+      markTurnElement(turn);
+      next.add(turn);
+      if (!state.observedTurns.has(turn)) {
         try {
-          state.io.observe(a);
+          state.io?.observe?.(turn);
         } catch {
           // ignore
         }
-        processed += 1;
-        if (deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() < 5) break;
-        if (!deadline && processed >= 250) break;
       }
-
-      if (state.observeQueue.length) scheduleScan();
-    };
-
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(run, { timeout: 1200 });
-    } else {
-      setTimeout(run, 200);
     }
-  }
 
-	  function attachContainerObserver(container) {
-	    if (state.containerMo) return;
-	    state.containerMo = new MutationObserver((records) => {
-	      try {
-	        state.kpi.moCallbackCount += 1;
-	      } catch {
-	        // ignore
-	      }
-	      let structureChanged = false;
-	      for (const r of records) {
-	        for (const n of r.addedNodes) {
-	          enqueueArticle(n);
-	          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
-            structureChanged = true;
-          }
-        }
-        // Prevent memory leaks: IntersectionObserver keeps strong refs to observed nodes.
-        // If ChatGPT swaps/removes turn <article> elements (common on SPA navigations),
-        // we must `unobserve()` removed nodes so they can be GC'd.
-        for (const n of r.removedNodes || []) {
-          if (n instanceof HTMLElement && (n.tagName === 'ARTICLE' || n.querySelector?.('article'))) {
-            structureChanged = true;
-          }
-          try {
-            if (!state.io) continue;
-            if (!(n instanceof HTMLElement)) continue;
-            if (n.tagName === 'ARTICLE') {
-              state.io.unobserve(n);
-              try {
-                state.observed.delete(n);
-              } catch {
-                // ignore
-              }
-              continue;
-            }
-            const list = n.querySelectorAll?.('article');
-            if (!list || !list.length) continue;
-            for (const a of list) {
-              try {
-                if (a instanceof HTMLElement) state.io.unobserve(a);
-                if (a instanceof HTMLElement) state.observed.delete(a);
-              } catch {
-                // ignore
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
+    for (const turn of Array.from(state.observedTurns)) {
+      if (next.has(turn)) continue;
+      try {
+        state.io?.unobserve?.(turn);
+      } catch {
+        // ignore
       }
-      if (structureChanged) state.structureDirty = true;
-      scheduleScan();
-    });
-    // Only observe list-level changes (avoid token-by-token streaming updates).
-    state.containerMo.observe(container, { childList: true, subtree: false });
+      clearOffscreen(turn);
+      try {
+        turn.classList.remove(TURN_CLASS);
+        turn.removeAttribute(COPY_UNFREEZE_ATTR);
+      } catch {
+        // ignore
+      }
+    }
+
+    state.observedTurns = next;
   }
 
-  function detachContainerObserver() {
+  function handleTurnsChanged(payload, reason = 'turns-change') {
+    if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+    if (document.visibilityState === 'hidden') return;
+
+    const container = findTurnsContainer();
+    if (!(container instanceof HTMLElement)) return;
+
+    const changedContainer = container !== state.containerEl;
+    setContainerEl(container);
+    state.structureDirty = true;
+    if (changedContainer) updateDefaultIntrinsic(container);
+    syncObservedTurns(getTurnElements(container));
+    scheduleApplyVirtualizationNow(reason || String(payload?.reason || 'core-turns'));
+  }
+
+  function ensureTurnsWatch() {
+    if (state.coreTurnsUnsub) return;
+    const core = getChatgptCoreApi();
+    if (typeof core?.onTurnsChange !== 'function') return;
+    state.coreTurnsUnsub = core.onTurnsChange((payload) => {
+      try {
+        state.kpi.moCallbackCount += 1;
+      } catch {
+        // ignore
+      }
+      handleTurnsChanged(payload, String(payload?.reason || 'core-turns'));
+    });
+  }
+
+  function stopTurnsWatch() {
     try {
-      state.containerMo?.disconnect();
+      if (typeof state.coreTurnsUnsub === 'function') state.coreTurnsUnsub();
     } catch {
       // ignore
     }
-    state.containerMo = null;
+    state.coreTurnsUnsub = null;
   }
 
   function startVirtualization() {
@@ -888,32 +924,29 @@
     state.structureDirty = true;
 
     detachIo();
-    detachContainerObserver();
-    state.containerEl = null;
+    setContainerEl(null);
 
     attachIo();
+    ensureTurnsWatch();
 
-    const container = findArticlesContainer();
-    if (container) {
-      state.containerEl = container;
+    const container = findTurnsContainer();
+    if (container instanceof HTMLElement) {
+      setContainerEl(container);
       updateDefaultIntrinsic(container);
+      syncObservedTurns(getTurnElements(container));
       scheduleApplyVirtualizationNow('start');
-      attachContainerObserver(container);
-      enqueueExistingArticles(container);
       return;
     }
 
-    // Wait for SPA hydration
     let tries = 0;
     const tryFind = () => {
       if (!state.io) return;
-      const c = findArticlesContainer();
-      if (c) {
-        state.containerEl = c;
-        updateDefaultIntrinsic(c);
+      const next = findTurnsContainer();
+      if (next instanceof HTMLElement) {
+        setContainerEl(next);
+        updateDefaultIntrinsic(next);
+        syncObservedTurns(getTurnElements(next));
         scheduleApplyVirtualizationNow('start-hydration');
-        attachContainerObserver(c);
-        enqueueExistingArticles(c);
         return;
       }
       tries += 1;
@@ -923,15 +956,15 @@
   }
 
   function stopVirtualization() {
-    // Cancel any ongoing idle reconciliation that may still hold a NodeList reference.
     try {
       state.reconcileToken += 1;
-      state.reconcileArticles = null;
+      state.reconcileTurns = null;
       state.reconcileIdx = 0;
     } catch {}
-    detachContainerObserver();
+    stopTurnsWatch();
     detachIo();
-    state.containerEl = null;
+    syncObservedTurns([]);
+    setContainerEl(null);
     state.lastVisibleFirst = -1;
     state.lastVisibleLast = -1;
     state.lastVisibleTotal = 0;
@@ -939,70 +972,35 @@
     state.budgetSnapshot = null;
     state.budgetSnapshotAt = 0;
     state.budgetLevel = 0;
-    document.querySelectorAll(`main article.${OFFSCREEN_CLASS}`).forEach((a) => clearOffscreen(a));
+    document.querySelectorAll(`.${TURN_CLASS}.${OFFSCREEN_CLASS}`).forEach((turn) => clearOffscreen(turn));
   }
 
   function ensureRouteWatch() {
-    if (state.routeTimer) return;
-
-    try {
-      state.lastHref = String(location.href || '');
-    } catch {
-      state.lastHref = '';
-    }
-
-    // Prefer shared bridge route-change events; keep a slow poll as a safety net.
-    try {
-      if (!state.routeUnsub) {
-        const bridge = globalThis.__aichat_quicknav_bridge_v1__;
-        if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
-          try {
-            bridge.ensureRouteListener();
-          } catch {}
-          state.routeUnsub = bridge.on('routeChange', () => {
-            try {
-              if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-              if (document.visibilityState === 'hidden') return;
-              startVirtualization();
-            } catch {
-              // ignore
-            }
-          });
-        }
-      }
-    } catch {}
-
-    state.routeTimer = setInterval(() => {
-      if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-      if (document.visibilityState === 'hidden') return;
+    if (state.coreRouteUnsub) return;
+    const core = getChatgptCoreApi();
+    if (typeof core?.onRouteChange !== 'function') return;
+    state.coreRouteUnsub = core.onRouteChange(() => {
       try {
-        const href = String(location.href || '');
-        if (href && href !== state.lastHref) {
-          state.lastHref = href;
-          startVirtualization();
-          return;
-        }
-      } catch {}
-      // Steady state: the existing container is still connected; avoid any DOM queries.
-      if (state.containerEl && state.containerEl.isConnected) return;
-      const current = findArticlesContainer();
-      if (!current) return;
-      if (state.containerEl && current === state.containerEl) return;
-      // Container replaced due to SPA navigation; reattach cheaply (avoid clearing classes on a large DOM).
-      startVirtualization();
-    }, 4000);
+        if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+        if (document.visibilityState === 'hidden') return;
+        startVirtualization();
+      } catch {
+        // ignore
+      }
+    });
   }
 
   function stopRouteWatch() {
-    if (state.routeTimer) clearInterval(state.routeTimer);
-    state.routeTimer = null;
     try {
-      if (state.routeUnsub) state.routeUnsub();
-    } catch {}
-    state.routeUnsub = null;
+      if (typeof state.coreRouteUnsub === 'function') state.coreRouteUnsub();
+    } catch {
+      // ignore
+    }
+    state.coreRouteUnsub = null;
   }
 
   function ensureUi() {
+
     if (!state.settings.showOverlay) {
       closeMenu();
       document.getElementById(UI_ID)?.remove();
@@ -1036,7 +1034,7 @@
 
     const perfBtn = mkBtn('enabled', uiText('性能：开', 'Performance: on'), uiText('切换性能优化总开关', 'Toggle the overall performance optimization switch'));
     const offBtn = mkBtn('virtualizeOffscreen', uiText('离屏虚拟化：开', 'Offscreen virtualization: on'), uiText('切换离屏虚拟化（长对话更流畅）', 'Toggle offscreen virtualization for smoother long conversations'));
-    const heavyBtn = mkBtn('optimizeHeavyBlocks', uiText('重内容优化：开', 'Heavy content optimization: on'), uiText('切换重内容优化（pre/table/公式等）', 'Toggle heavy content optimization (pre/table/formulas, etc.)'));
+    const heavyBtn = mkBtn('optimizeHeavyBlocks', uiText('重内容优化：开', 'Heavy content optimization: on'), uiText('切换重内容优化（pre/table/公式/段落块等）', 'Toggle heavy content optimization (pre/table/formulas/markdown blocks, etc.)'));
     const animBtn = mkBtn('disableAnimations', uiText('动画：开', 'Animations: on'), uiText('切换动画/过渡（关闭可减少卡顿）', 'Toggle animations/transitions (turning them off can reduce jank)'));
     const boostBtn = mkBtn('boostDuringInput', uiText('交互加速：开', 'Interaction boost: on'), uiText('输入/编辑时临时收紧预加载，减少点击/发送卡顿', 'Temporarily tighten preloading while typing/editing to reduce click/send lag'));
 
@@ -1224,22 +1222,23 @@
 
   function restartIo() {
     if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
-    const container = state.containerEl || findArticlesContainer();
+    const container = state.containerEl || findTurnsContainer();
     detachIo();
     attachIo();
     state.structureDirty = true;
     if (!container) return;
+    setContainerEl(container);
     updateDefaultIntrinsic(container);
-    enqueueExistingArticles(container);
+    syncObservedTurns(getTurnElements(container));
   }
 
-  function findFirstIndexByBottom(articles, topBound) {
+  function findFirstIndexByBottom(turns, topBound) {
     let lo = 0;
-    let hi = articles.length - 1;
-    let ans = articles.length;
+    let hi = turns.length - 1;
+    let ans = turns.length;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      const rect = articles[mid].getBoundingClientRect();
+      const rect = turns[mid].getBoundingClientRect();
       if (rect.bottom >= topBound) {
         ans = mid;
         hi = mid - 1;
@@ -1250,13 +1249,13 @@
     return ans;
   }
 
-  function findLastIndexByTop(articles, bottomBound) {
+  function findLastIndexByTop(turns, bottomBound) {
     let lo = 0;
-    let hi = articles.length - 1;
+    let hi = turns.length - 1;
     let ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      const rect = articles[mid].getBoundingClientRect();
+      const rect = turns[mid].getBoundingClientRect();
       if (rect.top <= bottomBound) {
         ans = mid;
         lo = mid + 1;
@@ -1267,21 +1266,21 @@
     return ans;
   }
 
-  function scheduleReconcile(articles, first, last) {
-    if (!(articles && typeof articles.length === 'number')) return;
-    const total = articles.length;
+  function scheduleReconcile(turns, first, last) {
+    if (!(turns && typeof turns.length === 'number')) return;
+    const total = turns.length;
     if (!total) return;
 
     state.reconcileToken += 1;
     const token = state.reconcileToken;
-    state.reconcileArticles = articles;
+    state.reconcileTurns = turns;
     state.reconcileIdx = 0;
     state.reconcileFirst = first;
     state.reconcileLast = last;
 
     const run = (deadline) => {
       if (token !== state.reconcileToken) return;
-      const list = state.reconcileArticles;
+      const list = state.reconcileTurns;
       if (!list) return;
       const max = list.length;
       const boundFirst = state.reconcileFirst;
@@ -1301,7 +1300,7 @@
 
       if (token !== state.reconcileToken) return;
       if (state.reconcileIdx >= max) {
-        state.reconcileArticles = null;
+        state.reconcileTurns = null;
         return;
       }
 
@@ -1323,14 +1322,14 @@
 	    } catch {
 	      // ignore
     }
-    const articles = container.querySelectorAll(':scope > article');
-    const total = articles.length;
+    const turns = getTurnElements(container);
+    const total = turns.length;
     if (!total) return;
 
     const topBound = -marginPx;
     const bottomBound = window.innerHeight + marginPx;
-    const first = findFirstIndexByBottom(articles, topBound);
-    const last = findLastIndexByTop(articles, bottomBound);
+    const first = findFirstIndexByBottom(turns, topBound);
+    const last = findLastIndexByTop(turns, bottomBound);
     const hiddenCount = Math.max(0, first) + Math.max(0, total - last - 1);
     const unchangedWindow =
       first === state.lastVisibleFirst && last === state.lastVisibleLast && total === state.lastVisibleTotal;
@@ -1342,10 +1341,10 @@
 
     if (!state.virtualizationActive) {
       state.reconcileToken += 1;
-      state.reconcileArticles = null;
+      state.reconcileTurns = null;
       state.budgetLevel = 0;
       state.structureDirty = false;
-      for (let i = 0; i < total; i += 1) clearOffscreen(articles[i]);
+      for (let i = 0; i < total; i += 1) clearOffscreen(turns[i]);
       return;
     }
 
@@ -1356,7 +1355,7 @@
     const start = Math.max(0, first - padItems);
     const end = Math.min(total - 1, last + padItems);
     for (let i = start; i <= end; i += 1) {
-      const el = articles[i];
+      const el = turns[i];
       if (i < first || i > last) setOffscreen(el);
       else clearOffscreen(el);
     }
@@ -1370,7 +1369,7 @@
     const minReconcileMs = wasStructureDirty ? 220 : reconcileIntervalMs();
     if (perfNow - state.lastReconcileAt >= minReconcileMs) {
       state.lastReconcileAt = perfNow;
-      scheduleReconcile(articles, first, last);
+      scheduleReconcile(turns, first, last);
     }
   }
 
@@ -1508,9 +1507,9 @@
 
     state.onScroll = () => {
       if (state.disposed) return;
-      if (!state.reconcileArticles) return;
+      if (!state.reconcileTurns) return;
       state.reconcileToken += 1;
-      state.reconcileArticles = null;
+      state.reconcileTurns = null;
     };
     window.addEventListener('scroll', state.onScroll, { passive: true });
   }
@@ -1529,9 +1528,6 @@
 
     try { state.rootAttrMo?.disconnect?.(); } catch {}
     state.rootAttrMo = null;
-
-    try { state.containerMo?.disconnect?.(); } catch {}
-    state.containerMo = null;
 
     try { state.io?.disconnect?.(); } catch {}
     state.io = null;
@@ -1597,6 +1593,20 @@
       if (state.onMessage) chrome?.runtime?.onMessage?.removeListener?.(state.onMessage);
     } catch {}
     state.onMessage = null;
+
+    try {
+      document.querySelectorAll(`.${TURN_CLASS}`).forEach((turnEl) => {
+        try {
+          turnEl.classList.remove(TURN_CLASS);
+          turnEl.classList.remove(OFFSCREEN_CLASS);
+          turnEl.style.removeProperty(INTRINSIC_VAR);
+          if (turnEl.getAttribute(COPY_UNFREEZE_ATTR) === '1') turnEl.removeAttribute(COPY_UNFREEZE_ATTR);
+        } catch {
+          // ignore
+        }
+      });
+    } catch {}
+    setContainerEl(null);
 
     try { document.getElementById(UI_ID)?.remove?.(); } catch {}
     try { document.getElementById(TOAST_ID)?.remove?.(); } catch {}

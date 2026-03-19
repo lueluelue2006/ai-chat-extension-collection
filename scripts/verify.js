@@ -653,6 +653,9 @@ function verifyChatgptPerfStructureHardening() {
   if (!jsSource.includes('ROOT_HOT_ATTR') || !jsSource.includes('syncTailTurnMetrics')) {
     failures.push('content/chatgpt-perf/content.js is missing active-tail hot-path coordination');
   }
+  if (!jsSource.includes('startFallbackTurnsWatch') || !jsSource.includes('currentRouteKey')) {
+    failures.push('content/chatgpt-perf/content.js is missing SPA fallback route/turn watches');
+  }
   if (!quicknavSource.includes('getChatScrollContainer?.()')) {
     failures.push('content/chatgpt-quicknav.js is not reusing chatgpt-core scroll-container service');
   }

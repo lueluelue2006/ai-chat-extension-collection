@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.27';
+  const EXT_VERSION = '0.1.29';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -108,6 +108,14 @@
     onStorageChanged: null,
     onMessage: null,
     cleanup: null,
+    routeHref: '',
+    routePollTimer: 0,
+    onPopState: null,
+    onHashChange: null,
+    fallbackTurnsMo: null,
+    fallbackTurnsRoot: null,
+    fallbackTurnsTimer: 0,
+    fallbackTailTimer: 0,
     lastVirtualizeStartAt: 0,
     lastReconcileAt: 0,
     lastVisibleFirst: -1,
@@ -118,18 +126,19 @@
     lastGeneratingCheckAt: 0,
     generatingCached: false,
     hotPathActive: false,
+    hotPathTimer: 0,
     tailMetricsTimer: 0,
     activeTailTurn: null,
     lastTailEstimateAt: 0,
-	    budgetSnapshot: null,
-	    budgetSnapshotAt: 0,
-	    budgetLevel: 0,
-	    kpi: {
-	      domQueryOps: 0,
-	      moCallbackCount: 0,
-	      turnScanCount: 0,
-	    },
-	  };
+    budgetSnapshot: null,
+    budgetSnapshotAt: 0,
+    budgetLevel: 0,
+    kpi: {
+      domQueryOps: 0,
+      moCallbackCount: 0,
+      turnScanCount: 0,
+    },
+  };
 
   function clampInt(n, min, max) {
     const x = Math.round(Number(n));
@@ -150,6 +159,14 @@
 
   function nowPerf() {
     return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  }
+
+  function currentRouteKey() {
+    try {
+      return `${location.pathname || ''}${location.search || ''}${location.hash || ''}`;
+    } catch {
+      return '';
+    }
   }
 
   function getChatgptCoreApi() {
@@ -180,6 +197,15 @@
       return turn instanceof HTMLElement ? turn : null;
     } catch {
       return null;
+    }
+  }
+
+  function isTurnRootElement(node) {
+    if (!(node instanceof Element)) return false;
+    try {
+      return !!node.matches?.(getTurnSelector());
+    } catch {
+      return false;
     }
   }
 
@@ -356,6 +382,43 @@
       // ignore
     }
     state.tailMetricsTimer = 0;
+  }
+
+  function clearHotPathTimer() {
+    try {
+      if (state.hotPathTimer) window.clearTimeout(state.hotPathTimer);
+    } catch {
+      // ignore
+    }
+    state.hotPathTimer = 0;
+  }
+
+  function scheduleHotPathCooldown(delayMs = 900) {
+    clearHotPathTimer();
+    state.hotPathTimer = window.setTimeout(() => {
+      state.hotPathTimer = 0;
+      if (state.disposed) return;
+      if (isGeneratingResponse(true)) {
+        scheduleHotPathCooldown(Math.max(900, delayMs));
+        return;
+      }
+      if (!state.hotPathActive) return;
+      state.hotPathActive = false;
+      applyRootAttrs();
+      scheduleApplyVirtualizationNow('hot-cooldown');
+    }, Math.max(240, Number(delayMs) || 900));
+  }
+
+  function setHotPathActive(nextActive) {
+    const active = !!nextActive;
+    if (state.hotPathActive === active) {
+      if (active) scheduleHotPathCooldown();
+      return;
+    }
+    state.hotPathActive = active;
+    if (active) scheduleHotPathCooldown();
+    else clearHotPathTimer();
+    applyRootAttrs();
   }
 
   function schedulePreciseTailMetrics(turns = null, delayMs = 420) {
@@ -1044,8 +1107,127 @@
     state.io = null;
     state.observedTurns = new Set();
     clearTailMetricsTimer();
+    clearHotPathTimer();
     state.activeTailTurn = null;
     state.lastTailEstimateAt = 0;
+  }
+
+  function clearFallbackTurnsTimers() {
+    try {
+      if (state.fallbackTurnsTimer) window.clearTimeout(state.fallbackTurnsTimer);
+    } catch {}
+    try {
+      if (state.fallbackTailTimer) window.clearTimeout(state.fallbackTailTimer);
+    } catch {}
+    state.fallbackTurnsTimer = 0;
+    state.fallbackTailTimer = 0;
+  }
+
+  function scheduleFallbackTailRefresh(reason = 'fallback-tail') {
+    if (state.fallbackTailTimer) return;
+    state.fallbackTailTimer = window.setTimeout(() => {
+      state.fallbackTailTimer = 0;
+      if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+      if (document.visibilityState === 'hidden') return;
+      const container = state.containerEl || findTurnsContainer();
+      if (!(container instanceof HTMLElement)) return;
+      const turns = getTurnElements(container);
+      if (!turns.length) return;
+      setContainerEl(container);
+      setTurnsCache(turns, container, 0);
+      state.structureDirty = true;
+      syncObservedTurns(turns);
+      syncTailTurnMetrics(turns, { generating: isGeneratingResponse(true), force: false });
+      scheduleApplyVirtualizationNow(reason);
+    }, 90);
+  }
+
+  function scheduleFallbackTurnsRefresh(reason = 'fallback-turns') {
+    if (state.fallbackTurnsTimer) return;
+    state.fallbackTurnsTimer = window.setTimeout(() => {
+      state.fallbackTurnsTimer = 0;
+      if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+      if (document.visibilityState === 'hidden') return;
+      const container = findTurnsContainer() || state.containerEl;
+      if (!(container instanceof HTMLElement)) return;
+      const turns = getTurnElements(container);
+      handleTurnsChanged(
+        {
+          root: container,
+          turns,
+          turnsVersion: 0,
+          rootChanged: container !== state.containerEl,
+          addedTurns: [],
+          removedTurns: [],
+        },
+        reason,
+      );
+    }, 70);
+  }
+
+  function stopFallbackTurnsWatch() {
+    try {
+      state.fallbackTurnsMo?.disconnect?.();
+    } catch {
+      // ignore
+    }
+    state.fallbackTurnsMo = null;
+    state.fallbackTurnsRoot = null;
+    clearFallbackTurnsTimers();
+  }
+
+  function startFallbackTurnsWatch(root = state.containerEl) {
+    const container = root instanceof HTMLElement ? root : state.containerEl;
+    if (!(container instanceof HTMLElement)) return;
+    if (state.fallbackTurnsMo && state.fallbackTurnsRoot === container) return;
+
+    stopFallbackTurnsWatch();
+    state.fallbackTurnsRoot = container;
+    state.fallbackTurnsMo = new MutationObserver((mutations) => {
+      try {
+        state.kpi.moCallbackCount += 1;
+      } catch {
+        // ignore
+      }
+
+      let structural = false;
+      let tailTouched = false;
+      const tail = getTailTurn();
+
+      for (const mut of mutations) {
+        if (mut?.type !== 'childList') continue;
+        const target = mut.target instanceof Element ? mut.target : null;
+        if (target && (target === container || target.parentElement === container)) structural = true;
+
+        for (const node of [...mut.addedNodes, ...mut.removedNodes]) {
+          if (!(node instanceof Element)) continue;
+          if (isTurnRootElement(node)) {
+            structural = true;
+            break;
+          }
+          if (!tailTouched && tail instanceof HTMLElement && (node === tail || tail.contains(node) || node.contains(tail))) {
+            tailTouched = true;
+          }
+        }
+
+        if (!tailTouched && tail instanceof HTMLElement && target && tail.contains(target)) {
+          tailTouched = true;
+        }
+        if (structural) break;
+      }
+
+      if (structural) {
+        scheduleFallbackTurnsRefresh('fallback-turns-mo');
+        return;
+      }
+      if (tailTouched) scheduleFallbackTailRefresh('fallback-tail-mo');
+    });
+
+    try {
+      state.fallbackTurnsMo.observe(container, { childList: true, subtree: true });
+    } catch {
+      stopFallbackTurnsWatch();
+    }
   }
 
   function syncObservedTurns(turns) {
@@ -1144,18 +1326,22 @@
     scheduleApplyVirtualizationNow(reason || String(payload?.reason || 'core-turns'));
   }
 
-  function ensureTurnsWatch() {
-    if (state.coreTurnsUnsub) return;
+  function ensureTurnsWatch(root = state.containerEl) {
     const core = getChatgptCoreApi();
-    if (typeof core?.onTurnsChange !== 'function') return;
-    state.coreTurnsUnsub = core.onTurnsChange((payload) => {
-      try {
-        state.kpi.moCallbackCount += 1;
-      } catch {
-        // ignore
-      }
-      handleTurnsChanged(payload, String(payload?.reason || 'core-turns'));
-    });
+    if (typeof core?.onTurnsChange === 'function') {
+      stopFallbackTurnsWatch();
+      if (state.coreTurnsUnsub) return;
+      state.coreTurnsUnsub = core.onTurnsChange((payload) => {
+        try {
+          state.kpi.moCallbackCount += 1;
+        } catch {
+          // ignore
+        }
+        handleTurnsChanged(payload, String(payload?.reason || 'core-turns'));
+      });
+      return;
+    }
+    startFallbackTurnsWatch(root);
   }
 
   function stopTurnsWatch() {
@@ -1165,6 +1351,7 @@
       // ignore
     }
     state.coreTurnsUnsub = null;
+    stopFallbackTurnsWatch();
   }
 
   function startVirtualization() {
@@ -1180,7 +1367,6 @@
     setContainerEl(null);
 
     attachIo();
-    ensureTurnsWatch();
 
     const snapshot = getCoreTurnsSnapshot(false);
     const container = snapshot?.root instanceof HTMLElement ? snapshot.root : findTurnsContainer();
@@ -1190,6 +1376,7 @@
       setTurnsCache(turns, container, snapshot?.turnsVersion || 0);
       updateDefaultIntrinsic(container, turns);
       syncObservedTurns(turns);
+      ensureTurnsWatch(container);
       scheduleApplyVirtualizationNow('start');
       return;
     }
@@ -1204,6 +1391,7 @@
         setTurnsCache(fallbackTurns, next, 0);
         updateDefaultIntrinsic(next, fallbackTurns);
         syncObservedTurns(fallbackTurns);
+        ensureTurnsWatch(next);
         scheduleApplyVirtualizationNow('start-hydration');
         return;
       }
@@ -1233,7 +1421,7 @@
     state.budgetSnapshot = null;
     state.budgetSnapshotAt = 0;
     state.budgetLevel = 0;
-    state.hotPathActive = false;
+    setHotPathActive(false);
     state.lastTailEstimateAt = 0;
     state.turnMetrics.clear();
     state.totalTurnDomNodes = 0;
@@ -1243,18 +1431,43 @@
   }
 
   function ensureRouteWatch() {
-    if (state.coreRouteUnsub) return;
-    const core = getChatgptCoreApi();
-    if (typeof core?.onRouteChange !== 'function') return;
-    state.coreRouteUnsub = core.onRouteChange(() => {
+    const restartForRoute = () => {
       try {
         if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+        const nextKey = currentRouteKey();
+        if (!nextKey || nextKey === state.routeHref) return;
+        state.routeHref = nextKey;
         if (document.visibilityState === 'hidden') return;
         startVirtualization();
       } catch {
         // ignore
       }
-    });
+    };
+
+    state.routeHref = currentRouteKey();
+    const core = getChatgptCoreApi();
+    if (typeof core?.onRouteChange === 'function') {
+      if (state.coreRouteUnsub) return;
+      state.coreRouteUnsub = core.onRouteChange(() => {
+        try {
+          if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
+          const nextKey = currentRouteKey();
+          const changed = !!nextKey && nextKey !== state.routeHref;
+          state.routeHref = nextKey;
+          if (!changed || document.visibilityState === 'hidden') return;
+          startVirtualization();
+        } catch {
+          // ignore
+        }
+      });
+      return;
+    }
+    if (state.routePollTimer || state.onPopState || state.onHashChange) return;
+    state.onPopState = () => restartForRoute();
+    state.onHashChange = () => restartForRoute();
+    window.addEventListener('popstate', state.onPopState, true);
+    window.addEventListener('hashchange', state.onHashChange, true);
+    state.routePollTimer = window.setInterval(restartForRoute, 400);
   }
 
   function stopRouteWatch() {
@@ -1264,6 +1477,31 @@
       // ignore
     }
     state.coreRouteUnsub = null;
+    if (state.routePollTimer) {
+      try {
+        window.clearInterval(state.routePollTimer);
+      } catch {
+        // ignore
+      }
+    }
+    state.routePollTimer = 0;
+    if (state.onPopState) {
+      try {
+        window.removeEventListener('popstate', state.onPopState, true);
+      } catch {
+        // ignore
+      }
+    }
+    if (state.onHashChange) {
+      try {
+        window.removeEventListener('hashchange', state.onHashChange, true);
+      } catch {
+        // ignore
+      }
+    }
+    state.onPopState = null;
+    state.onHashChange = null;
+    state.routeHref = '';
   }
 
   function ensureUi() {
@@ -1500,6 +1738,7 @@
     setTurnsCache(turns, container, snapshot?.turnsVersion || 0);
     updateDefaultIntrinsic(container, turns);
     syncObservedTurns(turns);
+    ensureTurnsWatch(container);
   }
 
   function findFirstIndexByBottom(turns, topBound) {
@@ -1624,8 +1863,7 @@
       state.reconcileToken += 1;
       state.reconcileTurns = null;
       state.budgetLevel = 0;
-      state.hotPathActive = false;
-      applyRootAttrs();
+      setHotPathActive(false);
       state.structureDirty = false;
       for (let i = 0; i < total; i += 1) clearOffscreen(turns[i]);
       return;
@@ -1634,8 +1872,7 @@
     const generating = isGeneratingResponse();
     const wasStructureDirty = state.structureDirty;
     const budget = collectBudgetSnapshot(total);
-    state.hotPathActive = !!(generating && computeBudgetLevel(budget) >= 2);
-    applyRootAttrs();
+    setHotPathActive(!!(generating && computeBudgetLevel(budget) >= 2));
     const padItems = computeAdaptivePadItems({ generating, boostActive: state.boostActive, snapshot: budget });
     const start = Math.max(0, first - padItems);
     const end = Math.min(total - 1, last + padItems);
@@ -1831,6 +2068,8 @@
       if (state.boostActionTimer) window.clearTimeout(state.boostActionTimer);
     } catch {}
     state.boostActionTimer = 0;
+
+    clearHotPathTimer();
 
     try { deactivateFindUnfreeze(); } catch {}
 

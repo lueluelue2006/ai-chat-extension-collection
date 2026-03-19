@@ -51,6 +51,8 @@
   let intentSyncTimer = 0;
   let topbarEnsureTimer = 0;
   let topbarRouteBound = false;
+  let topbarRouteKey = '';
+  let topbarRoutePollTimer = 0;
   let topbarWatchedHeader = null;
   let topbarHeaderObserver = null;
   let topbarInlineRow = null;
@@ -280,6 +282,14 @@
       return globalThis.__aichat_chatgpt_core_v1__ || null;
     } catch {
       return null;
+    }
+  }
+
+  function currentRouteKey() {
+    try {
+      return `${location.pathname || ''}${location.search || ''}${location.hash || ''}`;
+    } catch {
+      return '';
     }
   }
 
@@ -523,6 +533,18 @@
     return true;
   }
 
+  function topbarNeedsRepair() {
+    cleanupTopbarOrphans();
+    const modelButton = getTopbarModelButton();
+    const modelRow = getTopbarModelRow(modelButton);
+    const header = getTopbarHeader(modelButton);
+    if (!modelButton || !modelRow || !header) return false;
+    if (modelRow.classList?.contains?.(TOPBAR_INLINE_MODEL_ROW_CLASS)) return false;
+    const actionsHost = findTopbarActionsHost(header, modelRow);
+    if (!actionsHost) return false;
+    return canInlineTopbarActions(modelRow, modelButton, actionsHost);
+  }
+
   function scheduleTopbarEnsure(reason = '') {
     if (topbarEnsureTimer) return;
     topbarEnsureTimer = setTrackedTimeout(() => {
@@ -532,21 +554,39 @@
   }
 
   function installTopbarRouteSync() {
-    if (topbarRouteBound) return;
+    topbarRouteKey = currentRouteKey();
+    if (topbarRouteBound && topbarRoutePollTimer) return;
     const core = getChatGptCore();
-    if (!core || typeof core.onRouteChange !== 'function') return;
-    const off = core.onRouteChange(() => {
-      scheduleTopbarEnsure('route');
-      setTrackedTimeout(() => scheduleTopbarEnsure('route+160'), 160);
-      setTrackedTimeout(() => scheduleTopbarEnsure('route+640'), 640);
-    });
-    trackOff(() => {
-      topbarRouteBound = false;
-      try {
-        off();
-      } catch {}
-    });
-    topbarRouteBound = true;
+    if (!topbarRouteBound && core && typeof core.onRouteChange === 'function') {
+      const off = core.onRouteChange(() => {
+        topbarRouteKey = currentRouteKey();
+        runTopbarStartupPasses('route');
+      });
+      trackOff(() => {
+        topbarRouteBound = false;
+        try {
+          off();
+        } catch {}
+      });
+      topbarRouteBound = true;
+    }
+    if (!topbarRoutePollTimer) {
+      topbarRoutePollTimer = window.setInterval(() => {
+        const nextKey = currentRouteKey();
+        const changed = !!nextKey && nextKey !== topbarRouteKey;
+        if (changed) topbarRouteKey = nextKey;
+        if (!changed && !topbarNeedsRepair()) return;
+        runTopbarStartupPasses(changed ? 'route-poll' : 'repair-poll');
+      }, 500);
+      trackOff(() => {
+        if (topbarRoutePollTimer) {
+          try {
+            clearInterval(topbarRoutePollTimer);
+          } catch {}
+          topbarRoutePollTimer = 0;
+        }
+      });
+    }
   }
 
   function runTopbarStartupPasses(reason = 'startup') {

@@ -683,6 +683,10 @@ function verifyChatgptPerfStructureHardening() {
   if (!quicknavSource.includes('isCodeBlockInteraction') || !quicknavSource.includes('allowNavScrollFor(1400)')) {
     failures.push('content/chatgpt-quicknav.js is missing code-block interaction scroll-lock backoff');
   }
+  const sidebarHeaderSource = readText('content/chatgpt-sidebar-header-fix/main.js');
+  if (!sidebarHeaderSource.includes('topbarNeedsRepair') || !sidebarHeaderSource.includes('topbarRoutePollTimer')) {
+    failures.push('content/chatgpt-sidebar-header-fix/main.js is missing SPA topbar self-healing polling');
+  }
   if (!cssSource.includes('.cgptperf-turn')) {
     failures.push('content/chatgpt-perf/content.css is missing .cgptperf-turn selectors');
   }

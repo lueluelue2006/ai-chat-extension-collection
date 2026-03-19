@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.29';
+  const EXT_VERSION = '0.1.30';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -1328,20 +1328,19 @@
 
   function ensureTurnsWatch(root = state.containerEl) {
     const core = getChatgptCoreApi();
-    if (typeof core?.onTurnsChange === 'function') {
-      stopFallbackTurnsWatch();
-      if (state.coreTurnsUnsub) return;
-      state.coreTurnsUnsub = core.onTurnsChange((payload) => {
-        try {
-          state.kpi.moCallbackCount += 1;
-        } catch {
-          // ignore
-        }
-        handleTurnsChanged(payload, String(payload?.reason || 'core-turns'));
-      });
-      return;
-    }
     startFallbackTurnsWatch(root);
+    if (typeof core?.onTurnsChange === 'function') {
+      if (!state.coreTurnsUnsub) {
+        state.coreTurnsUnsub = core.onTurnsChange((payload) => {
+          try {
+            state.kpi.moCallbackCount += 1;
+          } catch {
+            // ignore
+          }
+          handleTurnsChanged(payload, String(payload?.reason || 'core-turns'));
+        });
+      }
+    }
   }
 
   function stopTurnsWatch() {
@@ -1446,8 +1445,7 @@
 
     state.routeHref = currentRouteKey();
     const core = getChatgptCoreApi();
-    if (typeof core?.onRouteChange === 'function') {
-      if (state.coreRouteUnsub) return;
+    if (typeof core?.onRouteChange === 'function' && !state.coreRouteUnsub) {
       state.coreRouteUnsub = core.onRouteChange(() => {
         try {
           if (!(state.settings.enabled && state.settings.virtualizeOffscreen)) return;
@@ -1460,7 +1458,6 @@
           // ignore
         }
       });
-      return;
     }
     if (state.routePollTimer || state.onPopState || state.onHashChange) return;
     state.onPopState = () => restartForRoute();

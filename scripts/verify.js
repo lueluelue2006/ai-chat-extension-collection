@@ -656,6 +656,12 @@ function verifyChatgptPerfStructureHardening() {
   if (!jsSource.includes('startFallbackTurnsWatch') || !jsSource.includes('currentRouteKey')) {
     failures.push('content/chatgpt-perf/content.js is missing SPA fallback route/turn watches');
   }
+  if (!jsSource.includes('containsTurnRoot(')) {
+    failures.push('content/chatgpt-perf/content.js is missing wrapper-aware turn fallback detection');
+  }
+  if (!jsSource.includes('preferLiveDom')) {
+    failures.push('content/chatgpt-perf/content.js is missing live-DOM fallback turn refresh');
+  }
   if (!quicknavSource.includes('getChatScrollContainer?.()')) {
     failures.push('content/chatgpt-quicknav.js is not reusing chatgpt-core scroll-container service');
   }

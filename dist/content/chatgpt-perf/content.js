@@ -7,7 +7,7 @@
     if (prev && typeof prev === 'object' && typeof prev.cleanup === 'function') prev.cleanup();
   } catch {}
 
-  const EXT_VERSION = '0.1.30';
+  const EXT_VERSION = '0.1.32';
 
   const STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const BENCH_KEY = 'cgpt_perf_mv3_bench_arm_v1';
@@ -209,6 +209,16 @@
     }
   }
 
+  function containsTurnRoot(node) {
+    if (!(node instanceof Element)) return false;
+    if (isTurnRootElement(node)) return true;
+    try {
+      return !!node.querySelector?.(getTurnSelector());
+    } catch {
+      return false;
+    }
+  }
+
   function getCoreTurnsSnapshot(force = false) {
     try {
       const core = getChatgptCoreApi();
@@ -230,10 +240,34 @@
     }
   }
 
-  function getTurnElements(root, payload = null) {
+  function getDomTurnElements(root) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+    try {
+      const list = Array.from(scope.querySelectorAll(getTurnSelector()));
+      const turns = [];
+      const seen = new Set();
+      for (const item of list) {
+        const turn = normalizeTurnElement(item);
+        if (!(turn instanceof HTMLElement) || seen.has(turn)) continue;
+        seen.add(turn);
+        turns.push(turn);
+      }
+      return turns;
+    } catch {
+      return [];
+    }
+  }
+
+  function getTurnElements(root, payload = null, options = null) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     const payloadTurns = Array.isArray(payload?.turns) ? payload.turns.filter((item) => item instanceof HTMLElement) : null;
     if (payloadTurns && payloadTurns.length) return payloadTurns;
+
+    const preferLiveDom = !!options?.preferLiveDom;
+    if (preferLiveDom) {
+      const turns = getDomTurnElements(scope);
+      if (turns.length) return turns;
+    }
 
     const snapshot = getCoreTurnsSnapshot(false);
     if (
@@ -255,16 +289,7 @@
     }
 
     try {
-      const list = Array.from(scope.querySelectorAll(getTurnSelector()));
-      const turns = [];
-      const seen = new Set();
-      for (const item of list) {
-        const turn = normalizeTurnElement(item);
-        if (!(turn instanceof HTMLElement) || seen.has(turn)) continue;
-        seen.add(turn);
-        turns.push(turn);
-      }
-      return turns;
+      return getDomTurnElements(scope);
     } catch {
       return [];
     }
@@ -1131,7 +1156,7 @@
       if (document.visibilityState === 'hidden') return;
       const container = state.containerEl || findTurnsContainer();
       if (!(container instanceof HTMLElement)) return;
-      const turns = getTurnElements(container);
+      const turns = getTurnElements(container, null, { preferLiveDom: true });
       if (!turns.length) return;
       setContainerEl(container);
       setTurnsCache(turns, container, 0);
@@ -1150,7 +1175,7 @@
       if (document.visibilityState === 'hidden') return;
       const container = findTurnsContainer() || state.containerEl;
       if (!(container instanceof HTMLElement)) return;
-      const turns = getTurnElements(container);
+      const turns = getTurnElements(container, null, { preferLiveDom: true });
       handleTurnsChanged(
         {
           root: container,
@@ -1197,11 +1222,11 @@
       for (const mut of mutations) {
         if (mut?.type !== 'childList') continue;
         const target = mut.target instanceof Element ? mut.target : null;
-        if (target && (target === container || target.parentElement === container)) structural = true;
+        if (target && (target === container || target.parentElement === container || containsTurnRoot(target))) structural = true;
 
         for (const node of [...mut.addedNodes, ...mut.removedNodes]) {
           if (!(node instanceof Element)) continue;
-          if (isTurnRootElement(node)) {
+          if (containsTurnRoot(node)) {
             structural = true;
             break;
           }

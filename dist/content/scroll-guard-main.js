@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 7;
+    const GUARD_VERSION = 8;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -602,6 +602,39 @@
     return !el || el === window || el === document || el === document.body || el === doc || el === se;
   }
 
+  function getCodeInteractionRoot(node) {
+    try {
+      const el =
+        node && node.nodeType === 1
+          ? node
+          : node && node.nodeType === 3
+            ? node.parentElement
+            : null;
+      if (!el || !el.closest) return null;
+      return (
+        el.closest('.cm-scroller, .cm-editor, pre, code, [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]') ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function shouldBypassNestedCodeScroll(el) {
+    if (!(el instanceof Element) || isWindowScroller(el)) return false;
+    const codeRoot = getCodeInteractionRoot(el);
+    if (!codeRoot) return false;
+    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    return !(cached && (cached === el || cached === codeRoot));
+  }
+
+  function shouldBypassCodeIntoView(target) {
+    const codeRoot = getCodeInteractionRoot(target);
+    if (!codeRoot) return false;
+    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    return !(cached && cached === codeRoot);
+  }
+
   function getScrollPos(el) {
     if (!el) return window.scrollY || 0;
     if (isWindowScroller(el)) {
@@ -664,18 +697,19 @@
   }
 
   function shouldBlockElementScroll(el, nextTop) {
+    if (shouldBypassNestedCodeScroll(el)) return false;
+    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    if (cached && !isWindowScroller(cached) && el !== cached) return false;
+
     const ts = now();
     // Occasionally refresh the cached scroller in case SPA navigation/hydration replaced it.
     // This also allows switching from an early window-scroller guess to the real nested chat scroller.
-    if (!isChatgptHeavyStreaming() && __cachedScroller && __cachedScroller.isConnected && ts - (__cachedScrollerAt || 0) > 1200) {
+    if (!isChatgptHeavyStreaming() && cached && ts - (__cachedScrollerAt || 0) > 1200) {
       try {
         getChatScroller();
       } catch {}
     }
 
-    // Fast path: if we already know the chat scroller and this isn't it, don't block
-    // (and avoid expensive dataset reads on random scrollTop writes).
-    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
     if (cached) {
       if (isWindowScroller(cached)) return false;
       if (el !== cached) return false;
@@ -726,6 +760,7 @@
   }
 
   function shouldBlockIntoView(target) {
+    if (shouldBypassCodeIntoView(target)) return false;
     if (isChatgptHeavyStreaming()) return false;
     if (isAllowed()) return false;
     const sc = getChatScroller();

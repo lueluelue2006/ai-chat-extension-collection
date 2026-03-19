@@ -671,6 +671,12 @@ function verifyChatgptPerfStructureHardening() {
   if (!scrollGuardSource.includes('readPerfHotFromDataset') || !scrollGuardSource.includes('isChatgptHeavyStreaming')) {
     failures.push('content/scroll-guard-main.js is missing perf hot-path / heavy-streaming bypass');
   }
+  if (!scrollGuardSource.includes('shouldBypassNestedCodeScroll') || !scrollGuardSource.includes('shouldBypassCodeIntoView')) {
+    failures.push('content/scroll-guard-main.js is missing nested code-block scroll bypass');
+  }
+  if (!quicknavSource.includes('isCodeBlockInteraction') || !quicknavSource.includes('allowNavScrollFor(1400)')) {
+    failures.push('content/chatgpt-quicknav.js is missing code-block interaction scroll-lock backoff');
+  }
   if (!cssSource.includes('.cgptperf-turn')) {
     failures.push('content/chatgpt-perf/content.css is missing .cgptperf-turn selectors');
   }

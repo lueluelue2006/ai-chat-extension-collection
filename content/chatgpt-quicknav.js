@@ -6054,6 +6054,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch { return false; }
   }
 
+  function isCodeBlockInteraction(target) {
+    try {
+      const el =
+        target && target.nodeType === 1
+          ? target
+          : target && target.nodeType === 3
+            ? target.parentElement
+            : null;
+      if (!el || !el.closest) return false;
+      return !!el.closest('.cm-scroller, .cm-editor, pre, code, [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]');
+    } catch {
+      return false;
+    }
+  }
+
   function bindScrollLockUserIntents() {
     if (!ensureRuntimeGuardSentinel(CHATGPT_SCROLL_LOCK_USER_INTENTS_BOUND_KEY, CHATGPT_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY)) {
       return;
@@ -6160,6 +6175,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             return;
           }
           if (isSendAction(e?.target)) return; // never allow send-triggered autoscroll to redefine baseline
+          if (isCodeBlockInteraction(e?.target)) {
+            scrollLockLastUserIntentTs = Date.now();
+            allowNavScrollFor(1400);
+            return;
+          }
           if (isSidebarToggle(e?.target) || isCopyCode(e?.target)) {
             scrollLockLastUserIntentTs = Date.now();
           }

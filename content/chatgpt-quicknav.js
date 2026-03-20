@@ -29,7 +29,7 @@
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
   const CHAT_ROUTE_LOADING_POLL_MS = 120;
-  const CHATGPT_ROUTE_WATCH_POLL_MS = 1200;
+  const CHATGPT_ROUTE_WATCH_POLL_MS = 350;
   const PREVIEW_CACHE_HARD_CAP = 1800;
   const ROLE_CACHE_HARD_CAP = 1800;
   const TURN_POS_HARD_CAP = 2600;
@@ -2059,13 +2059,33 @@
       writeRuntimeGuardFlag(CHATGPT_ROUTE_WATCHER_INSTALLED_KEY, CHATGPT_ROUTE_WATCHER_INSTALLED_LEGACY_KEY, true);
     } catch {}
 
-    // Prefer shared core/bridge (MAIN-world route hook + slow polling fallback).
+    const installSecondaryRoutePoll = () => {
+      try {
+        if (!window.__cgptRouteWatcherPollTimerV2) {
+          window.__cgptRouteWatcherPollTimerV2 = scopeInterval(runtimeScope, () => {
+            try {
+              if (document.hidden) return;
+              detectUrlChange();
+            } catch {}
+          }, CHATGPT_ROUTE_WATCH_POLL_MS);
+        }
+      } catch {}
+    };
+
+    // Prefer shared core/bridge (MAIN-world route hook), but always keep a lightweight
+    // secondary URL poll because ChatGPT can occasionally miss route events during
+    // heavy SPA hydration on long conversations.
     try {
       const core = globalThis.__aichat_chatgpt_core_v1__;
       if (core && typeof core.onRouteChange === 'function') {
         window.__cgptRouteWatcherUnsubV2 = core.onRouteChange(() => {
           try { detectUrlChange(); } catch {}
         });
+        try {
+          scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
+          scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
+        } catch {}
+        installSecondaryRoutePoll();
         return;
       }
     } catch {}
@@ -2083,7 +2103,14 @@
             } catch {}
           }
         });
-        if (installed && installed.installed) return;
+        if (installed && installed.installed) {
+          try {
+            scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
+            scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
+          } catch {}
+          installSecondaryRoutePoll();
+          return;
+        }
       }
     } catch {}
 
@@ -2097,25 +2124,21 @@
         window.__cgptRouteWatcherUnsubV2 = bridge.on('routeChange', () => {
           try { detectUrlChange(); } catch {}
         });
+        try {
+          scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
+          scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
+        } catch {}
+        installSecondaryRoutePoll();
         return;
       }
     } catch {}
 
-    // Last resort: popstate/hashchange + slow polling.
+    // Last resort: native events + secondary polling only.
     try {
       scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
       scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
     } catch {}
-    try {
-      if (!window.__cgptRouteWatcherPollTimerV2) {
-        window.__cgptRouteWatcherPollTimerV2 = scopeInterval(runtimeScope, () => {
-          try {
-            if (document.hidden) return;
-            detectUrlChange();
-          } catch {}
-        }, CHATGPT_ROUTE_WATCH_POLL_MS);
-      }
-    } catch {}
+    installSecondaryRoutePoll();
   }
 
   installRouteWatcher();

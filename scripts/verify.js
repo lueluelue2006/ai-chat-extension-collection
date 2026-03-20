@@ -593,6 +593,8 @@ function verifyChatgptTopbarModelBadge() {
   for (const required of [
     'TOPBAR_MODEL_BADGE_ATTR',
     'TOPBAR_MODEL_META_ATTR',
+    'TOPBAR_ROUTE_RECOVERY_MS',
+    'TOPBAR_STARTUP_DELAYS_MS',
     'readModelButtonReactLabel',
     'readTopbarModelBadgeLabel',
     'syncTopbarModelBadge',
@@ -617,6 +619,23 @@ function verifyChatgptTopbarModelBadge() {
     !coreMainSource.includes('data-qn-chatgpt-model-meta-label')
   ) {
     failures.push('content/chatgpt-core-main.js is missing exported readCurrentModelMetaLabel()');
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
+function verifyChatgptBootstrapRouteEnsureHardening() {
+  const source = readText('content/bootstrap.js');
+  const failures = [];
+
+  for (const required of ['hasQuicknavRuntimeBridge', 'Force ensure only when the shared runtime bridge is genuinely absent']) {
+    if (!source.includes(required)) failures.push(`content/bootstrap.js is missing ${required}`);
+  }
+  if (source.includes('const force = !hasQuicknavUi();')) {
+    failures.push('content/bootstrap.js still forces route reinjects based on hasQuicknavUi()');
   }
 
   return {
@@ -756,7 +775,7 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   const quicknavSource = readText('content/chatgpt-quicknav.js');
   const failures = [];
 
-  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', 'shouldCacheTurnSelector', 'currentRouteEnteredAt = Date.now()', 'lastRenderedRouteKey', 'refresh-route-drift', 'getTurnAppendMarker', 'pendingPreviousRouteTurnMarkers', 'cachedTurnAppendMarkers', 'matchesPendingPreviousRouteTurns', '检测中…']) {
+  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', 'shouldCacheTurnSelector', 'currentRouteEnteredAt = Date.now()', 'lastRenderedRouteKey', 'refresh-route-drift', 'getTurnAppendMarker', 'pendingPreviousRouteTurnMarkers', 'cachedTurnAppendMarkers', 'matchesPendingPreviousRouteTurns', '检测中…', 'installSecondaryRoutePoll', 'scopeOn(runtimeScope, window, \'popstate\', detectUrlChange)', 'scopeOn(runtimeScope, window, \'hashchange\', detectUrlChange)']) {
     if (!quicknavSource.includes(required)) {
       failures.push(`content/chatgpt-quicknav.js is missing ${required}`);
     }
@@ -927,6 +946,14 @@ function main() {
     return;
   }
   console.log('ChatGPT topbar model badge: OK');
+
+  const bootstrapRouteEnsureHardening = verifyChatgptBootstrapRouteEnsureHardening();
+  if (!bootstrapRouteEnsureHardening.ok) {
+    console.error(`ChatGPT bootstrap route ensure hardening: FAIL (${bootstrapRouteEnsureHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT bootstrap route ensure hardening: OK');
 
   const replyTimerGate = verifyChatgptReplyTimerExtendedProGate();
   if (!replyTimerGate.ok) {

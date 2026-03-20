@@ -44,6 +44,8 @@
   const TOPBAR_SYNTHETIC_HOST_ATTR = 'data-qn-chatgpt-topbar-actions-synthetic';
   const TOPBAR_MIN_WIDTH_PX = 720;
   const TOPBAR_MIN_GAP_PX = 6;
+  const TOPBAR_ROUTE_RECOVERY_MS = 1800;
+  const TOPBAR_STARTUP_DELAYS_MS = Object.freeze([0, 120, 360, 900]);
   const root = document.documentElement;
   let lockUntil = 0;
   let unlockTimer = 0;
@@ -55,6 +57,7 @@
   let topbarRouteBound = false;
   let topbarRouteKey = '';
   let topbarRoutePollTimer = 0;
+  let topbarRouteRecoveryUntil = 0;
   let topbarWatchedHeader = null;
   let topbarHeaderObserver = null;
   let topbarInlineRow = null;
@@ -362,6 +365,15 @@
     }
   }
 
+  function enterTopbarRouteRecovery(ms = TOPBAR_ROUTE_RECOVERY_MS) {
+    const duration = Math.max(0, Number(ms) || TOPBAR_ROUTE_RECOVERY_MS);
+    topbarRouteRecoveryUntil = Math.max(topbarRouteRecoveryUntil, Date.now() + duration);
+  }
+
+  function isTopbarRouteRecovering() {
+    return Date.now() < Number(topbarRouteRecoveryUntil || 0);
+  }
+
   function resetTopbarObserver() {
     if (!topbarHeaderObserver) return;
     try {
@@ -629,15 +641,20 @@
     const modelRow = getTopbarModelRow(modelButton);
     const header = getTopbarHeader(modelButton);
     if (!modelButton || !modelRow || !header) {
-      restoreTopbarActionsHost();
-      resetTopbarObserver();
+      if (!isTopbarRouteRecovering()) {
+        restoreTopbarActionsHost();
+        resetTopbarObserver();
+      }
       return false;
     }
 
     const actionsHost = findTopbarActionsHost(header, modelRow);
-    if (!actionsHost) return false;
+    if (!actionsHost) {
+      if (!isTopbarRouteRecovering()) restoreTopbarActionsHost();
+      return false;
+    }
     if (!canInlineTopbarActions(modelRow, modelButton, actionsHost)) {
-      restoreTopbarActionsHost();
+      if (!isTopbarRouteRecovering()) restoreTopbarActionsHost();
       return false;
     }
 
@@ -697,6 +714,7 @@
     if (!topbarRouteBound && core && typeof core.onRouteChange === 'function') {
       const off = core.onRouteChange(() => {
         topbarRouteKey = currentRouteKey();
+        enterTopbarRouteRecovery();
         runTopbarStartupPasses('route');
       });
       trackOff(() => {
@@ -712,7 +730,8 @@
         const nextKey = currentRouteKey();
         const changed = !!nextKey && nextKey !== topbarRouteKey;
         if (changed) topbarRouteKey = nextKey;
-        if (!changed && !topbarNeedsRepair()) return;
+        if (changed) enterTopbarRouteRecovery();
+        if (!changed && !topbarNeedsRepair() && !isTopbarRouteRecovering()) return;
         runTopbarStartupPasses(changed ? 'route-poll' : 'repair-poll');
       }, 500);
       trackOff(() => {
@@ -727,10 +746,10 @@
   }
 
   function runTopbarStartupPasses(reason = 'startup') {
-    scheduleTopbarEnsure(reason);
-    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+400`), 400);
-    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+1400`), 1400);
-    setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+3200`), 3200);
+    for (const delay of TOPBAR_STARTUP_DELAYS_MS) {
+      if (delay <= 0) scheduleTopbarEnsure(reason);
+      else setTrackedTimeout(() => scheduleTopbarEnsure(`${reason}+${delay}`), delay);
+    }
   }
 
 	  function ensureStyle() {

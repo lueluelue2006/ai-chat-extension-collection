@@ -332,9 +332,9 @@
     }
   }
 
-  const hasQuicknavUi = () => {
+  const hasQuicknavRuntimeBridge = () => {
     try {
-      return !!(document.getElementById('cgpt-compact-nav') || document.getElementById('cgpt-compact-nav-style'));
+      return !!globalThis.__aichat_quicknav_bridge_v1__;
     } catch {
       return false;
     }
@@ -451,9 +451,10 @@
       lastRouteKey = nextRouteKey;
 
       // New route => reset ensure budget, then run route-aware ensure.
-      // Force ensure only when QuickNav UI is missing (e.g. Grok "/" -> "/c/..." SPA hop).
+      // Force ensure only when the shared runtime bridge is genuinely absent.
+      // Missing UI alone is not enough, because some sites briefly unmount panels during SPA hydration.
       ensureAttempt = 0;
-      const force = !hasQuicknavUi();
+      const force = !hasQuicknavRuntimeBridge();
       ensureInjected({ force, reason: `${reason}:changed` });
       if (force) {
         scheduleEnsureRetry(true, `${reason}:retry1`, 700);

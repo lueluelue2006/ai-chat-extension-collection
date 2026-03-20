@@ -508,6 +508,34 @@
     if (!(target instanceof Element)) return null;
     const byProseMirror = target.closest('.ProseMirror[contenteditable="true"]');
     if (byProseMirror) return byProseMirror;
+    const byTextarea = target.closest('textarea');
+    if (byTextarea) {
+      const response = byTextarea.closest('[id^="response-"]');
+      const hasEditControls = !!response?.querySelector('button');
+      const controls = hasEditControls
+        ? Array.from(response.querySelectorAll('button')).map((btn) => normalizeText(btn.innerText || btn.textContent || btn.getAttribute?.('aria-label') || ''))
+        : [];
+      const hasCancel = controls.some((text) => /^(cancel|取消)$/i.test(text));
+      const hasSave = controls.some((text) => /^(save|send|保存|发送)$/i.test(text));
+      if (response && hasCancel && hasSave) return byTextarea;
+    }
+    return null;
+  }
+
+  function getGrokEditScopeFromPrompt(promptEl) {
+    return promptEl?.closest?.('[id^="response-"]') || null;
+  }
+
+  function resolveGrokEditSaveButton(promptEl) {
+    const scope = getGrokEditScopeFromPrompt(promptEl);
+    if (!scope) return null;
+    const buttons = Array.from(scope.querySelectorAll('button'));
+    for (const button of buttons) {
+      if (!isButtonLikeElement(button) || isElementDisabled(button)) continue;
+      const label = normalizeText(button.innerText || button.textContent || button.getAttribute?.('aria-label') || '');
+      if (!/^(save|send|保存|发送)$/i.test(label)) continue;
+      return button;
+    }
     return null;
   }
 
@@ -1310,6 +1338,11 @@
       }
 
       if (SITE === 'grok') {
+        const editButton = resolveGrokEditSaveButton(promptEl);
+        if (editButton) {
+          editButton.click();
+          return true;
+        }
         const form = promptEl.closest('form') || null;
         const button =
           form?.querySelector('button[aria-label="Submit"]') || form?.querySelector('button[type="submit"]') || null;

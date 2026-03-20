@@ -200,7 +200,7 @@
       { siteId: 'ernie', js: 'content/ernie-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'ernie') },
       { siteId: 'zai', js: 'content/zai-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'zai') },
       { siteId: 'genspark', js: 'content/genspark-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'genspark') },
-      { siteId: 'grok', js: 'content/grok-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'grok') }
+      { siteId: 'grok', js: 'content/grok-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'grok') }
     ];
 
     for (const s of QUICKNAV_SITES) {

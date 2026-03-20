@@ -610,6 +610,11 @@
             clearInterval(oldNav._ui._forceRefreshTimer);
             if (DEBUG || window.DEBUG_TEMP) console.log('Grok QuickNav: 已清理定时器');
           }
+          if (oldNav._ui._observerHealTimer) {
+            clearInterval(oldNav._ui._observerHealTimer);
+            oldNav._ui._observerHealTimer = 0;
+            if (DEBUG || window.DEBUG_TEMP) console.log('Grok QuickNav: 已清理 observer heal 定时器');
+          }
           // 断开MutationObserver
           if (oldNav._ui._mo) {
             try {
@@ -2483,12 +2488,27 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return document.body;
   }
 
+  function healObserverIfNeeded(ui, reason = '') {
+    if (!ui) return false;
+    const target = ui._moTarget;
+    if (target && target.isConnected) return false;
+    if (DEBUG || window.DEBUG_TEMP) console.log('Grok QuickNav: 观察目标已断开，重绑观察器', reason || '');
+    observeChat(ui);
+    scheduleRefresh(ui, { force: true });
+    return true;
+  }
+
   function observeChat(ui) {
     const target = getTurnsContainer() || document.body;
     if (ui._mo) {
       try { ui._mo.disconnect(); } catch {}
     }
+    if (ui._observerHealTimer) {
+      try { clearInterval(ui._observerHealTimer); } catch {}
+      ui._observerHealTimer = 0;
+    }
     const mo = new MutationObserver((muts) => {
+      if (healObserverIfNeeded(ui, 'mutation-callback')) return;
       const isLongChat = (lastDomTurnCount || 0) > 120;
       const hasStop = checkStreamingState(ui);
       const useSoft = isLongChat && !!hasStop;
@@ -2527,12 +2547,20 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 定期兜底（10s 一次，别等 30s）
     if (forceRefreshTimer) clearInterval(forceRefreshTimer);
     forceRefreshTimer = setInterval(() => {
+      if (healObserverIfNeeded(ui, 'force-refresh-tick')) return;
       const hasStop = !!checkStreamingState(ui, true);
-      const count = qsTurns().length;
-      if (!hasStop && count === lastDomTurnCount) return;
+      const turns = qsTurns();
+      const count = turns.length;
+      const firstKey = count ? getTurnKey(turns[0]) : '';
+      const lastKey = count ? getTurnKey(turns[count - 1]) : '';
+      const unchanged = count === lastDomTurnCount && firstKey === lastDomFirstKey && lastKey === lastDomLastKey;
+      if (!hasStop && unchanged) return;
       scheduleRefresh(ui, { force: hasStop, soft: !hasStop && (lastDomTurnCount || 0) > 120 });
     }, 10000);
     ui._forceRefreshTimer = forceRefreshTimer;
+    ui._observerHealTimer = setInterval(() => {
+      healObserverIfNeeded(ui, 'health-check');
+    }, 1200);
   }
 
   // 防自动滚动（不改全局原型，避免与其他脚本冲突）

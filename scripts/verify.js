@@ -789,6 +789,37 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   };
 }
 
+function verifyGrokQuicknavHardening(runtimeDefs) {
+  const quicknavSource = readText('content/grok-quicknav.js');
+  const cmdenterSource = readText('content/chatgpt-cmdenter-send/main.js');
+  const failures = [];
+
+  for (const required of ['healObserverIfNeeded', '_observerHealTimer', 'force-refresh-tick', 'health-check']) {
+    if (!quicknavSource.includes(required)) {
+      failures.push(`content/grok-quicknav.js is missing ${required}`);
+    }
+  }
+
+  const grokQuicknavDef = Array.isArray(runtimeDefs)
+    ? runtimeDefs.find((def) => def && def.id === 'quicknav_grok')
+    : null;
+  const grokMatches = Array.isArray(grokQuicknavDef?.matches) ? grokQuicknavDef.matches : [];
+  if (!grokMatches.includes('https://grok.com/*')) {
+    failures.push('quicknav_grok is not injected on https://grok.com/*');
+  }
+
+  for (const required of ['getGrokEditScopeFromPrompt', 'resolveGrokEditSaveButton']) {
+    if (!cmdenterSource.includes(required)) {
+      failures.push(`content/chatgpt-cmdenter-send/main.js is missing ${required}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -940,6 +971,14 @@ function main() {
     return;
   }
   console.log('ChatGPT QuickNav turn candidate hardening: OK');
+
+  const grokQuicknavHardening = verifyGrokQuicknavHardening(runtimeDefs);
+  if (!grokQuicknavHardening.ok) {
+    console.error(`Grok QuickNav/Cmd+Enter hardening: FAIL (${grokQuicknavHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('Grok QuickNav/Cmd+Enter hardening: OK');
 
   console.log('Integrated repo checks: OK');
 }

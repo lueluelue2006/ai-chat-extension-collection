@@ -46,6 +46,7 @@
   const elSiteName = document.getElementById('siteName');
   const elSiteUrl = document.getElementById('siteUrl');
   const elToggleList = document.getElementById('toggleList');
+  let currentPageMetaResolved = false;
 
   const REGISTRY = (() => {
     try {
@@ -526,6 +527,92 @@
     });
   }
 
+  function tabsGet(tabId) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.tabs.get(tabId, (tab) => {
+          const err = chrome.runtime.lastError;
+          if (err) return reject(new Error(err.message || String(err)));
+          resolve(tab || null);
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function readDebugTabId() {
+    try {
+      const url = new URL(location.href);
+      const raw = String(url.searchParams.get('debugTabId') || '').trim();
+      if (!/^\d+$/.test(raw)) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+
+  function getTabHrefCandidate(tab) {
+    if (!tab || typeof tab !== 'object') return '';
+    const direct = typeof tab.url === 'string' ? tab.url : '';
+    if (direct) return direct;
+    const pending = typeof tab.pendingUrl === 'string' ? tab.pendingUrl : '';
+    if (pending) return pending;
+    const fallback = typeof tab.pendingUrl === 'string' ? tab.pendingUrl : '';
+    return fallback || '';
+  }
+
+  function setCurrentPageMeta(name, href = '', { resolved = false } = {}) {
+    if (resolved || !!href) currentPageMetaResolved = true;
+    if (elSiteName) elSiteName.textContent = translateText(String(name || ''));
+    if (elSiteUrl) elSiteUrl.textContent = href ? href.replace(/^https?:\/\//, '') : '';
+  }
+
+  async function resolveActivePageContext({ attempts = 8, delayMs = 180, debugTabId = null } = {}) {
+    let lastTab = null;
+    let lastMenuResp = null;
+    let lastHref = '';
+    for (let i = 0; i < Math.max(1, Number(attempts) || 1); i++) {
+      const tab = Number.isFinite(debugTabId) ? await tabsGet(debugTabId) : await tabsQueryActive();
+      lastTab = tab;
+      const tabId = tab?.id;
+      if (!Number.isFinite(tabId)) throw new Error('No active tab');
+
+      let menuResp = null;
+      try {
+        menuResp = await tabsSendMessage(tabId, { type: 'AISHORTCUTS_GET_MENU' });
+      } catch {
+        menuResp = null;
+      }
+      lastMenuResp = menuResp;
+
+      const href =
+        (menuResp && menuResp.ok === true && typeof menuResp.href === 'string' && menuResp.href) ||
+        getTabHrefCandidate(tab) ||
+        '';
+      lastHref = href || lastHref;
+      const activeSiteId = getSiteIdFromUrl(href);
+      if (href && (activeSiteId || (menuResp && menuResp.ok === true))) {
+        return { tab, tabId, menuResp, href, activeSiteId, settled: true };
+      }
+      if (i < attempts - 1) await sleep(delayMs);
+    }
+    const href = lastHref || getTabHrefCandidate(lastTab) || '';
+    return {
+      tab: lastTab,
+      tabId: lastTab?.id,
+      menuResp: lastMenuResp,
+      href,
+      activeSiteId: getSiteIdFromUrl(href),
+      settled: false
+    };
+  }
+
   function tabsSendMessage(tabId, msg, options = { frameId: 0 }) {
     return new Promise((resolve, reject) => {
       try {
@@ -896,27 +983,20 @@
   // Per-site toggles + menu (Tampermonkey-like)
   (async () => {
     try {
-      const tab = await tabsQueryActive();
-      const tabId = tab?.id;
+      currentPageMetaResolved = false;
+      setCurrentPageMeta('检测中…', '');
+      const ctx = await resolveActivePageContext({ debugTabId: readDebugTabId() });
+      const tab = ctx?.tab;
+      const tabId = ctx?.tabId;
       if (!Number.isFinite(tabId)) throw new Error('No active tab');
 
-      // Prefer asking injected menu for href (works even if tabs.url is unavailable)
-      let menuResp = null;
-      try {
-        menuResp = await tabsSendMessage(tabId, { type: 'AISHORTCUTS_GET_MENU' });
-      } catch {
-        menuResp = null;
-      }
-
-      const href =
-        (menuResp && menuResp.ok === true && typeof menuResp.href === 'string' && menuResp.href) ||
-        (typeof tab?.url === 'string' ? tab.url : '') ||
-        '';
+      let menuResp = ctx?.menuResp || null;
+      const href = String(ctx?.href || '');
       const activeSiteId = getSiteIdFromUrl(href);
       const siteDef = activeSiteId ? getSiteDef(activeSiteId) : null;
-
-      if (elSiteName) elSiteName.textContent = siteDef ? getSiteDisplayMeta(siteDef).name : translateText('未支持站点');
-      if (elSiteUrl) elSiteUrl.textContent = href ? href.replace(/^https?:\/\//, '') : '';
+      setCurrentPageMeta(siteDef ? getSiteDisplayMeta(siteDef).name : href ? '未支持站点' : '未检测', href, {
+        resolved: !!href
+      });
 
       let settings = await getSettings();
       currentLocaleMode = String(settings?.localeMode || 'auto');
@@ -1016,8 +1096,10 @@
 
       renderToggles({ settings, activeSiteId, menuByModule, unmappedMenu, onMutate: mutateSettings, onRunMenu });
       localizeBody();
+      if ((!menuResp || menuResp.ok !== true) && activeSiteId) queueMenuRefresh(220);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (!currentPageMetaResolved) setCurrentPageMeta('未检测', '');
       setStatus(/^zh/i.test(resolveUiLocale()) ? `初始化菜单失败：${msg}` : `Failed to initialize the menu: ${msg}`, 'warn');
     }
   })();

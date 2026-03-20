@@ -21,3 +21,11 @@ release/
 
 .codex-tasks/
 *TO DO list.csv
+AGENTS.md
+docs/chatgpt-site-research.md
+docs/grok-rate-limit-display-uiux.md
+docs/grok-scroll-lock-parity.md
+docs/kimi-scroll-lock-parity.md
+docs/rename-boundary-matrix.md
+.agents/
+artifacts/

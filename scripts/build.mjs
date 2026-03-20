@@ -18,7 +18,6 @@ const RUNTIME_ROOT_ENTRIES = [
   'options',
   'popup',
   'shared',
-  'rules',
   'icons',
   'third_party'
 ];

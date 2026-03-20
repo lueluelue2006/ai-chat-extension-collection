@@ -716,7 +716,7 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   const quicknavSource = readText('content/chatgpt-quicknav.js');
   const failures = [];
 
-  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', '检测中…']) {
+  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', 'shouldCacheTurnSelector', 'currentRouteEnteredAt = Date.now()', 'lastRenderedRouteKey', 'refresh-route-drift', 'getTurnAppendMarker', 'pendingPreviousRouteTurnMarkers', 'cachedTurnAppendMarkers', 'matchesPendingPreviousRouteTurns', '检测中…']) {
     if (!quicknavSource.includes(required)) {
       failures.push(`content/chatgpt-quicknav.js is missing ${required}`);
     }

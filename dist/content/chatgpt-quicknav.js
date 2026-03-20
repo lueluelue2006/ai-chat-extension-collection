@@ -29,6 +29,7 @@
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
   const CHAT_ROUTE_LOADING_POLL_MS = 120;
+  const CHATGPT_ROUTE_WATCH_POLL_MS = 1200;
   const PREVIEW_CACHE_HARD_CAP = 1800;
   const ROLE_CACHE_HARD_CAP = 1800;
   const TURN_POS_HARD_CAP = 2600;
@@ -1144,6 +1145,8 @@
   let lastDomTurnCount = 0;
   let lastDomFirstKey = '';
   let lastDomLastKey = '';
+  let lastRenderedRouteKey = getRouteKey();
+  let pendingPreviousRouteTurnMarkers = [];
   const CHATGPT_TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
   const CHATGPT_TURN_SELECTOR = `${CHATGPT_TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
   const CHATGPT_DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', CHATGPT_TURN_HOST_SELECTOR);
@@ -1204,6 +1207,7 @@
     try { roleCache.clear(); } catch {}
     try { turnIdToPos.clear(); } catch {}
     cachedTurnIds = [];
+    cachedTurnAppendMarkers = [];
     cacheIndex = [];
     cacheBaseIndex = [];
     lastUserSeq = 0;
@@ -1214,6 +1218,7 @@
     lastDomLastKey = '';
     currentActiveTurnPos = 0;
     currentActiveId = null;
+    lastRenderedRouteKey = '';
     TURN_SELECTOR = null;
     treeSummary = null;
     treePanelOpen = false;
@@ -1241,7 +1246,7 @@
 
   function getQuicknavEmptyLabel(filterFav = false) {
     if (filterFav) return qnT('暂无收藏');
-    if (isChatRoute() && isRouteRecoveryActive()) return qnT('检测中');
+    if (isChatRoute() && isRouteRecoveryActive()) return qnT('检测中…');
     return qnT('暂无对话');
   }
 
@@ -1292,6 +1297,33 @@
       if (count > 0) return count;
     } catch {}
     return 0;
+  }
+
+  function captureCurrentRouteTurnMarkers(turnsOverride = null) {
+    try {
+      const turns = Array.isArray(turnsOverride) ? turnsOverride : qsTurns();
+      return turns.map((turn) => getTurnAppendMarker(turn)).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  function matchesPendingPreviousRouteTurns(turns) {
+    const prev = Array.isArray(pendingPreviousRouteTurnMarkers) ? pendingPreviousRouteTurnMarkers : [];
+    const turnsArr = Array.isArray(turns) ? turns : [];
+    if (!isRouteRecoveryActive() || !prev.length || !turnsArr.length) return false;
+    if (turnsArr.length !== prev.length) return false;
+    try {
+      const markers = turnsArr.map((turn) => getTurnAppendMarker(turn));
+      if (markers.length !== prev.length) return false;
+      if (markers[0] !== prev[0]) return false;
+      if (markers[prev.length - 1] !== prev[prev.length - 1]) return false;
+      const mid = Math.floor(prev.length / 2);
+      if (mid > 0 && markers[mid] !== prev[mid]) return false;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function isLikelyConversationTurnNode(el) {
@@ -1708,6 +1740,7 @@
   // Store only turn element ids (strings), not DOM nodes. This avoids accidentally keeping
   // old/virtualized turns alive and reduces long-session memory pressure.
   let cachedTurnIds = [];
+  let cachedTurnAppendMarkers = [];
 
   function trimMapToLimit(map, limit) {
     if (!map || typeof map.size !== 'number') return;
@@ -1746,6 +1779,17 @@
       }
     } catch {
       cachedTurnIds = [];
+    }
+    try {
+      const markers = turns.map((t) => getTurnAppendMarker(t)).filter(Boolean);
+      const n = markers.length;
+      if (n > CACHED_TURN_IDS_HARD_CAP) {
+        cachedTurnAppendMarkers = markers.slice(n - CACHED_TURN_IDS_HARD_CAP);
+      } else {
+        cachedTurnAppendMarkers = markers;
+      }
+    } catch {
+      cachedTurnAppendMarkers = [];
     }
   }
 
@@ -1936,8 +1980,8 @@
         bindActiveTracking();
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
-        scheduleRefresh(ui);
         armRouteRecovery(ui, 'panel-boot');
+        scheduleRefresh(ui);
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
         __cgptBooting = false;
@@ -1952,6 +1996,7 @@
     if (nextKey === currentRouteKey) return;
 
     if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: route changed', currentRouteKey, '->', nextKey);
+    pendingPreviousRouteTurnMarkers = captureCurrentRouteTurnMarkers();
     currentRouteKey = nextKey;
     currentRouteEnteredAt = Date.now();
     routeRecoveryUntil = isChatRoute() ? Date.now() + CHAT_ROUTE_LOADING_GRACE_MS : 0;
@@ -2031,7 +2076,7 @@
           target: window,
           unsubKey: '__cgptRouteWatcherUnsubV2',
           pollKey: '__cgptRouteWatcherPollTimerV2',
-          pollMs: 8000,
+          pollMs: CHATGPT_ROUTE_WATCH_POLL_MS,
           onRouteChange: () => {
             try {
               detectUrlChange();
@@ -2068,7 +2113,7 @@
             if (document.hidden) return;
             detectUrlChange();
           } catch {}
-        }, 8000);
+        }, CHATGPT_ROUTE_WATCH_POLL_MS);
       }
     } catch {}
   }
@@ -2521,6 +2566,22 @@
     return '';
   }
 
+  function getTurnAppendMarker(turnEl) {
+    try {
+      const msgId = getTurnMessageId(turnEl, null);
+      if (msgId) return `msg:${msgId}`;
+    } catch {}
+    try {
+      const key = getTurnKey(turnEl);
+      if (key) return `key:${key}`;
+    } catch {}
+    try {
+      const domId = String(turnEl?.id || '');
+      if (domId) return `id:${domId}`;
+    } catch {}
+    return '';
+  }
+
   function getTabQueueStateFromTurn(turnEl) {
     const empty = { queued: false, msgId: '', key: '' };
     try {
@@ -2711,14 +2772,14 @@
     const turnsArr = Array.isArray(turns) ? turns : [];
     const oldCount = Number(prevCount) || 0;
     if (!oldCount || turnsArr.length <= oldCount) return false;
-    if (!Array.isArray(cachedTurnIds) || cachedTurnIds.length !== oldCount) return false;
+    if (!Array.isArray(cachedTurnAppendMarkers) || cachedTurnAppendMarkers.length !== oldCount) return false;
 
     // Cheap structural checks: same DOM nodes at key positions => safe to treat as append-only.
     try {
-      if (String(turnsArr[0]?.id || '') !== cachedTurnIds[0]) return false;
-      if (String(turnsArr[oldCount - 1]?.id || '') !== cachedTurnIds[oldCount - 1]) return false;
+      if (getTurnAppendMarker(turnsArr[0]) !== cachedTurnAppendMarkers[0]) return false;
+      if (getTurnAppendMarker(turnsArr[oldCount - 1]) !== cachedTurnAppendMarkers[oldCount - 1]) return false;
       const mid = Math.floor(oldCount / 2);
-      if (mid > 0 && String(turnsArr[mid]?.id || '') !== cachedTurnIds[mid]) return false;
+      if (mid > 0 && getTurnAppendMarker(turnsArr[mid]) !== cachedTurnAppendMarkers[mid]) return false;
     } catch {
       return false;
     }
@@ -4453,12 +4514,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         isConversationViewRoute() &&
         (
           isRouteRecoveryActive() ||
+          (hasConversationTopbarActions() && (lastDomTurnCount || 0) === 0) ||
           !!ui?._moBootstrapTimer ||
           !hasDirectTurnDom ||
           (!(ui?._moTarget) && (lastDomTurnCount || 0) === 0) ||
           (Date.now() - currentRouteEnteredAt < CHAT_ROUTE_LOADING_GRACE_MS && (lastDomTurnCount || 0) === 0)
         );
-      list.innerHTML = `<div class="compact-empty">${filterFav ? '暂无收藏' : (shouldShowLoading ? '检测中…' : '暂无对话')}</div>`;
+      list.innerHTML = `<div class="compact-empty">${shouldShowLoading ? getQuicknavEmptyLabel(false) : getQuicknavEmptyLabel(!!filterFav)}</div>`;
       try {
         list._qnRenderState = { len: 0, lastKey: '', filterFav: !!filterFav };
       } catch {}
@@ -4664,7 +4726,31 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function refreshIndex(ui, { soft = false, force = false } = {}) {
+    const liveRouteKey = getRouteKey();
+    if (liveRouteKey !== lastRenderedRouteKey) {
+      pendingPreviousRouteTurnMarkers = captureCurrentRouteTurnMarkers();
+      currentRouteKey = liveRouteKey;
+      currentRouteEnteredAt = Date.now();
+      routeRecoveryUntil = isChatRoute() ? Date.now() + CHAT_ROUTE_LOADING_GRACE_MS : 0;
+      clearConversationCaches();
+      if (isChatRoute()) armRouteRecovery(ui, 'refresh-route-drift');
+      lastRenderedRouteKey = liveRouteKey;
+      force = true;
+      soft = false;
+    }
     const turns = qsTurns();
+    if (matchesPendingPreviousRouteTurns(turns)) {
+      cacheIndex = [];
+      cacheBaseIndex = [];
+      lastTurnCount = 0;
+      lastDomTurnCount = 0;
+      lastDomFirstKey = '';
+      lastDomLastKey = '';
+      cachedTurnIds = [];
+      cachedTurnAppendMarkers = [];
+      renderList(ui);
+      return true;
+    }
     const turnCount = turns.length;
     const firstKey = turnCount ? getTurnKey(turns[0]) : '';
     const lastKey = turnCount ? getTurnKey(turns[turnCount - 1]) : '';
@@ -4686,6 +4772,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (DEBUG) console.log('ChatGPT Navigation: turns', next.length, '(含📌)');
     lastTurnCount = next.length;
     cacheIndex = next;
+    if (turnCount > 0 && pendingPreviousRouteTurnMarkers.length) pendingPreviousRouteTurnMarkers = [];
     // Keep per-conversation caches bounded.
     try { maybeTrimTurnCaches(turns); } catch {}
     renderList(ui);

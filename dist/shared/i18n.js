@@ -76,6 +76,7 @@
     '就绪': 'Ready',
     '正在加载设置…': 'Loading settings…',
     '检测中': 'Detecting',
+    '检测中…': 'Detecting…',
     '保存后会自动生效到已打开页面；若要彻底移除已注入内容，仍需手动刷新对应页面。': 'Changes take effect on already-open pages automatically. Refresh the page if you need to fully remove injected content.',
     '安装路径必须是 dist/ 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。': 'The install path must be the dist/ directory. Loading the repository root by mistake can cause injection failures or “Receiving end does not exist”.',
     '安装路径必须是': 'The install path must be',

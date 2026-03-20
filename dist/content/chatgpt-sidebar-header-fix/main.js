@@ -470,8 +470,8 @@
     if (!raw) return '';
     const compact = raw.toLowerCase().replace(/\s+/g, ' ').trim();
     if (/\binstant\b/.test(compact) || compact === 'gpt-5-3') return 'Instant';
-    if (/\bthinking\b/.test(compact) || /heavy thinking|light thinking/.test(compact)) return 'Thinking';
-    if (/\b(?:extended\s+)?pro\b/.test(compact)) return 'Pro';
+    if (/\b(light|heavy)(?:\s+thinking)?\b/.test(compact) || /\bthinking\b/.test(compact) || /思考|推理/.test(compact)) return 'Thinking';
+    if (/\b(standard|extended)(?:\s+pro)?\b/.test(compact) || /\b(?:extended\s+)?pro\b/.test(compact) || /专业|标准|扩展/.test(compact)) return 'Pro';
     if (/\blatest\b/.test(compact)) return 'Latest';
     if (/^gpt-\d+(?:\.\d+)?(?:-[a-z0-9]+)*$/.test(compact)) {
       if (compact.endsWith('-thinking')) return 'Thinking';

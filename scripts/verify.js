@@ -585,6 +585,46 @@ function verifyChatgptModelDetectionHardening() {
   };
 }
 
+function verifyChatgptTopbarModelBadge() {
+  const source = readText('content/chatgpt-sidebar-header-fix/main.js');
+  const coreMainSource = readText('content/chatgpt-core-main.js');
+  const failures = [];
+
+  for (const required of [
+    'TOPBAR_MODEL_BADGE_ATTR',
+    'TOPBAR_MODEL_META_ATTR',
+    'readModelButtonReactLabel',
+    'readTopbarModelBadgeLabel',
+    'syncTopbarModelBadge',
+    'gpt-5-3',
+    'Thinking',
+    'Pro'
+  ]) {
+    if (!source.includes(required)) {
+      failures.push(`content/chatgpt-sidebar-header-fix/main.js is missing ${required}`);
+    }
+  }
+
+  if (!source.includes('modelButton[propsKey]') && !source.includes("__reactProps$")) {
+    failures.push('content/chatgpt-sidebar-header-fix/main.js is not reading React props for model selector metadata');
+  }
+  if (!source.includes('getChatGptCoreMain') || !source.includes('readCurrentModelMetaLabel')) {
+    failures.push('content/chatgpt-sidebar-header-fix/main.js is not consuming chatgpt-core-main model metadata');
+  }
+  if (
+    !coreMainSource.includes('function readCurrentModelMetaLabel()') ||
+    !coreMainSource.includes('readCurrentModelMetaLabel,') ||
+    !coreMainSource.includes('data-qn-chatgpt-model-meta-label')
+  ) {
+    failures.push('content/chatgpt-core-main.js is missing exported readCurrentModelMetaLabel()');
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function verifyChatgptReplyTimerExtendedProGate() {
   const abs = path.join(ROOT, 'content/chatgpt-reply-timer/main.js');
   const priorGlobals = {
@@ -879,6 +919,14 @@ function main() {
     return;
   }
   console.log('ChatGPT model detection hardening: OK');
+
+  const topbarModelBadge = verifyChatgptTopbarModelBadge();
+  if (!topbarModelBadge.ok) {
+    console.error(`ChatGPT topbar model badge: FAIL (${topbarModelBadge.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT topbar model badge: OK');
 
   const replyTimerGate = verifyChatgptReplyTimerExtendedProGate();
   if (!replyTimerGate.ok) {

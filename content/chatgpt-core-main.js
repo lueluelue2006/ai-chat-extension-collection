@@ -3,7 +3,7 @@
   'use strict';
 
   const API_KEY = '__aichat_chatgpt_core_main_v1__';
-  const API_VERSION = 6;
+  const API_VERSION = 7;
 
   // Avoid installing timers/listeners inside iframes.
   const isAllowedFrame = (() => {
@@ -31,6 +31,7 @@
   const TURN_SELECTOR = `${TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
   const MODEL_SWITCHER_SELECTOR =
     'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
+  const MODEL_META_LABEL_ATTR = 'data-qn-chatgpt-model-meta-label';
   const COMPOSER_MODE_TOKEN_RE =
     /\b(?:instant|thinking|pro|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
   const DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', TURN_HOST_SELECTOR);
@@ -41,6 +42,13 @@
     routeKey: '',
     el: null
   };
+  let modelMetaButton = null;
+  let modelMetaHeader = null;
+  let modelMetaObserver = null;
+  let modelMetaSyncTimers = new Set();
+  let modelMetaBootstrapTimer = 0;
+  let modelMetaBootstrapAttempts = 0;
+  const MODEL_META_BOOTSTRAP_MAX_ATTEMPTS = 16;
 
   function prefixSelectorList(prefix, selectorList) {
     return String(selectorList || '')
@@ -223,6 +231,107 @@
     } catch {
       return '';
     }
+  }
+
+  function readCurrentModelMetaLabel() {
+    try {
+      const button = getModelSwitcherButton();
+      if (!(button instanceof HTMLElement)) return '';
+      const keys = Object.keys(button);
+      const propsKey = keys.find((key) => key.startsWith('__reactProps$'));
+      const fiberKey = keys.find((key) => key.startsWith('__reactFiber$'));
+      const props =
+        (propsKey && button[propsKey]) ||
+        (fiberKey && button[fiberKey] && button[fiberKey].memoizedProps) ||
+        null;
+      if (props && typeof props.label === 'string' && props.label.trim()) return props.label.trim();
+      const children = Array.isArray(props?.children) ? props.children : [];
+      for (const child of children) {
+        const label = child?.props?.label;
+        if (typeof label === 'string' && label.trim()) return label.trim();
+      }
+    } catch {}
+    return '';
+  }
+
+  function clearCurrentModelMetaLabel(button = modelMetaButton) {
+    try {
+      button?.removeAttribute?.(MODEL_META_LABEL_ATTR);
+    } catch {}
+  }
+
+  function resetCurrentModelMetaObserver() {
+    try {
+      modelMetaObserver?.disconnect?.();
+    } catch {}
+    modelMetaObserver = null;
+    modelMetaHeader = null;
+  }
+
+  function stopCurrentModelMetaBootstrap() {
+    try {
+      if (modelMetaBootstrapTimer) clearInterval(modelMetaBootstrapTimer);
+    } catch {}
+    modelMetaBootstrapTimer = 0;
+    modelMetaBootstrapAttempts = 0;
+  }
+
+  function ensureCurrentModelMetaBootstrap(force = false) {
+    if (force) stopCurrentModelMetaBootstrap();
+    if (modelMetaBootstrapTimer) return;
+    modelMetaBootstrapAttempts = 0;
+    modelMetaBootstrapTimer = window.setInterval(() => {
+      try {
+        modelMetaBootstrapAttempts += 1;
+        syncCurrentModelMetaLabel();
+        if (modelMetaBootstrapAttempts >= MODEL_META_BOOTSTRAP_MAX_ATTEMPTS) return stopCurrentModelMetaBootstrap();
+      } catch {
+        stopCurrentModelMetaBootstrap();
+      }
+    }, 500);
+  }
+
+  function syncCurrentModelMetaLabel() {
+    try {
+      const button = getModelSwitcherButton();
+      if (modelMetaButton && modelMetaButton !== button) clearCurrentModelMetaLabel(modelMetaButton);
+      modelMetaButton = button instanceof HTMLElement ? button : null;
+
+      const label = readCurrentModelMetaLabel();
+      if (modelMetaButton && label) {
+        modelMetaButton.setAttribute(MODEL_META_LABEL_ATTR, label);
+      } else {
+        clearCurrentModelMetaLabel(modelMetaButton);
+        ensureCurrentModelMetaBootstrap();
+      }
+
+      const nextHeader = modelMetaButton?.closest?.('header') || null;
+      if (nextHeader === modelMetaHeader) return;
+      resetCurrentModelMetaObserver();
+      if (!(nextHeader instanceof HTMLElement)) return;
+      modelMetaHeader = nextHeader;
+      modelMetaObserver = new MutationObserver(() => {
+        scheduleCurrentModelMetaSync(40);
+      });
+      modelMetaObserver.observe(nextHeader, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-label', 'data-state']
+      });
+    } catch {}
+  }
+
+  function scheduleCurrentModelMetaSync(delayMs = 0) {
+    const id = window.setTimeout(() => {
+      try {
+        modelMetaSyncTimers.delete(id);
+      } catch {}
+      syncCurrentModelMetaLabel();
+    }, Math.max(0, Number(delayMs) || 0));
+    try {
+      modelMetaSyncTimers.add(id);
+    } catch {}
   }
 
   function readComposerModeLabel(editorEl) {
@@ -1008,6 +1117,35 @@
     };
   }
 
+  function installCurrentModelMetaSync() {
+    syncCurrentModelMetaLabel();
+    ensureCurrentModelMetaBootstrap(true);
+    scheduleCurrentModelMetaSync(0);
+    scheduleCurrentModelMetaSync(250);
+    scheduleCurrentModelMetaSync(1200);
+    scheduleCurrentModelMetaSync(3200);
+    safeCall(() =>
+      onRouteChange(() => {
+        ensureCurrentModelMetaBootstrap(true);
+        scheduleCurrentModelMetaSync(0);
+        scheduleCurrentModelMetaSync(250);
+        scheduleCurrentModelMetaSync(1200);
+      })
+    );
+    try {
+      window.addEventListener('pageshow', () => {
+        ensureCurrentModelMetaBootstrap(true);
+        scheduleCurrentModelMetaSync(0);
+      }, { passive: true });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          ensureCurrentModelMetaBootstrap(true);
+          scheduleCurrentModelMetaSync(0);
+        }
+      });
+    } catch {}
+  }
+
   const api = Object.freeze({
     version: API_VERSION,
     now,
@@ -1018,6 +1156,7 @@
     getComposerForm,
     getModelSwitcherButton,
     readCurrentModelLabel,
+    readCurrentModelMetaLabel,
     readComposerModeLabel,
     findSendButton,
     findStopButton,
@@ -1044,4 +1183,6 @@
       window[API_KEY] = api;
     } catch {}
   }
+
+  installCurrentModelMetaSync();
 })();

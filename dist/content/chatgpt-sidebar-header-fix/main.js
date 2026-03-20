@@ -35,8 +35,10 @@
   const MODE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-expanded';
   const MODE_RAIL_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-rail';
   const TOPBAR_MODEL_SELECTOR = 'button[data-testid="model-switcher-dropdown-button"]';
+  const TOPBAR_MODEL_META_ATTR = 'data-qn-chatgpt-model-meta-label';
   const TOPBAR_INLINE_MODEL_ROW_CLASS = 'qn-chatgpt-topbar-inline-model-row';
   const TOPBAR_INLINE_ACTIONS_CLASS = 'qn-chatgpt-topbar-inline-actions';
+  const TOPBAR_MODEL_BADGE_ATTR = 'data-qn-chatgpt-topbar-model-label';
   const TOPBAR_PLACEHOLDER_ATTR = 'data-qn-chatgpt-topbar-actions-placeholder';
   const TOPBAR_RELOCATED_ATTR = 'data-qn-chatgpt-topbar-actions-relocated';
   const TOPBAR_SYNTHETIC_HOST_ATTR = 'data-qn-chatgpt-topbar-actions-synthetic';
@@ -285,6 +287,14 @@
     }
   }
 
+  function getChatGptCoreMain() {
+    try {
+      return window.__aichat_chatgpt_core_main_v1__ || null;
+    } catch {
+      return null;
+    }
+  }
+
   function currentRouteKey() {
     try {
       return `${location.pathname || ''}${location.search || ''}${location.hash || ''}`;
@@ -385,9 +395,108 @@
     try {
       topbarActionsPlaceholder?.remove?.();
     } catch {}
+    try {
+      topbarActionsHost?.removeAttribute?.(TOPBAR_MODEL_BADGE_ATTR);
+    } catch {}
     topbarInlineRow = null;
     topbarActionsHost = null;
     topbarActionsPlaceholder = null;
+  }
+
+  function readModelButtonReactLabel(modelButton) {
+    try {
+      if (!(modelButton instanceof HTMLElement)) return '';
+      const keys = Object.keys(modelButton);
+      const propsKey = keys.find((key) => key.startsWith('__reactProps$'));
+      const fiberKey = keys.find((key) => key.startsWith('__reactFiber$'));
+      const reactProps =
+        (propsKey && modelButton[propsKey]) ||
+        (fiberKey && modelButton[fiberKey] && modelButton[fiberKey].memoizedProps) ||
+        null;
+      if (reactProps && typeof reactProps.label === 'string' && reactProps.label.trim()) {
+        return reactProps.label.trim();
+      }
+      const children = Array.isArray(reactProps?.children) ? reactProps.children : [];
+      for (const child of children) {
+        const label = child?.props?.label;
+        if (typeof label === 'string' && label.trim()) return label.trim();
+      }
+    } catch {}
+    return '';
+  }
+
+  function readVisibleModelMenuLabel() {
+    try {
+      const menus = Array.from(document.querySelectorAll('[role="menu"]'));
+      for (const menu of menus) {
+        if (!(menu instanceof HTMLElement)) continue;
+        const options = Array.from(menu.querySelectorAll('[role="menuitemradio"], [role="menuitemcheckbox"], button'));
+        for (const option of options) {
+          if (!(option instanceof HTMLElement)) continue;
+          const selected =
+            option.getAttribute('aria-checked') === 'true' ||
+            option.getAttribute('aria-selected') === 'true' ||
+            option.querySelector?.('[data-state="checked"], [aria-hidden="true"].icon, svg[aria-hidden="true"]');
+          if (!selected) continue;
+          const text = String(option.innerText || option.textContent || '').trim();
+          if (text) return text.split(/\n+/).map((part) => part.trim()).filter(Boolean)[0] || '';
+        }
+      }
+    } catch {}
+    return '';
+  }
+
+  function prettifyModelIdentifier(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    const compact = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (/\binstant\b/.test(compact) || compact === 'gpt-5-3') return 'Instant';
+    if (/\bthinking\b/.test(compact) || /heavy thinking|light thinking/.test(compact)) return 'Thinking';
+    if (/\b(?:extended\s+)?pro\b/.test(compact)) return 'Pro';
+    if (/\blatest\b/.test(compact)) return 'Latest';
+    if (/^gpt-\d+(?:\.\d+)?(?:-[a-z0-9]+)*$/.test(compact)) {
+      if (compact.endsWith('-thinking')) return 'Thinking';
+      if (compact.endsWith('-pro')) return 'Pro';
+      return compact.toUpperCase();
+    }
+    return raw;
+  }
+
+  function readTopbarModelBadgeLabel(modelButton) {
+    const visible = prettifyModelIdentifier(readVisibleModelMenuLabel());
+    if (visible) return visible;
+
+    const mirroredMeta = prettifyModelIdentifier(String(modelButton?.getAttribute?.(TOPBAR_MODEL_META_ATTR) || '').trim());
+    if (mirroredMeta) return mirroredMeta;
+
+    const coreMain = getChatGptCoreMain();
+    try {
+      const metaLabel = prettifyModelIdentifier(coreMain?.readCurrentModelMetaLabel?.());
+      if (metaLabel) return metaLabel;
+    } catch {}
+
+    const reactLabel = prettifyModelIdentifier(readModelButtonReactLabel(modelButton));
+    if (reactLabel) return reactLabel;
+
+    const core = getChatGptCore();
+    try {
+      const composerMode = prettifyModelIdentifier(core?.readComposerModeLabel?.());
+      if (composerMode) return composerMode;
+    } catch {}
+    try {
+      const currentLabel = prettifyModelIdentifier(core?.readCurrentModelLabel?.());
+      if (currentLabel && currentLabel.toLowerCase() !== 'chatgpt') return currentLabel;
+    } catch {}
+
+    const text = prettifyModelIdentifier(String(modelButton?.innerText || modelButton?.textContent || '').trim());
+    if (text && text.toLowerCase() !== 'chatgpt') return text;
+    return '';
+  }
+
+  function estimateModelBadgeWidth(label) {
+    const text = String(label || '').trim();
+    if (!text) return 0;
+    return Math.max(48, Math.min(112, 18 + text.length * 8));
   }
 
   function findTopbarActionsHost(header, modelRow) {
@@ -446,15 +555,32 @@
       if (window.innerWidth < TOPBAR_MIN_WIDTH_PX) return false;
       const rowWidth = Number(modelRow.getBoundingClientRect?.().width || 0);
       const modelWidth = Number(modelButton.getBoundingClientRect?.().width || 0);
+      const badgeWidth = estimateModelBadgeWidth(readTopbarModelBadgeLabel(modelButton));
       let hostWidth = Number(actionsHost.getBoundingClientRect?.().width || 0);
       if (!Number.isFinite(hostWidth) || hostWidth <= 0) {
         hostWidth = Math.max(72, actionsHost.querySelectorAll('button').length * 40);
       }
       if (!Number.isFinite(rowWidth) || !Number.isFinite(modelWidth)) return false;
-      return rowWidth >= modelWidth + hostWidth + TOPBAR_MIN_GAP_PX + 24;
+      return rowWidth >= modelWidth + badgeWidth + hostWidth + TOPBAR_MIN_GAP_PX + 24;
     } catch {
       return false;
     }
+  }
+
+  function syncTopbarModelBadge(modelRow, modelButton, actionsHost) {
+    if (!modelRow || !modelButton || !(actionsHost instanceof HTMLElement)) return false;
+    const label = readTopbarModelBadgeLabel(modelButton);
+    if (!label) {
+      try {
+        actionsHost.removeAttribute(TOPBAR_MODEL_BADGE_ATTR);
+      } catch {}
+      return false;
+    }
+    try {
+      actionsHost.setAttribute(TOPBAR_MODEL_BADGE_ATTR, label);
+      actionsHost.setAttribute('aria-live', 'polite');
+    } catch {}
+    return true;
   }
 
   function moveTopbarActionsInline(modelRow, modelButton, actionsHost) {
@@ -517,6 +643,7 @@
 
     const moved = moveTopbarActionsInline(modelRow, modelButton, actionsHost);
     if (!moved) return false;
+    syncTopbarModelBadge(modelRow, modelButton, actionsHost);
 
     if (header !== topbarWatchedHeader) {
       resetTopbarObserver();
@@ -527,7 +654,12 @@
         })
       );
       try {
-        topbarHeaderObserver.observe(header, { childList: true, subtree: true });
+        topbarHeaderObserver.observe(header, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: [TOPBAR_MODEL_META_ATTR, 'aria-label', 'data-state']
+        });
       } catch {}
     }
     return true;
@@ -539,9 +671,14 @@
     const modelRow = getTopbarModelRow(modelButton);
     const header = getTopbarHeader(modelButton);
     if (!modelButton || !modelRow || !header) return false;
-    if (modelRow.classList?.contains?.(TOPBAR_INLINE_MODEL_ROW_CLASS)) return false;
     const actionsHost = findTopbarActionsHost(header, modelRow);
     if (!actionsHost) return false;
+    const expectedBadge = readTopbarModelBadgeLabel(modelButton);
+    const currentBadge = String(actionsHost.getAttribute?.(TOPBAR_MODEL_BADGE_ATTR) || '').trim();
+    if (modelRow.classList?.contains?.(TOPBAR_INLINE_MODEL_ROW_CLASS)) {
+      if (!expectedBadge) return false;
+      return currentBadge !== expectedBadge;
+    }
     return canInlineTopbarActions(modelRow, modelButton, actionsHost);
   }
 
@@ -696,6 +833,25 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  gap: 4px !important;
 	  margin-inline-start: ${TOPBAR_MIN_GAP_PX}px !important;
 	  overflow: visible !important;
+}
+.${TOPBAR_INLINE_ACTIONS_CLASS}[${TOPBAR_MODEL_BADGE_ATTR}]::before{
+	  content: attr(${TOPBAR_MODEL_BADGE_ATTR});
+	  display: inline-flex !important;
+	  align-items: center !important;
+	  justify-content: center !important;
+	  min-height: 28px !important;
+	  padding: 0 10px !important;
+	  margin-inline-end: ${TOPBAR_MIN_GAP_PX}px !important;
+	  border-radius: 999px !important;
+	  background: color-mix(in srgb, var(--main-surface-secondary, rgba(255,255,255,0.08)) 78%, transparent) !important;
+	  color: var(--text-secondary, rgba(255,255,255,0.78)) !important;
+	  font-size: 12px !important;
+	  font-weight: 600 !important;
+	  letter-spacing: 0.01em !important;
+	  line-height: 1 !important;
+	  white-space: nowrap !important;
+	  user-select: none !important;
+	  pointer-events: none !important;
 }
 .${TOPBAR_INLINE_ACTIONS_CLASS} .flex.items-center{
 	  gap: 4px !important;

@@ -712,6 +712,30 @@ function verifyChatgptPerfStructureHardening() {
   };
 }
 
+function verifyChatgptQuicknavTurnCandidateHardening() {
+  const quicknavSource = readText('content/chatgpt-quicknav.js');
+  const failures = [];
+
+  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', '检测中…']) {
+    if (!quicknavSource.includes(required)) {
+      failures.push(`content/chatgpt-quicknav.js is missing ${required}`);
+    }
+  }
+
+  if (!quicknavSource.includes("el.closest?.('[role=\"banner\"")) {
+    failures.push('content/chatgpt-quicknav.js is missing banner/header exclusion in turn fallback');
+  }
+
+  if (quicknavSource.includes("el.querySelector('p,li,pre,code,blockquote')")) {
+    failures.push('content/chatgpt-quicknav.js still uses generic text-node fallback for turn candidate detection');
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -871,6 +895,14 @@ function main() {
     return;
   }
   console.log('ChatGPT perf structure hardening: OK');
+
+  const quicknavTurnCandidateHardening = verifyChatgptQuicknavTurnCandidateHardening();
+  if (!quicknavTurnCandidateHardening.ok) {
+    console.error(`ChatGPT QuickNav turn candidate hardening: FAIL (${quicknavTurnCandidateHardening.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT QuickNav turn candidate hardening: OK');
 
   console.log('Integrated repo checks: OK');
 }

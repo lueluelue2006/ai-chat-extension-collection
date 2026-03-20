@@ -27,6 +27,8 @@
   const DEFAULT_NAV_ESTIMATED_WIDTH = 210;
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
+  const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
+  const CHAT_ROUTE_LOADING_POLL_MS = 120;
   const PREVIEW_CACHE_HARD_CAP = 1800;
   const ROLE_CACHE_HARD_CAP = 1800;
   const TURN_POS_HARD_CAP = 2600;
@@ -1146,6 +1148,12 @@
   const CHATGPT_TURN_SELECTOR = `${CHATGPT_TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
   const CHATGPT_DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', CHATGPT_TURN_HOST_SELECTOR);
   const CHATGPT_WRAPPED_TURN_HOST_SELECTOR = prefixSelectorList(':scope > *', CHATGPT_TURN_HOST_SELECTOR);
+  const CACHEABLE_CHATGPT_TURN_SELECTORS = new Set([
+    'section[data-testid^="conversation-turn-"]',
+    'article[data-testid^="conversation-turn-"]',
+    '[data-testid^="conversation-turn-"]',
+    'div[data-message-id]'
+  ]);
   let TURN_SELECTOR = null;
   let scrollTicking = false;
   let activeUpdateTimer = 0;
@@ -1155,6 +1163,8 @@
   let __cgptBooting = false;
   let refreshTimer = 0; // 新的尾随去抖定时器
   let refreshTailTimer = 0;
+  let routeRecoveryUntil = 0;
+  let routeRecoveryTimer = 0;
   let lastStopCheckTs = 0;
   let lastHasStop = null;
   let __cgptKeydownHandler = null;
@@ -1166,6 +1176,7 @@
   let __cgptSendBurstUi = null;
   let __cgptSendBurstLastTriggerAt = 0;
   const SEND_BURST_TRIGGER_DEDUP_MS = 260;
+  let __cgptCoreTurnsUnsub = null;
 
   let __quicknavDisposed = false;
 
@@ -1214,6 +1225,87 @@
     setBoundedTreePathSet([]);
     treeSummaryPendingReqId = '';
     clearTreeNavigatePending();
+  }
+
+  function stopRouteRecovery() {
+    try {
+      if (routeRecoveryTimer) cancelScopedInterval(routeRecoveryTimer);
+    } catch {}
+    routeRecoveryTimer = 0;
+    routeRecoveryUntil = 0;
+  }
+
+  function isRouteRecoveryActive() {
+    return !!(routeRecoveryUntil && Date.now() < routeRecoveryUntil);
+  }
+
+  function getQuicknavEmptyLabel(filterFav = false) {
+    if (filterFav) return qnT('暂无收藏');
+    if (isChatRoute() && isRouteRecoveryActive()) return qnT('检测中');
+    return qnT('暂无对话');
+  }
+
+  function updateQuicknavEmptyState(ui) {
+    try {
+      const list = ui?.list || document.querySelector('#cgpt-compact-nav .compact-list');
+      const empty = list?.querySelector('.compact-empty');
+      if (empty) empty.textContent = getQuicknavEmptyLabel(!!favFilterState);
+    } catch {}
+  }
+
+  function getRawConversationTurnCount() {
+    try {
+      const direct = document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR).length;
+      if (direct > 0) return direct;
+    } catch {}
+    try {
+      const core = getChatgptCoreApi();
+      if (core && typeof core.getTurnsSnapshot === 'function') {
+        const snapshot = core.getTurnsSnapshot(false);
+        const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
+        if (turns.length > 0) return turns.length;
+      }
+    } catch {}
+    try {
+      const scoped = Array.from(document.querySelectorAll('main [data-message-id], main [data-message-author-role]'));
+      const seen = new Set();
+      let count = 0;
+      for (const node of scoped) {
+        if (!(node instanceof Element)) continue;
+        const turn =
+          node.closest(CHATGPT_TURN_HOST_SELECTOR) ||
+          node.closest('[data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]');
+        if (turn) {
+          if (seen.has(turn)) continue;
+          seen.add(turn);
+          count += 1;
+          continue;
+        }
+        if (!node.querySelector?.('.markdown, .prose, .whitespace-pre-wrap, p, pre, code, blockquote, li') && !String(node.textContent || '').trim()) {
+          continue;
+        }
+        const key = node.getAttribute('data-message-id') || node;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        count += 1;
+      }
+      if (count > 0) return count;
+    } catch {}
+    return 0;
+  }
+
+  function isLikelyConversationTurnNode(el) {
+    try {
+      if (!(el instanceof Element)) return false;
+      if (el.matches?.(CHATGPT_TURN_SELECTOR)) return true;
+      if (el.hasAttribute?.('data-message-id') || el.hasAttribute?.('data-message-author-role')) return true;
+      if (el.querySelector?.('[data-message-id], [data-message-author-role]')) return true;
+    } catch {}
+    return false;
+  }
+
+  function shouldCacheTurnSelector(selector) {
+    return CACHEABLE_CHATGPT_TURN_SELECTORS.has(String(selector || ''));
   }
 
   function removeScrollLockTargetListener() {
@@ -1275,6 +1367,10 @@
 
     safeCancelSendBurstRefresh();
     cancelNavJumpStabilizer();
+    try {
+      if (typeof __cgptCoreTurnsUnsub === 'function') __cgptCoreTurnsUnsub();
+    } catch {}
+    __cgptCoreTurnsUnsub = null;
 
     try {
       if (refreshTimer) cancelScopedTimeout(refreshTimer);
@@ -1292,6 +1388,7 @@
       if (forceRefreshTimer) cancelScopedInterval(forceRefreshTimer);
     } catch {}
     forceRefreshTimer = 0;
+    stopRouteRecovery();
     try {
       if (treeSummaryReqTimer) cancelScopedTimeout(treeSummaryReqTimer);
     } catch {}
@@ -1375,6 +1472,30 @@
       return true;
     }
   }
+
+  function isConversationViewRoute() {
+    try {
+      const p = location && location.pathname ? location.pathname : '/';
+      return p.startsWith('/c/') || p.startsWith('/share/');
+    } catch {
+      return false;
+    }
+  }
+
+  function hasConversationTopbarActions() {
+    try {
+      const banner = document.querySelector('[role="banner"], header');
+      if (!banner) return false;
+      return !!(
+        banner.querySelector('button[aria-label="Share"]') ||
+        banner.querySelector('button[aria-label="Open conversation options"]')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  let currentRouteEnteredAt = Date.now();
 
   function getConversationIdFromUrl() {
     try {
@@ -1811,10 +1932,12 @@
         installTabQueueBridgeListener();
         initScrollLock(ui);
         observeChat(ui);
+        bindCoreTurnsWatcher(ui);
         bindActiveTracking();
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
         scheduleRefresh(ui);
+        armRouteRecovery(ui, 'panel-boot');
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
         __cgptBooting = false;
@@ -1830,6 +1953,8 @@
 
     if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: route changed', currentRouteKey, '->', nextKey);
     currentRouteKey = nextKey;
+    currentRouteEnteredAt = Date.now();
+    routeRecoveryUntil = isChatRoute() ? Date.now() + CHAT_ROUTE_LOADING_GRACE_MS : 0;
 
     disposeConversation('route-change', { removePanel: true, recreateScope: true });
 
@@ -1844,6 +1969,43 @@
       } catch {}
       init();
     }, 0);
+  }
+
+  function armRouteRecovery(ui, reason = 'route-bootstrap') {
+    try {
+      if (!ui || !isChatRoute()) return;
+      routeRecoveryUntil = Date.now() + CHAT_ROUTE_LOADING_GRACE_MS;
+      if (routeRecoveryTimer) return;
+      routeRecoveryTimer = scopeInterval(conversationScope, () => {
+        try {
+          if (document.hidden) return;
+          if (!isChatRoute()) {
+            stopRouteRecovery();
+            return;
+          }
+          const nav = document.getElementById('cgpt-compact-nav');
+          const currentUi = nav && nav._ui ? nav._ui : ui;
+          if (!currentUi) {
+            stopRouteRecovery();
+            return;
+          }
+          updateQuicknavEmptyState(currentUi);
+          if (cacheIndex.length) {
+            stopRouteRecovery();
+            return;
+          }
+          const rawTurns = getRawConversationTurnCount();
+          if (!currentUi._moTarget || rawTurns > 0) {
+            TURN_SELECTOR = null;
+            observeChat(currentUi);
+            scheduleRefresh(currentUi, { force: true, soft: false, delay: rawTurns > 0 ? 0 : 60 });
+          }
+          if (!isRouteRecoveryActive() && cacheIndex.length) stopRouteRecovery();
+          else if (!isRouteRecoveryActive() && !rawTurns) stopRouteRecovery();
+        } catch {}
+      }, CHAT_ROUTE_LOADING_POLL_MS);
+      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: armRouteRecovery', reason);
+    } catch {}
   }
 
   function installRouteWatcher() {
@@ -1912,6 +2074,50 @@
   }
 
   installRouteWatcher();
+
+  function bindCoreTurnsWatcher(ui) {
+    try {
+      if (typeof __cgptCoreTurnsUnsub === 'function') __cgptCoreTurnsUnsub();
+    } catch {}
+    __cgptCoreTurnsUnsub = null;
+
+    try {
+      const core = getChatgptCoreApi();
+      if (!core || typeof core.onTurnsChange !== 'function') return;
+      __cgptCoreTurnsUnsub = core.onTurnsChange((payload) => {
+        try {
+          const nav = document.getElementById('cgpt-compact-nav');
+          const currentUi = nav?._ui || ui;
+          if (!currentUi || currentUi !== ui || !nav || !nav.isConnected || !isChatRoute()) return;
+
+          const nextTurnCount = Number(payload?.turnCount) || 0;
+          const rootChanged = !!payload?.rootChanged;
+          const targetMissing = !(currentUi._moTarget && currentUi._moTarget.isConnected);
+
+          if (((lastDomTurnCount || 0) === 0 && nextTurnCount > 0) || rootChanged || targetMissing) {
+            observeChat(currentUi);
+            scheduleRefresh(currentUi, { force: true });
+            return;
+          }
+
+          const hasStructuralDelta =
+            (Array.isArray(payload?.addedTurns) && payload.addedTurns.length > 0) ||
+            (Array.isArray(payload?.removedTurns) && payload.removedTurns.length > 0) ||
+            nextTurnCount !== (lastDomTurnCount || 0);
+          if (!hasStructuralDelta) return;
+
+          scheduleRefresh(currentUi, {
+            delay: nextTurnCount > 120 ? 120 : 30,
+            soft: nextTurnCount > 120
+          });
+        } catch (err) {
+          if (DEBUG || window.DEBUG_TEMP) console.error('ChatGPT Navigation: core turns watcher error', err);
+        }
+      });
+    } catch (err) {
+      if (DEBUG || window.DEBUG_TEMP) console.error('ChatGPT Navigation: failed to bind core turns watcher', err);
+    }
+  }
 
   function installNavSelfHeal() {
     try {
@@ -2054,8 +2260,12 @@
     } catch {}
 
     if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
+      const els = Array.from(root.querySelectorAll(TURN_SELECTOR));
+      if (els.length) {
+        const sampleSize = Math.min(els.length, 6);
+        const validCount = els.slice(0, sampleSize).filter(isLikelyConversationTurnNode).length;
+        if (validCount >= Math.min(sampleSize, 2)) return els;
+      }
       // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
       TURN_SELECTOR = null;
     }
@@ -2091,6 +2301,31 @@
       'main div[data-testid]'
     ];
 
+    const isExtensionOwnedTurnCandidate = (el) => {
+      try {
+        if (!(el instanceof Element)) return true;
+        if (el.id === 'cgpt-compact-nav' || el.closest?.('#cgpt-compact-nav')) return true;
+        if (el.closest?.('[id^="__aichat_"], [id^="cgpt-"], [class*="qn-chatgpt-"]')) return true;
+        const id = String(el.id || '');
+        if (id.startsWith('__aichat_') || id.startsWith('cgpt-')) return true;
+        const cls = typeof el.className === 'string' ? el.className : String(el.getAttribute?.('class') || '');
+        if (cls.includes('qn-chatgpt-')) return true;
+      } catch {}
+      return false;
+    };
+
+    const isLikelyTurnCandidate = (el) => {
+      try {
+        if (!(el instanceof Element)) return false;
+        if (isExtensionOwnedTurnCandidate(el)) return false;
+        if (el.closest?.('[role="banner"], header, nav')) return false;
+        if (el.matches?.(CHATGPT_TURN_SELECTOR)) return true;
+        if (el.matches?.('div[data-message-id], [data-message-author-role]')) return true;
+        if (el.querySelector?.('[data-message-author-role], [data-message-id], .text-message[data-author], .markdown, .prose, .whitespace-pre-wrap')) return true;
+      } catch {}
+      return false;
+    };
+
     if (DEBUG || window.DEBUG_TEMP) {
       console.log('ChatGPT Navigation Debug: 检测对话选择器');
       for (const selector of selectors) {
@@ -2107,11 +2342,11 @@
       let hit = null;
       try { hit = root.querySelector(selector); } catch {}
       if (!hit) continue;
-      const els = root.querySelectorAll(selector);
+      const els = Array.from(root.querySelectorAll(selector)).filter(isLikelyTurnCandidate);
       if (!els.length) continue;
-      TURN_SELECTOR = selector;
+      if (shouldCacheTurnSelector(selector)) TURN_SELECTOR = selector;
       if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-      return Array.from(els);
+      return els;
     }
 
     if (DEBUG || window.DEBUG_TEMP) {
@@ -2149,19 +2384,23 @@
         for (const el of raw) list.push(el);
       }
 
-      const candidates = list.filter(el => {
-        // 检查是否包含消息相关的内容
-        return (
-          el.querySelector('div[data-message-author-role]') ||
-          el.querySelector('[data-testid*="user"]') ||
-          el.querySelector('[data-testid*="assistant"]') ||
-          el.querySelector('[data-author]') ||
-          el.querySelector('.markdown') ||
-          el.querySelector('.prose') ||
-          el.querySelector('.whitespace-pre-wrap') ||
-          // Avoid `textContent` here: it allocates a full string and can spike memory on huge pages.
-          el.querySelector('p,li,pre,code,blockquote')
-        );
+      const candidates = list.filter((el) => {
+        try {
+          if (isExtensionOwnedTurnCandidate(el)) return false;
+          if (el.closest?.('[role="banner"], header, nav')) return false;
+          return (
+            el.querySelector('[data-message-author-role]') ||
+            el.querySelector('[data-testid*="user"]') ||
+            el.querySelector('[data-testid*="assistant"]') ||
+            el.querySelector('[data-author]') ||
+            el.querySelector('[data-message-id]') ||
+            el.querySelector('.markdown') ||
+            el.querySelector('.prose') ||
+            el.querySelector('.whitespace-pre-wrap')
+          );
+        } catch {
+          return false;
+        }
       });
 
       if (candidates.length > 0) {
@@ -2256,6 +2495,17 @@
     return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
   }
 
+  function clearSyntheticTurnMarkers(el) {
+    try {
+      if (!el) return;
+      try { el.removeAttribute?.('data-cgpt-turn'); } catch {}
+      const syntheticId = String(el.id || '');
+      if (/^cgpt-turn-\d+$/i.test(syntheticId) && !el.getAttribute?.('data-testid') && !el.getAttribute?.('data-message-id')) {
+        try { el.removeAttribute('id'); } catch {}
+      }
+    } catch {}
+  }
+
   function getTurnMessageId(turnEl, previewEl) {
     try {
       if (!turnEl) return '';
@@ -2289,9 +2539,6 @@
 
   function analyzeTurnToIndexItem(el, i, fullLen, userSeq, assistantSeq) {
     if (!el) return { item: null, userSeq, assistantSeq };
-    try {
-      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-    } catch {}
 
     const attrTestId = (() => {
       try {
@@ -2300,13 +2547,6 @@
         return '';
       }
     })();
-
-    try {
-      if (!el.id) el.id = `cgpt-turn-${i + 1}`;
-    } catch {}
-    try {
-      setBoundedTurnPos(el.id, i);
-    } catch {}
 
     const msgKey = getTurnKey(el);
     const nodeMeta = (() => {
@@ -2360,6 +2600,7 @@
 
     if (!isUser && !isAssistant) {
       if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 角色识别失败`);
+      clearSyntheticTurnMarkers(el);
       return { item: null, userSeq, assistantSeq };
     }
 
@@ -2390,8 +2631,19 @@
     }
     if (!preview) {
       if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 无法提取预览文本`);
+      clearSyntheticTurnMarkers(el);
       return { item: null, userSeq, assistantSeq };
     }
+
+    try {
+      if (!el.id) el.id = `cgpt-turn-${i + 1}`;
+    } catch {}
+    try {
+      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
+    } catch {}
+    try {
+      setBoundedTurnPos(el.id, i);
+    } catch {}
 
     const seq = isUser ? ++userSeq : ++assistantSeq;
     const msgId = getTurnMessageId(el, block) || '';
@@ -2438,6 +2690,16 @@
     }
 
     setBoundedCachedTurnIds(turns);
+
+    if (!list.length && turns.length) {
+      TURN_SELECTOR = null;
+      lastDomTurnCount = 0;
+      lastDomFirstKey = '';
+      lastDomLastKey = '';
+      cachedTurnIds = [];
+      if (DEBUG || window.DEBUG_TEMP) console.warn('ChatGPT Navigation: 仅命中了无效候选节点，已清空 turn selector 缓存并等待重试');
+      return [];
+    }
 
     if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
     lastUserSeq = u;
@@ -4179,13 +4441,32 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {
-      list.innerHTML = `<div class="compact-empty">${filterFav ? '暂无收藏' : '暂无对话'}</div>`;
+      const hasDirectTurnDom = (() => {
+        try {
+          return !!document.querySelector(CHATGPT_TURN_SELECTOR);
+        } catch {
+          return false;
+        }
+      })();
+      const shouldShowLoading =
+        !filterFav &&
+        isConversationViewRoute() &&
+        (
+          isRouteRecoveryActive() ||
+          !!ui?._moBootstrapTimer ||
+          !hasDirectTurnDom ||
+          (!(ui?._moTarget) && (lastDomTurnCount || 0) === 0) ||
+          (Date.now() - currentRouteEnteredAt < CHAT_ROUTE_LOADING_GRACE_MS && (lastDomTurnCount || 0) === 0)
+        );
+      list.innerHTML = `<div class="compact-empty">${filterFav ? '暂无收藏' : (shouldShowLoading ? '检测中…' : '暂无对话')}</div>`;
       try {
         list._qnRenderState = { len: 0, lastKey: '', filterFav: !!filterFav };
       } catch {}
       queueScrollbarState();
       return;
     }
+
+    stopRouteRecovery();
 
     const syncTabQueueRowState = (node, item) => {
       if (!node || !item) return;
@@ -5325,10 +5606,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const firstTextNode = Array.from(treeBtn.childNodes || []).find((node) => node?.nodeType === Node.TEXT_NODE);
         if (firstTextNode) firstTextNode.nodeValue = qnT('树');
       }
-      try {
-        const empty = nav.querySelector('.compact-empty');
-        if (empty) empty.textContent = qnT(filterFav ? '暂无收藏' : '暂无对话');
-      } catch {}
+      updateQuicknavEmptyState(ui);
       updateStarBtnState(ui);
       updateScrollLockBtnState();
       updateTreeBtnState(ui);
@@ -5401,6 +5679,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!nodes.length) {
       // No turns yet: don't attach a wide observer (it would cover the whole app and be very noisy).
       // `observeChat()` will bootstrap a narrow observer later when turns appear.
+      return null;
+    }
+
+    const hasStructuralTurnMarker = nodes.some((node) => {
+      try {
+        if (!(node instanceof Element)) return false;
+        if (node.matches(CHATGPT_TURN_SELECTOR)) return true;
+        return !!node.querySelector?.('[data-message-id], [data-message-author-role], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]');
+      } catch {
+        return false;
+      }
+    });
+    if (!hasStructuralTurnMarker) {
+      // Early SPA/hydration windows can make generic fallback selectors match wrapper shells in <main>.
+      // Treat those as "no turns yet" so bootstrap keeps polling instead of binding a noisy wrong target.
       return null;
     }
 
@@ -5547,6 +5840,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (document.hidden) return;
       const hasStop = !!checkStreamingState(ui, true);
       const count = qsTurns().length;
+      const rawCount = getRawConversationTurnCount();
       try {
         // Defensive: if caches ever grow beyond reasonable bounds (e.g. due to React remount changing ids),
         // trim even when the list looks "unchanged".
@@ -5564,6 +5858,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       // If we don't have a target yet (no turns rendered), let the bootstrap poller do its job.
       if (!ui._moTarget) {
         if (!bootstrapRunning) observeChat(ui);
+        return;
+      }
+      if (!hasStop && (count > 0 || rawCount > 0) && !cacheBaseIndex.length) {
+        TURN_SELECTOR = null;
+        observeChat(ui);
+        scheduleRefresh(ui, { force: true, soft: false });
         return;
       }
       // 某些切换会话场景：turn selector 暂时抓不到元素（一直 0），这里强制重绑+刷新，避免长期“暂无对话”

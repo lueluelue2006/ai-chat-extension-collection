@@ -39,6 +39,9 @@
   const TOPBAR_INLINE_MODEL_ROW_CLASS = 'qn-chatgpt-topbar-inline-model-row';
   const TOPBAR_INLINE_ACTIONS_CLASS = 'qn-chatgpt-topbar-inline-actions';
   const TOPBAR_MODEL_BADGE_ATTR = 'data-qn-chatgpt-topbar-model-label';
+  const TOPBAR_MODEL_BADGE_BUTTON_ATTR = 'data-qn-chatgpt-topbar-model-toggle';
+  const TOPBAR_MODEL_BADGE_BUTTON_CLASS = 'qn-chatgpt-topbar-model-toggle';
+  const TOPBAR_MODEL_BADGE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v1__';
   const TOPBAR_PLACEHOLDER_ATTR = 'data-qn-chatgpt-topbar-actions-placeholder';
   const TOPBAR_RELOCATED_ATTR = 'data-qn-chatgpt-topbar-actions-relocated';
   const TOPBAR_SYNTHETIC_HOST_ATTR = 'data-qn-chatgpt-topbar-actions-synthetic';
@@ -63,6 +66,7 @@
   let topbarInlineRow = null;
   let topbarActionsHost = null;
   let topbarActionsPlaceholder = null;
+  let topbarModelToggleBusy = false;
 
   const trackedOffs = [];
   const trackedObservers = new Set();
@@ -405,6 +409,9 @@
       }
     } catch {}
     try {
+      topbarActionsHost?.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`)?.remove?.();
+    } catch {}
+    try {
       topbarActionsPlaceholder?.remove?.();
     } catch {}
     try {
@@ -511,6 +518,92 @@
     return Math.max(48, Math.min(112, 18 + text.length * 8));
   }
 
+  function resolveTopbarToggleTarget(label) {
+    const pretty = String(label || '').trim().toLowerCase();
+    if (pretty === 'pro') return 'thinking';
+    if (pretty === 'thinking') return 'pro';
+    return 'thinking';
+  }
+
+  function expectedTopbarToggleTitle(targetMode) {
+    return targetMode === 'pro' ? '切换到 Pro' : '切换到 Thinking';
+  }
+
+  function isLegacyTopbarBadgeButton(button, label) {
+    if (!(button instanceof HTMLButtonElement)) return true;
+    const text = String(label || '').trim();
+    const targetMode = resolveTopbarToggleTarget(text);
+    const expectedTitle = expectedTopbarToggleTitle(targetMode);
+    return (
+      button.disabled ||
+      String(button.dataset?.targetMode || '').trim() !== targetMode ||
+      String(button.textContent || '').trim() !== text ||
+      String(button.getAttribute('title') || '').trim() !== expectedTitle ||
+      String(button.getAttribute('aria-label') || '').trim() !== expectedTitle
+    );
+  }
+
+  async function handleTopbarModelBadgeToggle(event) {
+    try {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      event?.stopImmediatePropagation?.();
+    } catch {}
+    if (topbarModelToggleBusy) return;
+    const button = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const actionsHost = button?.closest?.(`.${TOPBAR_INLINE_ACTIONS_CLASS}`) || topbarActionsHost;
+    const currentLabel = String(button?.dataset?.label || actionsHost?.getAttribute?.(TOPBAR_MODEL_BADGE_ATTR) || '').trim();
+    const targetMode = resolveTopbarToggleTarget(currentLabel);
+    topbarModelToggleBusy = true;
+    try {
+      button?.setAttribute?.('aria-busy', 'true');
+      button?.classList?.add('is-busy');
+      try {
+        window.dispatchEvent(new CustomEvent(TOPBAR_MODEL_BADGE_EVENT, { detail: { targetMode } }));
+      } catch {}
+    } catch {}
+    finally {
+      topbarModelToggleBusy = false;
+      try {
+        button?.removeAttribute?.('aria-busy');
+        button?.classList?.remove('is-busy');
+      } catch {}
+      scheduleTopbarEnsure('badge-toggle');
+    }
+  }
+
+  function syncTopbarModelBadgeButton(actionsHost, label) {
+    if (!(actionsHost instanceof HTMLElement)) return false;
+    const text = String(label || '').trim();
+    let button = actionsHost.querySelector(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
+    if (!text) {
+      try { button?.remove?.(); } catch {}
+      return false;
+    }
+    if (!(button instanceof HTMLButtonElement)) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.className = TOPBAR_MODEL_BADGE_BUTTON_CLASS;
+      button.setAttribute(TOPBAR_MODEL_BADGE_BUTTON_ATTR, '1');
+      button.addEventListener('click', handleTopbarModelBadgeToggle, true);
+      try {
+        actionsHost.insertBefore(button, actionsHost.firstChild || null);
+      } catch {
+        return false;
+      }
+    }
+    const targetMode = resolveTopbarToggleTarget(text);
+    const expectedTitle = expectedTopbarToggleTitle(targetMode);
+    button.textContent = text;
+    button.dataset.label = text;
+    button.dataset.targetMode = targetMode;
+    button.disabled = false;
+    button.removeAttribute('disabled');
+    button.title = expectedTitle;
+    button.setAttribute('aria-label', expectedTitle);
+    return true;
+  }
+
   function findTopbarActionsHost(header, modelRow) {
     cleanupTopbarOrphans();
     if (topbarActionsHost && topbarActionsHost.isConnected) return topbarActionsHost;
@@ -569,8 +662,12 @@
       const modelWidth = Number(modelButton.getBoundingClientRect?.().width || 0);
       const badgeWidth = estimateModelBadgeWidth(readTopbarModelBadgeLabel(modelButton));
       let hostWidth = Number(actionsHost.getBoundingClientRect?.().width || 0);
+      const badgeButton = actionsHost.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
+      const badgeButtonWidth = Number(badgeButton?.getBoundingClientRect?.().width || 0);
+      if (badgeButtonWidth > 0 && Number.isFinite(hostWidth)) hostWidth = Math.max(0, hostWidth - badgeButtonWidth);
       if (!Number.isFinite(hostWidth) || hostWidth <= 0) {
-        hostWidth = Math.max(72, actionsHost.querySelectorAll('button').length * 40);
+        const actionButtons = Array.from(actionsHost.querySelectorAll('button')).filter((button) => !(button instanceof HTMLElement) || button.getAttribute(TOPBAR_MODEL_BADGE_BUTTON_ATTR) !== '1');
+        hostWidth = Math.max(72, actionButtons.length * 40);
       }
       if (!Number.isFinite(rowWidth) || !Number.isFinite(modelWidth)) return false;
       return rowWidth >= modelWidth + badgeWidth + hostWidth + TOPBAR_MIN_GAP_PX + 24;
@@ -586,12 +683,14 @@
       try {
         actionsHost.removeAttribute(TOPBAR_MODEL_BADGE_ATTR);
       } catch {}
+      syncTopbarModelBadgeButton(actionsHost, '');
       return false;
     }
     try {
       actionsHost.setAttribute(TOPBAR_MODEL_BADGE_ATTR, label);
       actionsHost.setAttribute('aria-live', 'polite');
     } catch {}
+    syncTopbarModelBadgeButton(actionsHost, label);
     return true;
   }
 
@@ -692,9 +791,10 @@
     if (!actionsHost) return false;
     const expectedBadge = readTopbarModelBadgeLabel(modelButton);
     const currentBadge = String(actionsHost.getAttribute?.(TOPBAR_MODEL_BADGE_ATTR) || '').trim();
+    const badgeButton = actionsHost.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
     if (modelRow.classList?.contains?.(TOPBAR_INLINE_MODEL_ROW_CLASS)) {
       if (!expectedBadge) return false;
-      return currentBadge !== expectedBadge;
+      return currentBadge !== expectedBadge || isLegacyTopbarBadgeButton(badgeButton, expectedBadge);
     }
     return canInlineTopbarActions(modelRow, modelButton, actionsHost);
   }
@@ -853,8 +953,7 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  margin-inline-start: ${TOPBAR_MIN_GAP_PX}px !important;
 	  overflow: visible !important;
 }
-.${TOPBAR_INLINE_ACTIONS_CLASS}[${TOPBAR_MODEL_BADGE_ATTR}]::before{
-	  content: attr(${TOPBAR_MODEL_BADGE_ATTR});
+.${TOPBAR_MODEL_BADGE_BUTTON_CLASS}{
 	  display: inline-flex !important;
 	  align-items: center !important;
 	  justify-content: center !important;
@@ -862,6 +961,7 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  padding: 0 10px !important;
 	  margin-inline-end: ${TOPBAR_MIN_GAP_PX}px !important;
 	  border-radius: 999px !important;
+	  border: none !important;
 	  background: color-mix(in srgb, var(--main-surface-secondary, rgba(255,255,255,0.08)) 78%, transparent) !important;
 	  color: var(--text-secondary, rgba(255,255,255,0.78)) !important;
 	  font-size: 12px !important;
@@ -870,7 +970,18 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  line-height: 1 !important;
 	  white-space: nowrap !important;
 	  user-select: none !important;
-	  pointer-events: none !important;
+	  pointer-events: auto !important;
+	  cursor: pointer !important;
+	  transition: background-color .16s ease, color .16s ease, opacity .16s ease !important;
+}
+.${TOPBAR_MODEL_BADGE_BUTTON_CLASS}:hover{
+	  background: color-mix(in srgb, var(--main-surface-secondary, rgba(255,255,255,0.12)) 88%, transparent) !important;
+	  color: var(--text-primary, rgba(255,255,255,0.92)) !important;
+}
+.${TOPBAR_MODEL_BADGE_BUTTON_CLASS}.is-busy,
+.${TOPBAR_MODEL_BADGE_BUTTON_CLASS}[aria-busy=\"true\"]{
+	  opacity: .72 !important;
+	  cursor: progress !important;
 }
 .${TOPBAR_INLINE_ACTIONS_CLASS} .flex.items-center{
 	  gap: 4px !important;

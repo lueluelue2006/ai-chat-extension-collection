@@ -22,6 +22,8 @@
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
+  const PUBLIC_API_KEY = '__aichat_chatgpt_thinking_toggle_api_v1__';
+  const TOPBAR_TOGGLE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v1__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
   const PULSE_STYLE_ID = '__tm_thinking_toggle_pulse_style';
@@ -1384,7 +1386,7 @@ button.${HINT_CLASS}::after {
     }
   }
 
-  async function toggleModelType() {
+  async function setModelType(targetMode = null) {
     if (busy) return false;
     busy = true;
     let didToggle = false;
@@ -1399,9 +1401,15 @@ button.${HINT_CLASS}::after {
         }
 
         const currentMode = detectCurrentModelMode();
-        const targetMode = currentMode === 'pro' ? 'thinking' : 'pro';
+        const resolvedTargetMode =
+          targetMode === 'thinking' || targetMode === 'pro'
+            ? targetMode
+            : currentMode === 'pro'
+              ? 'thinking'
+              : 'pro';
         const findTargetItem = () =>
-          findVisibleModelSwitcherItemBySuffix(targetMode === 'pro' ? '-pro' : 'thinking') || findVisibleThinkingProItem(targetMode);
+          findVisibleModelSwitcherItemBySuffix(resolvedTargetMode === 'pro' ? '-pro' : 'thinking') ||
+          findVisibleThinkingProItem(resolvedTargetMode);
         const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
         // 如果菜单已打开，直接点；否则打开菜单再点
@@ -1429,7 +1437,7 @@ button.${HINT_CLASS}::after {
 
         const switched = await waitForTruthy(() => {
           const nextMode = detectCurrentModelMode();
-          return nextMode === targetMode;
+          return nextMode === resolvedTargetMode;
         }, 1200, 40);
 
         if (!switched && attempt < 2) {
@@ -1437,10 +1445,10 @@ button.${HINT_CLASS}::after {
           continue;
         }
 
-        preferredModelMode = targetMode;
+        preferredModelMode = resolvedTargetMode;
         savePreferredModelMode(preferredModelMode);
         const pulseTarget = findGPT52ModelSelectorTrigger();
-        if (pulseTarget) schedulePulse(pulseTarget, targetMode === 'pro', targetMode === 'pro' ? 'Pro' : 'Thinking');
+        if (pulseTarget) schedulePulse(pulseTarget, resolvedTargetMode === 'pro', resolvedTargetMode === 'pro' ? 'Pro' : 'Thinking');
         didToggle = true;
         return true;
       }
@@ -1464,6 +1472,44 @@ button.${HINT_CLASS}::after {
       if (didToggle) await restoreComposerFocusToEnd();
       busy = false;
     }
+  }
+
+  async function toggleModelType() {
+    return setModelType(null);
+  }
+
+  function installPublicApi() {
+    try {
+      Object.defineProperty(window, PUBLIC_API_KEY, {
+        configurable: true,
+        enumerable: false,
+        writable: false,
+        value: Object.freeze({
+          toggleModelType,
+          setModelType,
+          detectCurrentModelMode
+        })
+      });
+    } catch {}
+  }
+
+  function installTopbarToggleBridge() {
+    try {
+      window.addEventListener(
+        TOPBAR_TOGGLE_EVENT,
+        (event) => {
+          try {
+            const targetMode = event?.detail?.targetMode;
+            if (targetMode === 'thinking' || targetMode === 'pro') {
+              void setModelType(targetMode);
+              return;
+            }
+            void toggleModelType();
+          } catch {}
+        },
+        true
+      );
+    } catch {}
   }
 
   // 以 fetch-sniffer 作为“已安装”标记，避免在 reinject / 与 Tampermonkey 共存时重复绑定快捷键
@@ -1491,4 +1537,6 @@ button.${HINT_CLASS}::after {
   }
 
   installFetchSniffer();
+  installPublicApi();
+  installTopbarToggleBridge();
 })();

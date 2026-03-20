@@ -588,16 +588,22 @@ function verifyChatgptModelDetectionHardening() {
 function verifyChatgptTopbarModelBadge() {
   const source = readText('content/chatgpt-sidebar-header-fix/main.js');
   const coreMainSource = readText('content/chatgpt-core-main.js');
+  const thinkingToggleSource = readText('content/chatgpt-thinking-toggle/main.js');
   const failures = [];
 
   for (const required of [
     'TOPBAR_MODEL_BADGE_ATTR',
+    'TOPBAR_MODEL_BADGE_BUTTON_ATTR',
+    'TOPBAR_MODEL_BADGE_BUTTON_CLASS',
     'TOPBAR_MODEL_META_ATTR',
     'TOPBAR_ROUTE_RECOVERY_MS',
     'TOPBAR_STARTUP_DELAYS_MS',
     'readModelButtonReactLabel',
     'readTopbarModelBadgeLabel',
     'syncTopbarModelBadge',
+    'syncTopbarModelBadgeButton',
+    'handleTopbarModelBadgeToggle',
+    'TOPBAR_MODEL_BADGE_EVENT',
     'gpt-5-3',
     'Thinking',
     'Pro'
@@ -619,6 +625,11 @@ function verifyChatgptTopbarModelBadge() {
     !coreMainSource.includes('data-qn-chatgpt-model-meta-label')
   ) {
     failures.push('content/chatgpt-core-main.js is missing exported readCurrentModelMetaLabel()');
+  }
+  for (const required of ['PUBLIC_API_KEY', 'TOPBAR_TOGGLE_EVENT', 'function setModelType(', 'toggleModelType,', 'setModelType,', 'detectCurrentModelMode', 'installTopbarToggleBridge']) {
+    if (!thinkingToggleSource.includes(required)) {
+      failures.push(`content/chatgpt-thinking-toggle/main.js is missing ${required}`);
+    }
   }
 
   return {

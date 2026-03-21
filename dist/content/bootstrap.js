@@ -340,6 +340,26 @@
     }
   };
 
+  const hasBootstrapRuntimeReadyHint = (href = '') => {
+    try {
+      const nonce = String(document.documentElement?.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (nonce) return true;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const url = String(href || location.href || '');
+      if (!/^https:\/\/chatgpt\.com(?:\/|$)/i.test(url)) return false;
+      return !!(
+        document.getElementById('cgpt-compact-nav') ||
+        document.querySelector('.qn-chatgpt-topbar-inline-actions,[data-qn-chatgpt-model-family],[data-qn-chatgpt-model-label]')
+      );
+    } catch {
+      return false;
+    }
+  };
+
   let prevState = null;
   try {
     prevState = window[STATE_KEY] || null;
@@ -376,6 +396,8 @@
     let routeWatcherInstalled = false;
     let sawBridgeRouteSignal = false;
     let lastBridgeRouteSignalAt = 0;
+    let startupHandshakeConfirmed = false;
+    let startupHintPollTimer = 0;
 
     applyLocaleFromSettings(null, bootstrapScope);
     try {
@@ -402,7 +424,7 @@
       reportError('bootstrap:locale:listen', error);
     }
 
-    const ensureInjected = ({ force = false, reason = '' } = {}) => {
+    const ensureInjected = ({ force = false, reason = '', allowStartupReadyHints = false } = {}) => {
       if (disposed) return;
 
       try {
@@ -411,6 +433,8 @@
       } catch (error) {
         reportError('bootstrap:ensure:bridge-check', error);
       }
+
+      if (allowStartupReadyHints && hasBootstrapRuntimeReadyHint(location.href)) return;
 
       ensureAttempt += 1;
       if (ensureAttempt > 3) return;
@@ -428,13 +452,14 @@
       }
     };
 
-    const scheduleEnsureRetry = (force, reason, delayMs) => {
+    const scheduleEnsureRetry = (force, reason, delayMs, { allowStartupReadyHints = false } = {}) => {
       if (disposed) return;
       try {
         bootstrapScope.timeout(
           () => {
             if (disposed) return;
-            ensureInjected({ force, reason });
+            if (allowStartupReadyHints && startupHandshakeConfirmed) return;
+            ensureInjected({ force, reason, allowStartupReadyHints });
           },
           Math.max(0, Number(delayMs) || 0)
         );
@@ -484,6 +509,7 @@
             if (!msg) return;
             sawBridgeRouteSignal = true;
             lastBridgeRouteSignalAt = Date.now();
+            startupHandshakeConfirmed = true;
             onSignal(msg.reason || 'bridge', msg.href);
           },
           true
@@ -532,11 +558,35 @@
       }
     };
 
+    const armStartupHandshakeMonitor = () => {
+      if (startupHintPollTimer) return;
+      try {
+        startupHintPollTimer = bootstrapScope.interval(() => {
+          if (disposed) return;
+          if (startupHandshakeConfirmed) {
+            try { window.clearInterval(startupHintPollTimer); } catch {}
+            startupHintPollTimer = 0;
+            return;
+          }
+          if (!hasBootstrapRuntimeReadyHint(location.href)) return;
+          startupHandshakeConfirmed = true;
+          try { window.clearInterval(startupHintPollTimer); } catch {}
+          startupHintPollTimer = 0;
+        }, 250);
+      } catch {
+        startupHintPollTimer = 0;
+      }
+    };
+
     const disposeBootstrap = () => {
       if (disposed) return;
       disposed = true;
       routeWatcherInstalled = false;
       routePollTimer = 0;
+      if (startupHintPollTimer) {
+        try { window.clearInterval(startupHintPollTimer); } catch {}
+        startupHintPollTimer = 0;
+      }
       sawBridgeRouteSignal = false;
       lastBridgeRouteSignalAt = 0;
       try {
@@ -558,7 +608,10 @@
       chrome.runtime.sendMessage({ type: 'QUICKNAV_BOOTSTRAP_PING', href: location.href }, (res) => {
         if (disposed) return;
         const err = chrome.runtime.lastError;
-        if (!err && res && res.ok) return;
+        if (!err && res && res.ok) {
+          startupHandshakeConfirmed = true;
+          return;
+        }
         if (attempt >= 3) return;
         try {
           bootstrapScope.timeout(ping, 200 * attempt);
@@ -570,11 +623,12 @@
 
     ping();
     installRouteWatcher();
+    armStartupHandshakeMonitor();
 
     // Safety net: on some Chrome/MV3 edge cases the registered scripts may not run on first load.
     // Re-check shortly after start and ask SW to inject missing modules into *this* tab.
-    scheduleEnsureRetry(false, 'bootstrap:retry1', 1200);
-    scheduleEnsureRetry(false, 'bootstrap:retry2', 3200);
+    scheduleEnsureRetry(false, 'bootstrap:retry1', 1200, { allowStartupReadyHints: true });
+    scheduleEnsureRetry(false, 'bootstrap:retry2', 3200, { allowStartupReadyHints: true });
 
     const state = Object.freeze({
       version: 2,

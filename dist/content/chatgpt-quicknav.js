@@ -2227,7 +2227,7 @@
         try {
           if (!isChatRoute()) return;
           if (document.getElementById('cgpt-compact-nav')) return;
-          scheduleEnsure(120);
+          scheduleEnsure(16);
         } catch {}
       });
       if (mo && document.body && typeof mo.observe === 'function') mo.observe(document.body, { childList: true });

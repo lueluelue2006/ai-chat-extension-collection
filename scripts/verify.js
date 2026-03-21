@@ -625,11 +625,17 @@ function verifyChatgptBootstrapRouteEnsureHardening() {
   const source = readText('content/bootstrap.js');
   const failures = [];
 
-  for (const required of ['hasQuicknavRuntimeBridge', 'Force ensure only when the shared runtime bridge is genuinely absent']) {
+  for (const required of ['hasQuicknavRuntimeBridge', 'hasBootstrapRuntimeReadyHint', 'allowStartupReadyHints', 'startupHandshakeConfirmed', 'startupHintPollTimer', 'armStartupHandshakeMonitor', 'Force ensure only when the shared runtime bridge is genuinely absent']) {
     if (!source.includes(required)) failures.push(`content/bootstrap.js is missing ${required}`);
   }
   if (source.includes('const force = !hasQuicknavUi();')) {
     failures.push('content/bootstrap.js still forces route reinjects based on hasQuicknavUi()');
+  }
+  if (!source.includes("scheduleEnsureRetry(false, 'bootstrap:retry1', 1200, { allowStartupReadyHints: true })")) {
+    failures.push('content/bootstrap.js is missing startup-ready hint gating for bootstrap retry1');
+  }
+  if (!source.includes("scheduleEnsureRetry(false, 'bootstrap:retry2', 3200, { allowStartupReadyHints: true })")) {
+    failures.push('content/bootstrap.js is missing startup-ready hint gating for bootstrap retry2');
   }
 
   return {
@@ -715,6 +721,9 @@ function verifyChatgptPerfStructureHardening() {
   if (!jsSource.includes('preferLiveDom')) {
     failures.push('content/chatgpt-perf/content.js is missing live-DOM fallback turn refresh');
   }
+  if (!jsSource.includes('installUiSelfHeal') || !jsSource.includes('scheduleUiHeal')) {
+    failures.push('content/chatgpt-perf/content.js is missing startup ui self-heal');
+  }
   if (!quicknavSource.includes('getChatScrollContainer?.()')) {
     failures.push('content/chatgpt-quicknav.js is not reusing chatgpt-core scroll-container service');
   }
@@ -781,6 +790,9 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
 
   if (quicknavSource.includes("el.querySelector('p,li,pre,code,blockquote')")) {
     failures.push('content/chatgpt-quicknav.js still uses generic text-node fallback for turn candidate detection');
+  }
+  if (!quicknavSource.includes('scheduleEnsure(16)')) {
+    failures.push('content/chatgpt-quicknav.js is missing fast body-wipe nav self-heal');
   }
 
   return {

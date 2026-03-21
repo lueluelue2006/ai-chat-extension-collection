@@ -116,6 +116,8 @@
     fallbackTurnsRoot: null,
     fallbackTurnsTimer: 0,
     fallbackTailTimer: 0,
+    uiHealObserver: null,
+    uiHealTimer: 0,
     lastVirtualizeStartAt: 0,
     lastReconcileAt: 0,
     lastVisibleFirst: -1,
@@ -707,6 +709,31 @@
     el.dataset.show = '0';
     (document.body || document.documentElement).appendChild(el);
     return el;
+  }
+
+  function scheduleUiHeal() {
+    if (state.disposed) return;
+    if (state.uiHealTimer) return;
+    state.uiHealTimer = window.setTimeout(() => {
+      state.uiHealTimer = 0;
+      if (state.disposed) return;
+      ensureUi();
+      renderUi();
+    }, 16);
+  }
+
+  function installUiSelfHeal() {
+    if (state.uiHealObserver || state.disposed || !document.body) return;
+    try {
+      state.uiHealObserver = new MutationObserver(() => {
+        if (state.disposed) return;
+        if (document.getElementById(UI_ID)) return;
+        scheduleUiHeal();
+      });
+      state.uiHealObserver.observe(document.body, { childList: true });
+    } catch {
+      state.uiHealObserver = null;
+    }
   }
 
   function debugSnapshot() {
@@ -2101,6 +2128,14 @@
     state.ioRestartTimer = 0;
 
     try {
+      if (state.uiHealTimer) window.clearTimeout(state.uiHealTimer);
+    } catch {}
+    state.uiHealTimer = 0;
+
+    try { state.uiHealObserver?.disconnect?.(); } catch {}
+    state.uiHealObserver = null;
+
+    try {
       if (state.onPointerDown) window.removeEventListener('pointerdown', state.onPointerDown, true);
     } catch {}
     state.onPointerDown = null;
@@ -2178,6 +2213,7 @@
     ensureBoostListeners();
     ensureRootAttrGuard();
     ensureMessageListener();
+    installUiSelfHeal();
 
     const storage = chrome?.storage;
     const canUse = (area) => !!(area && typeof area.get === 'function' && typeof area.set === 'function');

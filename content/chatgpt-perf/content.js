@@ -737,12 +737,12 @@
     state.uiMountTimer = window.setTimeout(() => {
       state.uiMountTimer = 0;
       finishInitialUiMount();
-    }, 450);
+    }, 1400);
     if (state.uiMountMaxTimer) return;
     state.uiMountMaxTimer = window.setTimeout(() => {
       state.uiMountMaxTimer = 0;
       finishInitialUiMount();
-    }, 2500);
+    }, 3200);
   }
 
   function scheduleUiHeal() {

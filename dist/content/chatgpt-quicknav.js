@@ -2269,8 +2269,8 @@
 
     // ChatGPT often churns direct body children during initial router bootstrap.
     // Mount after a short quiet window so the panel appears once and avoids a visible wipe/rebuild.
-    const INITIAL_BODY_QUIET_MS = 450;
-    const INITIAL_MOUNT_MAX_WAIT_MS = 2500;
+    const INITIAL_BODY_QUIET_MS = 1400;
+    const INITIAL_MOUNT_MAX_WAIT_MS = 3200;
 
     const armStableInitialMount = () => {
       let quietTimer = 0;

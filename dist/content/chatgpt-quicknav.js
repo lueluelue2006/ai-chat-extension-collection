@@ -2313,6 +2313,15 @@
       if (core && typeof core.getTurnsSnapshot === 'function' && root === document) {
         const snapshot = core.getTurnsSnapshot(false);
         const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
+        let liveTurns = null;
+        try {
+          const direct = Array.from(document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR));
+          if (direct.length) liveTurns = direct;
+        } catch {}
+        if (Array.isArray(liveTurns) && liveTurns.length > turns.length) {
+          TURN_SELECTOR = CHATGPT_TURN_HOST_SELECTOR;
+          return liveTurns;
+        }
         if (turns.length) {
           TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
           return turns;

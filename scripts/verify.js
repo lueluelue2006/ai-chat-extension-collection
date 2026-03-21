@@ -769,7 +769,7 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   const quicknavSource = readText('content/chatgpt-quicknav.js');
   const failures = [];
 
-  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', 'shouldCacheTurnSelector', 'currentRouteEnteredAt = Date.now()', 'lastRenderedRouteKey', 'refresh-route-drift', 'getTurnAppendMarker', 'pendingPreviousRouteTurnMarkers', 'cachedTurnAppendMarkers', 'matchesPendingPreviousRouteTurns', '检测中…', 'installSecondaryRoutePoll', 'scopeOn(runtimeScope, window, \'popstate\', detectUrlChange)', 'scopeOn(runtimeScope, window, \'hashchange\', detectUrlChange)']) {
+  for (const required of ['isExtensionOwnedTurnCandidate', 'clearSyntheticTurnMarkers', 'cacheBaseIndex.length', "TURN_SELECTOR = null", 'bindCoreTurnsWatcher', 'core.onTurnsChange', '__cgptCoreTurnsUnsub', 'armRouteRecovery', 'getRawConversationTurnCount', 'getQuicknavEmptyLabel', 'shouldCacheTurnSelector', 'currentRouteEnteredAt = Date.now()', 'lastRenderedRouteKey', 'refresh-route-drift', 'getTurnAppendMarker', 'pendingPreviousRouteTurnMarkers', 'cachedTurnAppendMarkers', 'matchesPendingPreviousRouteTurns', '检测中…', 'installSecondaryRoutePoll', 'scopeOn(runtimeScope, window, \'popstate\', detectUrlChange)', 'scopeOn(runtimeScope, window, \'hashchange\', detectUrlChange)', 'liveTurns.length > turns.length', 'document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR)']) {
     if (!quicknavSource.includes(required)) {
       failures.push(`content/chatgpt-quicknav.js is missing ${required}`);
     }

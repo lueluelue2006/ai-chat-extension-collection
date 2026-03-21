@@ -721,8 +721,8 @@ function verifyChatgptPerfStructureHardening() {
   if (!jsSource.includes('preferLiveDom')) {
     failures.push('content/chatgpt-perf/content.js is missing live-DOM fallback turn refresh');
   }
-  if (!jsSource.includes('installUiSelfHeal') || !jsSource.includes('scheduleUiHeal')) {
-    failures.push('content/chatgpt-perf/content.js is missing startup ui self-heal');
+  if (!jsSource.includes('installUiSelfHeal') || !jsSource.includes('scheduleUiHeal') || !jsSource.includes('armInitialUiMount') || !jsSource.includes('uiMountReady')) {
+    failures.push('content/chatgpt-perf/content.js is missing startup ui self-heal / mount stabilization');
   }
   if (!quicknavSource.includes('getChatScrollContainer?.()')) {
     failures.push('content/chatgpt-quicknav.js is not reusing chatgpt-core scroll-container service');
@@ -793,6 +793,9 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   }
   if (!quicknavSource.includes('scheduleEnsure(16)')) {
     failures.push('content/chatgpt-quicknav.js is missing fast body-wipe nav self-heal');
+  }
+  if (!quicknavSource.includes('armStableInitialMount') || !quicknavSource.includes('INITIAL_BODY_QUIET_MS')) {
+    failures.push('content/chatgpt-quicknav.js is missing startup body-stability mount barrier');
   }
 
   return {

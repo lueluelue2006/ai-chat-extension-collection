@@ -2,7 +2,7 @@
 
 - Name: AI捷径 (AI Shortcuts)
 - Version: 3.0.7
-- Generated: 2026-03-21 03:46
+- Generated: 2026-03-21 03:53
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 

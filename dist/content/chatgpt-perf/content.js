@@ -116,6 +116,9 @@
     fallbackTurnsRoot: null,
     fallbackTurnsTimer: 0,
     fallbackTailTimer: 0,
+    uiMountReady: false,
+    uiMountTimer: 0,
+    uiMountMaxTimer: 0,
     uiHealObserver: null,
     uiHealTimer: 0,
     lastVirtualizeStartAt: 0,
@@ -711,8 +714,40 @@
     return el;
   }
 
+  function finishInitialUiMount() {
+    if (state.disposed || state.uiMountReady) return;
+    state.uiMountReady = true;
+    try {
+      if (state.uiMountTimer) window.clearTimeout(state.uiMountTimer);
+    } catch {}
+    try {
+      if (state.uiMountMaxTimer) window.clearTimeout(state.uiMountMaxTimer);
+    } catch {}
+    state.uiMountTimer = 0;
+    state.uiMountMaxTimer = 0;
+    ensureUi();
+    renderUi();
+  }
+
+  function armInitialUiMount() {
+    if (state.disposed || state.uiMountReady) return;
+    try {
+      if (state.uiMountTimer) window.clearTimeout(state.uiMountTimer);
+    } catch {}
+    state.uiMountTimer = window.setTimeout(() => {
+      state.uiMountTimer = 0;
+      finishInitialUiMount();
+    }, 450);
+    if (state.uiMountMaxTimer) return;
+    state.uiMountMaxTimer = window.setTimeout(() => {
+      state.uiMountMaxTimer = 0;
+      finishInitialUiMount();
+    }, 2500);
+  }
+
   function scheduleUiHeal() {
     if (state.disposed) return;
+    if (!state.uiMountReady) return;
     if (state.uiHealTimer) return;
     state.uiHealTimer = window.setTimeout(() => {
       state.uiHealTimer = 0;
@@ -727,6 +762,10 @@
     try {
       state.uiHealObserver = new MutationObserver(() => {
         if (state.disposed) return;
+        if (!state.uiMountReady) {
+          armInitialUiMount();
+          return;
+        }
         if (document.getElementById(UI_ID)) return;
         scheduleUiHeal();
       });
@@ -1554,6 +1593,7 @@
   }
 
   function ensureUi() {
+    if (!state.uiMountReady) return document.getElementById(UI_ID);
 
     if (!state.settings.showOverlay) {
       closeMenu();
@@ -2132,6 +2172,15 @@
     } catch {}
     state.uiHealTimer = 0;
 
+    try {
+      if (state.uiMountTimer) window.clearTimeout(state.uiMountTimer);
+    } catch {}
+    try {
+      if (state.uiMountMaxTimer) window.clearTimeout(state.uiMountMaxTimer);
+    } catch {}
+    state.uiMountTimer = 0;
+    state.uiMountMaxTimer = 0;
+
     try { state.uiHealObserver?.disconnect?.(); } catch {}
     state.uiHealObserver = null;
 
@@ -2214,6 +2263,7 @@
     ensureRootAttrGuard();
     ensureMessageListener();
     installUiSelfHeal();
+    armInitialUiMount();
 
     const storage = chrome?.storage;
     const canUse = (area) => !!(area && typeof area.get === 'function' && typeof area.set === 'function');

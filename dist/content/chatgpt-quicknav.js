@@ -2267,10 +2267,49 @@
       } catch {}
     };
 
-    // ChatGPT sometimes does a fast "hydrate / router bootstrap" pass right after first paint,
-    // which can wipe early-injected DOM nodes and make UIs flicker (looks like a refresh).
-    // Delay the initial mount slightly so our UI appears once and stays.
-    const INITIAL_MOUNT_DELAY_MS = 350;
+    // ChatGPT often churns direct body children during initial router bootstrap.
+    // Mount after a short quiet window so the panel appears once and avoids a visible wipe/rebuild.
+    const INITIAL_BODY_QUIET_MS = 450;
+    const INITIAL_MOUNT_MAX_WAIT_MS = 2500;
+
+    const armStableInitialMount = () => {
+      let quietTimer = 0;
+      let maxTimer = 0;
+      let mo = null;
+      let done = false;
+
+      const finish = () => {
+        if (done) return;
+        done = true;
+        try { if (quietTimer) cancelScopedTimeout(quietTimer); } catch {}
+        try { if (maxTimer) cancelScopedTimeout(maxTimer); } catch {}
+        try { mo?.disconnect?.(); } catch {}
+        quietTimer = 0;
+        maxTimer = 0;
+        mo = null;
+        start();
+      };
+
+      const armQuiet = () => {
+        try { if (quietTimer) cancelScopedTimeout(quietTimer); } catch {}
+        quietTimer = scopeTimeout(runtimeScope, finish, INITIAL_BODY_QUIET_MS);
+      };
+
+      try {
+        mo = scopeObserver(runtimeScope, () => {
+          if (done) return;
+          armQuiet();
+        });
+        if (mo && document.body && typeof mo.observe === 'function') {
+          mo.observe(document.body, { childList: true });
+        }
+      } catch {
+        mo = null;
+      }
+
+      armQuiet();
+      maxTimer = scopeTimeout(runtimeScope, finish, INITIAL_MOUNT_MAX_WAIT_MS);
+    };
 
     try {
       if (document.readyState === 'loading') {
@@ -2279,7 +2318,7 @@
           document,
           'DOMContentLoaded',
           () => {
-            scopeTimeout(runtimeScope, start, INITIAL_MOUNT_DELAY_MS);
+            armStableInitialMount();
           },
           { once: true }
         );
@@ -2287,7 +2326,7 @@
       }
     } catch {}
 
-    scopeTimeout(runtimeScope, start, INITIAL_MOUNT_DELAY_MS);
+    armStableInitialMount();
   });
 
   function qsTurns(root = document) {

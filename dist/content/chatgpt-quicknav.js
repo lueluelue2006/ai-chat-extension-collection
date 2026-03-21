@@ -25,6 +25,10 @@
   const DEFAULT_NAV_TOP = 1;
   const DEFAULT_NAV_RIGHT = 1;
   const DEFAULT_NAV_ESTIMATED_WIDTH = 210;
+  const NATIVE_OUTLINE_HIDDEN_ATTR = 'data-aichat-qn-native-outline-hidden';
+  const NATIVE_OUTLINE_RIGHT_EDGE_MAX_GAP = 220;
+  const NATIVE_OUTLINE_MIN_BUTTONS = 4;
+  const NATIVE_OUTLINE_HIDE_SCAN_DELAY_MS = 60;
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
@@ -122,7 +126,10 @@
   const AISHORTCUTS_I18N = globalThis.AISHORTCUTS_I18N || null;
   let quicknavLocaleMode = 'auto';
   let quicknavResolvedLocale = '';
-  let removeQuicknavLocaleStorageListener = null;
+  let removeQuicknavSettingsStorageListener = null;
+  let quicknavHideNativeOutlineEnabled = true;
+  const hiddenNativeOutlineRoots = new Set();
+  let nativeOutlineHideSyncTimer = 0;
 
   function getQuickNavLocale() {
     if (quicknavResolvedLocale) return quicknavResolvedLocale;
@@ -149,7 +156,19 @@
     return raw;
   }
 
-  function syncQuickNavLocaleFromSettings(settings) {
+  function readQuickNavHideNativeOutlineSetting(settings) {
+    try {
+      const mods = settings?.siteModules?.[QUICKNAV_SITE_ID];
+      const raw = mods?.chatgpt_quicknav_hide_native_outline;
+      const userSet = mods?.chatgpt_quicknav_hide_native_outline_user_set;
+      if (userSet === true && typeof raw === 'boolean') return raw;
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  function syncQuickNavRuntimeSettingsFromSettings(settings) {
     try {
       const nextMode =
         AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.normalizeLocaleMode === 'function'
@@ -159,36 +178,192 @@
         AISHORTCUTS_I18N && typeof AISHORTCUTS_I18N.resolveLocale === 'function'
           ? AISHORTCUTS_I18N.resolveLocale(nextMode, navigator)
           : 'en';
-      const changed = quicknavLocaleMode !== nextMode || quicknavResolvedLocale !== nextLocale;
+      const localeChanged = quicknavLocaleMode !== nextMode || quicknavResolvedLocale !== nextLocale;
       quicknavLocaleMode = nextMode;
       quicknavResolvedLocale = nextLocale;
-      if (changed) {
-        const ui = document.getElementById('cgpt-compact-nav')?._ui;
-        if (ui) refreshQuickNavLocaleUi(ui);
+
+      const nextHideNativeOutline = readQuickNavHideNativeOutlineSetting(settings);
+      const hideChanged = quicknavHideNativeOutlineEnabled !== nextHideNativeOutline;
+      quicknavHideNativeOutlineEnabled = nextHideNativeOutline;
+
+      const ui = document.getElementById('cgpt-compact-nav')?._ui;
+      if (localeChanged && ui) refreshQuickNavLocaleUi(ui);
+      if (hideChanged) {
+        if (!quicknavHideNativeOutlineEnabled) clearHiddenNativeOutlineRoots();
+        scheduleNativeOutlineVisibilitySync(ui, 0);
       }
     } catch {}
   }
 
-  function installQuickNavLocaleSync() {
+  function installQuickNavRuntimeSettingsSync() {
     if (typeof chrome === 'undefined' || !chrome?.storage?.local || !chrome?.storage?.onChanged) return;
     try {
       chrome.storage.local.get({ [SETTINGS_KEY]: null }, (items) => {
         void chrome.runtime?.lastError;
-        syncQuickNavLocaleFromSettings(items?.[SETTINGS_KEY] || null);
+        syncQuickNavRuntimeSettingsFromSettings(items?.[SETTINGS_KEY] || null);
       });
     } catch {}
     try {
       const onStorage = (changes, areaName) => {
         if (areaName !== 'local' || !changes?.[SETTINGS_KEY]) return;
-        syncQuickNavLocaleFromSettings(changes[SETTINGS_KEY].newValue || null);
+        syncQuickNavRuntimeSettingsFromSettings(changes[SETTINGS_KEY].newValue || null);
       };
       chrome.storage.onChanged.addListener(onStorage);
-      removeQuicknavLocaleStorageListener = () => {
+      removeQuicknavSettingsStorageListener = () => {
         try {
           chrome.storage.onChanged.removeListener(onStorage);
         } catch {}
       };
     } catch {}
+  }
+
+  function isHideNativeOutlineEnabled() {
+    return !!quicknavHideNativeOutlineEnabled;
+  }
+
+  function isElementNearRightEdge(rect) {
+    try {
+      if (!rect || !Number.isFinite(rect.right)) return false;
+      const vw = Math.max(0, Number(window.innerWidth) || 0);
+      if (!vw) return false;
+      return rect.right >= vw - NATIVE_OUTLINE_RIGHT_EDGE_MAX_GAP;
+    } catch {
+      return false;
+    }
+  }
+
+  function isLikelyNativeOutlineButton(el) {
+    try {
+      if (!(el instanceof Element)) return false;
+      if (el.closest?.('#cgpt-compact-nav')) return false;
+      const aria = String(el.getAttribute?.('aria-label') || '').trim();
+      if (!aria) return false;
+      const cls = String(el.className || '');
+      if (!cls.includes('h-[2px]') || !cls.includes('w-[18px]') || !cls.includes('rounded-full')) return false;
+      const rect = el.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      if (rect.width > 40 || rect.height > 16) return false;
+      return isElementNearRightEdge(rect);
+    } catch {
+      return false;
+    }
+  }
+
+  function isLikelyNativeOutlineRoot(root) {
+    try {
+      if (!(root instanceof Element)) return false;
+      if (root.closest?.('#cgpt-compact-nav')) return false;
+      const cls = String(root.className || '');
+      if (!/(^|\s)fixed(\s|$)/.test(cls) || cls.indexOf('top-1/2') < 0) return false;
+      const rect = root.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      if (rect.width > 96 || rect.height < 48) return false;
+      if (!isElementNearRightEdge(rect)) return false;
+      return root.querySelectorAll('button[aria-label]').length >= NATIVE_OUTLINE_MIN_BUTTONS;
+    } catch {
+      return false;
+    }
+  }
+
+  function findNativeOutlineRootFromElement(el) {
+    try {
+      let cur = el instanceof Element ? el.parentElement : null;
+      while (cur && cur !== document.body && cur !== document.documentElement) {
+        if (isLikelyNativeOutlineRoot(cur)) return cur;
+        cur = cur.parentElement;
+      }
+    } catch {}
+    return null;
+  }
+
+  function collectNativeOutlineRoots() {
+    const roots = [];
+    const seen = new Set();
+    try {
+      const buttons = document.querySelectorAll('button[aria-label]');
+      for (const btn of buttons) {
+        if (!isLikelyNativeOutlineButton(btn)) continue;
+        const root = findNativeOutlineRootFromElement(btn);
+        if (!(root instanceof Element)) continue;
+        if (seen.has(root)) continue;
+        seen.add(root);
+        roots.push(root);
+      }
+    } catch {}
+    return roots;
+  }
+
+  function clearHiddenNativeOutlineRoots() {
+    if (!hiddenNativeOutlineRoots.size) return;
+    for (const root of Array.from(hiddenNativeOutlineRoots)) {
+      try {
+        if (root instanceof Element) {
+          root.removeAttribute(NATIVE_OUTLINE_HIDDEN_ATTR);
+          root.style.removeProperty('display');
+          root.style.removeProperty('pointer-events');
+        }
+      } catch {}
+    }
+    hiddenNativeOutlineRoots.clear();
+  }
+
+  function syncNativeOutlineVisibility() {
+    if (!isHideNativeOutlineEnabled()) {
+      clearHiddenNativeOutlineRoots();
+      return;
+    }
+    const nextRoots = collectNativeOutlineRoots().filter((root) => root instanceof Element && root.isConnected);
+    const nextSet = new Set(nextRoots);
+    for (const root of Array.from(hiddenNativeOutlineRoots)) {
+      if (nextSet.has(root)) continue;
+      try {
+        if (root instanceof Element) {
+          root.removeAttribute(NATIVE_OUTLINE_HIDDEN_ATTR);
+          root.style.removeProperty('display');
+          root.style.removeProperty('pointer-events');
+        }
+      } catch {}
+      hiddenNativeOutlineRoots.delete(root);
+    }
+    for (const root of nextRoots) {
+      try {
+        root.setAttribute(NATIVE_OUTLINE_HIDDEN_ATTR, '1');
+        root.style.setProperty('display', 'none', 'important');
+        root.style.setProperty('pointer-events', 'none', 'important');
+        hiddenNativeOutlineRoots.add(root);
+      } catch {}
+    }
+  }
+
+  function scheduleNativeOutlineVisibilitySync(_ui = null, delay = NATIVE_OUTLINE_HIDE_SCAN_DELAY_MS) {
+    try {
+      if (nativeOutlineHideSyncTimer) cancelScopedTimeout(nativeOutlineHideSyncTimer);
+    } catch {}
+    nativeOutlineHideSyncTimer = scopeTimeout(conversationScope, () => {
+      nativeOutlineHideSyncTimer = 0;
+      syncNativeOutlineVisibility();
+    }, Math.max(0, Number(delay) || 0));
+  }
+
+  function installNativeOutlineVisibilityWatcher() {
+    if (readRuntimeGuardFlag('__quicknavChatgptNativeOutlineHideObserverV1', '__cgptNativeOutlineHideObserver')) return;
+    writeRuntimeGuardFlag('__quicknavChatgptNativeOutlineHideObserverV1', '__cgptNativeOutlineHideObserver', true);
+
+    const attach = () => {
+      if (!document.body) {
+        scopeTimeout(runtimeScope, attach, 50);
+        return;
+      }
+      try {
+        const mo = scopeObserver(runtimeScope, () => {
+          scheduleNativeOutlineVisibilitySync(null, NATIVE_OUTLINE_HIDE_SCAN_DELAY_MS);
+        });
+        if (mo && typeof mo.observe === 'function') mo.observe(document.body, { childList: true, subtree: true });
+      } catch {}
+      scheduleNativeOutlineVisibilitySync(null, 0);
+    };
+
+    attach();
   }
 
   function readRuntimeGuardFlag(primaryKey, legacyKey) {
@@ -1437,6 +1612,7 @@
 
     clearConversationCaches();
     removeScrollLockTargetListener();
+    clearHiddenNativeOutlineRoots();
 
     try {
       disposePanelUi(document.getElementById('cgpt-compact-nav'), { removeNode: removePanel });
@@ -1474,12 +1650,19 @@
     try { window.__cgptRouteWatcherUnsubV2 = null; } catch {}
 
     try {
+      clearHiddenNativeOutlineRoots();
+    } catch {}
+    try {
+      if (nativeOutlineHideSyncTimer) cancelScopedTimeout(nativeOutlineHideSyncTimer);
+    } catch {}
+    nativeOutlineHideSyncTimer = 0;
+    try {
       if (runtimeScope && typeof runtimeScope.dispose === 'function') runtimeScope.dispose();
     } catch {}
     try {
-      removeQuicknavLocaleStorageListener?.();
+      removeQuicknavSettingsStorageListener?.();
     } catch {}
-    removeQuicknavLocaleStorageListener = null;
+    removeQuicknavSettingsStorageListener = null;
 
     writeRuntimeGuardFlag(CHATGPT_ROUTE_WATCHER_INSTALLED_KEY, CHATGPT_ROUTE_WATCHER_INSTALLED_LEGACY_KEY, false);
     try { window.__cgptRouteWatcherPollTimerV2 = 0; } catch {}
@@ -1494,7 +1677,7 @@
     })
   );
 
-  installQuickNavLocaleSync();
+  installQuickNavRuntimeSettingsSync();
 
   function isChatRoute() {
     try {
@@ -1981,6 +2164,8 @@
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
         armRouteRecovery(ui, 'panel-boot');
+        installNativeOutlineVisibilityWatcher();
+        scheduleNativeOutlineVisibilitySync(ui, 0);
         scheduleRefresh(ui);
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
@@ -4820,6 +5005,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       cachedTurnIds = [];
       cachedTurnAppendMarkers = [];
       renderList(ui);
+      scheduleNativeOutlineVisibilitySync(ui);
       return true;
     }
     const turnCount = turns.length;
@@ -4847,6 +5033,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // Keep per-conversation caches bounded.
     try { maybeTrimTurnCaches(turns); } catch {}
     renderList(ui);
+    scheduleNativeOutlineVisibilitySync(ui);
     return true;
   }
 

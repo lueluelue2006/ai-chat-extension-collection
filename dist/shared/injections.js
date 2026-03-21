@@ -35,7 +35,8 @@
       chatgpt_quick_deep_search_hotkeys_force: false,
       chatgpt_tab_queue_queue_shortcut: true,
       chatgpt_tab_queue_ctrl_c_clear: true,
-      chatgpt_tab_queue_quicknav_mark: true
+      chatgpt_tab_queue_quicknav_mark: true,
+      chatgpt_quicknav_hide_native_outline: true
     }),
     qwen: Object.freeze({
       qwen_thinking_toggle_hotkeys: true,

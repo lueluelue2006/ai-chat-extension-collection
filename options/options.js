@@ -1912,6 +1912,30 @@
     rowLock.appendChild(inputLock);
     elModuleSettings.appendChild(rowLock);
 
+    if (siteId === 'chatgpt') {
+      const rowHideNativeOutline = document.createElement('label');
+      rowHideNativeOutline.className = 'formRow';
+      const leftHideNativeOutline = document.createElement('span');
+      leftHideNativeOutline.textContent = '默认隐藏 ChatGPT 原生对话横杠目录';
+      leftHideNativeOutline.title = '默认开启：当页面右侧出现 ChatGPT 自带的细横杠对话目录时，QuickNav 会自动把它隐藏，只保留扩展自己的 QuickNav。';
+      const inputHideNativeOutline = document.createElement('input');
+      inputHideNativeOutline.type = 'checkbox';
+      inputHideNativeOutline.checked = getSiteModuleSetting(siteId, 'chatgpt_quicknav_hide_native_outline', true);
+      inputHideNativeOutline.addEventListener('change', () => {
+        const checked = !!inputHideNativeOutline.checked;
+        patchQuickNavSettings((next) => {
+          next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+          next.siteModules[siteId] =
+            next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+          next.siteModules[siteId].chatgpt_quicknav_hide_native_outline = checked;
+          next.siteModules[siteId].chatgpt_quicknav_hide_native_outline_user_set = true;
+        });
+      });
+      rowHideNativeOutline.appendChild(leftHideNativeOutline);
+      rowHideNativeOutline.appendChild(inputHideNativeOutline);
+      elModuleSettings.appendChild(rowHideNativeOutline);
+    }
+
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent = isSiteEnabled(siteId)

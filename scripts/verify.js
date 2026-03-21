@@ -794,6 +794,12 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   if (!quicknavSource.includes('scheduleEnsure(16)')) {
     failures.push('content/chatgpt-quicknav.js is missing fast body-wipe nav self-heal');
   }
+  if (!quicknavSource.includes('chatgpt_quicknav_hide_native_outline') || !quicknavSource.includes('installNativeOutlineVisibilityWatcher') || !quicknavSource.includes('syncNativeOutlineVisibility') || !quicknavSource.includes('findNativeOutlineRootFromElement')) {
+    failures.push('content/chatgpt-quicknav.js is missing ChatGPT native outline hide rollout');
+  }
+  if (!quicknavSource.includes('h-[2px]') || !quicknavSource.includes('w-[18px]') || !quicknavSource.includes('NATIVE_OUTLINE_HIDDEN_ATTR')) {
+    failures.push('content/chatgpt-quicknav.js is missing native outline button/root heuristics');
+  }
   if (!quicknavSource.includes('armStableInitialMount') || !quicknavSource.includes('INITIAL_BODY_QUIET_MS')) {
     failures.push('content/chatgpt-quicknav.js is missing startup body-stability mount barrier');
   }

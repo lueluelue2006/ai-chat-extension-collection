@@ -26,9 +26,12 @@
   const DEFAULT_NAV_RIGHT = 1;
   const DEFAULT_NAV_ESTIMATED_WIDTH = 210;
   const NATIVE_OUTLINE_HIDDEN_ATTR = 'data-aichat-qn-native-outline-hidden';
+  const NATIVE_OUTLINE_HIDE_ENABLED_ATTR = 'data-aichat-qn-hide-native-outline';
+  const NATIVE_OUTLINE_HIDE_STYLE_ID = 'aichat-qn-hide-native-outline-style';
   const NATIVE_OUTLINE_RIGHT_EDGE_MAX_GAP = 220;
   const NATIVE_OUTLINE_MIN_BUTTONS = 4;
   const NATIVE_OUTLINE_HIDE_SCAN_DELAY_MS = 60;
+  const NATIVE_OUTLINE_HIDE_RETRY_DELAYS = [0, 120, 360, 900, 1800, 3200];
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
@@ -130,6 +133,7 @@
   let quicknavHideNativeOutlineEnabled = true;
   const hiddenNativeOutlineRoots = new Set();
   let nativeOutlineHideSyncTimer = 0;
+  const nativeOutlineHideBurstTimers = new Set();
 
   function getQuickNavLocale() {
     if (quicknavResolvedLocale) return quicknavResolvedLocale;
@@ -187,11 +191,11 @@
       quicknavHideNativeOutlineEnabled = nextHideNativeOutline;
 
       const ui = document.getElementById('cgpt-compact-nav')?._ui;
+      ensureNativeOutlineHideStyle(quicknavHideNativeOutlineEnabled);
+      syncNativeOutlineHideRootAttr();
       if (localeChanged && ui) refreshQuickNavLocaleUi(ui);
-      if (hideChanged) {
-        if (!quicknavHideNativeOutlineEnabled) clearHiddenNativeOutlineRoots();
-        scheduleNativeOutlineVisibilitySync(ui, 0);
-      }
+      if (hideChanged && !quicknavHideNativeOutlineEnabled) clearHiddenNativeOutlineRoots();
+      if (quicknavHideNativeOutlineEnabled) scheduleNativeOutlineVisibilityBurst(ui, 0);
     } catch {}
   }
 
@@ -219,6 +223,34 @@
 
   function isHideNativeOutlineEnabled() {
     return !!quicknavHideNativeOutlineEnabled;
+  }
+
+  function ensureNativeOutlineHideStyle(enabled = isHideNativeOutlineEnabled()) {
+    try {
+      let style = document.getElementById(NATIVE_OUTLINE_HIDE_STYLE_ID);
+      if (!(style instanceof HTMLStyleElement)) {
+        style = document.createElement('style');
+        style.id = NATIVE_OUTLINE_HIDE_STYLE_ID;
+        (document.head || document.documentElement || document.body)?.appendChild(style);
+      }
+      style.textContent = enabled
+        ? `
+.fixed.end-4.top-1\\/2.z-20.-translate-y-1\\/2:has(button[aria-label].h-\\[2px\\].w-\\[18px\\].rounded-full) {
+  display: none !important;
+  pointer-events: none !important;
+}
+`
+        : '';
+    } catch {}
+  }
+
+  function syncNativeOutlineHideRootAttr() {
+    try {
+      const root = document.documentElement;
+      if (!(root instanceof Element)) return;
+      if (isHideNativeOutlineEnabled()) root.setAttribute(NATIVE_OUTLINE_HIDE_ENABLED_ATTR, '1');
+      else root.removeAttribute(NATIVE_OUTLINE_HIDE_ENABLED_ATTR);
+    } catch {}
   }
 
   function isElementNearRightEdge(rect) {
@@ -345,6 +377,26 @@
     }, Math.max(0, Number(delay) || 0));
   }
 
+  function clearNativeOutlineVisibilityBurst() {
+    if (!nativeOutlineHideBurstTimers.size) return;
+    for (const timerId of Array.from(nativeOutlineHideBurstTimers)) {
+      try { cancelScopedTimeout(timerId); } catch {}
+    }
+    nativeOutlineHideBurstTimers.clear();
+  }
+
+  function scheduleNativeOutlineVisibilityBurst(ui = null, delayBase = 0) {
+    clearNativeOutlineVisibilityBurst();
+    const base = Math.max(0, Number(delayBase) || 0);
+    for (const retryDelay of NATIVE_OUTLINE_HIDE_RETRY_DELAYS) {
+      const timerId = scopeTimeout(conversationScope, () => {
+        nativeOutlineHideBurstTimers.delete(timerId);
+        scheduleNativeOutlineVisibilitySync(ui, 0);
+      }, base + retryDelay);
+      if (timerId) nativeOutlineHideBurstTimers.add(timerId);
+    }
+  }
+
   function installNativeOutlineVisibilityWatcher() {
     if (readRuntimeGuardFlag('__quicknavChatgptNativeOutlineHideObserverV1', '__cgptNativeOutlineHideObserver')) return;
     writeRuntimeGuardFlag('__quicknavChatgptNativeOutlineHideObserverV1', '__cgptNativeOutlineHideObserver', true);
@@ -360,7 +412,7 @@
         });
         if (mo && typeof mo.observe === 'function') mo.observe(document.body, { childList: true, subtree: true });
       } catch {}
-      scheduleNativeOutlineVisibilitySync(null, 0);
+      scheduleNativeOutlineVisibilityBurst(null, 0);
     };
 
     attach();
@@ -1613,6 +1665,7 @@
     clearConversationCaches();
     removeScrollLockTargetListener();
     clearHiddenNativeOutlineRoots();
+    clearNativeOutlineVisibilityBurst();
 
     try {
       disposePanelUi(document.getElementById('cgpt-compact-nav'), { removeNode: removePanel });
@@ -1677,6 +1730,8 @@
     })
   );
 
+  ensureNativeOutlineHideStyle(true);
+  syncNativeOutlineHideRootAttr();
   installQuickNavRuntimeSettingsSync();
 
   function isChatRoute() {
@@ -2165,7 +2220,7 @@
         bindAltPin(ui); // 绑定 Option+单击添加📌
         armRouteRecovery(ui, 'panel-boot');
         installNativeOutlineVisibilityWatcher();
-        scheduleNativeOutlineVisibilitySync(ui, 0);
+        scheduleNativeOutlineVisibilityBurst(ui, 0);
         scheduleRefresh(ui);
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
@@ -5005,7 +5060,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       cachedTurnIds = [];
       cachedTurnAppendMarkers = [];
       renderList(ui);
-      scheduleNativeOutlineVisibilitySync(ui);
+      scheduleNativeOutlineVisibilityBurst(ui);
       return true;
     }
     const turnCount = turns.length;
@@ -5033,7 +5088,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // Keep per-conversation caches bounded.
     try { maybeTrimTurnCaches(turns); } catch {}
     renderList(ui);
-    scheduleNativeOutlineVisibilitySync(ui);
+    scheduleNativeOutlineVisibilityBurst(ui);
     return true;
   }
 

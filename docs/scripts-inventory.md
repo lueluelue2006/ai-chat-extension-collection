@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 3.1.2
-- Generated: 2026-03-21 05:08
+- Version: 3.2.0
+- Generated: 2026-03-27 08:38
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -45,7 +45,7 @@
 - `chatgpt_perf`: ChatGPT 性能优化 — 离屏虚拟化 + CSS contain
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
-  - 注入: document_idle / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-perf/content.js`, `content/chatgpt-perf/content.css`
+  - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-core.js`, `content/chatgpt-perf/content.js`, `content/chatgpt-perf/content.css`
 - `chatgpt_thinking_toggle`: ChatGPT 推理强度/模型 快捷切换 — ⌘O 推理强度 / ⌘J 模型切换
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later

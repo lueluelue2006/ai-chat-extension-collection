@@ -243,7 +243,7 @@
       matches: chatgpt,
       js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, "content/chatgpt-perf/content.js"],
       css: ["content/chatgpt-perf/content.css"],
-      runAt: "document_idle"
+      runAt: "document_start"
     });
     defs.push({
       id: "quicknav_chatgpt_openai_new_model_banner",

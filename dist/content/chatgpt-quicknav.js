@@ -21,6 +21,10 @@
   const HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS = 320;
   const HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS = 420;
   const HOT_SCROLL_FALLBACK_SCAN_DELAY_MS = 640;
+  const VERY_HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS = 520;
+  const VERY_HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS = 760;
+  const QUICKNAV_LARGE_INDEX_THRESHOLD = 80;
+  const QUICKNAV_LIST_AUTOREVEAL_MS = 1800;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEFAULT_NAV_TOP = 1;
   const DEFAULT_NAV_RIGHT = 1;
@@ -1366,6 +1370,40 @@
     }
   }
 
+  function getChatgptTurnRecordsSnapshot(force = false) {
+    try {
+      const core = getChatgptCoreApi();
+      if (!core || typeof core.getTurnRecordsSnapshot !== 'function') return null;
+      const snapshot = core.getTurnRecordsSnapshot(force);
+      return snapshot && typeof snapshot === 'object' ? snapshot : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getChatgptPerfSnapshot() {
+    try {
+      const core = getChatgptCoreApi();
+      if (!core || typeof core.getPerfSnapshot !== 'function') return null;
+      const snapshot = core.getPerfSnapshot();
+      return snapshot && typeof snapshot === 'object' ? snapshot : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isChatgptTurnOffscreen(turnEl) {
+    try {
+      const core = getChatgptCoreApi();
+      if (core && typeof core.isTurnOffscreen === 'function' && core.isTurnOffscreen(turnEl)) return true;
+    } catch {}
+    try {
+      return !!(turnEl instanceof HTMLElement && turnEl.classList.contains('cgptperf-offscreen'));
+    } catch {
+      return false;
+    }
+  }
+
   let pending = false, rafId = null, idleId = null;
   let forceRefreshTimer = null;
   let lastTurnCount = 0;
@@ -1390,6 +1428,7 @@
   let lastScrollTs = 0;
   let currentActiveId = null;
   let currentActiveTurnPos = 0; // 当前激活 turn 在 qsTurns() 里的位置，用于减少扫描
+  let quicknavUiInteractionUntil = 0;
   let __cgptBooting = false;
   let refreshTimer = 0; // 新的尾随去抖定时器
   let refreshTailTimer = 0;
@@ -2006,9 +2045,16 @@
     setBoundedMapValue(turnIdToPos, id, Number(pos) || 0, TURN_POS_HARD_CAP);
   }
 
-  function setBoundedCachedTurnIds(turns) {
+  function setBoundedCachedTurnIds(turns, records = null) {
     try {
-      const ids = turns.map((t) => String(t?.id || '')).filter(Boolean);
+      const ids = Array.isArray(records) && records.length
+        ? records
+          .map((record) => {
+            const el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
+            return String(el?.id || '');
+          })
+          .filter(Boolean)
+        : turns.map((t) => String(t?.id || '')).filter(Boolean);
       const n = ids.length;
       if (n > CACHED_TURN_IDS_HARD_CAP) {
         cachedTurnIds = ids.slice(n - CACHED_TURN_IDS_HARD_CAP);
@@ -2019,7 +2065,9 @@
       cachedTurnIds = [];
     }
     try {
-      const markers = turns.map((t) => getTurnAppendMarker(t)).filter(Boolean);
+      const markers = Array.isArray(records) && records.length
+        ? records.map((record) => String(record?.appendMarker || '')).filter(Boolean)
+        : turns.map((t) => getTurnAppendMarker(t)).filter(Boolean);
       const n = markers.length;
       if (n > CACHED_TURN_IDS_HARD_CAP) {
         cachedTurnAppendMarkers = markers.slice(n - CACHED_TURN_IDS_HARD_CAP);
@@ -2029,6 +2077,29 @@
     } catch {
       cachedTurnAppendMarkers = [];
     }
+  }
+
+  function getRecordStructuralKey(record) {
+    return String(record?.key || record?.msgId || record?.stableTurnId || record?.appendMarker || '').trim();
+  }
+
+  function getTurnCollectionMeta(turns, records = null) {
+    const turnList = Array.isArray(turns) ? turns : [];
+    const recordList = Array.isArray(records) && records.length ? records : null;
+    if (recordList) {
+      const firstKey = recordList.length ? getRecordStructuralKey(recordList[0]) : '';
+      const lastKey = recordList.length ? getRecordStructuralKey(recordList[recordList.length - 1]) : '';
+      return {
+        count: recordList.length,
+        firstKey,
+        lastKey,
+      };
+    }
+    return {
+      count: turnList.length,
+      firstKey: turnList.length ? getTurnKey(turnList[0]) : '',
+      lastKey: turnList.length ? getTurnKey(turnList[turnList.length - 1]) : '',
+    };
   }
 
   function setBoundedTreePathSet(pathIds) {
@@ -2592,6 +2663,10 @@
       if (core && typeof core.getTurnsSnapshot === 'function' && root === document) {
         const snapshot = core.getTurnsSnapshot(false);
         const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
+        if (turns.length) {
+          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
+          if (!isRouteRecoveryActive()) return turns;
+        }
         let liveTurns = null;
         try {
           const direct = Array.from(document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR));
@@ -2601,10 +2676,7 @@
           TURN_SELECTOR = CHATGPT_TURN_HOST_SELECTOR;
           return liveTurns;
         }
-        if (turns.length) {
-          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
-          return turns;
-        }
+        if (turns.length) return turns;
       }
       if (core && typeof core.getTurnArticles === 'function') {
         const turns = core.getTurnArticles(root);
@@ -3038,18 +3110,78 @@
     };
   }
 
-  function buildIndex(turnsOverride) {
+  function buildIndex(turnsOverride, turnRecordsOverride = null) {
     const turns = turnsOverride || qsTurns();
-    lastDomTurnCount = turns.length;
-    lastDomFirstKey = turns.length ? getTurnKey(turns[0]) : '';
-    lastDomLastKey = turns.length ? getTurnKey(turns[turns.length - 1]) : '';
     turnIdToPos.clear();
-    if (!turns.length) {
+    const turnRecords = Array.isArray(turnRecordsOverride) && turnRecordsOverride.length
+      ? turnRecordsOverride
+      : (() => {
+      try {
+        const snapshot = getChatgptTurnRecordsSnapshot(false);
+        const records = Array.isArray(snapshot?.records) ? snapshot.records : null;
+        if (!records || !records.length) return null;
+        return records;
+      } catch {
+        return null;
+      }
+    })();
+    const structural = getTurnCollectionMeta(turns, turnRecords);
+    lastDomTurnCount = structural.count;
+    lastDomFirstKey = structural.firstKey;
+    lastDomLastKey = structural.lastKey;
+    if (!turns.length && !turnRecords) {
       if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 没有找到任何对话元素');
       return [];
     }
 
-    if (DEBUG) console.log(`ChatGPT Navigation: 开始分析 ${turns.length} 个对话元素`);
+    if (DEBUG) console.log(`ChatGPT Navigation: 开始分析 DOM=${turns.length}, records=${turnRecords?.length || 0}`);
+    if (turnRecords) {
+      let userSeq = 0;
+      let assistantSeq = 0;
+      const list = [];
+      for (let i = 0; i < turnRecords.length; i++) {
+        const record = turnRecords[i];
+        const el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
+        const role = String(record?.role || '');
+        if (role !== 'user' && role !== 'assistant') {
+          if (el) clearSyntheticTurnMarkers(el);
+          continue;
+        }
+        const msgId = String(record?.msgId || '');
+        const msgKey = String(record?.key || msgId || record?.stableTurnId || (el ? getTurnKey(el) : '') || '');
+        const itemId = getRecordBackedTurnId(record, i, el, msgKey);
+        if (el) {
+          if (!el.id) el.id = itemId;
+          try {
+            if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
+          } catch {}
+          try {
+            setBoundedTurnPos(el.id, i);
+          } catch {}
+        }
+
+        const seq = role === 'user' ? ++userSeq : ++assistantSeq;
+        const tabQueueState = role === 'user' && el ? getTabQueueStateFromTurn(el) : null;
+        list.push({
+          id: itemId,
+          key: msgKey,
+          msgId,
+          idx: i,
+          role,
+          preview: String(record?.preview || '...') || '...',
+          seq,
+          mounted: !!el,
+          queued: !!tabQueueState?.queued,
+          tabQueueMsgId: String(tabQueueState?.msgId || msgId || ''),
+          tabQueueKey: String(tabQueueState?.key || msgKey || '')
+        });
+      }
+      setBoundedCachedTurnIds(turns, turnRecords);
+      lastUserSeq = userSeq;
+      lastAssistantSeq = assistantSeq;
+      if (DEBUG) console.log(`ChatGPT Navigation: 使用 core turn records 构建 ${list.length} 个对话`);
+      return list;
+    }
 
     let u = 0,
       a = 0;
@@ -3079,18 +3211,154 @@
     return list;
   }
 
-  function canAppendTurns(turns, prevCount) {
+  function getRecordBackedTurnId(record, idx, turnEl = null, keyHint = '') {
+    const el = turnEl instanceof HTMLElement ? turnEl : (record?.turnEl instanceof HTMLElement ? record.turnEl : null);
+    if (el?.id) return String(el.id);
+    const rawKey = String(keyHint || record?.key || record?.msgId || record?.stableTurnId || '').trim();
+    if (!rawKey) return `cgpt-turn-record-${idx + 1}`;
+    const slug = rawKey
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+    return `cgpt-turn-record-${slug || idx + 1}`;
+  }
+
+  function normalizeIndexItemLookup(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (!(item instanceof HTMLElement)) return item;
+
+    const dataId = String(item.dataset?.id || item.id || '').trim();
+    const dataKey = String(item.dataset?.key || '').trim();
+    const dataMsgId = String(item.dataset?.msgId || '').trim();
+    const dataIdxRaw = String(item.dataset?.idx || '').trim();
+    const dataIdx = dataIdxRaw ? Number(dataIdxRaw) : Number.NaN;
+
+    if ((dataId || dataKey || dataMsgId) && Array.isArray(cacheIndex) && cacheIndex.length) {
+      const cached = cacheIndex.find((entry) => {
+        if (!entry || typeof entry !== 'object') return false;
+        if (dataId && String(entry.id || '') === dataId) return true;
+        if (dataMsgId && String(entry.msgId || '') === dataMsgId) return true;
+        if (dataKey && String(entry.key || '') === dataKey) return true;
+        return false;
+      });
+      if (cached) return cached;
+    }
+
+    return {
+      id: dataId,
+      key: dataKey,
+      msgId: dataMsgId,
+      idx: Number.isInteger(dataIdx) ? dataIdx : undefined
+    };
+  }
+
+  function findRecordElementForIndexItem(item) {
+    const snapshot = getChatgptTurnRecordsSnapshot(false);
+    const records = Array.isArray(snapshot?.records) ? snapshot.records : null;
+    if (!records || !records.length || !item || typeof item !== 'object') return null;
+
+    const wantedId = String(item.id || '').trim();
+    const wantedKey = String(item.key || '').trim();
+    const wantedMsgId = String(item.msgId || '').trim();
+    const wantedIdx = Number(item.idx);
+
+    const matchRecord = (record) => {
+      if (!record || typeof record !== 'object') return false;
+      if (record?.turnEl instanceof HTMLElement) {
+        const turnEl = record.turnEl;
+        if (wantedId && String(turnEl.id || '') === wantedId) return true;
+      }
+      if (wantedMsgId && String(record.msgId || '') === wantedMsgId) return true;
+      if (wantedKey) {
+        if (String(record.key || '') === wantedKey) return true;
+        if (String(record.stableTurnId || '') === wantedKey) return true;
+      }
+      if (Number.isInteger(wantedIdx) && Number(record.idx) === wantedIdx) return true;
+      return false;
+    };
+
+    for (let i = 0; i < records.length; i += 1) {
+      const record = records[i];
+      if (!matchRecord(record)) continue;
+      if (record?.turnEl instanceof HTMLElement) return record.turnEl;
+      break;
+    }
+
+    if (!Number.isInteger(wantedIdx)) return null;
+    for (let offset = 1; offset < records.length; offset += 1) {
+      const lower = wantedIdx - offset;
+      if (lower >= 0) {
+        const lowerRecord = records[lower];
+        if (lowerRecord?.turnEl instanceof HTMLElement) return lowerRecord.turnEl;
+      }
+      const upper = wantedIdx + offset;
+      if (upper < records.length) {
+        const upperRecord = records[upper];
+        if (upperRecord?.turnEl instanceof HTMLElement) return upperRecord.turnEl;
+      }
+    }
+
+    return null;
+  }
+
+  function resolveIndexItemElement(item) {
+    const normalized = normalizeIndexItemLookup(item);
+    if (!normalized || typeof normalized !== 'object') return null;
+    if (normalized?.turnEl instanceof HTMLElement) return normalized.turnEl;
+    try {
+      const id = String(normalized.id || '');
+      if (id) {
+        const byId = document.getElementById(id);
+        if (byId) return byId;
+      }
+    } catch {}
+    try {
+      const msgId = String(normalized.msgId || '');
+      if (msgId) {
+        const byMsgId = findTurnByMessageId(msgId);
+        if (byMsgId) return byMsgId;
+      }
+    } catch {}
+    try {
+      const key = String(normalized.key || '');
+      if (key) {
+        const byKey = findTurnByKey(key);
+        if (byKey) return byKey;
+      }
+    } catch {}
+    try {
+      const byRecord = findRecordElementForIndexItem(normalized);
+      if (byRecord) return byRecord;
+    } catch {}
+    try {
+      const idx = Number(normalized.idx);
+      const turns = qsTurns();
+      if (Number.isInteger(idx) && idx >= 0 && idx < turns.length) return turns[idx];
+    } catch {}
+    return null;
+  }
+
+  function canAppendTurns(turns, prevCount, turnRecords = null) {
     const turnsArr = Array.isArray(turns) ? turns : [];
+    const recordsArr = Array.isArray(turnRecords) && turnRecords.length ? turnRecords : null;
     const oldCount = Number(prevCount) || 0;
-    if (!oldCount || turnsArr.length <= oldCount) return false;
+    const currentCount = recordsArr ? recordsArr.length : turnsArr.length;
+    if (!oldCount || currentCount <= oldCount) return false;
     if (!Array.isArray(cachedTurnAppendMarkers) || cachedTurnAppendMarkers.length !== oldCount) return false;
+
+    const markerAt = (idx) => {
+      try {
+        if (recordsArr && recordsArr[idx]) return String(recordsArr[idx]?.appendMarker || '');
+      } catch {}
+      return getTurnAppendMarker(turnsArr[idx]);
+    };
 
     // Cheap structural checks: same DOM nodes at key positions => safe to treat as append-only.
     try {
-      if (getTurnAppendMarker(turnsArr[0]) !== cachedTurnAppendMarkers[0]) return false;
-      if (getTurnAppendMarker(turnsArr[oldCount - 1]) !== cachedTurnAppendMarkers[oldCount - 1]) return false;
+      if (markerAt(0) !== cachedTurnAppendMarkers[0]) return false;
+      if (markerAt(oldCount - 1) !== cachedTurnAppendMarkers[oldCount - 1]) return false;
       const mid = Math.floor(oldCount / 2);
-      if (mid > 0 && getTurnAppendMarker(turnsArr[mid]) !== cachedTurnAppendMarkers[mid]) return false;
+      if (mid > 0 && markerAt(mid) !== cachedTurnAppendMarkers[mid]) return false;
     } catch {
       return false;
     }
@@ -3098,12 +3366,61 @@
     return true;
   }
 
-  function appendTurnsToBaseIndex(turns, startIdx) {
+  function appendTurnsToBaseIndex(turns, startIdx, turnRecords = null) {
     const t = Array.isArray(turns) ? turns : [];
     const start = Math.max(0, Number(startIdx) || 0);
-    lastDomTurnCount = t.length;
-    lastDomFirstKey = t.length ? getTurnKey(t[0]) : '';
-    lastDomLastKey = t.length ? getTurnKey(t[t.length - 1]) : '';
+    const recordsArr = Array.isArray(turnRecords) && turnRecords.length ? turnRecords : null;
+    const structural = getTurnCollectionMeta(t, recordsArr);
+    lastDomTurnCount = structural.count;
+    lastDomFirstKey = structural.firstKey;
+    lastDomLastKey = structural.lastKey;
+
+    if (recordsArr && recordsArr.length > start) {
+      let u = Number(lastUserSeq) || 0;
+      let a = Number(lastAssistantSeq) || 0;
+      const base = Array.isArray(cacheBaseIndex) ? cacheBaseIndex : [];
+      for (let i = start; i < recordsArr.length; i++) {
+        const record = recordsArr[i];
+        const el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
+        const role = String(record?.role || '');
+        if (role !== 'user' && role !== 'assistant') {
+          if (el) clearSyntheticTurnMarkers(el);
+          continue;
+        }
+        const msgId = String(record?.msgId || '');
+        const msgKey = String(record?.key || msgId || (el ? getTurnKey(el) : '') || '');
+        const itemId = getRecordBackedTurnId(record, i, el, msgKey);
+        if (el) {
+          if (!el.id) el.id = itemId;
+          try {
+            if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
+          } catch {}
+          try {
+            setBoundedTurnPos(el.id, i);
+          } catch {}
+        }
+        const seq = role === 'user' ? ++u : ++a;
+        const tabQueueState = role === 'user' && el ? getTabQueueStateFromTurn(el) : null;
+        base.push({
+          id: itemId,
+          key: msgKey,
+          msgId,
+          idx: i,
+          role,
+          preview: String(record?.preview || '...') || '...',
+          seq,
+          mounted: !!el,
+          queued: !!tabQueueState?.queued,
+          tabQueueMsgId: String(tabQueueState?.msgId || msgId || ''),
+          tabQueueKey: String(tabQueueState?.key || msgKey || '')
+        });
+      }
+      setBoundedCachedTurnIds(t, recordsArr);
+      lastUserSeq = u;
+      lastAssistantSeq = a;
+      cacheBaseIndex = base;
+      return base;
+    }
 
     let u = Number(lastUserSeq) || 0;
     let a = Number(lastAssistantSeq) || 0;
@@ -4555,7 +4872,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const el = findTurnByMessageId(msgId);
       if (!el) return false;
       if (!el.id) el.id = `cgpt-turn-msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      setActiveTurn(el.id);
+      setActiveTurn(el.id, { forceReveal: true });
       scrollToTurn(el);
       return true;
     } catch {
@@ -4807,9 +5124,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (removed) { saveCPSet(); }
     // 清理已失效的收藏（不再存在的消息或图钉）
     const nextFull = cacheIndex;
-    const validKeys = new Set(nextFull.map(i => i.key));
+    const shouldValidateFavorites = !!filterFav || favSet.size > 0;
+    const validKeys = shouldValidateFavorites ? new Set(nextFull.map(i => i.key)) : null;
     // Early boot can render before the message index is ready; avoid clearing persisted favorites on an empty snapshot.
-    const favRemoved = validKeys.size > 0 ? runFavoritesGC(false, validKeys) : 0;
+    const favRemoved = validKeys instanceof Set && validKeys.size > 0 ? runFavoritesGC(false, validKeys) : 0;
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {
@@ -4864,6 +5182,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       node.className = `compact-item ${item.role} ${fav ? 'has-fav' : ''} ${branchCount ? 'has-branches' : ''}`;
       node.dataset.id = item.id;
       node.dataset.key = item.key;
+      node.dataset.idx = String(Number.isInteger(item.idx) ? item.idx : '');
       if (msgId) node.dataset.msgId = msgId;
       else delete node.dataset.msgId;
       if (item.role === 'pin') {
@@ -5025,12 +5344,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             return;
           }
         }
-        const el = document.getElementById(item.dataset.id);
+        const el = resolveIndexItemElement(item);
         if (el) {
-          setActiveTurn(item.dataset.id);
+          if (!el.id) el.id = String(item.dataset.id || `cgpt-turn-click-${Date.now().toString(36)}`);
+          markQuicknavUiInteraction();
+          setActiveTurn(el.id, { forceReveal: true });
           scrollToTurn(el);
         }
       });
+      list.addEventListener('pointerdown', () => markQuicknavUiInteraction(), { passive: true });
+      list.addEventListener('wheel', () => markQuicknavUiInteraction(), { passive: true });
       list._eventBound = true;
     }
     scheduleActiveUpdateNow();
@@ -5049,7 +5372,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       force = true;
       soft = false;
     }
-    const turns = qsTurns();
+    const turnRecordSnapshot = getChatgptTurnRecordsSnapshot(false);
+    const turnRecords = Array.isArray(turnRecordSnapshot?.records) ? turnRecordSnapshot.records : null;
+    const snapshotTurns = Array.isArray(turnRecordSnapshot?.turns)
+      ? turnRecordSnapshot.turns.filter((item) => item instanceof HTMLElement)
+      : null;
+    const turns = snapshotTurns && (snapshotTurns.length || (Array.isArray(turnRecords) && turnRecords.length))
+      ? snapshotTurns
+      : qsTurns();
     if (matchesPendingPreviousRouteTurns(turns)) {
       cacheIndex = [];
       cacheBaseIndex = [];
@@ -5063,20 +5393,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       scheduleNativeOutlineVisibilityBurst(ui);
       return true;
     }
-    const turnCount = turns.length;
-    const firstKey = turnCount ? getTurnKey(turns[0]) : '';
-    const lastKey = turnCount ? getTurnKey(turns[turnCount - 1]) : '';
+    const structural = getTurnCollectionMeta(turns, turnRecords);
+    const turnCount = structural.count;
+    const firstKey = structural.firstKey;
+    const lastKey = structural.lastKey;
     const prevDomCount = lastDomTurnCount;
     const unchanged = turnCount === lastDomTurnCount && firstKey === lastDomFirstKey && lastKey === lastDomLastKey;
     if (soft && !force && unchanged && cacheIndex.length && turnCount > 0) return false;
 
     const base = (() => {
       try {
-        if (!force && canAppendTurns(turns, prevDomCount) && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length) {
-          return appendTurnsToBaseIndex(turns, prevDomCount);
+        if (!force && canAppendTurns(turns, prevDomCount, turnRecords) && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length) {
+          return appendTurnsToBaseIndex(turns, prevDomCount, turnRecords);
         }
       } catch {}
-      const full = buildIndex(turns);
+      const full = buildIndex(turns, turnRecords);
       cacheBaseIndex = full;
       return full;
     })();
@@ -5522,6 +5853,26 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
   }
 
+  const QUICKNAV_LONG_JUMP_MIN_PX = 2400;
+  const QUICKNAV_LONG_JUMP_VIEWPORT_MULTIPLIER = 4;
+
+  function shouldUseInstantTurnJump(targetEl, marginPx, scroller) {
+    try {
+      const delta = computeDeltaToAlignTop(targetEl, marginPx, scroller);
+      if (!Number.isFinite(delta)) return false;
+      const viewport = isWindowScroller(scroller)
+        ? Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0)
+        : Math.max(Number(scroller?.clientHeight) || 0, 0);
+      const threshold = Math.max(
+        QUICKNAV_LONG_JUMP_MIN_PX,
+        Math.round(viewport * QUICKNAV_LONG_JUMP_VIEWPORT_MULTIPLIER)
+      );
+      return Math.abs(delta) >= threshold;
+    } catch {
+      return false;
+    }
+  }
+
   function startNavJumpStabilizer(targetEl, marginPx, opts = {}) {
     const el = targetEl && targetEl.nodeType === 1 ? targetEl : null;
     if (!el) return;
@@ -5633,11 +5984,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function scrollToTurn(el) {
     const turnHost = el?.closest?.(CHATGPT_TURN_HOST_SELECTOR) || el;
     const margin = Math.max(0, getFixedHeaderHeight());
-    const behavior = scrollLockEnabled ? 'auto' : 'smooth';
-    const allowMs = scrollLockEnabled ? 1800 : 1200;
-    markNavScrollIntent(allowMs);
     const isPin = !!(el && el.classList && el.classList.contains('cgpt-pin-anchor'));
     const target = isPin ? el : turnHost;
+    const scroller = getChatScrollContainer() || (document.scrollingElement || document.documentElement);
+    const instantJump = scrollLockEnabled || shouldUseInstantTurnJump(target, margin, scroller);
+    const behavior = instantJump ? 'auto' : 'smooth';
+    const allowMs = instantJump ? 1800 : 1200;
+    markNavScrollIntent(allowMs);
     // For normal turns, align the turn itself to the top. This keeps the highlight box fully visible
     // (otherwise the turn's header can sit above the viewport and the top border gets hidden).
     scrollToTopOfElement(target, margin, behavior);
@@ -6040,10 +6393,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const listNow = cacheIndex;
     if (listNow && listNow.length) {
       const targetItem = which === 'top' ? listNow[0] : listNow[listNow.length - 1];
-      const el = document.getElementById(targetItem.id) || qsTurns()[targetItem.idx] || null;
+      const el = resolveIndexItemElement(targetItem);
       if (el) {
         if (!el.id) el.id = `cgpt-turn-edge-${which}`;
-        setActiveTurn(el.id);
+        markQuicknavUiInteraction();
+        setActiveTurn(el.id, { forceReveal: true });
         markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
         scrollToTurn(el);
         return;
@@ -6773,6 +7127,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!ensureRuntimeGuardSentinel(CHATGPT_SCROLL_LOCK_USER_INTENTS_BOUND_KEY, CHATGPT_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY)) {
       return;
     }
+    let lastCodeBlockIntentAt = 0;
 
     const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
     const isSendAction = (t) => {
@@ -6857,6 +7212,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const mark = (e) => {
       if (!scrollLockEnabled) return;
       if (ignoreIfInNav(e?.target)) return;
+      if (isCodeBlockInteraction(e?.target)) {
+        const now = Date.now();
+        scrollLockLastUserIntentTs = now;
+        scrollLockLastUserTs = now;
+        if ((now - lastCodeBlockIntentAt) >= 220) {
+          lastCodeBlockIntentAt = now;
+          allowNavScrollFor(1400);
+        }
+        return;
+      }
       scrollLockLastUserIntentTs = Date.now();
     };
 
@@ -7604,7 +7969,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     });
   }
 
-  function onAnyScroll() {
+  function onAnyScroll(e) {
+    const target = e?.target;
+    if (target && target !== document && target !== document.documentElement && target !== document.body && isCodeBlockInteraction(target)) {
+      return;
+    }
     if (scrollTicking) return;
     scrollTicking = true;
     requestAnimationFrame(() => {
@@ -7615,6 +7984,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function shouldThrottleActiveTracking() {
+    const perf = getChatgptPerfSnapshot();
+    if (perf?.hotPathActive) return true;
+    if (perf?.heavyEnabled) return true;
     try {
       if (document.documentElement?.dataset?.cgptperfHot === '1') return true;
       if (document.documentElement?.dataset?.cgptperfHeavy === '1') return true;
@@ -7623,7 +7995,24 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return cacheIndex.length >= 12;
   }
 
+  function shouldUseVeryHeavyActiveTracking() {
+    return shouldThrottleActiveTracking() && cacheIndex.length >= QUICKNAV_LARGE_INDEX_THRESHOLD;
+  }
+
+  function markQuicknavUiInteraction(ms = QUICKNAV_LIST_AUTOREVEAL_MS) {
+    const ttl = Math.max(200, Number(ms) || 0);
+    quicknavUiInteractionUntil = Date.now() + ttl;
+  }
+
+  function shouldRevealActiveRow(forceReveal = false) {
+    if (forceReveal) return true;
+    if (!shouldUseVeryHeavyActiveTracking()) return true;
+    return Date.now() < quicknavUiInteractionUntil;
+  }
+
   function shouldSuspendActiveTracking() {
+    const perf = getChatgptPerfSnapshot();
+    if (perf?.hotPathActive) return cacheIndex.length >= 8;
     try {
       if (document.documentElement?.dataset?.cgptperfHot === '1') return cacheIndex.length >= 8;
     } catch {}
@@ -7637,6 +8026,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function scheduleActiveUpdateDebounced(delay = 90) {
     if (shouldSuspendActiveTracking()) {
       delay = Math.max(Number(delay) || 0, HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+    } else if (shouldUseVeryHeavyActiveTracking()) {
+      delay = Math.max(Number(delay) || 0, VERY_HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
     } else if (shouldThrottleActiveTracking()) {
       delay = Math.max(Number(delay) || 0, HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
     }
@@ -7650,6 +8041,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function scheduleActiveUpdateNow() {
     if (shouldSuspendActiveTracking()) {
       scheduleActiveUpdateDebounced(HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS);
+      return;
+    }
+    if (shouldUseVeryHeavyActiveTracking()) {
+      scheduleActiveUpdateDebounced(VERY_HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS);
       return;
     }
     if (shouldThrottleActiveTracking() && isChatgptGenerating()) {
@@ -7697,6 +8092,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!activeEl) {
       const minDelay = hotTracking
         ? HOT_SCROLL_FALLBACK_SCAN_DELAY_MS
+        : shouldUseVeryHeavyActiveTracking()
+          ? VERY_HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS
         : heavyTracking
           ? HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS
           : 160;
@@ -7718,7 +8115,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       for (let i = start; i < end; i += 1) {
         const el = shared.turns[i];
         if (!(el instanceof HTMLElement)) continue;
-        if (el.classList.contains('cgptperf-offscreen')) continue;
+        if (isChatgptTurnOffscreen(el)) continue;
         narrowed.push(el);
       }
       if (narrowed.length) return narrowed;
@@ -7736,7 +8133,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     for (let i = start; i < end; i += 1) {
       const el = turns[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('cgptperf-offscreen')) continue;
+      if (isChatgptTurnOffscreen(el)) continue;
       narrowed.push(el);
     }
     if (narrowed.length) return narrowed;
@@ -7744,7 +8141,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const visible = [];
     for (const el of turns) {
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('cgptperf-offscreen')) continue;
+      if (isChatgptTurnOffscreen(el)) continue;
       visible.push(el);
       if (visible.length >= 18) break;
     }
@@ -7798,7 +8195,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return null;
   }
 
-  function setActiveTurn(id) {
+  function setActiveTurn(id, { forceReveal = false } = {}) {
     const list = document.querySelector('#cgpt-compact-nav .compact-list');
     if (!id) return;
     // 同一条目：如果 active class 仍然存在就直接返回；否则继续走恢复逻辑
@@ -7820,6 +8217,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     if (n !== prevNode) n.classList.add('active');
     list._qnActiveNode = n;
+    if (!shouldRevealActiveRow(forceReveal)) return;
     if (list._qnActiveMeasureRaf) cancelAnimationFrame(list._qnActiveMeasureRaf);
     list._qnActiveMeasureRaf = requestAnimationFrame(() => {
       list._qnActiveMeasureRaf = 0;
@@ -7841,9 +8239,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (idx < 0) idx = 0;
     }
     const nextIdx = Math.max(0, Math.min(listNow.length - 1, idx + delta));
-    const id = listNow[nextIdx].id;
-    const el = document.getElementById(id);
-    if (el) { setActiveTurn(id); scrollToTurn(el); }
+    const targetItem = listNow[nextIdx];
+    const el = resolveIndexItemElement(targetItem);
+    if (el) {
+      if (!el.id) el.id = String(targetItem?.id || `cgpt-turn-nav-${nextIdx + 1}`);
+      markQuicknavUiInteraction();
+      setActiveTurn(el.id, { forceReveal: true });
+      scrollToTurn(el);
+    }
   }
 
   function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }

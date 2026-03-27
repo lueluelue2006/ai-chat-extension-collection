@@ -34,7 +34,8 @@
   const FORCE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-force-expanded';
   const MODE_EXPANDED_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-expanded';
   const MODE_RAIL_CLASS = 'qn-chatgpt-sidebar-header-fix-mode-rail';
-  const TOPBAR_MODEL_SELECTOR = 'button[data-testid="model-switcher-dropdown-button"]';
+  const TOPBAR_MODEL_SELECTOR =
+    'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
   const TOPBAR_MODEL_META_ATTR = 'data-qn-chatgpt-model-meta-label';
   const TOPBAR_INLINE_MODEL_ROW_CLASS = 'qn-chatgpt-topbar-inline-model-row';
   const TOPBAR_INLINE_ACTIONS_CLASS = 'qn-chatgpt-topbar-inline-actions';
@@ -344,7 +345,19 @@
     const btn = modelButton || getTopbarModelButton();
     const row = btn?.parentElement || null;
     if (!btn || !row) return null;
-    if (!row.closest?.('header')) return null;
+    const header = btn.closest?.('header') || null;
+    if (!header || !row.closest?.('header')) return null;
+    const expandedRow = row.parentElement || null;
+    try {
+      if (
+        expandedRow &&
+        expandedRow !== header &&
+        expandedRow.closest?.('header') === header &&
+        /\bflex\b/.test(String(expandedRow.className || ''))
+      ) {
+        return expandedRow;
+      }
+    } catch {}
     return row;
   }
 
@@ -712,7 +725,13 @@
         parent.insertBefore(placeholder, actionsHost);
         topbarActionsPlaceholder = placeholder;
       }
-      const anchor = Array.from(modelRow.children).find((child) => child !== modelButton && child !== actionsHost) || null;
+      const modelSlot =
+        (modelButton.parentElement instanceof HTMLElement && modelRow.contains(modelButton.parentElement))
+          ? modelButton.parentElement
+          : modelButton;
+      const children = Array.from(modelRow.children).filter((child) => child instanceof HTMLElement && child !== actionsHost);
+      const modelIdx = children.indexOf(modelSlot);
+      const anchor = modelIdx >= 0 ? (children[modelIdx + 1] || null) : (children[0] || null);
       if (anchor) modelRow.insertBefore(actionsHost, anchor);
       else modelRow.appendChild(actionsHost);
     }
@@ -942,7 +961,7 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 	  min-width: 0 !important;
 	  gap: 0 !important;
 }
-.${TOPBAR_INLINE_MODEL_ROW_CLASS} > ${TOPBAR_MODEL_SELECTOR}{
+.${TOPBAR_INLINE_MODEL_ROW_CLASS} ${TOPBAR_MODEL_SELECTOR}{
 	  flex: none !important;
 }
 .${TOPBAR_INLINE_ACTIONS_CLASS}{

@@ -538,10 +538,6 @@ function verifyChatgptModelDetectionHardening() {
     {
       relPath: 'content/chatgpt-reply-timer/main.js',
       patterns: ['model-switcher-dropdown-button', 'Model selector']
-    },
-    {
-      relPath: 'content/chatgpt-tab-queue/main.js',
-      patterns: ['model-switcher-dropdown-button', 'Model selector']
     }
   ];
   const failures = [];
@@ -556,9 +552,34 @@ function verifyChatgptModelDetectionHardening() {
   }
 
   const thinkingToggleSource = readText('content/chatgpt-thinking-toggle/main.js');
+  const tabQueueSource = readText('content/chatgpt-tab-queue/main.js');
   for (const staleLiteral of ['model-switcher-gpt-5-2-thinking', 'model-switcher-gpt-5-2-pro']) {
     if (thinkingToggleSource.includes(staleLiteral)) {
       failures.push(`content/chatgpt-thinking-toggle/main.js still hard-codes ${staleLiteral}`);
+    }
+  }
+  for (const staleLiteral of ['extendedProPaused', 'isExtendedProLabel', 'isTabQueueModelAllowed', 'isTabQueueModelActive']) {
+    if (tabQueueSource.includes(staleLiteral)) {
+      failures.push(`content/chatgpt-tab-queue/main.js still hard-codes ${staleLiteral}`);
+    }
+  }
+  for (const required of ['extractGptVersionPriority', 'findGptModelSelectorTrigger']) {
+    if (!thinkingToggleSource.includes(required)) {
+      failures.push(`content/chatgpt-thinking-toggle/main.js is missing ${required}`);
+    }
+  }
+
+  const settingsSources = [
+    'options/options.js',
+    'shared/i18n.js'
+  ];
+  for (const relPath of settingsSources) {
+    const source = readText(relPath);
+    if (source.includes('GPT 5.2 thinking') || source.includes('GPT 5.2 pro')) {
+      failures.push(`${relPath} still contains stale GPT 5.2 thinking/pro copy`);
+    }
+    if (!source.includes('当前 GPT 5.x thinking ↔ pro') && !source.includes('current GPT 5.x Thinking and Pro variants')) {
+      failures.push(`${relPath} is missing the GPT 5.x thinking/pro wording`);
     }
   }
 
@@ -659,13 +680,27 @@ function verifyChatgptReplyTimerExtendedProGate() {
     if (!api || typeof api.shouldTrackReplyTimer !== 'function') {
       return { ok: false, reason: 'reply_timer_test_api_missing' };
     }
-    const shouldTrack = api.shouldTrackReplyTimer({
-      payloadModel: '',
-      modelLabel: 'ChatGPT',
-      composerModeLabel: 'Extended Pro'
-    });
-    if (shouldTrack !== false) {
-      return { ok: false, reason: 'reply_timer_should_skip_extended_pro_when_model_button_only_reports_chatgpt' };
+    const cases = [
+      {
+        reason: 'reply_timer_should_skip_extended_pro_when_model_button_only_reports_chatgpt',
+        input: { payloadModel: '', modelLabel: 'ChatGPT', composerModeLabel: 'Extended Pro' }
+      },
+      {
+        reason: 'reply_timer_should_skip_standard_pro_when_model_button_only_reports_chatgpt',
+        input: { payloadModel: '', modelLabel: 'ChatGPT', composerModeLabel: 'Standard Pro' }
+      },
+      {
+        reason: 'reply_timer_should_skip_gpt54_pro_payload_model',
+        input: { payloadModel: 'gpt-5.4-pro', modelLabel: '', composerModeLabel: 'Standard' }
+      },
+      {
+        reason: 'reply_timer_should_skip_gpt54_pro_model_label',
+        input: { payloadModel: '', modelLabel: 'GPT 5.4 Pro', composerModeLabel: 'Standard' }
+      }
+    ];
+    for (const testCase of cases) {
+      const shouldTrack = api.shouldTrackReplyTimer(testCase.input);
+      if (shouldTrack !== false) return { ok: false, reason: testCase.reason };
     }
     return { ok: true };
   } catch (error) {
@@ -709,8 +744,17 @@ function verifyChatgptPerfStructureHardening() {
   if (!coreSource.includes('getVisibleTurnWindow')) {
     failures.push('content/chatgpt-core.js is missing shared visible-turn window service');
   }
+  if (!coreSource.includes('getTurnRecordsSnapshot') || !coreSource.includes('onTurnRecordsChange')) {
+    failures.push('content/chatgpt-core.js is missing shared turn-records service');
+  }
   if (!jsSource.includes('ROOT_HOT_ATTR') || !jsSource.includes('syncTailTurnMetrics')) {
     failures.push('content/chatgpt-perf/content.js is missing active-tail hot-path coordination');
+  }
+  if (!jsSource.includes('parkTurnBody(') || !jsSource.includes('restoreAllParkedTurns(') || !jsSource.includes("data-cgptperf-parked")) {
+    failures.push('content/chatgpt-perf/content.js is missing assistant body parking runtime');
+  }
+  if (!coreSource.includes('data-cgptperf-preview')) {
+    failures.push('content/chatgpt-core.js is missing parked-body preview recovery');
   }
   if (!jsSource.includes('startFallbackTurnsWatch') || !jsSource.includes('currentRouteKey')) {
     failures.push('content/chatgpt-perf/content.js is missing SPA fallback route/turn watches');
@@ -729,6 +773,9 @@ function verifyChatgptPerfStructureHardening() {
   }
   if (!quicknavSource.includes('getVisibleTurnWindow')) {
     failures.push('content/chatgpt-quicknav.js is not using shared visible-turn window service');
+  }
+  if (!quicknavSource.includes('getTurnRecordsSnapshot')) {
+    failures.push('content/chatgpt-quicknav.js is not using shared turn-records service');
   }
   if (!quicknavSource.includes('cgptperfHot')) {
     failures.push('content/chatgpt-quicknav.js is missing cgptperf hot-path throttling');
@@ -762,7 +809,7 @@ function verifyChatgptPerfStructureHardening() {
   if (cssSource.includes('main article')) {
     failures.push('content/chatgpt-perf/content.css still hard-codes main article selectors');
   }
-  for (const staleCost of ["scopeRoot?.getElementsByTagName?.('*')?.length", "document.getElementsByTagName('*').length"]) {
+  for (const staleCost of ["scopeRoot?.getElementsByTagName?.('*')?.length", "document.getElementsByTagName('*').length", "turnEl.getElementsByTagName('*').length"]) {
     if (jsSource.includes(staleCost)) {
       failures.push(`content/chatgpt-perf/content.js still uses conversation-wide DOM counting via ${staleCost}`);
     }

@@ -875,9 +875,7 @@ button.${HINT_CLASS}::after {
   function isModelLikeMenuItemText(text) {
     const t = normalizeText(text);
     if (!t) return false;
-    if (t.includes('5.2')) return true;
-    if (t.includes('5.4')) return true;
-    if (t.includes('5.3')) return true;
+    if (extractGptVersionPriority(t) >= 0) return true;
     if (t.includes('gpt')) return true;
     if (t === 'thinking' || t.startsWith('thinking')) return true;
     if (t === 'pro' || t.startsWith('pro')) return true;
@@ -886,6 +884,29 @@ button.${HINT_CLASS}::after {
     if (/\bgpt[-\s]?\d/.test(t)) return true;
     if (/\b\d(?:\.\d)+\b/.test(t)) return true;
     return false;
+  }
+
+  function extractGptVersionPriority(text) {
+    const t = normalizeText(text);
+    if (!t) return -1;
+
+    /** @type {number[]} */
+    const matches = [];
+    const collect = (re) => {
+      re.lastIndex = 0;
+      let match = null;
+      while ((match = re.exec(t))) {
+        const value = Number(match[1]);
+        if (!Number.isFinite(value)) continue;
+        if (value < 4 || value >= 10) continue;
+        matches.push(value);
+      }
+    };
+
+    collect(/\bgpt[-\s]?(\d+(?:\.\d+)+)\b/g);
+    if (!matches.length) collect(/\b(\d+(?:\.\d+)+)\b/g);
+    if (!matches.length) return -1;
+    return Math.max(...matches);
   }
 
   function scoreModelItem(text, mode) {
@@ -903,7 +924,8 @@ button.${HINT_CLASS}::after {
     if (wantsPro && !hasPro) return -999;
 
     let score = 0;
-    if (t.includes('5.2')) score += 6;
+    const version = extractGptVersionPriority(t);
+    if (version >= 0) score += Math.round(version * 10);
     if (/\bgpt\b/.test(t)) score += 2;
     if (/\bgpt[-\s]?5\b/.test(t)) score += 2;
     if (hasThinking) score += wantsThinking ? 6 : -4;
@@ -1038,7 +1060,7 @@ button.${HINT_CLASS}::after {
     return preferredModelMode === 'thinking' || preferredModelMode === 'pro' ? preferredModelMode : null;
   }
 
-  function findGPT52ModelSelectorTrigger() {
+  function findGptModelSelectorTrigger() {
     try {
       const core = window.__aichat_chatgpt_core_main_v1__;
       if (core && typeof core.getModelSwitcherButton === 'function') {
@@ -1062,7 +1084,7 @@ button.${HINT_CLASS}::after {
   }
 
   function listMaybeThinkingProTriggers() {
-    const direct = findGPT52ModelSelectorTrigger();
+    const direct = findGptModelSelectorTrigger();
     if (direct instanceof HTMLElement) return [direct];
 
     const primaryNodes = Array.from(
@@ -1393,7 +1415,7 @@ button.${HINT_CLASS}::after {
 
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
-        const trigger = findGPT52ModelSelectorTrigger();
+        const trigger = findGptModelSelectorTrigger();
         cachedThinkingProTrigger = trigger;
         if (!trigger) {
           await sleep(80);
@@ -1447,7 +1469,7 @@ button.${HINT_CLASS}::after {
 
         preferredModelMode = resolvedTargetMode;
         savePreferredModelMode(preferredModelMode);
-        const pulseTarget = findGPT52ModelSelectorTrigger();
+        const pulseTarget = findGptModelSelectorTrigger();
         if (pulseTarget) schedulePulse(pulseTarget, resolvedTargetMode === 'pro', resolvedTargetMode === 'pro' ? 'Pro' : 'Thinking');
         didToggle = true;
         return true;

@@ -5,7 +5,7 @@
   // Goal: reduce duplicated brittle selectors / route polling across ChatGPT-only modules.
 
   const API_KEY = '__aichat_chatgpt_core_v1__';
-  const API_VERSION = 6;
+  const API_VERSION = 9;
   const BRIDGE_CHANNEL = 'quicknav';
   const BRIDGE_V = 1;
   const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
@@ -69,6 +69,14 @@
 
   const TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
   const TURN_SELECTOR = `${TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
+  const USER_TURN_BODY_SELECTOR =
+    '[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]';
+  const ASSISTANT_TURN_BODY_SELECTOR =
+    '.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]';
+  const TURN_PREVIEW_SKIP_SELECTOR = 'pre, .katex-display, mjx-container, table';
+  const TURN_RECORD_COUNT_ATTR = 'data-aichat-core-turn-record-count';
+  const TURN_RECORD_BODYREFS_ATTR = 'data-aichat-core-turn-record-live-body-refs';
+  const TURN_RECORD_VERSION_ATTR = 'data-aichat-core-turn-record-version';
   const MODEL_SWITCHER_SELECTOR =
     'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
   const COMPOSER_MODE_TOKEN_RE =
@@ -943,6 +951,368 @@
     return '';
   }
 
+  function getStableTurnId(turnEl) {
+    return getMessageId(turnEl) || getTurnId(turnEl);
+  }
+
+  function getTurnKey(turnEl) {
+    try {
+      if (!turnEl) return '';
+      return (
+        String(turnEl.getAttribute?.('data-message-id') || '').trim() ||
+        String(turnEl.getAttribute?.('data-testid') || '').trim() ||
+        String(turnEl.id || '').trim()
+      );
+    } catch {
+      return '';
+    }
+  }
+
+  function inferTurnRole(turnEl) {
+    const direct = getTurnRole(turnEl);
+    if (direct) return direct;
+    let testId = '';
+    try {
+      testId = String(turnEl?.getAttribute?.('data-testid') || '').trim();
+    } catch {
+      testId = '';
+    }
+    try {
+      if (
+        turnEl?.querySelector?.('[data-message-author-role="user"]') ||
+        turnEl?.querySelector?.('.text-message[data-author="user"]') ||
+        /\buser\b/i.test(testId)
+      ) {
+        return 'user';
+      }
+    } catch {}
+    try {
+      if (
+        turnEl?.querySelector?.('[data-message-author-role="assistant"]') ||
+        turnEl?.querySelector?.('.text-message[data-author="assistant"]') ||
+        /\bassistant\b/i.test(testId)
+      ) {
+        return 'assistant';
+      }
+    } catch {}
+    return '';
+  }
+
+  function findTurnBodyEl(turnEl, role = '') {
+    if (!(turnEl instanceof Element)) return null;
+    const normalizedRole = String(role || '').trim();
+    const selector = normalizedRole === 'user' ? USER_TURN_BODY_SELECTOR : ASSISTANT_TURN_BODY_SELECTOR;
+    try {
+      const body = turnEl.querySelector(selector);
+      if (body instanceof HTMLElement) return body;
+    } catch {}
+    if (normalizedRole !== 'user') {
+      try {
+        const fallback = turnEl.querySelector(USER_TURN_BODY_SELECTOR);
+        if (fallback instanceof HTMLElement) return fallback;
+      } catch {}
+    }
+    return turnEl instanceof HTMLElement ? turnEl : null;
+  }
+
+  function collectTurnPreviewText(root, { hardCap = 320, nodeCap = 180, skipHeavy = false } = {}) {
+    if (!(root instanceof Element)) return '';
+    try {
+      const parkedPreview = String(root.getAttribute?.('data-cgptperf-preview') || '').replace(/\s+/g, ' ').trim();
+      if (parkedPreview) return parkedPreview.length > hardCap ? parkedPreview.slice(0, hardCap) : parkedPreview;
+    } catch {}
+    let out = '';
+    let lastWasSpace = false;
+    let scanned = 0;
+
+    let walker = null;
+    try {
+      walker = document.createTreeWalker(
+        root,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode(node) {
+            try {
+              if (!node || !node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_SKIP;
+              if (skipHeavy) {
+                const parent = node.parentElement;
+                if (parent && parent.closest?.(TURN_PREVIEW_SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            } catch {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+        }
+      );
+    } catch {
+      walker = null;
+    }
+
+    if (walker) {
+      while (walker.nextNode()) {
+        scanned += 1;
+        if (scanned > nodeCap) break;
+        const text = String(walker.currentNode?.nodeValue || '');
+        if (!text) continue;
+        for (let i = 0; i < text.length && out.length < hardCap; i += 1) {
+          const ch = text[i];
+          const isSpace = ch <= ' ' || /\s/.test(ch);
+          if (isSpace) {
+            if (!lastWasSpace && out.length) {
+              out += ' ';
+              lastWasSpace = true;
+            }
+            continue;
+          }
+          out += ch;
+          lastWasSpace = false;
+        }
+        if (out.length >= hardCap) break;
+      }
+      return out.trim();
+    }
+
+    try {
+      const text = String(root.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) return '';
+      return text.length > hardCap ? text.slice(0, hardCap) : text;
+    } catch {
+      return '';
+    }
+  }
+
+  function formatTurnStructureSummary({ codeBlocks = 0, mathBlocks = 0, tables = 0 } = {}) {
+    const parts = [];
+    if (codeBlocks > 0) parts.push(uiText(`代码 ${codeBlocks}`, `code ${codeBlocks}`));
+    if (mathBlocks > 0) parts.push(uiText(`公式 ${mathBlocks}`, `math ${mathBlocks}`));
+    if (tables > 0) parts.push(uiText(`表格 ${tables}`, `table ${tables}`));
+    return parts.join(' · ');
+  }
+
+  function getTurnPreview(turnEl, bodyEl, role = '') {
+    const root = bodyEl instanceof Element ? bodyEl : turnEl instanceof Element ? turnEl : null;
+    if (!(root instanceof Element)) return '...';
+
+    let codeBlocks = 0;
+    let mathBlocks = 0;
+    let tables = 0;
+    try {
+      codeBlocks = root.querySelectorAll('pre').length;
+    } catch {}
+    try {
+      mathBlocks = root.querySelectorAll('.katex-display, mjx-container').length;
+    } catch {}
+    try {
+      tables = root.querySelectorAll('table').length;
+    } catch {}
+
+    const heavySummary = formatTurnStructureSummary({ codeBlocks, mathBlocks, tables });
+    const preferStructured = String(role || '') === 'assistant' && (codeBlocks > 0 || mathBlocks > 0 || tables > 0);
+    const text = collectTurnPreviewText(root, {
+      hardCap: preferStructured ? 180 : 320,
+      nodeCap: preferStructured ? 120 : 180,
+      skipHeavy: preferStructured
+    });
+    if (text && heavySummary) return `${text} · ${heavySummary}`;
+    if (text) return text;
+    if (heavySummary) return heavySummary;
+    return '...';
+  }
+
+  function getTurnAppendMarker(turnEl) {
+    try {
+      const msgId = getMessageId(turnEl);
+      if (msgId) return `msg:${msgId}`;
+    } catch {}
+    try {
+      const key = getTurnKey(turnEl);
+      if (key) return `key:${key}`;
+    } catch {}
+    try {
+      const domId = String(turnEl?.id || '').trim();
+      if (domId) return `id:${domId}`;
+    } catch {}
+    return '';
+  }
+
+  const turnRecordsWatch = (() => ({
+    listeners: new Set(),
+    turnsUnsub: null,
+    recordsVersion: 0,
+    cachedSnapshot: null,
+    metaByTurn: new WeakMap()
+  }))();
+
+  function buildTurnRecord(turnEl, index, turnsVersion) {
+    if (!(turnEl instanceof HTMLElement)) return null;
+    const role = inferTurnRole(turnEl);
+    const msgId = getMessageId(turnEl);
+    const turnId = getTurnId(turnEl);
+    const stableTurnId = msgId || turnId || getTurnKey(turnEl);
+    const key = getTurnKey(turnEl) || stableTurnId;
+    const bodyEl = findTurnBodyEl(turnEl, role);
+    const appendMarker = getTurnAppendMarker(turnEl);
+    const cached = (() => {
+      try {
+        return turnRecordsWatch.metaByTurn.get(turnEl) || null;
+      } catch {
+        return null;
+      }
+    })();
+    let preview =
+      cached &&
+      cached.msgId === msgId &&
+      cached.role === role &&
+      cached.key === key &&
+      cached.appendMarker === appendMarker
+        ? String(cached.preview || '')
+        : '';
+    if (!preview) preview = getTurnPreview(turnEl, bodyEl, role);
+    const record = {
+      index,
+      key,
+      role,
+      msgId,
+      turnId,
+      stableTurnId,
+      appendMarker,
+      preview: preview || '...',
+      turnVersion: Number(turnsVersion) || 0,
+      turnEl
+    };
+    try {
+      turnRecordsWatch.metaByTurn.set(turnEl, {
+        key,
+        role,
+        msgId,
+        appendMarker,
+        preview: record.preview
+      });
+    } catch {}
+    return record;
+  }
+
+  function areTurnRecordsEqual(prev, next) {
+    if (prev === next) return true;
+    if (!prev || !next) return false;
+    return (
+      prev.turnEl === next.turnEl &&
+      prev.key === next.key &&
+      prev.role === next.role &&
+      prev.msgId === next.msgId &&
+      prev.turnId === next.turnId &&
+      prev.stableTurnId === next.stableTurnId &&
+      prev.appendMarker === next.appendMarker &&
+      prev.preview === next.preview
+    );
+  }
+
+  function publishTurnRecordDebugAttrs(snapshot) {
+    const html = document.documentElement;
+    if (!html) return;
+    const records = Array.isArray(snapshot?.records) ? snapshot.records : [];
+    let liveBodyRefs = 0;
+    for (const record of records) {
+      if (record?.bodyEl instanceof HTMLElement) liveBodyRefs += 1;
+    }
+    try {
+      html.setAttribute(TURN_RECORD_COUNT_ATTR, String(records.length));
+      html.setAttribute(TURN_RECORD_BODYREFS_ATTR, String(liveBodyRefs));
+      html.setAttribute(TURN_RECORD_VERSION_ATTR, String(Number(snapshot?.recordsVersion || 0)));
+    } catch {}
+  }
+
+  function refreshTurnRecordsSnapshot(sourceSnapshot = null, { force = false } = {}) {
+    const baseSnapshot =
+      sourceSnapshot && typeof sourceSnapshot === 'object'
+        ? sourceSnapshot
+        : getTurnsSnapshot(force);
+    const turns = Array.isArray(baseSnapshot?.turns) ? baseSnapshot.turns.filter((item) => item instanceof HTMLElement) : [];
+    const records = [];
+    for (let i = 0; i < turns.length; i += 1) {
+      const record = buildTurnRecord(turns[i], i, baseSnapshot?.turnsVersion);
+      if (record) records.push(record);
+    }
+
+    const prev = turnRecordsWatch.cachedSnapshot;
+    let changed =
+      force ||
+      !prev ||
+      prev.root !== (baseSnapshot?.root || null) ||
+      Number(prev.turnsVersion || 0) !== Number(baseSnapshot?.turnsVersion || 0) ||
+      prev.records.length !== records.length;
+    if (!changed && prev) {
+      for (let i = 0; i < records.length; i += 1) {
+        if (!areTurnRecordsEqual(prev.records[i], records[i])) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (changed) turnRecordsWatch.recordsVersion += 1;
+
+    const snapshot = {
+      root: baseSnapshot?.root || null,
+      turns,
+      turnsVersion: Number(baseSnapshot?.turnsVersion || 0),
+      rootChanged: !!baseSnapshot?.rootChanged,
+      addedTurns: Array.isArray(baseSnapshot?.addedTurns) ? baseSnapshot.addedTurns.filter((item) => item instanceof HTMLElement) : [],
+      removedTurns: Array.isArray(baseSnapshot?.removedTurns) ? baseSnapshot.removedTurns.filter((item) => item instanceof HTMLElement) : [],
+      records,
+      recordsVersion: turnRecordsWatch.recordsVersion
+    };
+    turnRecordsWatch.cachedSnapshot = snapshot;
+    publishTurnRecordDebugAttrs(snapshot);
+    return snapshot;
+  }
+
+  function getTurnRecordsSnapshot(force = false) {
+    if (!force && turnRecordsWatch.cachedSnapshot) return turnRecordsWatch.cachedSnapshot;
+    return refreshTurnRecordsSnapshot(null, { force });
+  }
+
+  function emitTurnRecordsChange(payload) {
+    const list = Array.from(turnRecordsWatch.listeners);
+    if (!list.length) return;
+    for (const fn of list) safeCall(fn, payload);
+  }
+
+  function ensureTurnRecordsWatcher() {
+    if (typeof turnRecordsWatch.turnsUnsub === 'function') return;
+    turnRecordsWatch.turnsUnsub = onTurnsChange((payload) => {
+      const snapshot = refreshTurnRecordsSnapshot(payload, { force: String(payload?.reason || '') === 'attach' });
+      emitTurnRecordsChange({
+        at: now(),
+        reason: String(payload?.reason || 'turn-records'),
+        root: snapshot.root,
+        turns: snapshot.turns,
+        turnCount: snapshot.turns.length,
+        turnsVersion: snapshot.turnsVersion,
+        rootChanged: snapshot.rootChanged,
+        addedTurns: snapshot.addedTurns,
+        removedTurns: snapshot.removedTurns,
+        records: snapshot.records,
+        recordsVersion: snapshot.recordsVersion
+      });
+    });
+  }
+
+  function onTurnRecordsChange(cb) {
+    if (typeof cb !== 'function') return () => void 0;
+    turnRecordsWatch.listeners.add(cb);
+    ensureTurnRecordsWatcher();
+    return () => {
+      try {
+        turnRecordsWatch.listeners.delete(cb);
+        if (!turnRecordsWatch.listeners.size && typeof turnRecordsWatch.turnsUnsub === 'function') {
+          turnRecordsWatch.turnsUnsub();
+          turnRecordsWatch.turnsUnsub = null;
+        }
+      } catch {}
+    };
+  }
+
   // === Route change subscription (ISOLATED) ===
   function onRouteChange(cb) {
     if (typeof cb !== 'function') return () => void 0;
@@ -979,6 +1349,83 @@
       } catch {}
     };
   }
+
+  // Shared perf runtime bridge. This lets sibling ChatGPT modules consume perf
+  // state through chatgpt-core instead of reading perf-specific DOM attributes.
+  const perfRuntime = (() => {
+    const state = {
+      snapshot: Object.freeze({
+        enabled: false,
+        windowingEnabled: false,
+        heavyEnabled: false,
+        hotPathActive: false,
+        virtualizationActive: false,
+        budgetLevel: 0
+      }),
+      isTurnOffscreen: null,
+      listeners: new Set()
+    };
+
+    function snapshotEqual(a, b) {
+      if (a === b) return true;
+      if (!a || !b) return false;
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      for (const key of keys) {
+        if (!Object.is(a[key], b[key])) return false;
+      }
+      return true;
+    }
+
+    function sanitizeSnapshot(next) {
+      const src = next && typeof next === 'object' ? next : {};
+      return Object.freeze({
+        enabled: !!src.enabled,
+        windowingEnabled: !!src.windowingEnabled,
+        heavyEnabled: !!src.heavyEnabled,
+        hotPathActive: !!src.hotPathActive,
+        virtualizationActive: !!src.virtualizationActive,
+        budgetLevel: Math.max(0, Number(src.budgetLevel) || 0)
+      });
+    }
+
+    function emit(snapshot) {
+      const list = Array.from(state.listeners);
+      for (const cb of list) safeCall(cb, snapshot);
+    }
+
+    return {
+      update(next = {}) {
+        const snapshot = sanitizeSnapshot(next);
+        const resolver = typeof next?.isTurnOffscreen === 'function' ? next.isTurnOffscreen : null;
+        const changed = !snapshotEqual(state.snapshot, snapshot) || state.isTurnOffscreen !== resolver;
+        state.snapshot = snapshot;
+        state.isTurnOffscreen = resolver;
+        if (changed) emit(snapshot);
+        return snapshot;
+      },
+      clear() {
+        return this.update({});
+      },
+      getSnapshot() {
+        return state.snapshot;
+      },
+      onChange(cb) {
+        if (typeof cb !== 'function') return () => void 0;
+        state.listeners.add(cb);
+        return () => {
+          try {
+            state.listeners.delete(cb);
+          } catch {}
+        };
+      },
+      isOffscreen(turnEl) {
+        try {
+          if (typeof state.isTurnOffscreen === 'function') return !!state.isTurnOffscreen(turnEl);
+        } catch {}
+        return false;
+      }
+    };
+  })();
 
   // === Memory guard (ChatGPT stability) ===
   // NOTE: This is a best-effort early warning based on JS heap usage. It cannot see total renderer RSS.
@@ -1256,14 +1703,22 @@
     getTurnsRoot,
     getTurnArticles,
     getTurnsSnapshot,
+    getTurnRecordsSnapshot,
     getChatScrollContainer,
     getVisibleTurnWindow,
     getTurnSelector: () => TURN_SELECTOR,
     onTurnsChange,
+    onTurnRecordsChange,
     getTurnRole,
     getTurnId,
     getMessageId,
+    getStableTurnId,
     onRouteChange,
+    getPerfSnapshot: () => perfRuntime.getSnapshot(),
+    setPerfSnapshot: (next) => perfRuntime.update(next),
+    clearPerfSnapshot: () => perfRuntime.clear(),
+    onPerfStateChange: (cb) => perfRuntime.onChange(cb),
+    isTurnOffscreen: (turnEl) => perfRuntime.isOffscreen(turnEl),
     memGuard
   });
 

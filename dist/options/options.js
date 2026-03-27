@@ -2215,7 +2215,7 @@
     addModuleHeader(
       'chatgpt_thinking_toggle',
       'ChatGPT 推理强度/模型 快捷切换',
-      '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在 GPT 5.2 thinking ↔ GPT 5.2 pro 之间切换。'
+      '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在当前 GPT 5.x thinking ↔ pro 之间切换。'
     );
 
     const rowInject = document.createElement('label');

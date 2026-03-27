@@ -55,7 +55,6 @@
     composerInterlockToast: { zh: '排队消息正在发出，请稍候再输入。', en: 'A queued message is being sent. Wait a moment before typing.' },
     manualSendPaused: { zh: '队列已暂停：上一条手动消息仍在发出。', en: 'Queue paused: the previous manual message is still being sent.' },
     queueSendPaused: { zh: '队列已暂停：上一条排队消息仍在发出。', en: 'Queue paused: the previous queued message is still being sent.' },
-    extendedProPaused: { zh: '队列已暂停：当前处于 Extended Pro。', en: 'Queue paused: Extended Pro is active.' },
     returnToConversationPaused: { zh: '队列已暂停：请回到原对话后继续自动发送。', en: 'Queue paused: return to the original conversation to continue sending automatically.' },
     notInConversationPaused: { zh: '队列已暂停：当前不在原对话里。', en: 'Queue paused: you are no longer in the original conversation.' },
     draftPaused: { zh: '队列已暂停：输入框里有未排队草稿。', en: 'Queue paused: the composer still has an unqueued draft.' },
@@ -262,73 +261,6 @@
     const route = getRoute();
     const conversationId = String(route?.conversationId || '').trim();
     return conversationId || '';
-  }
-
-  function readCurrentModelLabel() {
-    try {
-      const core = getCore();
-      if (core && typeof core.readCurrentModelLabel === 'function') {
-        const label = String(core.readCurrentModelLabel() || '').trim();
-        if (label) return label;
-      }
-    } catch {}
-    const selectors = [
-      'button[data-testid="model-switcher-dropdown-button"]',
-      'button[aria-label*="Model selector" i]',
-      'button[aria-label*="Model selector, current model is" i]',
-      'button[aria-label*="current model is" i]'
-    ];
-    for (const selector of selectors) {
-      try {
-        const button = document.querySelector(selector);
-        const aria = String(button?.getAttribute?.('aria-label') || '').trim();
-        if (aria) return aria.replace(/^.*current model is\s*/i, '').trim();
-        const text = String(button?.innerText || button?.textContent || '').trim();
-        if (text) return text;
-      } catch {}
-    }
-    return '';
-  }
-
-  function readComposerModeLabel() {
-    try {
-      const core = getCore();
-      if (core && typeof core.readComposerModeLabel === 'function') {
-        const label = String(core.readComposerModeLabel() || '').trim();
-        if (label) return label;
-      }
-    } catch {}
-    const form = getComposerForm(getEditorEl());
-    const selectors = ['button[aria-haspopup="menu"]', 'button'];
-    for (const selector of selectors) {
-      try {
-        const buttons = Array.from(form?.querySelectorAll?.(selector) || []);
-        for (const button of buttons) {
-          const text = String(button?.innerText || button?.textContent || '').trim();
-          if (!text) continue;
-          if (/\bthinking\b/i.test(text) || /\bpro\b/i.test(text)) return text;
-        }
-      } catch {}
-    }
-    return '';
-  }
-
-  function isExtendedProLabel(label) {
-    return /\bextended\s+pro\b/.test(String(label || '').trim().toLowerCase());
-  }
-
-  function isTabQueueModelAllowed(options = {}) {
-    const modelLabel = String(options.modelLabel || '').trim().toLowerCase();
-    const composerModeLabel = String(options.composerModeLabel || '').trim().toLowerCase();
-    if (isExtendedProLabel(modelLabel) || isExtendedProLabel(composerModeLabel)) return false;
-    return true;
-  }
-
-  function isTabQueueModelActive() {
-    return isTabQueueModelAllowed({
-      modelLabel: readCurrentModelLabel(),
-      composerModeLabel: readComposerModeLabel()
-    });
   }
 
   function getTurnArticles() {
@@ -1899,9 +1831,6 @@
     if (isComposerInterlockActive()) {
       return t('queueSendPaused');
     }
-    if (!isTabQueueModelActive()) {
-      return t('extendedProPaused');
-    }
     const currentConversationId = getConversationBindingId();
     if (head.conversationId && currentConversationId && head.conversationId !== currentConversationId) {
       return t('returnToConversationPaused');
@@ -2315,7 +2244,6 @@
 
   function canSendQueueHead() {
     if (!state.queue.length) return false;
-    if (!isTabQueueModelActive()) return false;
     if (isManualSendWarmupActive()) return false;
     if (isManualSendInterlockActive()) return false;
     if (state.activeRequests.size > 0) return false;
@@ -2602,10 +2530,6 @@
       setLastQueueAttemptDebug({ ok: false, reason: 'queue_disabled' });
       return false;
     }
-    if (!isTabQueueModelActive()) {
-      setLastQueueAttemptDebug({ ok: false, reason: 'model_inactive' });
-      return false;
-    }
     const sourceEditor = resolveComposerEditorFromTarget(options.sourceEditor || null);
     const liveEditor = getEditorEl();
     const editor = liveEditor || sourceEditor;
@@ -2873,7 +2797,6 @@
       return;
     }
     if (!action) return;
-    if (action === 'queue_tab' && !isTabQueueModelActive()) return;
 
     swallowEvent(event);
 
@@ -3253,8 +3176,6 @@
       isManualSendInterlockActive,
       isManualSendWarmupActive,
       isSteerTurnUrl,
-      isExtendedProLabel,
-      isTabQueueModelAllowed,
       normalizeConversationStreamStatus,
       normalizePreviewText,
       canPreserveQueuedDraftOnClearFailure,

@@ -25,6 +25,11 @@
   const AUTO_BRANCH_SEND_TIMEOUT_MS = 15000;
   const AUTO_BRANCH_STOP_RETRY_MS = 4000;
   const AUTO_BRANCH_MAX_STOP_CLICKS = 2;
+  const EDIT_BUTTON_VISIBLE_MARGIN_PX = 900;
+  const EDIT_BUTTON_RECENT_USER_TURNS = 4;
+  const EDIT_BUTTON_WINDOWED_MIN_TOTAL_TURNS = 48;
+  const EDIT_BUTTON_WINDOWED_MIN_USER_TURNS = 18;
+  const VIEWPORT_SCAN_MIN_INTERVAL_MS = 180;
 
   const state = {
     version: STATE_VERSION,
@@ -51,6 +56,8 @@
     unwatchHref: null,
     sendIntentClickHandler: null,
     sendIntentKeyHandler: null,
+    viewportHandler: null,
+    viewportLastAt: 0,
     cleanup: null
   };
 
@@ -98,6 +105,15 @@
       return '';
     } catch {
       return '';
+    }
+  }
+
+  function isUnsupportedRoute() {
+    try {
+      const path = String(location.pathname || '');
+      return /^\/share(?:\/|$)/.test(path);
+    } catch {
+      return false;
     }
   }
 
@@ -623,6 +639,49 @@
     hideBanner();
   }
 
+  function teardownRouteRuntime() {
+    try {
+      if (typeof state.turnsUnsub === 'function') state.turnsUnsub();
+    } catch {}
+    state.turnsUnsub = null;
+
+    try {
+      state.hubUnsub?.();
+    } catch {}
+    state.hubUnsub = null;
+
+    try {
+      if (state.hoverHandler) {
+        document.removeEventListener('mouseover', state.hoverHandler, true);
+        document.removeEventListener('focusin', state.hoverHandler, true);
+      }
+    } catch {}
+    state.hoverHandler = null;
+
+    try {
+      if (state.sendIntentClickHandler) {
+        document.removeEventListener('click', state.sendIntentClickHandler, true);
+      }
+    } catch {}
+    state.sendIntentClickHandler = null;
+
+    try {
+      if (state.sendIntentKeyHandler) {
+        document.removeEventListener('keydown', state.sendIntentKeyHandler, true);
+      }
+    } catch {}
+    state.sendIntentKeyHandler = null;
+
+    try {
+      if (state.viewportHandler) {
+        document.removeEventListener('scroll', state.viewportHandler, true);
+        window.removeEventListener('resize', state.viewportHandler, true);
+      }
+    } catch {}
+    state.viewportHandler = null;
+    state.viewportLastAt = 0;
+  }
+
   function cleanup() {
     try {
       if (state.scanTimer) clearTimeout(state.scanTimer);
@@ -646,41 +705,11 @@
     state.moRoot = null;
 
     try {
-      if (typeof state.turnsUnsub === 'function') state.turnsUnsub();
-    } catch {}
-    state.turnsUnsub = null;
-
-    try {
-      state.hubUnsub?.();
-    } catch {}
-    state.hubUnsub = null;
-
-    try {
       state.unwatchHref?.();
     } catch {}
     state.unwatchHref = null;
 
-    try {
-      if (state.hoverHandler) {
-        document.removeEventListener('mouseover', state.hoverHandler, true);
-        document.removeEventListener('focusin', state.hoverHandler, true);
-      }
-    } catch {}
-    state.hoverHandler = null;
-
-    try {
-      if (state.sendIntentClickHandler) {
-        document.removeEventListener('click', state.sendIntentClickHandler, true);
-      }
-    } catch {}
-    state.sendIntentClickHandler = null;
-
-    try {
-      if (state.sendIntentKeyHandler) {
-        document.removeEventListener('keydown', state.sendIntentKeyHandler, true);
-      }
-    } catch {}
-    state.sendIntentKeyHandler = null;
+    teardownRouteRuntime();
 
     state.seenTurns = null;
     state.retryTurns = null;
@@ -711,6 +740,147 @@
 
   function getUserMessageEl(turnEl) {
     return turnEl?.querySelector?.('[data-message-author-role="user"][data-message-id]') || null;
+  }
+
+  function readUserTurnMessageId(turnEl) {
+    try {
+      return String(getUserMessageEl(turnEl)?.dataset?.messageId || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function isEligibleUserTurn(turnEl) {
+    try {
+      if (!turnEl || turnEl.nodeType !== 1) return false;
+      const role = String(
+        turnEl.getAttribute?.('data-turn') ||
+        turnEl.getAttribute?.('data-message-author-role') ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+      if (role === 'user') return true;
+    } catch {}
+    return !!getUserMessageEl(turnEl);
+  }
+
+  function hasInjectedEditButton(turnEl) {
+    try {
+      return !!turnEl?.querySelector?.('button[data-aichat-img-edit="1"]');
+    } catch {
+      return false;
+    }
+  }
+
+  function shouldUseWindowedEditButtons(totalTurns, userTurnsCount) {
+    return (
+      Number(totalTurns || 0) >= EDIT_BUTTON_WINDOWED_MIN_TOTAL_TURNS &&
+      Number(userTurnsCount || 0) >= EDIT_BUTTON_WINDOWED_MIN_USER_TURNS
+    );
+  }
+
+  function getUserTurnsSnapshot(force = false) {
+    const core = getCoreApi();
+    try {
+      if (core && typeof core.getTurnsSnapshot === 'function') {
+        const snapshot = core.getTurnsSnapshot(force);
+        const turns = Array.isArray(snapshot?.turns) ? snapshot.turns.filter(Boolean) : [];
+        const userTurns = [];
+        for (const turnEl of turns) {
+          if (isEligibleUserTurn(turnEl)) userTurns.push(turnEl);
+        }
+        return {
+          turns,
+          userTurns,
+          totalTurns: turns.length
+        };
+      }
+    } catch {}
+
+    const userTurns = Array.from(document.querySelectorAll(USER_TURN_SELECTOR)).filter(Boolean);
+    return {
+      turns: userTurns,
+      userTurns,
+      totalTurns: userTurns.length
+    };
+  }
+
+  function collectCandidateTurns(force = false) {
+    const snapshot = getUserTurnsSnapshot(force);
+    const userTurns = Array.isArray(snapshot?.userTurns) ? snapshot.userTurns : [];
+    const keepSet = new Set();
+    let limited = false;
+
+    if (shouldUseWindowedEditButtons(snapshot?.totalTurns, userTurns.length)) {
+      const core = getCoreApi();
+      try {
+        if (core && typeof core.getVisibleTurnWindow === 'function') {
+          const visibleWindow = core.getVisibleTurnWindow(force, EDIT_BUTTON_VISIBLE_MARGIN_PX);
+          const visibleTurns = Array.isArray(visibleWindow?.visibleTurns) ? visibleWindow.visibleTurns : [];
+          for (const turnEl of visibleTurns) {
+            if (isEligibleUserTurn(turnEl)) {
+              keepSet.add(turnEl);
+              limited = true;
+            }
+          }
+        }
+      } catch {}
+
+      if (limited || userTurns.length > EDIT_BUTTON_RECENT_USER_TURNS) {
+        limited = true;
+        for (const turnEl of userTurns.slice(-EDIT_BUTTON_RECENT_USER_TURNS)) keepSet.add(turnEl);
+        const pendingMessageId = String(state.pending?.sourceMessageId || '').trim();
+        if (pendingMessageId) {
+          for (const turnEl of userTurns) {
+            if (readUserTurnMessageId(turnEl) === pendingMessageId) {
+              keepSet.add(turnEl);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!limited) {
+      for (const turnEl of userTurns) keepSet.add(turnEl);
+    }
+
+    return {
+      userTurns,
+      keepSet,
+      targets: Array.from(keepSet),
+      limited
+    };
+  }
+
+  function pruneOffscreenEditButtons(keepSet) {
+    try {
+      if (!(keepSet instanceof Set) || !keepSet.size) return;
+      const pendingMessageId = String(state.pending?.sourceMessageId || '').trim();
+      const buttons = document.querySelectorAll('button[data-aichat-img-edit="1"]');
+      for (const btn of buttons) {
+        const turnEl = btn.closest?.(ANY_TURN_SELECTOR);
+        if (!turnEl) continue;
+        if (keepSet.has(turnEl)) continue;
+        if (pendingMessageId && readUserTurnMessageId(turnEl) === pendingMessageId) continue;
+        try {
+          btn.remove();
+        } catch {}
+      }
+    } catch {}
+  }
+
+  function shouldRefreshViewportButtons() {
+    const snapshot = getUserTurnsSnapshot(false);
+    return shouldUseWindowedEditButtons(snapshot?.totalTurns, snapshot?.userTurns?.length || 0);
+  }
+
+  function scheduleViewportScan(delayMs = 80) {
+    const ts = now();
+    if ((ts - Number(state.viewportLastAt || 0)) < VIEWPORT_SCAN_MIN_INTERVAL_MS) return;
+    state.viewportLastAt = ts;
+    scheduleScan(delayMs);
   }
 
   function extractUserText(userMsgEl) {
@@ -781,6 +951,9 @@
     const userMsg = getUserMessageEl(turnEl);
     if (!userMsg) return;
     const hasImages = hasUserMessageImages(userMsg);
+
+    installPayloadRewriter();
+    installSendIntentCapture();
 
     const conversationId = getConversationIdFromUrl();
     const parentMessageId = findParentMessageId(turnEl);
@@ -878,6 +1051,7 @@
     state.retryTurns = null;
     state.retryAttempts = null;
     state.retryDelayMs = 0;
+    state.viewportLastAt = 0;
     try {
       if (state.bootstrapTimer) clearTimeout(state.bootstrapTimer);
     } catch {}
@@ -888,6 +1062,10 @@
     } catch {}
     state.mo = null;
     state.moRoot = null;
+    teardownRouteRuntime();
+    if (isUnsupportedRoute()) return;
+    installTurnActivator();
+    installViewportWatcher();
     scheduleScan(150);
   }
 
@@ -895,8 +1073,8 @@
     return state.retryTurns || (state.retryTurns = new Set());
   }
 
-  const MAX_RETRY_TURNS = 80;
-  const MAX_RETRY_ATTEMPTS = 6;
+  const MAX_RETRY_TURNS = 24;
+  const MAX_RETRY_ATTEMPTS = 4;
 
   function getRetryAttempts() {
     return state.retryAttempts || (state.retryAttempts = new WeakMap());
@@ -926,6 +1104,7 @@
   }
 
   function installTurnsWatcher() {
+    if (isUnsupportedRoute()) return false;
     if (state.turnsUnsub) return true;
     try {
       const core = window.__aichat_chatgpt_core_main_v1__;
@@ -948,8 +1127,8 @@
 
           for (const t of addedTurns) {
             if (!t || t.nodeType !== 1) continue;
-            if (!t.matches?.(USER_TURN_SELECTOR)) continue;
-            if (seen.has(t)) continue;
+            if (!isEligibleUserTurn(t)) continue;
+            if (seen.has(t) && hasInjectedEditButton(t)) continue;
             if (ensureEditButtonForTurn(t)) {
               seen.add(t);
             } else {
@@ -1014,6 +1193,7 @@
   }
 
   function ensureTurnsObserver() {
+    if (isUnsupportedRoute()) return false;
     if (state.turnsUnsub) return true;
     const first = document.querySelector(ANY_TURN_SELECTOR);
     const root = first?.parentElement || null;
@@ -1048,7 +1228,7 @@
         if (!set.size) return;
         let needRetry = false;
         for (const t of set) {
-          if (seen.has(t)) continue;
+          if (seen.has(t) && hasInjectedEditButton(t)) continue;
           if (ensureEditButtonForTurn(t)) {
             seen.add(t);
           } else {
@@ -1074,6 +1254,7 @@
   }
 
   function ensureBootstrapObserver() {
+    if (isUnsupportedRoute()) return false;
     if (state.turnsUnsub) return true;
     try {
       if (state.mo) return true;
@@ -1120,6 +1301,7 @@
   }
 
   function scanAllTurns() {
+    if (isUnsupportedRoute() || document.hidden) return;
     if (location.href !== state.lastHref) onRouteChange();
 
     if (!state.seenTurns) state.seenTurns = new WeakSet();
@@ -1128,14 +1310,15 @@
 
     const seen = state.seenTurns;
     const retry = getRetryTurns();
-    const turns = document.querySelectorAll(USER_TURN_SELECTOR);
+    const targetInfo = collectCandidateTurns(false);
+    const turns = Array.isArray(targetInfo?.targets) ? targetInfo.targets : [];
     if (!turns.length) {
       if (!hasTurnsWatcher) ensureBootstrapObserver();
       return;
     }
     let needRetry = false;
     for (const t of turns) {
-      if (seen.has(t)) continue;
+      if (seen.has(t) && hasInjectedEditButton(t)) continue;
       if (ensureEditButtonForTurn(t)) {
         seen.add(t);
       } else {
@@ -1146,12 +1329,14 @@
         }
       }
     }
+    if (targetInfo.limited) pruneOffscreenEditButtons(targetInfo.keepSet);
     if (needRetry) scheduleRetryScan();
     else state.retryDelayMs = 0;
   }
 
   function retryPendingTurns() {
     try {
+      if (isUnsupportedRoute() || document.hidden) return;
       if (location.href !== state.lastHref) onRouteChange();
       const retry = state.retryTurns;
       if (!retry || !retry.size) {
@@ -1159,6 +1344,9 @@
         return;
       }
       const seen = state.seenTurns || (state.seenTurns = new WeakSet());
+      const targetInfo = collectCandidateTurns(false);
+      const keepSet = targetInfo.keepSet instanceof Set ? targetInfo.keepSet : null;
+      const pendingMessageId = String(state.pending?.sourceMessageId || '').trim();
       let stillPending = false;
       for (const t of Array.from(retry)) {
         try {
@@ -1166,7 +1354,11 @@
             retry.delete(t);
             continue;
           }
-          if (seen.has(t)) {
+          if (seen.has(t) && hasInjectedEditButton(t)) {
+            retry.delete(t);
+            continue;
+          }
+          if (keepSet && !keepSet.has(t) && (!pendingMessageId || readUserTurnMessageId(t) !== pendingMessageId)) {
             retry.delete(t);
             continue;
           }
@@ -1213,6 +1405,7 @@
     let lastAt = 0;
     const handler = (e) => {
       try {
+        if (isUnsupportedRoute() || document.hidden) return;
         const target = e?.target;
         if (!target || typeof target.closest !== 'function') return;
         const turn = target.closest(USER_TURN_SELECTOR);
@@ -1242,10 +1435,30 @@
     } catch {}
   }
 
+  function installViewportWatcher() {
+    if (state.viewportHandler) return;
+    const handler = (e) => {
+      try {
+        if (isUnsupportedRoute()) return;
+        if (document.hidden) return;
+        const target = e?.target;
+        if (target instanceof Element && target.closest?.('pre,code,.cm-scroller,[data-cgptperf-lite-code-view]')) return;
+        if (!shouldRefreshViewportButtons()) return;
+        scheduleViewportScan(90);
+      } catch {}
+    };
+    state.viewportHandler = handler;
+    try {
+      document.addEventListener('scroll', handler, true);
+      window.addEventListener('resize', handler, true);
+    } catch {}
+  }
+
   function installSendIntentCapture() {
     if (!state.sendIntentClickHandler) {
       const clickHandler = (e) => {
         try {
+          if (isUnsupportedRoute()) return;
           if (!state.pending) return;
           if (!e?.isTrusted) return;
           const target = e.target;
@@ -1272,6 +1485,7 @@
     if (!state.sendIntentKeyHandler) {
       const keyHandler = (e) => {
         try {
+          if (isUnsupportedRoute()) return;
           if (!state.pending) return;
           if (!e?.isTrusted) return;
           if (e.key !== 'Enter') return;
@@ -1384,15 +1598,17 @@
     } catch {}
   }
 
-  installPayloadRewriter();
-  installTurnActivator();
-  installSendIntentCapture();
+  if (!isUnsupportedRoute()) {
+    installTurnActivator();
+    installViewportWatcher();
+  }
 
   try {
     state.unwatchHref = installHrefWatcher();
   } catch {}
 
   function bootScan() {
+    if (isUnsupportedRoute() || document.hidden) return;
     try {
       scanAllTurns();
     } catch {}

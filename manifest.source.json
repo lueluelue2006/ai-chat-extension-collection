@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI捷径 (AI Shortcuts)",
   "short_name": "AI捷径",
-  "version": "3.2.2",
+  "version": "4.0.0",
   "description": "多AI站点脚本合集",
   "permissions": [
     "scripting",

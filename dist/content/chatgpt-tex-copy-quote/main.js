@@ -791,6 +791,18 @@
     }
   }
 
+  function selectionIsCollapsedInsideComposer() {
+    try {
+      const sel = window.getSelection?.();
+      if (!sel || !sel.isCollapsed) return false;
+      const node = sel.anchorNode;
+      const el = node instanceof Element ? node : node?.parentElement;
+      return isComposerOrInside(el);
+    } catch {
+      return false;
+    }
+  }
+
   function isComposerOrInside(el) {
     if (!el || !(el instanceof Element)) return false;
     if (isComposerEl(el)) return true;
@@ -807,6 +819,10 @@
     const active = document.activeElement;
     const target = ev?.target;
     if (!isComposerOrInside(active) && !isComposerOrInside(target)) return false;
+    if (selectionIsCollapsedInsideComposer()) {
+      if (state.selectionQuoteSnapshot) hideSelectionQuoteButton();
+      return true;
+    }
     if (activeSelectionLooksQuotable()) return false;
     if (state.selectionQuoteSnapshot) hideSelectionQuoteButton();
     return true;

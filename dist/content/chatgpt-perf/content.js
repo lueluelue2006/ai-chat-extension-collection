@@ -245,8 +245,12 @@
     try {
       const root = document.documentElement;
       if (!root) return;
-      if (value === null || value === undefined || value === false) root.removeAttribute(name);
-      else root.setAttribute(name, String(value));
+      if (value === null || value === undefined || value === false) {
+        if (root.hasAttribute(name)) root.removeAttribute(name);
+        return;
+      }
+      const next = String(value);
+      if (root.getAttribute(name) !== next) root.setAttribute(name, next);
     } catch {}
   }
 
@@ -775,6 +779,34 @@
     }
   }
 
+  function isComposerMutationRecord(record = null) {
+    if (!record) return false;
+    try {
+      if (isComposerInteractionTarget(record.target)) return true;
+    } catch {}
+    const lists = [record.addedNodes, record.removedNodes];
+    for (const list of lists) {
+      if (!list || !list.length) continue;
+      const limit = Math.min(3, list.length);
+      for (let i = 0; i < limit; i += 1) {
+        const node = list[i];
+        if (!node) continue;
+        const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+        if (el && isComposerInteractionTarget(el)) return true;
+      }
+    }
+    return false;
+  }
+
+  function isComposerOnlyMutation(records = []) {
+    if (!isExtremeMode() || !records || !records.length) return false;
+    const limit = Math.min(16, records.length);
+    for (let i = 0; i < limit; i += 1) {
+      if (!isComposerMutationRecord(records[i])) return false;
+    }
+    return true;
+  }
+
   function markInteractionHot(event = null) {
     state.interactionHotUntil = now() + INTERACTION_HOT_MS;
     if ((event?.type === 'input' || event?.type === 'keydown') && isComposerInteractionTarget(event?.target)) {
@@ -813,6 +845,13 @@
       try {
         state.mutationObserver = new MutationObserver((records) => {
           if (document.hidden) return;
+          if (isComposerOnlyMutation(records)) {
+            state.hotPathActive = true;
+            state.lastReason = 'composer-mutation-hot';
+            publishState();
+            scheduleScan(SCAN_EXTREME_COMPOSER_IDLE_MS, 'composer-mutation-idle');
+            return;
+          }
           state.mutationScore = Math.min(500, state.mutationScore + Math.min(80, records?.length || 0));
           if (isExtremeMode()) {
             const generating = isGenerating();

@@ -105,7 +105,14 @@ function fmtModuleMeta(def) {
   const authors = Array.isArray(def?.authors) ? def.authors.map((v) => fmtOneLine(v)).filter(Boolean) : [];
   const license = typeof def?.license === 'string' ? fmtOneLine(def.license) : '';
   const upstream = typeof def?.upstream === 'string' ? fmtOneLine(def.upstream) : '';
-  return { authors, license, upstream };
+  const references = Array.isArray(def?.references)
+    ? def.references.map((ref) => {
+        const label = fmtOneLine(ref?.label || '参考');
+        const url = fmtOneLine(ref?.url || '');
+        return url ? { label, url } : null;
+      }).filter(Boolean)
+    : [];
+  return { authors, license, upstream, references };
 }
 
 function fmtDefLine(d) {
@@ -171,12 +178,13 @@ function main() {
       const m = modules[moduleId] || null;
       const mName = fmtOneLine(m?.name || moduleId);
       const mSub = fmtOneLine(m?.sub || '');
-      const { authors, license, upstream } = fmtModuleMeta(m);
+      const { authors, license, upstream, references } = fmtModuleMeta(m);
 
       out += `- \`${moduleId}\`: ${mName}${mSub ? ` — ${mSub}` : ''}\n`;
       if (authors.length) out += `  - 作者: ${authors.join(' / ')}\n`;
       if (license) out += `  - 许可证: ${license}\n`;
       if (upstream) out += `  - 上游: \`${upstream}\`\n`;
+      for (const ref of references) out += `  - ${ref.label}: \`${ref.url}\`\n`;
 
       const key = `${siteId}\n${moduleId}`;
       const list = defsBySiteModule.get(key) || [];

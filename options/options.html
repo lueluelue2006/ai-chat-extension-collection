@@ -107,7 +107,7 @@
                 <div class="panelShellTopRow">
                   <div class="panelShellEyebrow">正在配置</div>
                   <div class="panelInfo" id="panelInfoWrap" hidden>
-                    <button class="panelInfoBtn" id="panelInfoBtn" type="button" aria-label="查看模块信息">i</button>
+                    <button class="panelInfoBtn" id="panelInfoBtn" type="button" aria-label="查看模块信息" aria-expanded="false" aria-controls="panelInfoCard">i</button>
                     <div class="panelInfoCard" id="panelInfoCard" role="tooltip" aria-hidden="true"></div>
                   </div>
                 </div>
@@ -125,7 +125,7 @@
       <section class="card" aria-label="OpenAI 新模型监控">
         <div class="cardTitle">OpenAI 新模型监控（可配置）</div>
         <div class="hint">
-          默认每 1 小时请求一次下方每个 URL（目前仅支持 developers.openai.com/images/api/models/icons/...）；只要检测到可用资源（非 404）就会提醒你（系统通知 + 扩展角标 + ChatGPT 页内横幅）。要停止提醒，请删除全部 URL 并保存（空列表会停用检测/提醒；横幅不会被点击关闭）。
+          默认不再内置任何探测 URL；保存下方列表后，每 1 小时请求一次每个 URL（目前仅支持 developers.openai.com/images/api/models/icons/...）。只有 HTTP 2xx 成功响应才会提醒你；403、404、5xx 和请求失败都视为不可用。要停止提醒，请删除全部 URL 并保存（空列表会停用检测/提醒；横幅不会被点击关闭）。
         </div>
         <div class="alertBox" id="gpt53AlertBox" hidden>
           <div class="alertTitle">OpenAI 新模型提示</div>

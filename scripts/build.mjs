@@ -44,8 +44,24 @@ async function exists(absPath) {
 }
 
 async function ensureCleanDist() {
-  await fs.rm(DIST, { recursive: true, force: true });
-  await fs.mkdir(DIST, { recursive: true });
+  try {
+    const stat = await fs.lstat(DIST);
+    if (!stat.isDirectory()) {
+      await fs.rm(DIST, { recursive: true, force: true });
+      await fs.mkdir(DIST, { recursive: true });
+      return;
+    }
+  } catch {
+    await fs.mkdir(DIST, { recursive: true });
+    return;
+  }
+
+  // Keep the dist root directory stable so Chrome can continue reading the
+  // unpacked extension after rebuilds on macOS.
+  const entries = await fs.readdir(DIST, { withFileTypes: true });
+  await Promise.all(
+    entries.map((entry) => fs.rm(path.join(DIST, entry.name), { recursive: true, force: true }))
+  );
 }
 
 async function copyRuntimeEntry(relPath) {

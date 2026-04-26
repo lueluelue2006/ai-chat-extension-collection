@@ -3,7 +3,9 @@
   'use strict';
 
   const API_KEY = '__aichat_chatgpt_core_main_v1__';
-  const API_VERSION = 7;
+  const DOM_ADAPTER_KEY = '__aichat_chatgpt_dom_adapter_v1__';
+  const API_VERSION = 8;
+  const DOM_ADAPTER_MIN_VERSION = 1;
 
   // Avoid installing timers/listeners inside iframes.
   const isAllowedFrame = (() => {
@@ -33,7 +35,7 @@
     'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
   const MODEL_META_LABEL_ATTR = 'data-qn-chatgpt-model-meta-label';
   const COMPOSER_MODE_TOKEN_RE =
-    /\b(?:instant|thinking|pro|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
+    /\b(?:instant|thinking|pro|light|heavy|standard|extended|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
   const DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', TURN_HOST_SELECTOR);
   const WRAPPED_TURN_HOST_SELECTOR = prefixSelectorList(':scope > *', TURN_HOST_SELECTOR);
 
@@ -48,6 +50,7 @@
   let modelMetaSyncTimers = new Set();
   let modelMetaBootstrapTimer = 0;
   let modelMetaBootstrapAttempts = 0;
+  let ownAdapterFallbackApi = null;
   const MODEL_META_BOOTSTRAP_MAX_ATTEMPTS = 16;
 
   function prefixSelectorList(prefix, selectorList) {
@@ -87,6 +90,15 @@
     }
   }
 
+  function getDomAdapter() {
+    try {
+      const api = globalThis[DOM_ADAPTER_KEY] || window[DOM_ADAPTER_KEY] || null;
+      if (api && api === ownAdapterFallbackApi) return null;
+      if (api && typeof api === 'object' && Number(api.version || 0) >= DOM_ADAPTER_MIN_VERSION) return api;
+    } catch {}
+    return null;
+  }
+
   function isVisibleElement(el) {
     try {
       if (!el || !el.getBoundingClientRect) return false;
@@ -102,6 +114,8 @@
   }
 
   function getConversationIdFromUrl(url) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getConversationIdFromUrl === 'function') return adapter.getConversationIdFromUrl(url);
     try {
       const u = new URL(String(url || ''), location.href);
       const parts = String(u.pathname || '')
@@ -127,6 +141,8 @@
   }
 
   function getRoute() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getRoute === 'function') return adapter.getRoute();
     const href = (() => {
       try {
         return String(location.href || '');
@@ -153,6 +169,8 @@
   }
 
   function getEditorEl() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getEditorEl === 'function') return adapter.getEditorEl();
     const route = getRoute();
     const routeKey = `${route.pathname}::${route.conversationId || ''}`;
     try {
@@ -200,6 +218,8 @@
   }
 
   function getComposerForm(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getComposerForm === 'function') return adapter.getComposerForm(editorEl);
     try {
       const el = editorEl || getEditorEl();
       return el?.closest?.('form') || null;
@@ -209,6 +229,8 @@
   }
 
   function getModelSwitcherButton() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getModelSwitcherButton === 'function') return adapter.getModelSwitcherButton();
     try {
       const visible = pickBottomMostVisible(Array.from(document.querySelectorAll(MODEL_SWITCHER_SELECTOR)).filter(isVisibleElement));
       if (visible) return visible;
@@ -221,6 +243,8 @@
   }
 
   function readCurrentModelLabel() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.readCurrentModelLabel === 'function') return adapter.readCurrentModelLabel();
     try {
       const button = getModelSwitcherButton();
       const aria = String(button?.getAttribute?.('aria-label') || '').trim();
@@ -234,6 +258,8 @@
   }
 
   function readCurrentModelMetaLabel() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.readCurrentModelMetaLabel === 'function') return adapter.readCurrentModelMetaLabel();
     try {
       const button = getModelSwitcherButton();
       if (!(button instanceof HTMLElement)) return '';
@@ -316,6 +342,7 @@
       modelMetaObserver.observe(nextHeader, {
         childList: true,
         subtree: true,
+        characterData: true,
         attributes: true,
         attributeFilter: ['aria-label', 'data-state']
       });
@@ -335,10 +362,13 @@
   }
 
   function readComposerModeLabel(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.readComposerModeLabel === 'function') return adapter.readComposerModeLabel(editorEl);
     try {
       const form = getComposerForm(editorEl);
       const buttons = Array.from(form?.querySelectorAll?.("button[aria-haspopup='menu'],button") || []);
       for (const button of buttons) {
+        if (!isVisibleElement(button)) continue;
         const text = String(button?.innerText || button?.textContent || '').trim();
         const aria = String(button?.getAttribute?.('aria-label') || '').trim();
         const combined = `${text} ${aria}`.trim();
@@ -350,30 +380,46 @@
   }
 
   function findSendButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.findSendButton === 'function') return adapter.findSendButton(editorEl);
     const form = getComposerForm(editorEl);
+    const findWithin = (root) => {
+      if (!root) return null;
+      try {
+        const direct =
+          root.querySelector('#composer-submit-button') ||
+          root.querySelector('button[data-testid="send-button"]') ||
+          root.querySelector('button[aria-label*="Send" i]') ||
+          root.querySelector('button[type="submit"]');
+        if (direct) return direct;
+        const buttons = Array.from(root.querySelectorAll('button'));
+        for (const button of buttons) {
+          const text = String(button?.innerText || button?.textContent || '').trim();
+          const aria = String(button?.getAttribute?.('aria-label') || '').trim();
+          const combined = `${text} ${aria}`.trim();
+          if (!combined) continue;
+          if (/\bstop\b/i.test(combined)) continue;
+          if (/\b(send|submit)\b/i.test(combined) || /发送|提交/.test(combined)) return button;
+        }
+      } catch {}
+      return null;
+    };
     try {
       if (form) {
-        const inForm =
-          form.querySelector('#composer-submit-button') ||
-          form.querySelector('button[data-testid="send-button"]') ||
-          form.querySelector('button[aria-label*="Send" i]') ||
-          null;
+        const inForm = findWithin(form);
         if (inForm) return inForm;
       }
     } catch {}
     try {
-      return (
-        document.querySelector('#composer-submit-button') ||
-        document.querySelector('button[data-testid="send-button"]') ||
-        document.querySelector('button[aria-label*="Send" i]') ||
-        null
-      );
+      return findWithin(document);
     } catch {
       return null;
     }
   }
 
   function findStopButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.findStopButton === 'function') return adapter.findStopButton(editorEl);
     const form = getComposerForm(editorEl);
     try {
       if (form) {
@@ -396,6 +442,8 @@
   }
 
   function isGenerating(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.isGenerating === 'function') return !!adapter.isGenerating(editorEl);
     return !!findStopButton(editorEl);
   }
 
@@ -412,6 +460,8 @@
   }
 
   function clickSendButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.clickSendButton === 'function') return !!adapter.clickSendButton(editorEl);
     try {
       const btn = findSendButton(editorEl);
       if (!(btn instanceof HTMLElement)) return false;
@@ -426,6 +476,8 @@
   }
 
   function clickStopButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.clickStopButton === 'function') return !!adapter.clickStopButton(editorEl);
     try {
       const btn = findStopButton(editorEl);
       if (!(btn instanceof HTMLElement)) return false;
@@ -438,6 +490,8 @@
   }
 
   function normalizeTurnElement(el) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.normalizeTurnElement === 'function') return adapter.normalizeTurnElement(el);
     try {
       if (!(el instanceof Element)) return null;
       if (el.matches(TURN_HOST_SELECTOR)) return el;
@@ -461,6 +515,8 @@
   }))();
 
   function getTurnsRoot() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnsRoot === 'function') return adapter.getTurnsRoot();
     try {
       const stable = document.querySelector('[data-testid="conversation-turns"]');
       if (stable) return stable;
@@ -468,14 +524,24 @@
     // Newer ChatGPT builds may not expose a stable `conversation-turns` container.
     // Fall back to a narrow ancestor derived from the first turn host.
     try {
-      const first = normalizeTurnElement(document.querySelector(TURN_SELECTOR));
+      const allTurns = [];
+      const seen = new Set();
+      for (const item of Array.from(document.querySelectorAll(TURN_SELECTOR))) {
+        const turn = normalizeTurnElement(item);
+        if (!turn || seen.has(turn)) continue;
+        seen.add(turn);
+        allTurns.push(turn);
+      }
+      const first = allTurns[0] || null;
       if (first) {
-        // Prefer a list container whose *direct* children are turn hosts (cheap + ignores inner streaming mutations).
+        // Prefer the smallest ancestor that still covers every normalized turn.
+        // Current ChatGPT wraps each turn in its own div, so the first direct-turn
+        // wrapper can contain only one turn.
         let cur = first.parentElement;
         const MAX_DEPTH = 12;
         for (let i = 0; cur && cur !== document.body && cur !== document.documentElement && i < MAX_DEPTH; i++) {
           try {
-            if (cur.querySelector?.(DIRECT_TURN_HOST_SELECTOR)) return cur;
+            if (allTurns.every((turn) => cur.contains(turn))) return cur;
           } catch {}
           cur = cur.parentElement;
         }
@@ -490,11 +556,15 @@
     return document;
   }
 
-  function getTurnArticles(root) {
+  function getTurnArticles(root, options = null) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnArticles === 'function') return adapter.getTurnArticles(root, options);
+    const forceFresh = !!(options && typeof options === 'object' && options.forceFresh);
     try {
       const cachedRoot = turnsWatch.cachedRoot;
       const cachedTurns = turnsWatch.cachedTurns;
       const useCached =
+        !forceFresh &&
         Array.isArray(cachedTurns) &&
         cachedTurns.length &&
         (!root || root === document || root === cachedRoot);
@@ -544,6 +614,8 @@
   }
 
   function getChatScrollContainer(force = false) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getChatScrollContainer === 'function') return adapter.getChatScrollContainer(force);
     const ts = now();
     if (!force) {
       try {
@@ -646,6 +718,8 @@
   }
 
   function getVisibleTurnWindow(force = false, marginPx = 0) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getVisibleTurnWindow === 'function') return adapter.getVisibleTurnWindow(force, marginPx);
     const snapshot = getTurnsSnapshot(force);
     const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
     const scroller = getChatScrollContainer(force);
@@ -734,7 +808,9 @@
     const prevRoot = turnsWatch.cachedRoot;
     const prevTurns = Array.isArray(turnsWatch.cachedTurns) ? turnsWatch.cachedTurns : [];
     const prevSet = prevRoot === normalizedRoot ? new Set(prevTurns) : null;
-    const turns = getTurnArticles(normalizedRoot);
+    // Force a DOM rescan here. Refresh is the only place allowed to replace the cache,
+    // so reusing `cachedTurns` would make the snapshot self-stale after new turns append.
+    const turns = getTurnArticles(normalizedRoot, { forceFresh: true });
     const turnsSet = new Set(turns);
     const rootChanged = prevRoot !== normalizedRoot;
 
@@ -786,6 +862,8 @@
   }
 
   function getTurnsSnapshot(force = false) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnsSnapshot === 'function') return adapter.getTurnsSnapshot(force);
     const root = turnsWatch.root && turnsWatch.root.isConnected ? turnsWatch.root : getTurnsRoot();
     if (
       !force &&
@@ -886,6 +964,34 @@
     turnsWatch.timer = 0;
   }
 
+  function clearVisibleTurnWindowCache() {
+    try {
+      visibleTurnsWatch.ts = 0;
+      visibleTurnsWatch.turnsVersion = 0;
+      visibleTurnsWatch.scroller = null;
+      visibleTurnsWatch.marginPx = 0;
+      visibleTurnsWatch.result = null;
+    } catch {}
+    try {
+      chatScrollWatch.scroller = null;
+      chatScrollWatch.at = 0;
+    } catch {}
+  }
+
+  function releaseTurnNodeCaches(reason = '') {
+    const before = {
+      turns: Array.isArray(turnsWatch.cachedTurns) ? turnsWatch.cachedTurns.length : 0
+    };
+    try {
+      turnsWatch.cachedRoot = null;
+      turnsWatch.cachedTurns = [];
+      turnsWatch.pendingAddedTurns.clear();
+      turnsWatch.version += 1;
+    } catch {}
+    clearVisibleTurnWindowCache();
+    return { reason: String(reason || ''), before };
+  }
+
   function stopTurnsHealthCheck() {
     try {
       if (turnsWatch.healthTimer) clearInterval(turnsWatch.healthTimer);
@@ -929,6 +1035,7 @@
         turnsWatch.routeUnsub = bridge.on('routeChange', () => {
           try {
             if (!turnsWatch.listeners.size) return;
+            releaseTurnNodeCaches('route');
             detachTurnsObserver();
             stopTurnsBootstrap();
             ensureTurnsObserver(true);
@@ -1035,6 +1142,7 @@
           detachTurnsObserver();
           stopTurnsBootstrap();
           stopTurnsHealthCheck();
+          releaseTurnNodeCaches('idle');
           try {
             if (typeof turnsWatch.routeUnsub === 'function') turnsWatch.routeUnsub();
           } catch {}
@@ -1045,6 +1153,8 @@
   }
 
   function getTurnRole(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnRole === 'function') return adapter.getTurnRole(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-turn') || '').trim();
       if (v) return v;
@@ -1062,6 +1172,8 @@
   }
 
   function getTurnId(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnId === 'function') return adapter.getTurnId(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-turn-id') || '').trim();
       if (v) return v;
@@ -1070,6 +1182,8 @@
   }
 
   function getMessageId(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getMessageId === 'function') return adapter.getMessageId(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-message-id') || '').trim();
       if (v) return v;
@@ -1146,11 +1260,37 @@
     } catch {}
   }
 
+  function installMemoryReleaseHooks() {
+    try {
+      if (window.__aichat_chatgpt_core_main_memory_hooks_v1__) return;
+      Object.defineProperty(window, '__aichat_chatgpt_core_main_memory_hooks_v1__', {
+        value: true,
+        configurable: true,
+        enumerable: false,
+        writable: true
+      });
+    } catch {}
+    const releaseIfHidden = () => {
+      try {
+        if (document.hidden) releaseTurnNodeCaches('hidden');
+      } catch {}
+    };
+    try {
+      document.addEventListener('visibilitychange', releaseIfHidden, true);
+    } catch {}
+    try {
+      window.addEventListener('pagehide', () => releaseTurnNodeCaches('pagehide'), true);
+    } catch {}
+  }
+
+  installMemoryReleaseHooks();
+
   const api = Object.freeze({
     version: API_VERSION,
     now,
     safeCall,
     getRoute,
+    getDomAdapter,
     getConversationIdFromUrl,
     getEditorEl,
     getComposerForm,
@@ -1173,7 +1313,8 @@
     getTurnRole,
     getTurnId,
     getMessageId,
-    onRouteChange
+    onRouteChange,
+    releaseMemory: (reason) => releaseTurnNodeCaches(reason || 'api')
   });
 
   try {
@@ -1181,6 +1322,20 @@
   } catch {
     try {
       window[API_KEY] = api;
+    } catch {}
+  }
+
+  try {
+    if (!window[DOM_ADAPTER_KEY]) {
+      ownAdapterFallbackApi = api;
+      Object.defineProperty(window, DOM_ADAPTER_KEY, { value: api, configurable: true, enumerable: false, writable: false });
+    }
+  } catch {
+    try {
+      if (!window[DOM_ADAPTER_KEY]) {
+        ownAdapterFallbackApi = api;
+        window[DOM_ADAPTER_KEY] = api;
+      }
     } catch {}
   }
 

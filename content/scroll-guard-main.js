@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 8;
+    const GUARD_VERSION = 9;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -265,7 +265,10 @@
   }
 
   function isAllowed(ts = now()) {
-    if (readPerfHotFromDataset(ts)) return true;
+    // Do not bypass scroll-lock just because the page is hot/heavy. On long ChatGPT
+    // threads, allowing send-time autoscroll forces the browser to materialize the
+    // whole range between the user's reading position and the composer.
+    void ts;
     try {
       syncEnabledFromDataset(ts);
     } catch {}
@@ -611,10 +614,25 @@
             ? node.parentElement
             : null;
       if (!el || !el.closest) return null;
-      return (
-        el.closest('.cm-scroller, .cm-editor, pre, code, [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]') ||
-        null
-      );
+      const direct =
+        el.closest('.cm-scroller, .cm-editor, pre, code, [id="code-block-viewer"], [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]') ||
+        null;
+      if (direct) return direct;
+
+      let cur = el;
+      for (let depth = 0; cur && depth < 4; depth += 1, cur = cur.parentElement) {
+        if (!(cur instanceof HTMLElement)) continue;
+        const cls = String(cur.className || '');
+        if (!/(overflow-y-auto|overflow-auto|overflow-scroll)/.test(cls)) continue;
+        if (!cur.closest?.('[data-testid^="conversation-turn-"], [data-message-id], .markdown, .prose')) continue;
+        const rangeY = Math.max(0, (cur.scrollHeight || 0) - (cur.clientHeight || 0));
+        const rangeX = Math.max(0, (cur.scrollWidth || 0) - (cur.clientWidth || 0));
+        if (rangeY < 1 && rangeX < 1) continue;
+        if (cur.clientHeight >= (window.innerHeight || 0) * 0.92) continue;
+        if (!cur.querySelector?.('pre, code, [id="code-block-viewer"], [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]')) continue;
+        return cur;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -761,7 +779,6 @@
 
   function shouldBlockIntoView(target) {
     if (shouldBypassCodeIntoView(target)) return false;
-    if (isChatgptHeavyStreaming()) return false;
     if (isAllowed()) return false;
     const sc = getChatScroller();
     if (!sc || !target || !target.getBoundingClientRect) return false;

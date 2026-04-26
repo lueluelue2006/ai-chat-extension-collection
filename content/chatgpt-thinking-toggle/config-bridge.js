@@ -151,13 +151,21 @@
 
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
+  const HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_light_pro_v1__';
+  const HOTKEY_SEND_MAX_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_max_pro_v1__';
 
   const DS_EFFORT_KEY = 'aichatHotkeyEffortEnabled';
   const DS_MODEL_KEY = 'aichatHotkeyModelEnabled';
+  const DS_SEND_LIGHT_PRO_KEY = 'aichatHotkeySendLightProEnabled';
+  const DS_SEND_MAX_PRO_KEY = 'aichatHotkeySendMaxProEnabled';
+  const DS_DISABLE_CMD_P_KEY = 'aichatHotkeyDisableCmdPEnabled';
 
   const pending = {
     effort: true,
     model: true,
+    sendLightPro: true,
+    sendMaxPro: true,
+    disableCmdP: true,
     timer: 0,
     tries: 0
   };
@@ -198,6 +206,8 @@
   function cleanupLegacyLocalStorage() {
     try { localStorage.removeItem(HOTKEY_EFFORT_ENABLED_KEY); } catch {}
     try { localStorage.removeItem(HOTKEY_MODEL_ENABLED_KEY); } catch {}
+    try { localStorage.removeItem(HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY); } catch {}
+    try { localStorage.removeItem(HOTKEY_SEND_MAX_PRO_ENABLED_KEY); } catch {}
   }
 
   function purgeLegacySettingsKey() {
@@ -211,7 +221,10 @@
     try {
       const ok1 = writeBoolDataset(DS_EFFORT_KEY, pending.effort);
       const ok2 = writeBoolDataset(DS_MODEL_KEY, pending.model);
-      if (ok1 && ok2) {
+      const ok3 = writeBoolDataset(DS_SEND_LIGHT_PRO_KEY, pending.sendLightPro);
+      const ok4 = writeBoolDataset(DS_SEND_MAX_PRO_KEY, pending.sendMaxPro);
+      const ok5 = writeBoolDataset(DS_DISABLE_CMD_P_KEY, pending.disableCmdP);
+      if (ok1 && ok2 && ok3 && ok4 && ok5) {
         pending.tries = 0;
         return;
       }
@@ -241,11 +254,24 @@
       const mods = settings?.siteModules?.chatgpt;
       const effortSetting = typeof mods?.chatgpt_thinking_toggle_hotkey_effort === 'boolean' ? mods.chatgpt_thinking_toggle_hotkey_effort : true;
       const modelSetting = typeof mods?.chatgpt_thinking_toggle_hotkey_model === 'boolean' ? mods.chatgpt_thinking_toggle_hotkey_model : true;
+      const sendLightProSetting =
+        typeof mods?.chatgpt_thinking_toggle_hotkey_send_light_pro === 'boolean'
+          ? mods.chatgpt_thinking_toggle_hotkey_send_light_pro
+          : true;
+      const sendMaxProSetting =
+        typeof mods?.chatgpt_thinking_toggle_hotkey_send_max_pro === 'boolean'
+          ? mods.chatgpt_thinking_toggle_hotkey_send_max_pro
+          : true;
+      const disableCmdPSetting =
+        typeof mods?.chatgpt_thinking_toggle_disable_cmd_p === 'boolean' ? mods.chatgpt_thinking_toggle_disable_cmd_p : true;
       const force = typeof mods?.chatgpt_thinking_toggle_hotkeys_force === 'boolean' ? mods.chatgpt_thinking_toggle_hotkeys_force : false;
       const hasMetaKey = resolveHasMetaKey(settings);
       cleanupLegacyLocalStorage();
       pending.effort = !!effortSetting && (!!hasMetaKey || !!force);
       pending.model = !!modelSetting && (!!hasMetaKey || !!force);
+      pending.sendLightPro = !!sendLightProSetting && (!!hasMetaKey || !!force);
+      pending.sendMaxPro = !!sendMaxProSetting && (!!hasMetaKey || !!force);
+      pending.disableCmdP = !!disableCmdPSetting;
       flushPending();
     } catch {}
   }
@@ -257,7 +283,13 @@
       if (!html) return;
       attrObserver = bridgeScope.observer(html, () => scheduleFlush(0), {
         attributes: true,
-        attributeFilter: ['data-aichat-hotkey-effort-enabled', 'data-aichat-hotkey-model-enabled']
+        attributeFilter: [
+          'data-aichat-hotkey-effort-enabled',
+          'data-aichat-hotkey-model-enabled',
+          'data-aichat-hotkey-send-light-pro-enabled',
+          'data-aichat-hotkey-send-max-pro-enabled',
+          'data-aichat-hotkey-disable-cmd-p-enabled'
+        ]
       });
     } catch {}
   }

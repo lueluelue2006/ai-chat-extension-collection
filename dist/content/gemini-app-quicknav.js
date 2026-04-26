@@ -956,6 +956,10 @@
             try { oldNav._ui.layout.destroy(); } catch {}
           }
         }
+        try {
+          if (typeof oldNav._dragCleanup === 'function') oldNav._dragCleanup();
+        } catch {}
+        oldNav._dragCleanup = null;
         oldNav.remove();
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已移除旧面板');
       }
@@ -2103,7 +2107,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       const api = globalThis.__aichat_ui_pos_drag_v1__;
       if (api && typeof api.enableRightTopDrag === 'function') {
-        api.enableRightTopDrag(nav, header, opts || {});
+        const off = api.enableRightTopDrag(nav, header, opts || {});
+        if (typeof off === 'function') nav._dragCleanup = off;
         return;
       }
     } catch {}

@@ -1,9 +1,31 @@
 (() => {
   'use strict';
 
-  const GUARD_KEY = '__aichat_genspark_moa_image_autosettings_v1__';
-  if (window[GUARD_KEY]) return;
-  Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+  const STATE_KEY = '__aichat_genspark_moa_image_autosettings_state_v1__';
+  const runtimeDisposers = [];
+  const runtimeState = {
+    disposed: false,
+    disposeRuntime() {
+      if (runtimeState.disposed) return;
+      runtimeState.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+      try {
+        document.documentElement?.removeAttribute?.('data-aichat-genspark-moa-image-autosettings');
+      } catch {}
+    }
+  };
+
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: runtimeState, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { window[STATE_KEY] = runtimeState; } catch {}
+  }
   try {
     document.documentElement?.setAttribute?.('data-aichat-genspark-moa-image-autosettings', '1');
   } catch {}
@@ -15,6 +37,26 @@
   const QUALITY_LABEL_TEXTS = ['quality', 'resolution', 'size', '画质', '分辨率', '尺寸'];
   const LOG_PREFIX = '[ai-chat] genspark image settings';
   const logged = new Set();
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    runtimeDisposers.push(dispose);
+    return dispose;
+  }
+
+  function interval(fn, ms) {
+    if (typeof fn !== 'function') return 0;
+    let id = 0;
+    try {
+      id = window.setInterval(fn, ms);
+    } catch {
+      return 0;
+    }
+    addRuntimeDisposer(() => {
+      try { window.clearInterval(id); } catch {}
+    });
+    return id;
+  }
 
   function logOnce(key, ...args) {
     if (logged.has(key)) return;
@@ -540,6 +582,7 @@
     let running = false;
 
     async function tick() {
+      if (runtimeState.disposed) return;
       if (running) return;
       running = true;
       try {
@@ -559,7 +602,7 @@
 
     // 初次进入尽快执行一次
     void tick();
-    setInterval(tick, 800);
+    interval(tick, 800);
   }
 
   void boot();

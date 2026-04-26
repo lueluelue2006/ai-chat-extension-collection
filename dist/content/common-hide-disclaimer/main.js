@@ -11,10 +11,16 @@
       try {
         if (prev.scanTimer) clearTimeout(prev.scanTimer);
       } catch {}
+      try {
+        if (prev.hydrationTimer) clearTimeout(prev.hydrationTimer);
+      } catch {}
+      try {
+        if (prev.readyHandler) document.removeEventListener('DOMContentLoaded', prev.readyHandler, false);
+      } catch {}
     }
   } catch {}
 
-  const state = { observer: null, scanTimer: null };
+  const state = { observer: null, scanTimer: null, hydrationTimer: null, readyHandler: null };
   try {
     Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
   } catch {
@@ -235,7 +241,8 @@
     });
 
     // 覆盖 SSR/水合后才出现的提示（仅一次）
-    setTimeout(() => {
+    state.hydrationTimer = setTimeout(() => {
+      state.hydrationTimer = null;
       enqueueRoot(document.body || document.documentElement);
       scheduleScanSoon();
     }, 800);
@@ -248,7 +255,8 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
+    state.readyHandler = boot;
+    document.addEventListener('DOMContentLoaded', state.readyHandler, { once: true });
   } else {
     boot();
   }

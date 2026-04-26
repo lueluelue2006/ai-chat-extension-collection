@@ -1,21 +1,22 @@
 (() => {
   'use strict';
 
-  const GUARD_KEY = '__aichat_genspark_force_sonnet45_thinking_v2__';
-  if (window[GUARD_KEY]) return;
-  Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
   if (window.top !== window) return;
 
+  const STATE_KEY = '__aichat_genspark_force_sonnet45_thinking_state_v1__';
   const ASK_API_RE = /\/api\/agent\/ask_proxy(?:\?|$)/i;
   const TARGET_MODELS = new Set(['claude-sonnet-4-5', 'claude-sonnet-4-5-20250929']);
   const THINKING_MODEL = 'claude-sonnet-4-5-thinking';
   const MAX_REASONING_LEN = 12000;
   const FETCH_PATCH_FLAG = '__aichatGensparkSonnet45ThinkingPatched';
+  const DIAG_MODEL_ATTR = 'data-aichat-genspark-thinking-last-model';
+  const DIAG_ACTIVE_ATTR = 'data-aichat-genspark-thinking-active';
 
   const STYLE_ID = '__aichat_genspark_thinking_inline_style_v1__';
   const PANEL_CLASS = 'aichat-genspark-thinking-panel';
   const PANEL_OPEN_ATTR = 'data-aichat-open';
 
+  const runtimeDisposers = [];
   const state = {
     reasoningText: '',
     lastReqId: 0,
@@ -24,8 +25,78 @@
     fullEl: null,
     toggleEl: null,
     maskTimerShort: null,
-    maskTimerLong: null
+    maskTimerLong: null,
+    originalFetch: null,
+    disposed: false,
+    disposeRuntime() {
+      if (state.disposed) return;
+      state.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+      try { if (state.maskTimerShort) window.clearTimeout(state.maskTimerShort); } catch {}
+      try { if (state.maskTimerLong) window.clearTimeout(state.maskTimerLong); } catch {}
+      state.maskTimerShort = null;
+      state.maskTimerLong = null;
+      try {
+        if (state.originalFetch && window.fetch && window.fetch[FETCH_PATCH_FLAG]) {
+          window.fetch = state.originalFetch;
+        }
+      } catch {}
+      state.originalFetch = null;
+      try { state.panelRoot?.remove?.(); } catch {}
+      state.panelRoot = null;
+      state.previewEl = null;
+      state.fullEl = null;
+      state.toggleEl = null;
+      try { document.getElementById(STYLE_ID)?.remove?.(); } catch {}
+      try {
+        document.documentElement?.removeAttribute?.(DIAG_MODEL_ATTR);
+        document.documentElement?.removeAttribute?.(DIAG_ACTIVE_ATTR);
+      } catch {}
+    }
   };
+
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { window[STATE_KEY] = state; } catch {}
+  }
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    runtimeDisposers.push(dispose);
+    return dispose;
+  }
+
+  function on(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return;
+    try {
+      target.addEventListener(type, listener, options);
+      addRuntimeDisposer(() => {
+        try { target.removeEventListener(type, listener, options); } catch {}
+      });
+    } catch {}
+  }
+
+  function timeout(fn, ms) {
+    if (typeof fn !== 'function') return 0;
+    let id = 0;
+    try {
+      id = window.setTimeout(() => {
+        if (state.disposed) return;
+        fn();
+      }, ms);
+      addRuntimeDisposer(() => {
+        try { window.clearTimeout(id); } catch {}
+      });
+    } catch {}
+    return id;
+  }
 
   function parseJsonSafe(text) {
     try {
@@ -51,6 +122,19 @@
     const v = String(inputModel || '').trim();
     if (!v) return v;
     return TARGET_MODELS.has(v) ? THINKING_MODEL : v;
+  }
+
+  function shouldHandleThinkingModel(inputModel) {
+    const v = String(inputModel || '').trim();
+    if (!v) return false;
+    return TARGET_MODELS.has(v) || v === THINKING_MODEL;
+  }
+
+  function setDiagnostics(inputModel, outputModel, active) {
+    try {
+      document.documentElement?.setAttribute?.(DIAG_MODEL_ATTR, `${inputModel || ''} -> ${outputModel || ''}`);
+      document.documentElement?.setAttribute?.(DIAG_ACTIVE_ATTR, active ? '1' : '0');
+    } catch {}
   }
 
   function capReasoningText(text) {
@@ -231,7 +315,7 @@
     toggle.type = 'button';
     toggle.className = 'aichat-thinking-toggle';
     toggle.textContent = '展开';
-    toggle.addEventListener('click', () => {
+    on(toggle, 'click', () => {
       const nextOpen = panel.getAttribute(PANEL_OPEN_ATTR) === '1' ? '0' : '1';
       panel.setAttribute(PANEL_OPEN_ATTR, nextOpen);
       toggle.textContent = nextOpen === '1' ? '收起' : '展开';
@@ -280,11 +364,11 @@
     maskInlineReasoningInLatestAnswer();
     if (state.maskTimerShort) clearTimeout(state.maskTimerShort);
     if (state.maskTimerLong) clearTimeout(state.maskTimerLong);
-    state.maskTimerShort = setTimeout(() => {
+    state.maskTimerShort = timeout(() => {
       state.maskTimerShort = null;
       maskInlineReasoningInLatestAnswer();
     }, 120);
-    state.maskTimerLong = setTimeout(() => {
+    state.maskTimerLong = timeout(() => {
       state.maskTimerLong = null;
       maskInlineReasoningInLatestAnswer();
     }, 700);
@@ -444,10 +528,13 @@
     const originalFetch = window.fetch;
     if (typeof originalFetch !== 'function') return;
     if (originalFetch[FETCH_PATCH_FLAG]) return;
+    state.originalFetch = originalFetch;
 
     const wrapped = async function (...args) {
+      if (state.disposed) return originalFetch.apply(this, args);
       let [input, init] = args;
       let reqUrl = '';
+      let shouldTapThinkingStream = false;
       try {
         reqUrl = typeof input === 'string' ? input : String(input?.url || '');
       } catch {
@@ -460,6 +547,8 @@
           const current = String(payload.ai_chat_model || '').trim();
           const next = forceThinkingModel(current);
           if (next && next !== current) payload.ai_chat_model = next;
+          shouldTapThinkingStream = shouldHandleThinkingModel(current) || shouldHandleThinkingModel(next);
+          setDiagnostics(current, next, shouldTapThinkingStream);
           init = { ...init, body: JSON.stringify(payload) };
           args[1] = init;
         }
@@ -467,7 +556,7 @@
 
       const response = await originalFetch.apply(this, args);
 
-      if (ASK_API_RE.test(reqUrl) && isAiChatPage()) {
+      if (shouldTapThinkingStream && ASK_API_RE.test(reqUrl) && isAiChatPage()) {
         state.lastReqId += 1;
         state.reasoningText = '';
         tapResponseStream(state.lastReqId, response);
@@ -491,18 +580,20 @@
   }
 
   function ensurePatchedFetch() {
+    if (state.disposed) return;
     try {
       patchFetch();
     } catch {}
   }
 
   ensurePatchedFetch();
-  setTimeout(ensurePatchedFetch, 0);
-  setTimeout(ensurePatchedFetch, 250);
-  setTimeout(ensurePatchedFetch, 1200);
-  setTimeout(ensurePatchedFetch, 5000);
-  window.addEventListener('load', ensurePatchedFetch, { once: true });
-  document.addEventListener(
+  timeout(ensurePatchedFetch, 0);
+  timeout(ensurePatchedFetch, 250);
+  timeout(ensurePatchedFetch, 1200);
+  timeout(ensurePatchedFetch, 5000);
+  on(window, 'load', ensurePatchedFetch, { once: true });
+  on(
+    document,
     'visibilitychange',
     () => {
       if (document.visibilityState === 'visible') ensurePatchedFetch();

@@ -1,17 +1,43 @@
 (() => {
   'use strict';
 
-  const GUARD_KEY = '__aichat_qwen_thinking_toggle_v1__';
-  try {
-    if (globalThis[GUARD_KEY]) return;
-    Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
-  } catch (_) {
-    try {
-      if (globalThis[GUARD_KEY]) return;
-      globalThis[GUARD_KEY] = true;
-    } catch (_) {
-      void _;
+  const STATE_KEY = '__aichat_qwen_thinking_toggle_state_v1__';
+  const runtimeDisposers = [];
+  const runtimeState = {
+    disposed: false,
+    disposeRuntime() {
+      if (runtimeState.disposed) return;
+      runtimeState.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
     }
+  };
+
+  try {
+    const prev = globalThis[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+  try {
+    Object.defineProperty(globalThis, STATE_KEY, { value: runtimeState, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { globalThis[STATE_KEY] = runtimeState; } catch {}
+  }
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    runtimeDisposers.push(dispose);
+    return dispose;
+  }
+
+  function on(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return;
+    try {
+      target.addEventListener(type, listener, options);
+      addRuntimeDisposer(() => {
+        try { target.removeEventListener(type, listener, options); } catch {}
+      });
+    } catch {}
   }
 
   const HOST = String((typeof location === 'object' && location && location.hostname) || '').toLowerCase();
@@ -92,13 +118,17 @@
       });
     } catch {}
     try {
-      chrome.storage.onChanged.addListener((changes, areaName) => {
+      const storageChangeHandler = (changes, areaName) => {
         try {
           if (areaName !== 'local') return;
           const next = changes?.[SETTINGS_KEY]?.newValue;
           if (!next) return;
           applyHotkeyPolicyFromSettings(next);
         } catch {}
+      };
+      chrome.storage.onChanged.addListener(storageChangeHandler);
+      addRuntimeDisposer(() => {
+        try { chrome.storage.onChanged.removeListener(storageChangeHandler); } catch {}
       });
     } catch {}
   }
@@ -321,8 +351,59 @@
     return popup;
   }
 
-  function pickModelToggleTarget(current) {
-    const cur = String(current || '');
+  function readModelNameFromText(text) {
+    const value = normText(text);
+    const match = value.match(/Qwen[\w.-]+/i);
+    return match ? match[0] : value;
+  }
+
+  function getModelItemName(el) {
+    if (!(el instanceof Element)) return '';
+    const nameEl = el.querySelector('[class*="model-item-name"]');
+    return readModelNameFromText(nameEl ? nameEl.textContent : el.textContent);
+  }
+
+  function dedupeModelNames(items) {
+    const out = [];
+    const seen = new Set();
+    for (const item of Array.isArray(items) ? items : []) {
+      const name = getModelItemName(item);
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    return out;
+  }
+
+  function pickNameByPattern(names, patterns, currentName) {
+    const currentKey = String(currentName || '').toLowerCase();
+    for (const pattern of patterns) {
+      const found = names.find((name) => {
+        if (String(name || '').toLowerCase() === currentKey) return false;
+        return pattern.test(name);
+      });
+      if (found) return found;
+    }
+    return names.find((name) => String(name || '').toLowerCase() !== currentKey) || '';
+  }
+
+  function pickModelToggleTarget(current, availableNames) {
+    const cur = readModelNameFromText(current);
+    const names = Array.isArray(availableNames) ? availableNames.filter(Boolean) : [];
+
+    if (names.length) {
+      const curText = String(cur || '');
+      const preferred = /max|preview/i.test(curText)
+        ? [/plus/i, /(?:27b|72b|32b|14b|7b|a17b|397)/i]
+        : /plus/i.test(curText)
+          ? [/max|preview/i, /(?:27b|72b|32b|14b|7b|a17b|397)/i]
+          : [/\bplus\b/i, /max|preview/i];
+      const want = pickNameByPattern(names, preferred, cur);
+      const alt = names.find((name) => String(name || '').toLowerCase() !== String(want || '').toLowerCase()) || cur || '';
+      return { want: want || alt, alt };
+    }
+
     if (/397/i.test(cur) || /a17b/i.test(cur)) return { want: 'Qwen3.5-Plus', alt: 'Qwen3.5-397B-A17B' };
     if (/plus/i.test(cur)) return { want: 'Qwen3.5-397B-A17B', alt: 'Qwen3.5-Plus' };
     return { want: 'Qwen3.5-397B-A17B', alt: 'Qwen3.5-Plus' };
@@ -330,7 +411,6 @@
 
   async function toggleModel() {
     const before = getHeaderModelText();
-    const target = pickModelToggleTarget(before);
 
     const popup = await openModelPopup();
     if (!popup) {
@@ -341,7 +421,10 @@
     const items = Array.from(popup.querySelectorAll('.index-module__model-item___MkLlj, [class*="model-item"]')).filter(
       isVisible
     );
+    const target = pickModelToggleTarget(before, dedupeModelNames(items));
     const pick =
+      items.find((el) => getModelItemName(el) === target.want) ||
+      items.find((el) => getModelItemName(el) === target.alt) ||
       items.find((el) => normText(el.textContent).includes(target.want)) ||
       items.find((el) => normText(el.textContent).includes(target.alt)) ||
       null;
@@ -646,10 +729,12 @@
   }
 
   async function ensureThinkingModeOnInitialLoad() {
+    if (runtimeState.disposed) return;
     if (initialThinkingBootstrapStarted) return;
     initialThinkingBootstrapStarted = true;
 
     const root = await waitForValue(() => getModeSelectRoot(), 12000, 80);
+    if (runtimeState.disposed) return;
     if (!root) return;
 
     const before = getCurrentModeText(root);
@@ -709,6 +794,7 @@
   }
 
   function handleKeyDown(e) {
+    if (runtimeState.disposed) return;
     const action = getActionFromKeydown(e);
     if (!action) return;
 
@@ -742,11 +828,7 @@
     if (!IS_QWEN_HOST) return;
     syncHotkeyPolicyFromStorage();
     void ensureThinkingModeOnInitialLoad();
-    try {
-      window.addEventListener('keydown', handleKeyDown, true);
-    } catch (_) {
-      void _;
-    }
+    on(window, 'keydown', handleKeyDown, true);
   }
 
   const testApi = Object.freeze({

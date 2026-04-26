@@ -223,7 +223,7 @@ AI捷径优先解决重度 ChatGPT / GPT 用户的高频问题：
 | 能力 | 说明 |
 | --- | --- |
 | QuickNav | 对话级导航、跳转、收藏、📌 标记、防自动滚动 |
-| 对话结构工具 | ChatGPT 消息树、导出、分叉编辑、TeX 复制 / 引用增强、下载修复 |
+| 对话结构工具 | ChatGPT 消息树、导出、分叉编辑、TeX 复制 / 引用增强（多段 Quote 交互参考 `chatgpt-ask-multi`）、下载修复 |
 | Tab queue | `Tab` 排队、自动串行发送、最近一条取回 |
 | 模型 / 推理操作 | ChatGPT `⌘O / ⌘J`、模型族 badge / toggle、Qwen 模型 / 推理切换 |
 | 长会话优化 | ChatGPT 长线程性能优化、顶栏恢复、SPA 恢复、代码块交互减载 |

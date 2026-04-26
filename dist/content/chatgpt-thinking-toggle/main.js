@@ -4,13 +4,22 @@
   // Prevent duplicate installs on MV3 reinject / extension reload.
   // This module registers global hotkeys and DOM listeners; running twice can cause double-trigger.
   const GUARD_KEY = '__aichat_chatgpt_thinking_toggle_v1__';
+  const STATE_KEY = '__aichat_chatgpt_thinking_toggle_state_v2__';
+  const MODEL_TOGGLE_LOCK_KEY = '__aichat_chatgpt_model_toggle_lock_v1__';
+  const MODEL_TOGGLE_LOCK_TTL_MS = 5000;
+  const RUNTIME_ID = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
   try {
-    if (globalThis[GUARD_KEY]) return;
-    Object.defineProperty(globalThis, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
+    const prev = globalThis[STATE_KEY];
+    if (prev && typeof prev.dispose === 'function') prev.dispose('replace');
+  } catch {}
+  try {
+    if (globalThis[GUARD_KEY] === true && !globalThis[STATE_KEY]) return;
+  } catch {}
+  try {
+    Object.defineProperty(globalThis, GUARD_KEY, { value: { runtimeId: RUNTIME_ID }, configurable: true, enumerable: false, writable: false });
   } catch {
     try {
-      if (globalThis[GUARD_KEY]) return;
-      globalThis[GUARD_KEY] = true;
+      globalThis[GUARD_KEY] = { runtimeId: RUNTIME_ID };
     } catch {}
   }
 
@@ -22,8 +31,10 @@
   const MODEL_PREF_KEY = '__aichat_chatgpt_model_pref_v1__';
   const HOTKEY_EFFORT_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_effort_v1__';
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
+  const HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_light_pro_v1__';
+  const HOTKEY_SEND_MAX_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_max_pro_v1__';
   const PUBLIC_API_KEY = '__aichat_chatgpt_thinking_toggle_api_v1__';
-  const TOPBAR_TOGGLE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v1__';
+  const TOPBAR_TOGGLE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v2__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
   const PULSE_STYLE_ID = '__tm_thinking_toggle_pulse_style';
@@ -33,22 +44,77 @@
   const PULSE_RGB_VAR = '--__tmThinkingTogglePulseRGB';
   const PULSE_RGB_LOW = '56,189,248'; // blue
   const PULSE_RGB_HIGH = '239,68,68'; // red
+  const SEND_LIGHT_PRO_TTL_MS = 15_000;
+  const LIGHT_PRO_MODEL_FALLBACK = 'gpt-5-4-pro';
+  const DS_SEND_LIGHT_PRO_KEY = 'aichatHotkeySendLightProEnabled';
+  const DS_SEND_MAX_PRO_KEY = 'aichatHotkeySendMaxProEnabled';
+  const DS_DISABLE_CMD_P_KEY = 'aichatHotkeyDisableCmdPEnabled';
 
   let busy = false;
   let hotkeyDrainRunning = false;
   let lastCfToastAt = 0;
-  /** @type {('toggle_effort'|'toggle_model')[]} */
+  /** @type {('toggle_effort'|'toggle_model'|'send_light_pro'|'send_max_pro')[]} */
   let hotkeyQueue = [];
   let preferredModelMode = null; // 'thinking' | 'pro' | null
   let lastModelByMode = { thinking: '', pro: '' };
   let lastEffortByMode = { thinking: '', pro: '' };
   let pendingModelOverride = null; // 'thinking' | 'pro' | null (one-shot fallback)
+  let pendingProSendOverride = null; // { model: string, effort: string, label: string, expiresAt: number } | null
   /** @type {HTMLButtonElement|null} */
   let cachedEffortPill = null;
   /** @type {HTMLButtonElement|null} */
   let cachedModelPill = null;
   /** @type {HTMLElement|null} */
   let cachedThinkingProTrigger = null;
+  let fetchConsumerUnsub = null;
+  const trackedOffs = [];
+
+  function trackOff(fn) {
+    if (typeof fn === 'function') trackedOffs.push(fn);
+  }
+
+  function addTrackedListener(target, type, handler, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof handler !== 'function') return;
+    target.addEventListener(type, handler, options);
+    trackOff(() => {
+      try {
+        target.removeEventListener(type, handler, options);
+      } catch {}
+    });
+  }
+
+  function disposeRuntime() {
+    try {
+      if (typeof fetchConsumerUnsub === 'function') fetchConsumerUnsub();
+    } catch {}
+    fetchConsumerUnsub = null;
+    while (trackedOffs.length) {
+      const off = trackedOffs.pop();
+      try { off?.(); } catch {}
+    }
+    try {
+      if (window[FETCH_SNIFF_FLAG] === RUNTIME_ID) delete window[FETCH_SNIFF_FLAG];
+    } catch {}
+    try {
+      if (globalThis[GUARD_KEY]?.runtimeId === RUNTIME_ID) delete globalThis[GUARD_KEY];
+    } catch {}
+    try {
+      if (globalThis[STATE_KEY]?.runtimeId === RUNTIME_ID) delete globalThis[STATE_KEY];
+    } catch {}
+  }
+
+  try {
+    Object.defineProperty(globalThis, STATE_KEY, {
+      value: Object.freeze({ runtimeId: RUNTIME_ID, dispose: disposeRuntime }),
+      configurable: true,
+      enumerable: false,
+      writable: false
+    });
+  } catch {
+    try {
+      globalThis[STATE_KEY] = { runtimeId: RUNTIME_ID, dispose: disposeRuntime };
+    } catch {}
+  }
 
   function loadPreferredModelMode() {
     try {
@@ -96,6 +162,32 @@
       await sleep(intervalMs);
     }
     return !!check();
+  }
+
+  function acquireModelToggleLock() {
+    const now = Date.now();
+    try {
+      const lock = window[MODEL_TOGGLE_LOCK_KEY];
+      if (lock && typeof lock === 'object' && Number(lock.until || 0) > now && lock.owner !== RUNTIME_ID) return false;
+      window[MODEL_TOGGLE_LOCK_KEY] = { owner: RUNTIME_ID, until: now + MODEL_TOGGLE_LOCK_TTL_MS };
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  function refreshModelToggleLock() {
+    try {
+      const lock = window[MODEL_TOGGLE_LOCK_KEY];
+      if (lock && typeof lock === 'object' && lock.owner === RUNTIME_ID) lock.until = Date.now() + MODEL_TOGGLE_LOCK_TTL_MS;
+    } catch {}
+  }
+
+  function releaseModelToggleLock() {
+    try {
+      const lock = window[MODEL_TOGGLE_LOCK_KEY];
+      if (lock && typeof lock === 'object' && lock.owner === RUNTIME_ID) delete window[MODEL_TOGGLE_LOCK_KEY];
+    } catch {}
   }
 
   function ensurePulseStyle() {
@@ -317,10 +409,79 @@ button.${HINT_CLASS}::after {
     return '';
   }
 
+  function deriveProModel(model) {
+    const source = String(model || '').trim();
+    if (!source) return LIGHT_PRO_MODEL_FALLBACK;
+
+    if (/\bgpt-[\d.]+-pro\b/i.test(source)) return source;
+
+    const thinkingMatch = source.match(/\b(gpt-[\d.]+)-thinking\b/i);
+    if (thinkingMatch?.[1]) return `${thinkingMatch[1]}-pro`;
+
+    const familyMatch = source.match(/\b(gpt-[\d.]+)\b/i);
+    if (familyMatch?.[1]) return `${familyMatch[1]}-pro`;
+
+    return LIGHT_PRO_MODEL_FALLBACK;
+  }
+
+  function armProSendOverride(model = '', effort = 'min', label = 'Light Pro') {
+    pendingProSendOverride = {
+      model: String(model || '').trim(),
+      effort: String(effort || 'min').trim().toLowerCase() || 'min',
+      label: String(label || 'Light Pro').trim() || 'Light Pro',
+      expiresAt: Date.now() + SEND_LIGHT_PRO_TTL_MS
+    };
+    return pendingProSendOverride;
+  }
+
+  function armLightProSendOverride(model = '') {
+    return armProSendOverride(model, 'min', 'Light Pro');
+  }
+
+  function armMaxProSendOverride(model = '') {
+    return armProSendOverride(model, 'max', 'Heavy Pro');
+  }
+
+  function clearProSendOverride() {
+    pendingProSendOverride = null;
+  }
+
+  function clearLightProSendOverride() {
+    clearProSendOverride();
+  }
+
+  function getActiveProSendOverride() {
+    const pending = pendingProSendOverride;
+    if (!pending || typeof pending !== 'object') return null;
+    const expiresAt = Number(pending.expiresAt || 0);
+    if (!expiresAt || expiresAt <= Date.now()) {
+      clearProSendOverride();
+      return null;
+    }
+    return pending;
+  }
+
+  function applyProSendOverrideToPayload(payload) {
+    if (!payload || typeof payload !== 'object') return { applied: false, reason: 'bad_payload' };
+    const pending = getActiveProSendOverride();
+    if (!pending) return { applied: false, reason: 'not_armed' };
+
+    const action = normalizeText(payload.action || '');
+    if (action && action !== 'next') return { applied: false, reason: 'non_next_action' };
+
+    payload.model = deriveProModel(payload.model || pending.model || '');
+    payload.thinking_effort = String(pending.effort || 'min');
+    clearProSendOverride();
+    return { applied: true, model: payload.model || '', effort: payload.thinking_effort || '', label: pending.label || '' };
+  }
+
   function guessModeFromEffort(effort) {
     const e = normalizeText(effort);
+    if (/\bthinking\b/.test(e) || e.includes('思考') || e.includes('推理')) return 'thinking';
+    if (/\bpro\b/.test(e) || e.includes('专业')) return 'pro';
     if (e === 'min' || e === 'max') return 'thinking';
-    if (e === 'standard' || e === 'extended') return 'pro';
+    // ChatGPT can show standalone effort names like "Extended" after selecting Thinking.
+    // They describe effort, not the Thinking/Pro model family, so do not infer mode from them.
     return null;
   }
 
@@ -449,18 +610,28 @@ button.${HINT_CLASS}::after {
   function isHotkeyEnabled(action) {
     if (action === 'toggle_effort') return readBoolDataset(DS_EFFORT_KEY, readBoolLS(HOTKEY_EFFORT_ENABLED_KEY, true));
     if (action === 'toggle_model') return readBoolDataset(DS_MODEL_KEY, readBoolLS(HOTKEY_MODEL_ENABLED_KEY, true));
+    if (action === 'block_cmd_p') return readBoolDataset(DS_DISABLE_CMD_P_KEY, true);
+    if (action === 'send_light_pro') {
+      return readBoolDataset(DS_SEND_LIGHT_PRO_KEY, readBoolLS(HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY, true));
+    }
+    if (action === 'send_max_pro') {
+      return readBoolDataset(DS_SEND_MAX_PRO_KEY, readBoolLS(HOTKEY_SEND_MAX_PRO_ENABLED_KEY, true));
+    }
     return true;
   }
 
   function getHotkeyAction(event) {
     if (!event.metaKey) return null;
-    if (event.ctrlKey || event.altKey || event.shiftKey) return null;
-
     const code = typeof event.code === 'string' ? event.code : '';
     const key = typeof event.key === 'string' ? event.key : '';
     const k = key.toLowerCase();
 
     const action = (() => {
+      if (event.shiftKey && (code === 'KeyP' || k === 'p')) return 'send_light_pro';
+      if (event.altKey && !event.shiftKey && (code === 'KeyP' || k === 'p')) return 'send_max_pro';
+      if (!event.ctrlKey && !event.altKey && !event.shiftKey && (code === 'KeyP' || k === 'p')) return 'block_cmd_p';
+      if (event.ctrlKey || event.altKey) return null;
+      if (event.shiftKey) return null;
       if (code === 'KeyO' || k === 'o') return 'toggle_effort';
       if (code === 'KeyJ' || k === 'j') return 'toggle_model';
       return null;
@@ -472,7 +643,7 @@ button.${HINT_CLASS}::after {
 
   function installFetchSniffer() {
     if (window[FETCH_SNIFF_FLAG]) return;
-    window[FETCH_SNIFF_FLAG] = true;
+    window[FETCH_SNIFF_FLAG] = RUNTIME_ID;
 
     const consumerBase = window.__aichat_chatgpt_fetch_consumer_base_v1__;
     const hub = window.__aichat_chatgpt_fetch_hub_v1__;
@@ -484,13 +655,19 @@ button.${HINT_CLASS}::after {
           : null;
     if (!registerConsumer) return;
 
-    registerConsumer('chatgpt-thinking-toggle', {
+    const maybeUnsub = registerConsumer('chatgpt-thinking-toggle', {
       priority: 110,
       onConversationPayload: (payload, ctx) => {
         /** @type {{mode:string,model:string,effort:string}|null} */
         let effortInfo = null;
+        let proSendLabel = '';
         try {
-          if (payload && pendingModelOverride) {
+          if (payload) {
+            const proOverride = applyProSendOverrideToPayload(payload);
+            proSendLabel = proOverride.applied ? String(proOverride.label || '') : '';
+          }
+
+          if (payload && pendingModelOverride && !proSendLabel) {
             const target = pendingModelOverride;
             const override = applyModelOverrideToPayload(payload, target);
             if (override.applied) pendingModelOverride = null;
@@ -511,6 +688,7 @@ button.${HINT_CLASS}::after {
 
         try {
           if (ctx && typeof ctx === 'object') ctx.__aichatThinkingToggleEffortInfo = effortInfo;
+          if (ctx && typeof ctx === 'object') ctx.__aichatThinkingToggleProSendLabel = proSendLabel;
         } catch {}
 
         return payload;
@@ -522,14 +700,21 @@ button.${HINT_CLASS}::after {
           if (!effortInfo || !respOk) return;
 
           const suffix = effortInfo.model ? ` (${effortInfo.model})` : '';
-          if (effortInfo.mode === 'thinking') showToast(uiText(`发送成功：thinking ${effortInfo.effort}${suffix}`, `Sent successfully: thinking ${effortInfo.effort}${suffix}`));
-          else if (effortInfo.mode === 'pro') showToast(uiText(`发送成功：pro ${effortInfo.effort}${suffix}`, `Sent successfully: pro ${effortInfo.effort}${suffix}`));
+          const proSendLabel = typeof ctx?.__aichatThinkingToggleProSendLabel === 'string' ? ctx.__aichatThinkingToggleProSendLabel : '';
+          if (proSendLabel) {
+            showToast(uiText(`发送成功：${proSendLabel}${suffix}`, `Sent successfully: ${proSendLabel}${suffix}`));
+          } else if (effortInfo.mode === 'thinking') {
+            showToast(uiText(`发送成功：thinking ${effortInfo.effort}${suffix}`, `Sent successfully: thinking ${effortInfo.effort}${suffix}`));
+          } else if (effortInfo.mode === 'pro') {
+            showToast(uiText(`发送成功：pro ${effortInfo.effort}${suffix}`, `Sent successfully: pro ${effortInfo.effort}${suffix}`));
+          }
           else showToast(uiText(`发送成功：thinking_effort=${effortInfo.effort}${suffix}`, `Sent successfully: thinking_effort=${effortInfo.effort}${suffix}`));
         } catch {
           // ignore
         }
       }
     });
+    if (typeof maybeUnsub === 'function') fetchConsumerUnsub = maybeUnsub;
   }
 
   function clickLikeUser(el) {
@@ -681,15 +866,101 @@ button.${HINT_CLASS}::after {
     return false;
   }
 
+  function isNodeWithin(node, ancestor) {
+    if (!(ancestor instanceof Node) || !(node instanceof Node)) return false;
+    try {
+      return node === ancestor || ancestor.contains(node);
+    } catch {
+      return false;
+    }
+  }
+
+  function isComposerEventContext(event) {
+    const editor = getComposerEditor();
+    if (!(editor instanceof HTMLElement)) return false;
+
+    let form = null;
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getComposerForm === 'function') form = core.getComposerForm(editor);
+    } catch {}
+
+    const scope = form instanceof HTMLElement ? form : editor;
+    const target = event?.target;
+    const active = document.activeElement;
+    return isNodeWithin(target, scope) || isNodeWithin(active, scope);
+  }
+
+  function clickComposerSendButton(editor) {
+    const target = editor instanceof HTMLElement ? editor : getComposerEditor();
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.clickSendButton === 'function') {
+        if (core.clickSendButton(target)) return true;
+      }
+    } catch {}
+
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.findSendButton === 'function') {
+        const button = core.findSendButton(target);
+        if (button instanceof HTMLElement) return clickLikeUser(button);
+      }
+    } catch {}
+
+    return false;
+  }
+
+  function isComposerGenerating(editor) {
+    const target = editor instanceof HTMLElement ? editor : getComposerEditor();
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.isGenerating === 'function') return !!core.isGenerating(target);
+    } catch {}
+    return false;
+  }
+
+  async function sendSpecialProMessage(effort = 'min', label = 'Light Pro') {
+    const editor = getComposerEditor();
+    if (!(editor instanceof HTMLElement)) {
+      showToast(uiText(`未找到输入框，无法执行 ${label} 发送`, `Composer not found. Could not send as ${label}.`));
+      return false;
+    }
+
+    if (isComposerGenerating(editor)) {
+      showToast(uiText(`当前仍在生成，暂时不能执行 ${label} 发送`, `A reply is still generating. ${label} send is unavailable.`));
+      return false;
+    }
+
+    armProSendOverride(lastModelByMode.thinking || '', effort, label);
+    const sent = clickComposerSendButton(editor);
+    if (!sent) {
+      clearProSendOverride();
+      showToast(uiText(`发送按钮未就绪，${label} 发送失败`, `Send button is not ready. ${label} send failed.`));
+      return false;
+    }
+    return true;
+  }
+
+  async function sendLightProMessage() {
+    return sendSpecialProMessage('min', 'Light Pro');
+  }
+
+  async function sendMaxProMessage() {
+    return sendSpecialProMessage('max', 'Heavy Pro');
+  }
+
   function listComposerPills() {
     const root = getComposerRoot();
     return Array.from(
       root.querySelectorAll("button.__composer-pill[aria-haspopup='menu'],button.__composer-pill")
-    ).filter((el) => el instanceof HTMLButtonElement);
+    ).filter((el) => el instanceof HTMLButtonElement && isVisibleElement(el));
   }
 
   function getEffortItems(menu) {
-    const items = Array.from(menu.querySelectorAll("[role='menuitemradio']")).filter((el) => el instanceof Element);
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio']")).filter(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
     /** @type {Element|null} */
     let light = null;
     /** @type {Element|null} */
@@ -741,7 +1012,9 @@ button.${HINT_CLASS}::after {
   }
 
   function getThinkingProModeItems(menu) {
-    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']"));
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']")).filter(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
     /** @type {Element|null} */
     let thinking = null;
     /** @type {Element|null} */
@@ -749,16 +1022,21 @@ button.${HINT_CLASS}::after {
 
     for (const item of items) {
       const testId = String(item.getAttribute('data-testid') || '').toLowerCase();
-      const t = normalizeText(item.textContent || item.getAttribute('aria-label') || '');
+      const t = normalizeText([
+        testId,
+        item.getAttribute('aria-label') || '',
+        item.getAttribute('data-value') || '',
+        item.textContent || ''
+      ].join(' '));
 
       // ChatGPT often concatenates label+description with no spaces in textContent (e.g. "ThinkingThinks...").
       if (
         !thinking &&
-        (testId.endsWith('thinking') || t === 'thinking' || t.startsWith('thinking') || t.startsWith('思考') || t.startsWith('推理'))
+        (testId.endsWith('thinking') || /\bthinking\b/.test(t) || t.startsWith('思考') || t.startsWith('推理'))
       ) {
         thinking = item;
       }
-      if (!pro && (testId.endsWith('-pro') || t === 'pro' || t.startsWith('pro') || t.startsWith('专业'))) {
+      if (!pro && (testId.endsWith('-pro') || /\bpro\b/.test(t) || t.startsWith('专业'))) {
         pro = item;
       }
       if (thinking && pro) break;
@@ -935,7 +1213,9 @@ button.${HINT_CLASS}::after {
 
   function findBestModelMenuItem(menu, mode) {
     if (!(menu instanceof Element)) return null;
-    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']"));
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']")).filter(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
     let best = null;
     let bestScore = -999;
     for (const item of items) {
@@ -1065,7 +1345,7 @@ button.${HINT_CLASS}::after {
       const core = window.__aichat_chatgpt_core_main_v1__;
       if (core && typeof core.getModelSwitcherButton === 'function') {
         const button = core.getModelSwitcherButton();
-        if (button instanceof HTMLElement) return button;
+        if (button instanceof HTMLElement && isVisibleElement(button)) return button;
       }
     } catch (_) {
       // ignore
@@ -1074,13 +1354,44 @@ button.${HINT_CLASS}::after {
     const byTestIdAll = Array.from(document.querySelectorAll("button[data-testid='model-switcher-dropdown-button']"));
     const byTestIdVisible = byTestIdAll.find((el) => el instanceof HTMLElement && isVisibleElement(el));
     if (byTestIdVisible instanceof HTMLElement) return byTestIdVisible;
-    const byTestIdFirst = byTestIdAll.find((el) => el instanceof HTMLElement);
-    if (byTestIdFirst instanceof HTMLElement) return byTestIdFirst;
 
     const byAria = Array.from(document.querySelectorAll('button[aria-label],[role="button"][aria-label]')).find(
       (el) => normalizeText(el.getAttribute('aria-label') || '').startsWith('model selector') && isVisibleElement(el)
     );
     return byAria instanceof HTMLElement ? byAria : null;
+  }
+
+  function isModelSwitcherMenuOpen(trigger, getMenu) {
+    try {
+      const menu = typeof getMenu === 'function' ? getMenu() : null;
+      if (menu instanceof HTMLElement && isVisibleElement(menu)) return true;
+    } catch (_) {
+      // ignore
+    }
+    return isTriggerMenuOpen(trigger);
+  }
+
+  async function waitForModelSwitcherTarget({ trigger, findTargetItem, getMenu, timeoutMs }) {
+    const target = typeof findTargetItem === 'function' ? findTargetItem() : null;
+    if (target instanceof HTMLElement && isVisibleElement(target)) return target;
+
+    const wasOpen = isModelSwitcherMenuOpen(trigger, getMenu);
+    if (!wasOpen) clickLikeUser(trigger);
+
+    const firstWait = await waitForValue(findTargetItem, timeoutMs, 16);
+    if (firstWait instanceof HTMLElement && isVisibleElement(firstWait)) return firstWait;
+
+    // If the menu is already open, clicking the trigger again would close it and can look like
+    // selector flapping on slower/variant ChatGPT profiles. Wait for menu content instead.
+    if (isModelSwitcherMenuOpen(trigger, getMenu)) {
+      const secondWait = await waitForValue(findTargetItem, Math.max(180, Math.floor(timeoutMs * 0.8)), 20);
+      if (secondWait instanceof HTMLElement && isVisibleElement(secondWait)) return secondWait;
+      return null;
+    }
+
+    clickLikeUser(trigger);
+    const retryWait = await waitForValue(findTargetItem, timeoutMs + 120, 16);
+    return retryWait instanceof HTMLElement && isVisibleElement(retryWait) ? retryWait : null;
   }
 
   function listMaybeThinkingProTriggers() {
@@ -1154,7 +1465,9 @@ button.${HINT_CLASS}::after {
 
   function menuSelectedIsHigh(menu) {
     if (!(menu instanceof Element)) return null;
-    const checked = menu.querySelector("[role='menuitemradio'][aria-checked='true']");
+    const checked = Array.from(menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")).find(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
     if (!checked) return null;
     const t = normalizeText(checked.textContent || '');
     if (t.includes('heavy') || t.includes('extended')) return true;
@@ -1164,7 +1477,9 @@ button.${HINT_CLASS}::after {
 
   function menuSelectedMode(menu) {
     if (!(menu instanceof Element)) return null;
-    const checked = menu.querySelector("[role='menuitemradio'][aria-checked='true']");
+    const checked = Array.from(menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")).find(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
     if (!checked) return null;
     const t = normalizeText(checked.textContent || '');
     if (t.includes('light') || t.includes('heavy')) return 'thinking';
@@ -1283,7 +1598,7 @@ button.${HINT_CLASS}::after {
   }
 
   function enqueueHotkeyAction(action) {
-    if (action !== 'toggle_effort' && action !== 'toggle_model') return;
+    if (action !== 'toggle_effort' && action !== 'toggle_model' && action !== 'send_light_pro' && action !== 'send_max_pro') return;
     if (hotkeyQueue.length >= HOTKEY_QUEUE_MAX) hotkeyQueue.shift();
     hotkeyQueue.push(action);
     void drainHotkeyQueue();
@@ -1304,6 +1619,8 @@ button.${HINT_CLASS}::after {
         await waitForIdle(1200);
         if (action === 'toggle_effort') await toggleThinkingTime();
         else if (action === 'toggle_model') await toggleModelType();
+        else if (action === 'send_light_pro') await sendLightProMessage();
+        else if (action === 'send_max_pro') await sendMaxProMessage();
         await sleep(12);
       }
     } finally {
@@ -1319,7 +1636,7 @@ button.${HINT_CLASS}::after {
 
     try {
       const pill =
-        cachedEffortPill instanceof HTMLButtonElement && document.contains(cachedEffortPill)
+        cachedEffortPill instanceof HTMLButtonElement && document.contains(cachedEffortPill) && isVisibleElement(cachedEffortPill)
           ? cachedEffortPill
           : await findEffortPill();
       cachedEffortPill = pill;
@@ -1410,11 +1727,13 @@ button.${HINT_CLASS}::after {
 
   async function setModelType(targetMode = null) {
     if (busy) return false;
+    if (!acquireModelToggleLock()) return false;
     busy = true;
     let didToggle = false;
 
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
+        refreshModelToggleLock();
         const trigger = findGptModelSelectorTrigger();
         cachedThinkingProTrigger = trigger;
         if (!trigger) {
@@ -1434,18 +1753,12 @@ button.${HINT_CLASS}::after {
           findVisibleThinkingProItem(resolvedTargetMode);
         const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
-        // 如果菜单已打开，直接点；否则打开菜单再点
-        let targetItem = findTargetItem();
-        if (!targetItem) {
-          clickLikeUser(trigger);
-          targetItem = await waitForValue(findTargetItem, 260 + attempt * 120, 16);
-        }
-
-        if (!targetItem) {
-          // 可能第一次 click 没弹出：再试一次
-          clickLikeUser(trigger);
-          targetItem = await waitForValue(findTargetItem, 340 + attempt * 120, 16);
-        }
+        const targetItem = await waitForModelSwitcherTarget({
+          trigger,
+          findTargetItem,
+          getMenu,
+          timeoutMs: 300 + attempt * 140
+        });
 
         if (!targetItem) {
           // Keep UI tidy even when the menu isn't fully populated yet.
@@ -1457,18 +1770,12 @@ button.${HINT_CLASS}::after {
         clickLikeUser(targetItem);
         await ensureMenuCollapsed(trigger, getMenu);
 
-        const switched = await waitForTruthy(() => {
-          const nextMode = detectCurrentModelMode();
-          return nextMode === resolvedTargetMode;
-        }, 1200, 40);
-
-        if (!switched && attempt < 2) {
-          await sleep(80);
-          continue;
-        }
-
         preferredModelMode = resolvedTargetMode;
         savePreferredModelMode(preferredModelMode);
+        await waitForTruthy(() => {
+          const nextMode = detectCurrentModelMode();
+          return nextMode === resolvedTargetMode || nextMode === null;
+        }, 260, 40);
         const pulseTarget = findGptModelSelectorTrigger();
         if (pulseTarget) schedulePulse(pulseTarget, resolvedTargetMode === 'pro', resolvedTargetMode === 'pro' ? 'Pro' : 'Thinking');
         didToggle = true;
@@ -1492,6 +1799,7 @@ button.${HINT_CLASS}::after {
       return false;
     } finally {
       if (didToggle) await restoreComposerFocusToEnd();
+      releaseModelToggleLock();
       busy = false;
     }
   }
@@ -1509,15 +1817,22 @@ button.${HINT_CLASS}::after {
         value: Object.freeze({
           toggleModelType,
           setModelType,
-          detectCurrentModelMode
-        })
+          detectCurrentModelMode,
+        armLightProSendOverride,
+        armMaxProSendOverride,
+        clearLightProSendOverride,
+        sendLightProMessage,
+        sendMaxProMessage,
+        sendHeavyProMessage: sendMaxProMessage
+      })
       });
     } catch {}
   }
 
   function installTopbarToggleBridge() {
     try {
-      window.addEventListener(
+      addTrackedListener(
+        window,
         TOPBAR_TOGGLE_EVENT,
         (event) => {
           try {
@@ -1534,18 +1849,20 @@ button.${HINT_CLASS}::after {
     } catch {}
   }
 
-  // 以 fetch-sniffer 作为“已安装”标记，避免在 reinject / 与 Tampermonkey 共存时重复绑定快捷键
-  if (!window[FETCH_SNIFF_FLAG]) {
-    window.addEventListener(
+  function installHotkeyListener() {
+    addTrackedListener(
+      window,
       'keydown',
       (event) => {
         const action = getHotkeyAction(event);
         if (!action) return;
+        if ((action === 'send_light_pro' || action === 'send_max_pro') && !isComposerEventContext(event)) return;
 
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
 
+        if (action === 'block_cmd_p') return;
         if (event.repeat) return;
         if (isCfChallengeActive()) {
           toastCfChallengeOnce();
@@ -1558,6 +1875,7 @@ button.${HINT_CLASS}::after {
     );
   }
 
+  installHotkeyListener();
   installFetchSniffer();
   installPublicApi();
   installTopbarToggleBridge();

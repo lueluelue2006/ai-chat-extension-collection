@@ -520,6 +520,10 @@
             try { oldNav._ui.layout.destroy(); } catch {}
           }
         }
+        try {
+          if (typeof oldNav._dragCleanup === 'function') oldNav._dragCleanup();
+        } catch {}
+        oldNav._dragCleanup = null;
         oldNav.remove();
         if (DEBUG || window.DEBUG_TEMP) console.log('Kimi QuickNav: 已移除旧面板');
       }
@@ -1492,7 +1496,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       const api = globalThis.__aichat_ui_pos_drag_v1__;
       if (api && typeof api.enableRightTopDrag === 'function') {
-        api.enableRightTopDrag(nav, header, opts || {});
+        const off = api.enableRightTopDrag(nav, header, opts || {});
+        if (typeof off === 'function') nav._dragCleanup = off;
         return;
       }
     } catch {}
@@ -1881,7 +1886,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 清理已失效的收藏（不再存在的消息或图钉）
     const nextFull = cacheIndex;
     const validKeys = new Set(nextFull.map(i => i.key));
-    const favRemoved = runFavoritesGC(false, validKeys);
+    const favRemoved = validKeys.size > 0 ? runFavoritesGC(true, validKeys) : 0;
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
     if (!next.length) {
@@ -2372,6 +2377,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       if (!favSet || !(favSet instanceof Set) || favSet.size === 0) return 0;
       const valid = validKeys instanceof Set ? validKeys : new Set();
+      const shouldRemoveInvalid = validKeys instanceof Set && validKeys.size > 0;
       // 如果没提供 validKeys，就尽量构造一个
       if (!(validKeys instanceof Set)) {
         try { const base = buildIndex(); base.forEach(i => valid.add(i.key)); } catch {}
@@ -2382,7 +2388,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       for (const k of Array.from(favSet.values())) {
         if (onlyPins && !(typeof k === 'string' && k.startsWith('pin-'))) continue;
         const meta = favMeta.get(k) || { created: 0 };
-        if (!valid.has(k) || !meta.created || (now - meta.created) > FAV_TTL_MS) { favSet.delete(k); favMeta.delete(k); removed++; }
+        if ((shouldRemoveInvalid && !valid.has(k)) || !meta.created || (now - meta.created) > FAV_TTL_MS) { favSet.delete(k); favMeta.delete(k); removed++; }
       }
       if (removed && saveAfter) saveFavSet();
       return removed;

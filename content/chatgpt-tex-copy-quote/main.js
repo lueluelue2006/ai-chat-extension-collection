@@ -19,13 +19,34 @@
 
   const BTQ_STYLE_ID = '__btq_latex_tooltip_style_v2__';
   const BTQ_TOOLTIP_ID = '__btq_latex_tooltip_v2__';
+  const MULTI_QUOTE_BUTTON_ID = '__btq_multi_quote_button_v1__';
 
   const HOVER_DELAY_MS = 800;
   const HOVER_MOVE_THROTTLE_MS = 80;
   const QUOTE_RETRY_DELAYS_MS = [0, 40, 120, 260, 520];
   const QUOTE_PATCH_WINDOW_MS = 2600;
+  const MULTI_QUOTE_MIN_SELECTION_LENGTH = 2;
+  const MULTI_QUOTE_BUTTON_WIDTH = 92;
+  const MULTI_QUOTE_BUTTON_HEIGHT = 34;
+  const MULTI_QUOTE_BUTTON_MARGIN = 8;
   const QUOTE_PREFIXES = ['> ', '>'];
   const QUOTE_TRAILINGS = ['\n\n', '\n', ''];
+  const CONFIG_DATASET_KEYS = Object.freeze({
+    multiQuote: 'aichatTexQuoteMultiQuoteEnabled',
+    hideNativeQuote: 'aichatTexQuoteHideNativeQuoteEnabled',
+    nativeQuotePatch: 'aichatTexQuoteNativeQuotePatchEnabled',
+    copyLatex: 'aichatTexQuoteCopyLatexEnabled',
+    hoverTooltip: 'aichatTexQuoteHoverTooltipEnabled',
+    doubleClickCopy: 'aichatTexQuoteDoubleClickCopyEnabled'
+  });
+  const CONFIG_ATTR_FILTER = Object.freeze([
+    'data-aichat-tex-quote-multi-quote-enabled',
+    'data-aichat-tex-quote-hide-native-quote-enabled',
+    'data-aichat-tex-quote-native-quote-patch-enabled',
+    'data-aichat-tex-quote-copy-latex-enabled',
+    'data-aichat-tex-quote-hover-tooltip-enabled',
+    'data-aichat-tex-quote-double-click-copy-enabled'
+  ]);
 
   const QUOTE_LABEL_RE = /(quote|引用|引述|援引|引用到输入框)/i;
   const QUICK_QUOTE_LABELS = new Set(['quote', '引用', '引述', '援引']);
@@ -36,7 +57,17 @@
     hoverKatex: null,
     hoverMoveLastAt: 0,
     pendingPointerQuoteSnapshot: null,
-    pendingQuotePatch: null
+    pendingPointerQuoteTimer: null,
+    pendingQuotePatch: null,
+    pendingQuotePatchTimer: null,
+    selectionQuoteButton: null,
+    selectionQuoteSnapshot: null,
+    hiddenNativeQuoteControls: [],
+    selectionRefreshTimer: null,
+    selectionRefreshRetryTimers: [],
+    selectionNativeHideTimers: [],
+    selectionRepositionRaf: 0,
+    configObserver: null
   };
 
   // Integrated from "ChatGPT TeX Copy & Quote 整合版.user.js"
@@ -46,10 +77,49 @@
   // This MV3 integration intentionally avoids monkey-patching Range/Selection prototypes.
   // Instead, it uses event-driven copy interception and quote-action post-processing.
 
+  function readBoolDataset(key, fallback = true) {
+    try {
+      const raw = String(document.documentElement?.dataset?.[key] || '').trim();
+      if (raw === '1') return true;
+      if (raw === '0') return false;
+    } catch {}
+    return !!fallback;
+  }
+
+  function isFeatureEnabled(key) {
+    const datasetKey = CONFIG_DATASET_KEYS?.[key];
+    if (!datasetKey) return true;
+    return readBoolDataset(datasetKey, true);
+  }
+
+  function isPerfHotOrHeavy() {
+    try {
+      const html = document.documentElement;
+      return (
+        html?.dataset?.cgptperfHot === '1' ||
+        html?.dataset?.cgptperfHeavy === '1' ||
+        (html?.dataset?.cgptperfExtreme === '1' && html?.dataset?.cgptperfGenerating === '1')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function applyConfigSideEffects() {
+    if (!isFeatureEnabled('multiQuote')) hideSelectionQuoteButton();
+    if (!isFeatureEnabled('hideNativeQuote')) restoreNativeQuoteControls();
+    if (!isFeatureEnabled('hoverTooltip')) updateHoverKatex(null);
+    if (!isFeatureEnabled('nativeQuotePatch')) clearPendingQuotePatch();
+  }
+
   function normalizeText(input) {
     return String(input == null ? '' : input)
       .replace(/\r\n?/g, '\n')
       .replace(/\u00A0/g, ' ');
+  }
+
+  function normalizeBlankLines(input) {
+    return normalizeText(input).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
   }
 
   function readLabel(el, attr) {
@@ -67,10 +137,34 @@
       if (!ann || !ann.textContent) return null;
       const raw = ann.textContent.trim();
       if (!raw) return null;
-      const isDisplay = katexEl.classList.contains('katex-display');
+      const isDisplay = katexEl.classList.contains('katex-display') || !!katexEl.closest('.katex-display');
       return isDisplay ? `$$${raw}$$` : `$${raw}$`;
     } catch {
       return null;
+    }
+  }
+
+  function getKatexSelectionRoot(node) {
+    const el = nodeToElement(node);
+    if (!el) return null;
+    try {
+      return el.closest('.katex-display') || el.closest('.katex') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function expandRangeToFormulaBoundaries(range) {
+    if (!range || typeof range.cloneRange !== 'function') return range;
+    try {
+      const expanded = range.cloneRange();
+      const startRoot = getKatexSelectionRoot(range.startContainer);
+      const endRoot = getKatexSelectionRoot(range.endContainer);
+      if (startRoot && startRoot.isConnected) expanded.setStartBefore(startRoot);
+      if (endRoot && endRoot.isConnected) expanded.setEndAfter(endRoot);
+      return expanded;
+    } catch {
+      return range;
     }
   }
 
@@ -79,13 +173,20 @@
       return { fragment, hasKatex: false, changed: false };
     }
 
-    const list = fragment.querySelectorAll('.katex');
+    const list = Array.from(fragment.querySelectorAll('.katex-display, .katex')).filter((el) => {
+      try {
+        const parentFormula = el.parentElement?.closest?.('.katex-display, .katex');
+        return !parentFormula || !fragment.contains(parentFormula);
+      } catch {
+        return true;
+      }
+    });
     if (!list.length) {
       return { fragment, hasKatex: false, changed: false };
     }
 
     let changed = false;
-    for (const el of Array.from(list)) {
+    for (const el of list) {
       const tex = findTexFromKatex(el);
       if (!tex) continue;
       const textNode = fragment.ownerDocument.createTextNode(tex);
@@ -145,7 +246,8 @@
     }
     if (!range || range.collapsed) return null;
 
-    const serialized = serializeRange(range);
+    const quoteRange = expandRangeToFormulaBoundaries(range);
+    const serialized = serializeRange(quoteRange);
     if (!serialized.hasKatex) return null;
 
     const plainText = normalizeText(sel.toString());
@@ -269,8 +371,13 @@
     try {
       if (el instanceof HTMLTextAreaElement) {
         el.focus();
-        el.value = finalText;
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, finalText);
+        else el.value = finalText;
         el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        try {
+          el.setSelectionRange(finalText.length, finalText.length);
+        } catch {}
         return true;
       }
     } catch {}
@@ -280,7 +387,15 @@
     } catch {}
 
     try {
-      document.execCommand('selectAll', false, null);
+      const sel = window.getSelection ? window.getSelection() : null;
+      if (sel && typeof sel.removeAllRanges === 'function' && document.createRange) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        document.execCommand('selectAll', false, null);
+      }
     } catch {}
 
     try {
@@ -313,6 +428,7 @@
     if (!target || !(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],[role="menuitem"]');
     if (!control) return false;
+    if (control.id === MULTI_QUOTE_BUTTON_ID || control.closest(`#${MULTI_QUOTE_BUTTON_ID}`)) return false;
 
     const dataTestId = readLabel(control, 'data-testid');
     if (dataTestId && dataTestId.toLowerCase().includes('quote')) return true;
@@ -331,18 +447,476 @@
     return false;
   }
 
+  function nodeToElement(node) {
+    if (!node) return null;
+    if (node instanceof Element) return node;
+    const parent = node.parentElement || node.parentNode;
+    return parent instanceof Element ? parent : null;
+  }
+
+  function isInsideComposerOrControl(el) {
+    if (!el || !(el instanceof Element)) return false;
+    try {
+      return !!el.closest(
+        [
+          `#${MULTI_QUOTE_BUTTON_ID}`,
+          `#${BTQ_TOOLTIP_ID}`,
+          '#prompt-textarea',
+          '.ProseMirror[contenteditable="true"]',
+          'textarea',
+          'input',
+          'button',
+          '[role="button"]',
+          '[role="menuitem"]',
+          '[contenteditable="true"]'
+        ].join(',')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function selectionBelongsToChatContent(range) {
+    const root = nodeToElement(range?.commonAncestorContainer);
+    if (!root || isInsideComposerOrControl(root)) return false;
+    try {
+      if (root.closest('nav,header,aside,[data-testid*="sidebar"],[data-testid*="conversation-list"]')) return false;
+      if (root.closest('main,[role="main"],[data-message-author-role],[data-testid*="conversation-turn"],article')) return true;
+    } catch {}
+    return !!normalizeText(range?.toString?.() || '').trim();
+  }
+
+  function rectIntersectsViewport(rect) {
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    const viewportWidth = Math.max(0, window.innerWidth || document.documentElement?.clientWidth || 0);
+    const viewportHeight = Math.max(0, window.innerHeight || document.documentElement?.clientHeight || 0);
+    return (
+      rect.bottom >= 0 &&
+      rect.right >= 0 &&
+      (!viewportWidth || rect.left <= viewportWidth) &&
+      (!viewportHeight || rect.top <= viewportHeight)
+    );
+  }
+
+  function getSelectionAnchorRect(range, options = {}) {
+    if (!range || typeof range.getClientRects !== 'function') return null;
+    try {
+      const allRects = Array.from(range.getClientRects()).filter((rect) => rect && rect.width > 0 && rect.height > 0);
+      const visibleRects = allRects.filter(rectIntersectsViewport);
+      const rect = visibleRects.length ? visibleRects[visibleRects.length - 1] : allRects[allRects.length - 1] || range.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+      if (options.requireVisible && !rectIntersectsViewport(rect)) return null;
+      return rect;
+    } catch {
+      return null;
+    }
+  }
+
+  function snapshotSelectionForMultiQuote() {
+    let sel = null;
+    try {
+      sel = window.getSelection ? window.getSelection() : null;
+    } catch {
+      sel = null;
+    }
+    if (!sel || sel.rangeCount <= 0 || sel.isCollapsed) return null;
+
+    let range = null;
+    try {
+      range = sel.getRangeAt(0);
+    } catch {
+      range = null;
+    }
+    if (!range || range.collapsed || !selectionBelongsToChatContent(range)) return null;
+
+    const selectedText = normalizeBlankLines(sel.toString()).trim();
+    if (selectedText.length < MULTI_QUOTE_MIN_SELECTION_LENGTH) return null;
+
+    const quoteRange = expandRangeToFormulaBoundaries(range);
+    const serialized = serializeRange(quoteRange);
+    const quoteText = normalizeBlankLines(serialized.hasKatex && serialized.plainText ? serialized.plainText : selectedText).trim();
+    if (quoteText.length < MULTI_QUOTE_MIN_SELECTION_LENGTH) return null;
+
+    const rect = getSelectionAnchorRect(range);
+    if (!rect) return null;
+
+    let anchorRange = null;
+    try {
+      anchorRange = range.cloneRange();
+    } catch {
+      anchorRange = null;
+    }
+
+    return {
+      capturedAt: Date.now(),
+      quoteText,
+      hasKatex: !!serialized.hasKatex,
+      anchorRange,
+      rect: {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      }
+    };
+  }
+
+  function buildMarkdownBlockquote(input) {
+    const text = normalizeBlankLines(input).trim();
+    if (!text) return '';
+    return text
+      .split('\n')
+      .map((line) => (line.trim() ? `> ${line}` : '>'))
+      .join('\n');
+  }
+
+  function appendQuoteToComposer(snapshot) {
+    const quoteText = normalizeBlankLines(snapshot?.quoteText || '').trim();
+    if (!quoteText) return false;
+
+    const composer = getComposerEl();
+    if (!composer) return false;
+
+    const current = normalizeBlankLines(readComposerText(composer)).trimEnd();
+    const block = buildMarkdownBlockquote(quoteText);
+    if (!block) return false;
+
+    const nextText = current ? `${current}\n\n${block}\n` : `${block}\n`;
+    return writeComposerText(composer, normalizeBlankLines(nextText));
+  }
+
+  function restoreNativeQuoteControls() {
+    const hidden = Array.isArray(state.hiddenNativeQuoteControls) ? state.hiddenNativeQuoteControls : [];
+    state.hiddenNativeQuoteControls = [];
+    for (const item of hidden) {
+      try {
+        if (!item || !item.el || !item.el.isConnected) continue;
+        item.el.style.display = item.display;
+        item.el.removeAttribute('data-aichat-btq-hidden-native-quote');
+      } catch {}
+    }
+  }
+
+  function hideNativeQuoteControlsNear(rect) {
+    restoreNativeQuoteControls();
+    if (!isFeatureEnabled('hideNativeQuote')) return;
+    const hidden = [];
+    const controls = Array.from(document.querySelectorAll('button,[role="button"],[role="menuitem"]'));
+    for (const control of controls) {
+      try {
+        if (!(control instanceof HTMLElement)) continue;
+        if (control.id === MULTI_QUOTE_BUTTON_ID) continue;
+        const label = normalizeText(control.textContent || readLabel(control, 'aria-label') || '').trim().toLowerCase();
+        if (label !== 'ask chatgpt' && label !== 'quote' && label !== '引用') continue;
+        const r = control.getBoundingClientRect();
+        if (label !== 'ask chatgpt' && rect && rectIntersectsViewport(rect)) {
+          const dx = Math.max(0, Math.max(rect.left - r.right, r.left - rect.right));
+          const dy = Math.max(0, Math.max(rect.top - r.bottom, r.top - rect.bottom));
+          if (dx > 260 || dy > 160) continue;
+        }
+        hidden.push({ el: control, display: control.style.display || '' });
+        control.setAttribute('data-aichat-btq-hidden-native-quote', '1');
+        control.style.display = 'none';
+      } catch {}
+    }
+    state.hiddenNativeQuoteControls = hidden;
+  }
+
+  function hideSelectionQuoteButton() {
+    if (state.selectionRepositionRaf) {
+      try {
+        cancelAnimationFrame(state.selectionRepositionRaf);
+      } catch {}
+      state.selectionRepositionRaf = 0;
+    }
+    if (Array.isArray(state.selectionRefreshRetryTimers)) {
+      for (const timer of state.selectionRefreshRetryTimers) {
+        try {
+          clearTimeout(timer);
+        } catch {}
+      }
+      state.selectionRefreshRetryTimers = [];
+    }
+    if (Array.isArray(state.selectionNativeHideTimers)) {
+      for (const timer of state.selectionNativeHideTimers) {
+        try {
+          clearTimeout(timer);
+        } catch {}
+      }
+      state.selectionNativeHideTimers = [];
+    }
+    restoreNativeQuoteControls();
+    state.selectionQuoteSnapshot = null;
+    const btn = state.selectionQuoteButton;
+    if (!btn) return;
+    try {
+      btn.style.display = 'none';
+    } catch {}
+  }
+
+  function positionSelectionQuoteButton(snapshot, rect) {
+    const btn = ensureSelectionQuoteButton();
+    if (!btn || !snapshot || !rect) return false;
+
+    const margin = MULTI_QUOTE_BUTTON_MARGIN;
+    const buttonWidth = MULTI_QUOTE_BUTTON_WIDTH;
+    const buttonHeight = MULTI_QUOTE_BUTTON_HEIGHT;
+    const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || buttonWidth + margin * 2;
+    const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || buttonHeight + margin * 2;
+    let bottomLimit = viewportHeight - margin;
+    try {
+      const composer = getComposerEl();
+      const composerRect = composer?.getBoundingClientRect?.();
+      if (composerRect && composerRect.width > 0 && composerRect.height > 0 && composerRect.top > margin && composerRect.top < viewportHeight) {
+        bottomLimit = Math.min(bottomLimit, composerRect.top - margin);
+      }
+    } catch {}
+
+    const maxLeft = Math.max(margin, viewportWidth - buttonWidth - margin);
+    const maxTop = Math.max(margin, bottomLimit - buttonHeight);
+    const left = Math.max(margin, Math.min(maxLeft, rect.right - buttonWidth));
+    const top = Math.max(margin, Math.min(maxTop, rect.bottom + margin));
+
+    btn.style.left = `${Math.round(left)}px`;
+    btn.style.top = `${Math.round(top)}px`;
+    btn.style.display = 'inline-flex';
+    snapshot.rect = {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height
+    };
+    return true;
+  }
+
+  function ensureSelectionQuoteButton() {
+    try {
+      if (state.selectionQuoteButton && state.selectionQuoteButton.isConnected) return state.selectionQuoteButton;
+      if (!document.body) return null;
+      const existing = document.getElementById(MULTI_QUOTE_BUTTON_ID);
+      if (existing instanceof HTMLButtonElement) {
+        state.selectionQuoteButton = existing;
+        return existing;
+      }
+      const btn = document.createElement('button');
+      btn.id = MULTI_QUOTE_BUTTON_ID;
+      btn.type = 'button';
+      btn.className = 'btq-multi-quote-button';
+      btn.textContent = 'Quote';
+      btn.setAttribute('aria-label', 'Quote selected text');
+      btn.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const snapshot = state.selectionQuoteSnapshot || snapshotSelectionForMultiQuote();
+        const ok = appendQuoteToComposer(snapshot);
+        if (ok) {
+          showToast(snapshot?.hasKatex ? '已添加 LaTeX 引用' : '已添加引用');
+          try {
+            window.getSelection?.()?.removeAllRanges?.();
+          } catch {}
+        } else {
+          showToast('引用失败：未找到输入框');
+        }
+        hideSelectionQuoteButton();
+      });
+      document.body.appendChild(btn);
+      state.selectionQuoteButton = btn;
+      return btn;
+    } catch {
+      return null;
+    }
+  }
+
+  function showSelectionQuoteButton(snapshot) {
+    if (!snapshot || !snapshot.rect) {
+      hideSelectionQuoteButton();
+      return;
+    }
+    const btn = ensureSelectionQuoteButton();
+    if (!btn) return;
+    state.selectionQuoteSnapshot = snapshot;
+    positionSelectionQuoteButton(snapshot, snapshot.rect);
+    hideNativeQuoteControlsNear(snapshot.rect);
+    if (Array.isArray(state.selectionNativeHideTimers)) {
+      for (const timer of state.selectionNativeHideTimers) {
+        try {
+          clearTimeout(timer);
+        } catch {}
+      }
+    }
+    state.selectionNativeHideTimers = [];
+    for (const delay of [90, 240, 520, 900]) {
+      const timer = setTimeout(() => {
+        if (state.selectionQuoteSnapshot === snapshot) hideNativeQuoteControlsNear(snapshot.rect);
+      }, delay);
+      state.selectionNativeHideTimers.push(timer);
+    }
+  }
+
+  function refreshSelectionQuotePosition() {
+    state.selectionRepositionRaf = 0;
+    const snapshot = state.selectionQuoteSnapshot;
+    if (!snapshot || !snapshot.anchorRange) {
+      hideSelectionQuoteButton();
+      return;
+    }
+
+    const rect = getSelectionAnchorRect(snapshot.anchorRange);
+    if (!rect) {
+      hideSelectionQuoteButton();
+      return;
+    }
+
+    if (!positionSelectionQuoteButton(snapshot, rect)) {
+      hideSelectionQuoteButton();
+      return;
+    }
+    hideNativeQuoteControlsNear(snapshot.rect);
+  }
+
+  function activeSelectionLooksQuotable() {
+    try {
+      const selectedText = normalizeBlankLines(window.getSelection?.()?.toString?.() || '').trim();
+      return selectedText.length >= MULTI_QUOTE_MIN_SELECTION_LENGTH;
+    } catch {
+      return false;
+    }
+  }
+
+  function isComposerOrInside(el) {
+    if (!el || !(el instanceof Element)) return false;
+    if (isComposerEl(el)) return true;
+    try {
+      return !!el.closest?.('#prompt-textarea, textarea[name="prompt-textarea"], .ProseMirror[contenteditable="true"]');
+    } catch {
+      return false;
+    }
+  }
+
+  function shouldSkipSelectionQuoteRefreshForTyping(ev) {
+    const type = String(ev?.type || '');
+    if (type !== 'selectionchange' && type !== 'keyup') return false;
+    const active = document.activeElement;
+    const target = ev?.target;
+    if (!isComposerOrInside(active) && !isComposerOrInside(target)) return false;
+    if (activeSelectionLooksQuotable()) return false;
+    if (state.selectionQuoteSnapshot) hideSelectionQuoteButton();
+    return true;
+  }
+
+  function handleSelectionViewportChange() {
+    if (state.selectionQuoteSnapshot) {
+      scheduleSelectionQuoteReposition();
+      return;
+    }
+    if (activeSelectionLooksQuotable()) scheduleSelectionQuoteRefresh();
+  }
+
+  function scheduleSelectionQuoteReposition() {
+    if (!state.selectionQuoteSnapshot) return;
+    if (state.selectionRepositionRaf) return;
+    try {
+      state.selectionRepositionRaf = requestAnimationFrame(refreshSelectionQuotePosition);
+    } catch {
+      refreshSelectionQuotePosition();
+    }
+  }
+
+  function refreshSelectionQuoteButton() {
+    if (!isFeatureEnabled('multiQuote')) {
+      hideSelectionQuoteButton();
+      return;
+    }
+    const snapshot = snapshotSelectionForMultiQuote();
+    if (!snapshot) {
+      hideSelectionQuoteButton();
+      return;
+    }
+    showSelectionQuoteButton(snapshot);
+  }
+
+  function scheduleSelectionQuoteRefresh(ev = null) {
+    if (shouldSkipSelectionQuoteRefreshForTyping(ev)) return;
+    if (isPerfHotOrHeavy() && ev?.type !== 'pointerup' && !state.selectionQuoteSnapshot) return;
+    if (!state.selectionQuoteSnapshot && ev?.type !== 'pointerup' && !activeSelectionLooksQuotable()) return;
+
+    if (state.selectionRefreshTimer) {
+      clearTimeout(state.selectionRefreshTimer);
+      state.selectionRefreshTimer = null;
+    }
+    state.selectionRefreshTimer = setTimeout(() => {
+      state.selectionRefreshTimer = null;
+      refreshSelectionQuoteButton();
+    }, 35);
+
+    if (Array.isArray(state.selectionRefreshRetryTimers)) {
+      for (const timer of state.selectionRefreshRetryTimers) {
+        try {
+          clearTimeout(timer);
+        } catch {}
+      }
+    }
+    state.selectionRefreshRetryTimers = [180, 450].map((delay) =>
+      setTimeout(() => {
+        if (!state.selectionQuoteSnapshot && activeSelectionLooksQuotable()) refreshSelectionQuoteButton();
+      }, delay)
+    );
+  }
+
   function clearPendingQuotePatch() {
+    if (state.pendingQuotePatchTimer) {
+      try {
+        clearTimeout(state.pendingQuotePatchTimer);
+      } catch {}
+      state.pendingQuotePatchTimer = null;
+    }
     state.pendingQuotePatch = null;
+    clearPendingPointerQuoteSnapshot();
+  }
+
+  function clearPendingPointerQuoteSnapshot() {
+    if (state.pendingPointerQuoteTimer) {
+      try {
+        clearTimeout(state.pendingPointerQuoteTimer);
+      } catch {}
+      state.pendingPointerQuoteTimer = null;
+    }
     state.pendingPointerQuoteSnapshot = null;
+  }
+
+  function setPendingPointerQuoteSnapshot(snapshot) {
+    clearPendingPointerQuoteSnapshot();
+    if (!snapshot) return;
+    state.pendingPointerQuoteSnapshot = snapshot;
+    state.pendingPointerQuoteTimer = setTimeout(() => {
+      clearPendingPointerQuoteSnapshot();
+    }, 1700);
   }
 
   function scheduleQuotePatch(snapshot) {
     if (!snapshot || !snapshot.hasKatex) return;
+    if (state.pendingQuotePatchTimer) {
+      try {
+        clearTimeout(state.pendingQuotePatchTimer);
+      } catch {}
+      state.pendingQuotePatchTimer = null;
+    }
     state.pendingQuotePatch = {
       createdAt: Date.now(),
       expiresAt: Date.now() + QUOTE_PATCH_WINDOW_MS,
       snapshot
     };
+    state.pendingQuotePatchTimer = setTimeout(() => {
+      clearPendingQuotePatch();
+    }, QUOTE_PATCH_WINDOW_MS + 80);
 
     for (const delay of QUOTE_RETRY_DELAYS_MS) {
       setTimeout(() => {
@@ -439,11 +1013,11 @@
     }
   }
 
-  function showCopySuccessToast() {
+  function showToast(message) {
     if (!document || !document.body) return;
     const el = document.createElement('div');
     el.className = 'btq-latex-copy-success';
-    el.textContent = '已复制 LaTeX 公式';
+    el.textContent = String(message || '');
     document.body.appendChild(el);
     setTimeout(() => {
       el.style.opacity = '0';
@@ -453,6 +1027,10 @@
         }
       }, 200);
     }, 1000);
+  }
+
+  function showCopySuccessToast() {
+    showToast('已复制 LaTeX 公式');
   }
 
   function ensureTooltipEl() {
@@ -504,7 +1082,9 @@
   function ensureStyles() {
     const css =
       '.btq-latex-tooltip{position:fixed;background-color:rgba(0,0,0,0.7);color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;z-index:1000;opacity:0;transition:opacity 0.15s;pointer-events:none;}' +
-      '.btq-latex-copy-success{position:fixed;bottom:10%;left:50%;transform:translateX(-50%);background-color:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:4px;font-size:12px;z-index:1000;opacity:1;transition:opacity 0.2s;pointer-events:none;}';
+      '.btq-latex-copy-success{position:fixed;bottom:10%;left:50%;transform:translateX(-50%);background-color:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:4px;font-size:12px;z-index:1000;opacity:1;transition:opacity 0.2s;pointer-events:none;}' +
+      '.btq-multi-quote-button{position:fixed;display:none;align-items:center;justify-content:center;gap:6px;height:32px;min-width:78px;padding:0 12px;border:1px solid rgba(192,132,252,0.58);border-radius:8px;background:rgba(109,40,217,0.96);color:#fff;font:600 13px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 8px 24px rgba(88,28,135,0.34);z-index:2147483646;cursor:pointer;user-select:none;}' +
+      '.btq-multi-quote-button:hover{background:rgba(126,34,206,0.98);border-color:rgba(216,180,254,0.78);}';
 
     if (!document.head) return;
     const existing = document.getElementById(BTQ_STYLE_ID);
@@ -547,6 +1127,14 @@
   }
 
   function onPointerMove(ev) {
+    if (!isFeatureEnabled('hoverTooltip')) {
+      updateHoverKatex(null);
+      return;
+    }
+    if (isPerfHotOrHeavy()) {
+      updateHoverKatex(null);
+      return;
+    }
     const target = ev?.target;
     if (!target || !(target instanceof Element)) return;
 
@@ -567,6 +1155,7 @@
   }
 
   function onDblClick(ev) {
+    if (!isFeatureEnabled('doubleClickCopy')) return;
     const target = ev?.target;
     if (!target || !(target instanceof Element)) return;
     const katexEl = target.closest('.katex');
@@ -579,6 +1168,7 @@
   }
 
   function onCopy(ev) {
+    if (!isFeatureEnabled('copyLatex')) return;
     const snapshot = snapshotActiveSelection();
     if (!snapshot || !snapshot.hasKatex || !snapshot.latexText) return;
 
@@ -595,6 +1185,10 @@
   }
 
   function onPointerDown(ev) {
+    if (!isFeatureEnabled('nativeQuotePatch')) {
+      clearPendingPointerQuoteSnapshot();
+      return;
+    }
     const target = ev?.target;
     if (!target || !(target instanceof Element)) return;
     if (!isQuoteActionTrigger(target)) return;
@@ -602,10 +1196,14 @@
     const snapshot = snapshotActiveSelection();
     if (!snapshot || !snapshot.hasKatex) return;
 
-    state.pendingPointerQuoteSnapshot = snapshot;
+    setPendingPointerQuoteSnapshot(snapshot);
   }
 
   function onQuoteTrigger(ev) {
+    if (!isFeatureEnabled('nativeQuotePatch')) {
+      clearPendingQuotePatch();
+      return;
+    }
     const target = ev?.target;
     if (!target || !(target instanceof Element)) return;
     if (!isQuoteActionTrigger(target)) return;
@@ -622,11 +1220,19 @@
     }
 
     if (!selectedSnapshot || !selectedSnapshot.hasKatex) {
-      state.pendingPointerQuoteSnapshot = null;
+      clearPendingPointerQuoteSnapshot();
       return;
     }
 
     scheduleQuotePatch(selectedSnapshot);
+    clearPendingPointerQuoteSnapshot();
+  }
+
+  function releaseEphemeralState() {
+    hideSelectionQuoteButton();
+    clearPendingQuotePatch();
+    clearPendingPointerQuoteSnapshot();
+    updateHoverKatex(null);
   }
 
   function bindHandlers() {
@@ -640,6 +1246,29 @@
     document.addEventListener('copy', onCopy, true);
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('click', onQuoteTrigger, true);
+    document.addEventListener('pointerup', scheduleSelectionQuoteRefresh, { capture: true, passive: true });
+    document.addEventListener('keyup', scheduleSelectionQuoteRefresh, true);
+    document.addEventListener('selectionchange', scheduleSelectionQuoteRefresh, true);
+    document.addEventListener('scroll', handleSelectionViewportChange, { capture: true, passive: true });
+    window.addEventListener('resize', handleSelectionViewportChange, { capture: true, passive: true });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) releaseEphemeralState();
+    }, true);
+    window.addEventListener('pagehide', releaseEphemeralState, true);
+    try {
+      window.visualViewport?.addEventListener?.('scroll', handleSelectionViewportChange, { passive: true });
+      window.visualViewport?.addEventListener?.('resize', handleSelectionViewportChange, { passive: true });
+    } catch {}
+  }
+
+  function ensureConfigObserver() {
+    if (state.configObserver || typeof MutationObserver !== 'function') return;
+    try {
+      const target = document.documentElement;
+      if (!target) return;
+      state.configObserver = new MutationObserver(() => applyConfigSideEffects());
+      state.configObserver.observe(target, { attributes: true, attributeFilter: [...CONFIG_ATTR_FILTER] });
+    } catch {}
   }
 
   function setup() {
@@ -647,6 +1276,8 @@
     ensureStyles();
     ensureTooltipEl();
     bindHandlers();
+    ensureConfigObserver();
+    applyConfigSideEffects();
   }
 
   if (typeof document !== 'undefined') {

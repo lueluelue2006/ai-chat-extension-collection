@@ -49,7 +49,13 @@
     composerInterlockToastCooldownMs: 1200,
     replyRenderPollMs: 180,
     replyRenderSettleMs: 900,
-    composerMirrorSyncDelayMs: 24
+    composerMirrorSyncDelayMs: 24,
+    queueDraftTextSettleMs: 140,
+    queueDraftTextSettleStepMs: 24,
+    composerTextCacheMaxAgeMs: 1600,
+    debugTextMaxChars: 160,
+    highlightSetMaxEntries: 240,
+    pendingHighlightMaxEntries: 32
   });
   const MESSAGES = Object.freeze({
     composerInterlockToast: { zh: '排队消息正在发出，请稍候再输入。', en: 'A queued message is being sent. Wait a moment before typing.' },
@@ -63,6 +69,16 @@
     responseSettlingPaused: { zh: '队列已暂停：上一条回复仍在收尾。', en: 'Queue paused: the previous reply is still settling.' },
     queuedCount: { zh: '已排队 {count} 条', en: '{count} queued' },
     queueHint: { zh: 'Tab 排队 · ⌥↑ / Alt+↑ 取回最近一条', en: 'Queue with Tab · restore the latest item with ⌥↑ / Alt+↑' },
+    forceSend: { zh: '强发', en: 'Send now' },
+    forceSendAria: { zh: '强制立即发送这条排队消息', en: 'Force-send this queued message immediately' },
+    forceSendBlocked: {
+      zh: '当前还不能强制发送：发送按钮尚未就绪或仍在回复中。',
+      en: 'Cannot force-send yet: the send button is not ready or a reply is still running.'
+    },
+    forceSendQueued: {
+      zh: '已请求强制发送这条排队消息。',
+      en: 'Requested an immediate force-send for this queued item.'
+    },
     remove: { zh: '删除', en: 'Remove' },
     removeAria: { zh: '删除这条排队消息', en: 'Remove this queued message' },
     moreQueued: { zh: '还有 {count} 条待发送', en: '{count} more queued item(s) waiting to send' },
@@ -357,13 +373,35 @@
     }
   }
 
+  function readComposerMirrorText(editorEl = null) {
+    const mirror = getComposerMirrorTextarea(editorEl || getEditorEl());
+    if (!mirror || mirror === editorEl) return '';
+    try {
+      return String(mirror.value || '').replace(/\r/g, '');
+    } catch {
+      return '';
+    }
+  }
+
+  function pickBestComposerReadVariant(primaryText, mirrorText) {
+    const primary = String(primaryText || '').replace(/\r/g, '');
+    const mirror = String(mirrorText || '').replace(/\r/g, '');
+    if (!hasText(primary)) return primary;
+    if (!hasText(mirror)) return primary;
+    if (primary === mirror) return primary;
+    if (mirror.length > primary.length && mirror.includes(primary)) return mirror;
+    if (primary.length > mirror.length && primary.includes(mirror)) return primary;
+    return primary;
+  }
+
   function readContentEditableText(el) {
     try {
       if (!el) return '';
       const text = typeof el.innerText === 'string' ? String(el.innerText || '') : '';
+      const textContent = typeof el.textContent === 'string' ? String(el.textContent || '') : '';
       const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
       const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
-      const normalized = text.replace(/\r/g, '');
+      const normalized = pickBestComposerReadVariant(text, textContent);
       if (placeholderText && normalized.trim() === placeholderText) return '';
       return normalized;
     } catch {
@@ -382,9 +420,34 @@
       }
     }
     try {
-      if (editor.isContentEditable) return readContentEditableText(editor);
+      if (editor.isContentEditable) {
+        return pickBestComposerReadVariant(readContentEditableText(editor), readComposerMirrorText(editor));
+      }
     } catch {}
     return '';
+  }
+
+  function readComposerTextForInputCache(editorEl = null) {
+    const editor = editorEl || null;
+    if (!editor) return '';
+    if (isTextareaLike(editor)) {
+      try {
+        return String(editor.value || '').replace(/\r/g, '');
+      } catch {
+        return '';
+      }
+    }
+    try {
+      if (!editor.isContentEditable) return '';
+      const text = typeof editor.textContent === 'string' ? String(editor.textContent || '').replace(/\r/g, '') : '';
+      if (!text.trim()) return '';
+      const placeholderEl = editor.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
+      const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
+      if (placeholderText && text.trim() === placeholderText) return '';
+      return text;
+    } catch {
+      return '';
+    }
   }
 
   function resolveComposerEditorFromTarget(eventTarget) {
@@ -404,10 +467,148 @@
     }
   }
 
+  function areComposerEditorsRelated(editorA = null, editorB = null) {
+    if (!editorA || !editorB) return false;
+    if (editorA === editorB) return true;
+    try {
+      if (getComposerMirrorTextarea(editorA) === editorB || getComposerMirrorTextarea(editorB) === editorA) return true;
+    } catch {}
+    try {
+      const formA = getComposerForm(editorA);
+      const formB = getComposerForm(editorB);
+      if (formA && formB && formA === formB) return true;
+    } catch {}
+    return false;
+  }
+
+  function updateComposerTextCache(editorEl = null, text = '') {
+    const editor = editorEl || getEditorEl();
+    state.composerTextCache = {
+      text: String(text || '').replace(/\r/g, ''),
+      editor: editor || null,
+      updatedAt: now()
+    };
+    armComposerTextCacheExpiry();
+  }
+
+  function clearComposerTextCache() {
+    try {
+      if (state.composerTextCacheClearTimer) clearTimeout(state.composerTextCacheClearTimer);
+    } catch {}
+    state.composerTextCacheClearTimer = 0;
+    state.composerTextCache = {
+      text: '',
+      editor: null,
+      updatedAt: 0
+    };
+  }
+
+  function armComposerTextCacheExpiry() {
+    try {
+      if (state.composerTextCacheClearTimer) clearTimeout(state.composerTextCacheClearTimer);
+    } catch {}
+    const delay = Math.max(250, Number(CONFIG.composerTextCacheMaxAgeMs || 0) + 120);
+    state.composerTextCacheClearTimer = setTimeout(() => {
+      state.composerTextCacheClearTimer = 0;
+      clearComposerTextCache();
+    }, delay);
+  }
+
+  function readCachedComposerText(editorEl = null, options = {}) {
+    const cache = state.composerTextCache || null;
+    if (!cache || !cache.updatedAt) return '';
+    if (now() - Number(cache.updatedAt || 0) > CONFIG.composerTextCacheMaxAgeMs) {
+      clearComposerTextCache();
+      return '';
+    }
+    const editor = editorEl || null;
+    if (cache.editor && cache.editor.isConnected === false) {
+      clearComposerTextCache();
+      return '';
+    }
+    if (editor && cache.editor && !areComposerEditorsRelated(editor, cache.editor)) return '';
+    const text = String(cache.text || '');
+    const baseText = String(options.baseText || '');
+    if (hasText(baseText) && !areComposerTextVersionsCompatible(baseText, text)) return '';
+    return text;
+  }
+
   function resolveQueueDraftText(options = {}) {
+    const sourceEditor = resolveComposerEditorFromTarget(options.sourceEditor || null);
+    const editor = options.editor || getEditorEl();
     const sourceText = String(options.sourceText || '');
-    if (hasText(sourceText)) return sourceText;
-    return String(options.liveText || '');
+    const liveText = String(options.liveText || '');
+    const baseText = pickBestComposerText([sourceText, liveText]);
+    const cachedText = pickBestComposerText(
+      [
+        readCachedComposerText(sourceEditor, { baseText }),
+        readCachedComposerText(editor, { baseText })
+      ],
+      baseText
+    );
+    return pickBestComposerText([sourceText, liveText, cachedText], baseText || cachedText);
+  }
+
+  function areComposerTextVersionsCompatible(baseText, nextText) {
+    const base = String(baseText || '');
+    const next = String(nextText || '');
+    if (!hasText(base)) return hasText(next);
+    if (!hasText(next)) return false;
+    return next === base || next.startsWith(base) || base.startsWith(next);
+  }
+
+  function pickBestComposerText(values = [], baseText = '') {
+    let best = '';
+    for (const value of values) {
+      const text = String(value || '');
+      if (!hasText(text)) continue;
+      if (hasText(baseText) && !areComposerTextVersionsCompatible(baseText, text)) continue;
+      if (text.length > best.length) best = text;
+    }
+    return best;
+  }
+
+  async function readSettledQueueDraftText(options = {}) {
+    const sourceEditor = options.sourceEditor || null;
+    const editor = options.editor || getEditorEl();
+    const startedAt = now();
+    const baseText = resolveQueueDraftText(options);
+    let best = pickBestComposerText(
+      [
+        options.sourceText,
+        options.liveText,
+        readCachedComposerText(sourceEditor, { baseText }),
+        readCachedComposerText(editor, { baseText }),
+        readComposerText(sourceEditor),
+        readComposerText(editor)
+      ],
+      baseText
+    );
+    let lastObserved = best;
+    let stableSince = now();
+
+    while (now() - startedAt < CONFIG.queueDraftTextSettleMs) {
+      await sleep(CONFIG.queueDraftTextSettleStepMs);
+      const next = pickBestComposerText(
+        [
+          readCachedComposerText(sourceEditor, { baseText: best || baseText }),
+          readCachedComposerText(editor, { baseText: best || baseText }),
+          readComposerText(sourceEditor),
+          readComposerText(editor),
+          best
+        ],
+        best || baseText
+      );
+      if (next.length > best.length) best = next;
+      if (next === lastObserved) {
+        if (now() - stableSince >= CONFIG.queueDraftTextSettleStepMs * 2) break;
+      } else {
+        lastObserved = next;
+        stableSince = now();
+      }
+    }
+
+    return best;
   }
 
   function collectConnectedComposerTexts(options = {}) {
@@ -620,6 +821,7 @@
         } catch {}
         return false;
       }
+      updateComposerTextCache(editor, next);
       try {
         if (editor.isContentEditable) {
           const selection = window.getSelection?.();
@@ -763,6 +965,37 @@
     return false;
   }
 
+  function shouldUseFullComposerInputPath(options = {}) {
+    if ((Number(options.queueLength) || 0) > 0) return true;
+    if (options.processQueueBusy === true) return true;
+    if (options.hasPendingSendGate === true) return true;
+    if ((Number(options.activeRequestCount) || 0) > 0) return true;
+    if (options.awaitingConversationStart === true) return true;
+    if (options.composerInterlockActive === true) return true;
+    if (options.restoredQueuedDraftActive === true) return true;
+    if (options.manualSendInterlockActive === true) return true;
+    if (options.manualSendWarmupActive === true) return true;
+    if (options.previewRepairActive === true && (Number(options.queueLength) || 0) > 0) return true;
+    if (options.replyRenderTimerActive === true) return true;
+    return false;
+  }
+
+  function shouldUseFullComposerInputPathForState() {
+    return shouldUseFullComposerInputPath({
+      queueLength: state.queue.length,
+      processQueueBusy: state.processQueueBusy,
+      hasPendingSendGate: !!state.pendingSendGate,
+      activeRequestCount: state.activeRequests.size,
+      awaitingConversationStart: state.awaitingConversationStart,
+      composerInterlockActive: !!state.composerInterlock,
+      restoredQueuedDraftActive: !!state.restoredQueuedDraft,
+      manualSendInterlockActive: !!state.manualSendInterlock,
+      manualSendWarmupActive: Number(state.manualSendWarmupUntil || 0) > now(),
+      previewRepairActive: !!state.previewRepairTimer,
+      replyRenderTimerActive: !!state.replyRender.timer
+    });
+  }
+
   function findSendButton(editorEl = null) {
     const core = getCore();
     if (core && typeof core.findSendButton === 'function') return core.findSendButton(editorEl || getEditorEl());
@@ -867,7 +1100,8 @@
   function isThinkingIndicatorText(text) {
     const normalized = normalizeUiStatusText(text);
     if (!normalized) return false;
-    return /(pro thinking|thinking|thought for|reasoned for|正在思考|仍在思考|还在思考|正在生成|仍在生成|还在生成|思考中|推理中)/i.test(
+    if (/(thought for|reasoned for|已思考|已推理)/i.test(normalized)) return false;
+    return /(^thinking$|pro thinking|still thinking|generating a response|正在思考|仍在思考|还在思考|正在生成|仍在生成|还在生成|思考中|推理中)/i.test(
       normalized
     );
   }
@@ -917,7 +1151,8 @@
       const hasThinkingIndicator = labels.some((label) => isThinkingIndicatorText(label));
       return shouldTreatAssistantThinkingAsGenerating({
         hasCopyAction,
-        hasThinkingIndicator
+        hasThinkingIndicator,
+        sendButtonReady: isReadySendButton(null, getEditorEl())
       });
     } catch {
       return false;
@@ -1002,8 +1237,15 @@
     manualSendWarmupUntil: 0,
     manualSendWarmupTimer: 0,
     composerInterlock: null,
+    restoredQueuedDraft: null,
     programmaticComposerDepth: 0,
     composerMirrorSyncTimer: 0,
+    composerTextCache: {
+      text: '',
+      editor: null,
+      updatedAt: 0
+    },
+    composerTextCacheClearTimer: 0,
     lastGenerating: false,
     lastGeneratingChangeAt: now(),
     lastTurnsChangeAt: now(),
@@ -1059,8 +1301,30 @@
     state.debug.lastHotkey = payload && typeof payload === 'object' ? Object.assign({ at: now() }, payload) : null;
   }
 
+  function compactDebugText(value) {
+    const text = String(value || '');
+    const max = Math.max(24, Number(CONFIG.debugTextMaxChars) || 160);
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}… [${text.length} chars]`;
+  }
+
+  function sanitizeDebugPayload(payload = null) {
+    if (!payload || typeof payload !== 'object') return null;
+    const out = Array.isArray(payload) ? [] : {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (typeof value === 'string' && /text/i.test(String(key || ''))) {
+        out[key] = compactDebugText(value);
+      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        out[key] = sanitizeDebugPayload(value);
+      } else {
+        out[key] = value;
+      }
+    }
+    return out;
+  }
+
   function setLastQueueAttemptDebug(payload = null) {
-    state.debug.lastQueueAttempt = payload && typeof payload === 'object' ? Object.assign({ at: now() }, payload) : null;
+    state.debug.lastQueueAttempt = payload && typeof payload === 'object' ? Object.assign({ at: now() }, sanitizeDebugPayload(payload)) : null;
   }
 
   function clearComposerMirrorSyncTimer() {
@@ -1207,13 +1471,12 @@
     const generationStartGraceMs = Math.max(0, Number(options.generationStartGraceMs) || 0);
     const nonGeneratingForMs = Math.max(0, Number(options.nonGeneratingForMs) || 0);
     const requiredNonGeneratingMs = Math.max(0, Number(options.requiredNonGeneratingMs) || 0);
+    const beforeAssistantCount = Math.max(0, Number(gate.beforeAssistantCount) || 0);
     const assistantTurnCount = Math.max(0, Number(options.assistantTurnCount) || 0);
     const replyRenderWaitMs = Math.max(0, Number(options.replyRenderWaitMs) || 0);
 
     if (generatingNow) return { status: 'wait_generating', waitMs: 0 };
-    if ((Number(gate.beforeAssistantCount) || 0) <= 0 && assistantTurnCount <= 0) {
-      return { status: 'wait_assistant_turn', waitMs: 0 };
-    }
+    if (assistantTurnCount <= beforeAssistantCount) return { status: 'wait_assistant_turn', waitMs: 0 };
     if (gate.sawGenerating) {
       if (!gate.transportDone) return { status: 'wait_transport_done', waitMs: 0 };
       if (requiredNonGeneratingMs > 0 && nonGeneratingForMs < requiredNonGeneratingMs) {
@@ -1318,6 +1581,98 @@
 
   function isComposerInterlockActive() {
     return !!state.composerInterlock;
+  }
+
+  function rememberRestoredQueuedDraft(item = null) {
+    if (!item) return false;
+    state.restoredQueuedDraft = {
+      id: String(item?.id || ''),
+      text: String(item?.text || ''),
+      conversationId: String(item?.conversationId || ''),
+      restoredAt: now(),
+      activeResponseAtRestore:
+        !!state.pendingSendGate ||
+        state.activeRequests.size > 0 ||
+        state.awaitingConversationStart ||
+        isManualSendInterlockActive() ||
+        isManualSendWarmupActive() ||
+        isGeneratingNow() ||
+        getLiveReplyRenderWaitMs() > 0
+    };
+    markQueueActivity();
+    return true;
+  }
+
+  function clearRestoredQueuedDraft() {
+    if (!state.restoredQueuedDraft) return false;
+    state.restoredQueuedDraft = null;
+    markQueueActivity();
+    return true;
+  }
+
+  function isRestoredQueuedDraftActive() {
+    return !!state.restoredQueuedDraft;
+  }
+
+  function shouldSuppressImmediateSendForRestoredDraft(options = {}) {
+    return options.restoredQueuedDraftActive === true;
+  }
+
+  function shouldHoldRestoredDraftInQueuePool(options = {}) {
+    if (options.restoredQueuedDraftActive !== true) return false;
+    return options.activeResponseAtRestore === true || options.currentActiveResponse === true;
+  }
+
+  function buildRestoredDraftQueuePoolHold(restoredDraft = null) {
+    if (!restoredDraft) return null;
+    if (
+      !shouldHoldRestoredDraftInQueuePool({
+        restoredQueuedDraftActive: true,
+        activeResponseAtRestore: restoredDraft.activeResponseAtRestore === true,
+        currentActiveResponse:
+          !!state.pendingSendGate ||
+          state.activeRequests.size > 0 ||
+          state.awaitingConversationStart ||
+          isManualSendInterlockActive() ||
+          isManualSendWarmupActive() ||
+          isGeneratingNow() ||
+          getLiveReplyRenderWaitMs() > 0
+      })
+    ) {
+      return null;
+    }
+    return {
+      reason: 'restored_queued_draft',
+      restoredFromId: String(restoredDraft.id || ''),
+      restoredAt: Number(restoredDraft.restoredAt) || now(),
+      armedAt: now()
+    };
+  }
+
+  function getQueuePoolHoldRetryDelay(item = null) {
+    const hold = item?.queuePoolHold || null;
+    if (!hold) return 0;
+    const holdStart = Number(hold.armedAt || hold.restoredAt || 0) || now();
+    const minHoldRemainingMs = Math.max(0, holdStart + CONFIG.postStopVisualSettleMs - now());
+    if (minHoldRemainingMs > 0) return minHoldRemainingMs;
+    if (
+      !!state.pendingSendGate ||
+      state.activeRequests.size > 0 ||
+      state.awaitingConversationStart ||
+      isManualSendInterlockActive() ||
+      isManualSendWarmupActive() ||
+      isGeneratingNow() ||
+      isCachedCurrentConversationStreamActive()
+    ) {
+      return CONFIG.streamStatusPollMs;
+    }
+    const replyRenderWaitMs = getLiveReplyRenderWaitMs();
+    if (replyRenderWaitMs > 0) return replyRenderWaitMs;
+    return 0;
+  }
+
+  function isQueuePoolHoldActive(item = null) {
+    return getQueuePoolHoldRetryDelay(item) > 0;
   }
 
   function maybeWarnComposerInterlock() {
@@ -1504,6 +1859,9 @@
     if (!gate) return false;
     refreshReplyRenderSampling();
     const generatingNow = isGeneratingNow();
+    if (gate.queuedId === 'manual-send' && !gate.transportDone && !generatingNow) {
+      gate.transportDone = true;
+    }
     const nonGeneratingForMs = generatingNow ? 0 : Math.max(0, now() - (Number(state.lastGeneratingChangeAt) || 0));
     const replyRenderWaitMs = getLiveReplyRenderWaitMs();
 
@@ -1735,9 +2093,16 @@
           min-width: 0;
           word-break: break-word;
         }
+        #${PREVIEW_ID} .aichatTabQueueItemActions {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: auto;
+        }
+        #${PREVIEW_ID} .aichatTabQueueItemForce,
         #${PREVIEW_ID} .aichatTabQueueItemRemove {
           flex: 0 0 auto;
-          margin-left: auto;
           padding: 2px 8px;
           border: 1px solid rgba(251, 191, 36, 0.2);
           border-radius: 999px;
@@ -1745,6 +2110,16 @@
           color: rgba(255, 245, 230, 0.9);
           font: 600 11px/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           cursor: pointer;
+        }
+        #${PREVIEW_ID} .aichatTabQueueItemForce {
+          border-color: rgba(56, 189, 248, 0.28);
+          background: rgba(56, 189, 248, 0.12);
+          color: rgba(224, 242, 254, 0.96);
+        }
+        #${PREVIEW_ID} .aichatTabQueueItemForce:hover {
+          background: rgba(56, 189, 248, 0.2);
+          border-color: rgba(56, 189, 248, 0.42);
+          color: rgba(240, 249, 255, 0.98);
         }
         #${PREVIEW_ID} .aichatTabQueueItemRemove:hover {
           background: rgba(251, 191, 36, 0.16);
@@ -1949,6 +2324,22 @@
       text.className = 'aichatTabQueueItemText';
       text.textContent = normalizePreviewText(item.text);
 
+      const actions = document.createElement('div');
+      actions.className = 'aichatTabQueueItemActions';
+
+      const force = document.createElement('button');
+      force.type = 'button';
+      force.className = 'aichatTabQueueItemForce';
+      force.textContent = t('forceSend');
+      force.setAttribute('aria-label', t('forceSendAria'));
+      force.addEventListener('click', (event) => {
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+        } catch {}
+        forceSendQueuedDraftById(item.id);
+      });
+
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'aichatTabQueueItemRemove';
@@ -1962,9 +2353,11 @@
         removeQueuedDraftById(item.id);
       });
 
+      actions.appendChild(force);
+      actions.appendChild(remove);
       row.appendChild(num);
       row.appendChild(text);
-      row.appendChild(remove);
+      row.appendChild(actions);
       listEl.appendChild(row);
     }
 
@@ -1991,9 +2384,17 @@
   }
 
   function startPreviewRepairLoop() {
+    if (!state.queue.length) {
+      stopPreviewRepairLoop();
+      return;
+    }
     if (state.previewRepairTimer) return;
     state.previewRepairTimer = setInterval(() => {
       if (state.disposed) return;
+      if (!state.queue.length) {
+        stopPreviewRepairLoop();
+        return;
+      }
       if (shouldRepairPreviewAttachment()) renderPreview({ force: true });
       repairQueueProgressFromPreviewTick();
     }, CONFIG.previewRepairIntervalMs);
@@ -2049,12 +2450,13 @@
     return true;
   }
 
-  function enqueueDraft(text) {
+  function enqueueDraft(text, options = {}) {
     const item = {
       id: nextQueueId(),
       text: String(text || ''),
       createdAt: now(),
-      conversationId: getConversationBindingId()
+      conversationId: getConversationBindingId(),
+      queuePoolHold: options.queuePoolHold || null
     };
     state.queue.push(item);
     markQueueActivity();
@@ -2066,7 +2468,7 @@
   function popLastQueuedDraft() {
     if (!state.queue.length) return null;
     const item = state.queue.pop() || null;
-    if (!state.queue.length) resetQueueSessionState();
+    if (!state.queue.length) resetQueueSessionState({ preserveActiveResponseState: true, clearRestoredQueuedDraft: false });
     markQueueActivity();
     refreshPreview();
     refreshReplyRenderSampling();
@@ -2087,7 +2489,7 @@
     const result = removeQueuedDraftFromList(state.queue, itemId);
     if (!result.removedItem) return false;
     state.queue = result.nextQueue;
-    if (!state.queue.length) resetQueueSessionState();
+    if (!state.queue.length) resetQueueSessionState({ preserveActiveResponseState: true });
     markQueueActivity();
     refreshPreview();
     refreshReplyRenderSampling();
@@ -2096,12 +2498,28 @@
     return true;
   }
 
-  function resetQueueSessionState() {
+  function moveQueuedDraftToFront(itemId) {
+    const nextId = String(itemId || '').trim();
+    if (!nextId || state.queue.length <= 1) return false;
+    const index = state.queue.findIndex((item) => String(item?.id || '').trim() === nextId);
+    if (index <= 0) return index === 0;
+    const [item] = state.queue.splice(index, 1);
+    if (!item) return false;
+    state.queue.unshift(item);
+    markQueueActivity();
+    refreshPreview();
+    return true;
+  }
+
+  function resetQueueSessionState(options = {}) {
     if (state.queue.length > 0) return false;
-    clearPendingSendGate();
-    clearAwaitingConversationStart();
+    if (options.preserveActiveResponseState !== true) {
+      clearPendingSendGate();
+      clearAwaitingConversationStart();
+      clearConversationStreamStatusCache();
+    }
     clearComposerInterlock();
-    clearConversationStreamStatusCache();
+    if (options.clearRestoredQueuedDraft !== false) clearRestoredQueuedDraft();
     markQueueActivity();
     refreshReplyRenderSampling();
     return true;
@@ -2152,7 +2570,6 @@
   function buildPendingHighlightCandidate(item, beforeSnapshot) {
     return {
       queuedId: item.id,
-      queuedText: item.text,
       beforeCount: Number(beforeSnapshot?.count) || 0,
       beforeLastKey: String(beforeSnapshot?.lastKey || ''),
       beforeLastMsgId: String(beforeSnapshot?.lastMsgId || ''),
@@ -2160,6 +2577,43 @@
       resolvedMsgId: '',
       resolvedKey: ''
     };
+  }
+
+  function trimSetToLimit(set, limit) {
+    if (!set || typeof set.size !== 'number') return;
+    const max = Math.max(1, Number(limit) || 1);
+    while (set.size > max) {
+      const first = set.values().next();
+      if (!first || first.done) break;
+      set.delete(first.value);
+    }
+  }
+
+  function pruneHighlightTracking(turns = null) {
+    try {
+      const turnList = Array.isArray(turns) ? turns : collectUserTurns();
+      if (turnList.length) {
+        const liveMsgIds = new Set();
+        const liveKeys = new Set();
+        for (const turn of turnList) {
+          const msgId = String(turn?.msgId || '');
+          const key = String(turn?.key || '');
+          if (msgId) liveMsgIds.add(msgId);
+          if (key) liveKeys.add(key);
+        }
+        for (const msgId of Array.from(state.highlightedMsgIds)) {
+          if (!liveMsgIds.has(msgId)) state.highlightedMsgIds.delete(msgId);
+        }
+        for (const key of Array.from(state.highlightedKeys)) {
+          if (!liveKeys.has(key)) state.highlightedKeys.delete(key);
+        }
+      }
+      trimSetToLimit(state.highlightedMsgIds, CONFIG.highlightSetMaxEntries);
+      trimSetToLimit(state.highlightedKeys, CONFIG.highlightSetMaxEntries);
+      if (state.pendingHighlightCandidates.length > CONFIG.pendingHighlightMaxEntries) {
+        state.pendingHighlightCandidates.splice(0, state.pendingHighlightCandidates.length - CONFIG.pendingHighlightMaxEntries);
+      }
+    } catch {}
   }
 
   function syncHighlightedTurnsToDom() {
@@ -2225,6 +2679,7 @@
     }
 
     if (changed) {
+      pruneHighlightTracking(turns);
       syncHighlightedTurnsToDom();
       postBridgeMessage(BRIDGE_TAB_QUEUE_MARKS_CHANGED);
     }
@@ -2242,7 +2697,8 @@
     void maybeReleasePendingSendGate();
   }
 
-  function canSendQueueHead() {
+  function canSendQueueHead(options = {}) {
+    const force = options.force === true;
     if (!state.queue.length) return false;
     if (isManualSendWarmupActive()) return false;
     if (isManualSendInterlockActive()) return false;
@@ -2250,19 +2706,58 @@
     if (state.awaitingConversationStart) return false;
     if (state.pendingSendGate) return false;
     if (state.composerInterlock) return false;
-    if (isGeneratingNow()) return false;
-    if (getLiveReplyRenderWaitMs() > 0) return false;
+    if (!force && isGeneratingNow()) return false;
+    if (!force && getLiveReplyRenderWaitMs() > 0) return false;
     const head = state.queue[0];
     if (!head) return false;
+    if (!force && isQueuePoolHoldActive(head)) return false;
     const composerState = getComposerBlockingState({
       composerText: readComposerText(getEditorEl()),
       headText: head.text,
       hasAttachments: hasLikelyComposerAttachments(getComposerForm(getEditorEl()))
     });
-    if (composerState.hasDraft || composerState.hasAttachments) return false;
+    if (!force && (composerState.hasDraft || composerState.hasAttachments)) return false;
     const currentConversationId = getConversationBindingId();
-    if (head.conversationId && currentConversationId && head.conversationId !== currentConversationId) return false;
-    if (head.conversationId && !currentConversationId) return false;
+    if (!force && head.conversationId && currentConversationId && head.conversationId !== currentConversationId) return false;
+    if (!force && head.conversationId && !currentConversationId) return false;
+    return true;
+  }
+
+  function getQueueRetryDelay(options = {}) {
+    const force = options.force === true;
+    if (!state.queue.length) return 0;
+    if (isManualSendWarmupActive()) {
+      return Math.max(0, Number(state.manualSendWarmupUntil || 0) - now()) || CONFIG.sendCooldownMs;
+    }
+    if (isManualSendInterlockActive()) return CONFIG.sendCooldownMs;
+    if (state.activeRequests.size > 0) return CONFIG.streamStatusPollMs;
+    if (state.awaitingConversationStart) return CONFIG.sendCooldownMs;
+    if (state.pendingSendGate) return CONFIG.streamStatusPollMs;
+    if (state.composerInterlock) return CONFIG.sendCooldownMs;
+    const holdRetryDelayMs = getQueuePoolHoldRetryDelay(state.queue[0]);
+    if (!force && holdRetryDelayMs > 0) return holdRetryDelayMs;
+    if (!force && isGeneratingNow()) return CONFIG.streamStatusPollMs;
+    if (!force) {
+      const replyRenderWaitMs = getLiveReplyRenderWaitMs();
+      if (replyRenderWaitMs > 0) return replyRenderWaitMs;
+    }
+    return 0;
+  }
+
+  function forceSendQueuedDraftById(itemId) {
+    const nextId = String(itemId || '').trim();
+    if (!nextId) return false;
+    const editor = getEditorEl();
+    const sendButton = findSendButton(editor);
+    if (!isReadySendButton(sendButton, editor)) {
+      showToast(t('forceSendBlocked'));
+      return false;
+    }
+    moveQueuedDraftToFront(nextId);
+    markQueueActivity();
+    refreshPreview();
+    showToast(t('forceSendQueued'));
+    void maybeProcessQueue({ force: true, allowSyncImmediate: true });
     return true;
   }
 
@@ -2350,7 +2845,8 @@
   }
 
   async function sendQueuedHead(options = {}) {
-    if (!canSendQueueHead()) return false;
+    const force = options.force === true;
+    if (!canSendQueueHead({ force })) return false;
     const head = state.queue[0];
     const initialEditor = getEditorEl();
     const initialForm = getComposerForm(initialEditor);
@@ -2380,9 +2876,10 @@
     markQueueActivity();
 
     const beforeSnapshot = getUserTurnSnapshot();
+    const beforeAssistantCount = collectAssistantTurns().length;
     const beforeConversationStartSeq = state.conversationStartSeq;
     const beforeSteerTurnStartSeq = state.steerTurnStartSeq;
-    if (hasForeignComposerDraft(head.text, getActiveEditor())) {
+    if (!force && hasForeignComposerDraft(head.text, getActiveEditor())) {
       refreshPreview();
       return false;
     }
@@ -2468,12 +2965,22 @@
 
     const steerTurnConfirmed = state.steerTurnStartSeq - beforeSteerTurnStartSeq > 0;
     clearComposerInterlock();
+    updateComposerTextCache(getActiveEditor(), '');
     state.queue.shift();
     markQueueActivity();
     if (readSettings().quicknavMarkEnabled) {
       state.pendingHighlightCandidates.push(buildPendingHighlightCandidate(head, beforeSnapshot));
+      pruneHighlightTracking();
       resolvePendingHighlights();
     }
+    armPendingSendGate(head.id, {
+      beforeAssistantCount,
+      sawGenerating: isGeneratingNow()
+    });
+    if (steerTurnConfirmed && state.pendingSendGate) {
+      state.pendingSendGate.transportDone = true;
+    }
+
     if (steerTurnConfirmed) {
       const conversationId = getConversationBindingId();
       if (conversationId) {
@@ -2483,10 +2990,9 @@
       }
       clearAwaitingConversationStart();
     } else {
-      armPendingSendGate(head.id);
       armAwaitingConversationStart();
     }
-    if (!state.queue.length) resetQueueSessionState();
+    if (!state.queue.length) resetQueueSessionState({ preserveActiveResponseState: true });
     refreshPreview();
     return true;
   }
@@ -2496,7 +3002,9 @@
     if (!readSettings().queueEnabled) return false;
     if (state.processQueueBusy) return false;
     state.processQueueBusy = true;
-    if (!canSendQueueHead()) {
+    if (!canSendQueueHead({ force: options.force === true })) {
+      const retryDelayMs = getQueueRetryDelay({ force: options.force === true });
+      if (retryDelayMs > 0) scheduleMaybeProcessQueue(retryDelayMs);
       state.processQueueBusy = false;
       refreshPreview();
       return false;
@@ -2520,11 +3028,14 @@
     const editor = getEditorEl();
     if (!editor) return false;
     const ok = setComposerText(item.text, editor);
-    if (ok) showToast(t('restoredLatest'));
+    if (ok) {
+      rememberRestoredQueuedDraft(item);
+      showToast(t('restoredLatest'));
+    }
     return ok;
   }
 
-  function queueCurrentComposerDraft(options = {}) {
+  async function queueCurrentComposerDraft(options = {}) {
     const settings = readSettings();
     if (!settings.queueEnabled) {
       setLastQueueAttemptDebug({ ok: false, reason: 'queue_disabled' });
@@ -2535,7 +3046,15 @@
     const editor = liveEditor || sourceEditor;
     const form = getComposerForm(editor) || getComposerForm(sourceEditor);
     const sourceText = String(options.sourceText || '');
-    const liveText = readComposerText(sourceEditor || editor);
+    const sourceReadText = readComposerText(sourceEditor || editor);
+    const liveText = pickBestComposerText(
+      [
+        sourceReadText,
+        readComposerText(liveEditor),
+        readCachedComposerText(sourceEditor || editor, { baseText: sourceText || sourceReadText })
+      ],
+      sourceText || sourceReadText
+    );
     if (!editor || !form) {
       setLastQueueAttemptDebug({
         ok: false,
@@ -2562,7 +3081,20 @@
       return false;
     }
 
-    const text = resolveQueueDraftText({ sourceText, liveText });
+    const resolvedSourceText = resolveQueueDraftText({
+      sourceEditor,
+      editor,
+      sourceText,
+      liveText
+    });
+    const text = hasText(sourceText)
+      ? resolvedSourceText
+      : await readSettledQueueDraftText({
+          sourceEditor,
+          editor,
+          sourceText: resolvedSourceText,
+          liveText
+        });
     if (!hasText(text)) {
       setLastQueueAttemptDebug({
         ok: false,
@@ -2575,8 +3107,22 @@
       return false;
     }
 
-    const item = enqueueDraft(text);
-    const immediateSend = shouldUseImmediateComposerSend(item, editor);
+    const restoredQueuedDraft = state.restoredQueuedDraft
+      ? {
+          id: state.restoredQueuedDraft.id,
+          text: state.restoredQueuedDraft.text,
+          conversationId: state.restoredQueuedDraft.conversationId,
+          restoredAt: state.restoredQueuedDraft.restoredAt,
+          activeResponseAtRestore: state.restoredQueuedDraft.activeResponseAtRestore
+        }
+      : null;
+    const queuePoolHold = buildRestoredDraftQueuePoolHold(restoredQueuedDraft);
+    const item = enqueueDraft(text, { queuePoolHold });
+    const suppressImmediateSend = shouldSuppressImmediateSendForRestoredDraft({
+      restoredQueuedDraftActive: !!restoredQueuedDraft,
+      queueLength: state.queue.length
+    });
+    const immediateSend = !suppressImmediateSend && shouldUseImmediateComposerSend(item, editor);
     if (!immediateSend) {
       const clearEditor = liveEditor || sourceEditor || editor;
       const cleared =
@@ -2599,7 +3145,7 @@
           })
         ) {
           state.queue.pop();
-          if (!state.queue.length) resetQueueSessionState();
+          if (!state.queue.length) resetQueueSessionState({ preserveActiveResponseState: true, clearRestoredQueuedDraft: false });
           refreshPreview();
           setLastQueueAttemptDebug({
             ok: false,
@@ -2628,8 +3174,12 @@
       queuedText: text,
       queuedId: item.id,
       queueLength: state.queue.length,
-      immediateSend
+      immediateSend,
+      suppressImmediateSend,
+      queuePoolHold,
+      queuePoolHoldActive: isQueuePoolHoldActive(item)
     });
+    clearRestoredQueuedDraft();
     showToast(t('queuedAdded', { count: state.queue.length }));
     void maybeProcessQueue({ allowSyncImmediate: immediateSend });
     return !!item;
@@ -2643,24 +3193,56 @@
     const text = readComposerText(editor);
     if (!hasText(text)) return false;
     const ok = setComposerText('', editor);
-    if (ok) showToast(t('clearedComposer'));
+    if (ok) {
+      clearRestoredQueuedDraft();
+      showToast(t('clearedComposer'));
+    }
     return ok;
   }
 
   function handleComposerInput(event) {
     if (!isEditableInComposer(event?.target)) return;
+    const eventEditor = resolveComposerEditorFromTarget(event?.target) || getEditorEl();
+    if (!shouldUseFullComposerInputPathForState()) {
+      updateComposerTextCache(eventEditor, readComposerTextForInputCache(eventEditor));
+      return;
+    }
+
+    const eventText = pickBestComposerText(
+      [
+        readComposerText(eventEditor),
+        readComposerMirrorText(eventEditor)
+      ],
+      readComposerText(eventEditor)
+    );
+    updateComposerTextCache(eventEditor, eventText);
+    if (!hasText(eventText)) clearRestoredQueuedDraft();
     if (!isProgrammaticComposerMutationActive() && !isTextareaLike(event?.target)) {
       scheduleComposerMirrorSync(0);
     }
     markQueueActivity();
     refreshReplyRenderSampling();
     refreshPreview();
+    if (state.queue.length > 0 && !state.processQueueBusy) {
+      const head = state.queue[0];
+      const composerState = getComposerBlockingState({
+        composerText: eventText,
+        headText: head?.text || '',
+        hasAttachments: hasLikelyComposerAttachments(getComposerForm(eventEditor))
+      });
+      if (!composerState.hasDraft && !composerState.hasAttachments) {
+        scheduleMaybeProcessQueue(CONFIG.composerSettleMs);
+      }
+    }
   }
 
   function handleComposerBeforeInput(event) {
+    const interlockActive = isComposerInterlockActive();
+    if (!interlockActive) return;
+    if (!isComposerMutationInputType(event?.inputType)) return;
     if (
       !shouldBlockComposerBeforeInput({
-        interlockActive: isComposerInterlockActive(),
+        interlockActive,
         isEditableTarget: isEditableInComposer(event?.target),
         inputType: event?.inputType
       })
@@ -2691,6 +3273,7 @@
       return;
     }
     armManualSendWarmup();
+    clearRestoredQueuedDraft();
   }
 
   function handleManualSendClick(event) {
@@ -2711,6 +3294,7 @@
       return;
     }
     armManualSendWarmup();
+    clearRestoredQueuedDraft();
     armManualSendInterlock({ composerText: readComposerText(editor) });
   }
 
@@ -2730,10 +3314,11 @@
       return;
     }
     armManualSendWarmup();
+    clearRestoredQueuedDraft();
     armManualSendInterlock({ composerText: readComposerText(editor) });
   }
 
-  function getHotkeyAction(event, queueLength = state.queue.length, settings = readSettings()) {
+  function getHotkeyAction(event, queueLength = state.queue.length, settings = null) {
     if (!event || typeof event !== 'object') return null;
     if (event.isComposing || event.keyCode === 229) return null;
 
@@ -2743,16 +3328,19 @@
 
     if (code === 'Tab' || key === 'Tab') {
       if (event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) return 'suppress_shift_tab';
-      if (!event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && settings.queueEnabled) return 'queue_tab';
+      const hotkeySettings = settings || readSettings();
+      if (!event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && hotkeySettings.queueEnabled) return 'queue_tab';
       return null;
     }
 
     if ((code === 'ArrowUp' || lowerKey === 'arrowup') && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-      return queueLength > 0 && settings.queueEnabled ? 'edit_last_queued' : null;
+      const hotkeySettings = settings || readSettings();
+      return queueLength > 0 && hotkeySettings.queueEnabled ? 'edit_last_queued' : null;
     }
 
     if ((code === 'KeyC' || lowerKey === 'c') && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-      return settings.clearEnabled ? 'clear_ctrl_c' : null;
+      const hotkeySettings = settings || readSettings();
+      return hotkeySettings.clearEnabled ? 'clear_ctrl_c' : null;
     }
 
     return null;
@@ -2767,11 +3355,24 @@
   }
 
   function handleKeyDown(event) {
+    const action = getHotkeyAction(event);
+    const interlockActive = isComposerInterlockActive();
+    if (!action && !interlockActive) return;
+
     const editableTarget = isEditableInComposer(event?.target);
     if (!editableTarget) return;
-    const action = getHotkeyAction(event);
-    const sourceEditor = resolveComposerEditorFromTarget(event?.target);
-    const sourceText = action === 'queue_tab' ? readComposerText(sourceEditor) : '';
+    const sourceEditor = action ? resolveComposerEditorFromTarget(event?.target) : null;
+    const sourceDomText = action === 'queue_tab' ? readComposerText(sourceEditor) : '';
+    const sourceText =
+      action === 'queue_tab'
+        ? pickBestComposerText(
+            [
+              sourceDomText,
+              readCachedComposerText(sourceEditor, { baseText: sourceDomText })
+            ],
+            sourceDomText
+          )
+        : '';
     setLastHotkeyDebug({
       key: String(event?.key || ''),
       code: String(event?.code || ''),
@@ -2783,7 +3384,7 @@
     });
     if (
       shouldBlockComposerKeydownDuringInterlock({
-        interlockActive: isComposerInterlockActive(),
+        interlockActive,
         isEditableTarget: editableTarget,
         hotkeyAction: action,
         key: event?.key,
@@ -2963,6 +3564,7 @@
     stopPreviewRepairLoop();
     clearProcessQueueTimer();
     clearComposerMirrorSyncTimer();
+    clearComposerTextCache();
     clearPendingSendGate();
     clearManualSendWarmup({ scheduleQueue: false });
     clearManualSendInterlock({ scheduleQueue: false });
@@ -3035,7 +3637,6 @@
     window.addEventListener('beforeinput', handleComposerBeforeInput, true);
     window.addEventListener('input', handleComposerInput, true);
     ensureUi();
-    startPreviewRepairLoop();
     return true;
   }
 
@@ -3046,7 +3647,17 @@
           id: item.id,
           text: item.text,
           conversationId: item.conversationId,
-          createdAt: item.createdAt
+          createdAt: item.createdAt,
+          queuePoolHold: item.queuePoolHold
+            ? {
+                reason: item.queuePoolHold.reason,
+                restoredFromId: item.queuePoolHold.restoredFromId,
+                restoredAt: item.queuePoolHold.restoredAt,
+                armedAt: item.queuePoolHold.armedAt,
+                active: isQueuePoolHoldActive(item),
+                retryDelayMs: getQueuePoolHoldRetryDelay(item)
+              }
+            : null
         })),
         activeRequestIds: Array.from(state.activeRequests.keys()),
         pendingHighlightCandidates: state.pendingHighlightCandidates.map((item) => ({
@@ -3075,6 +3686,15 @@
               composerText: state.manualSendInterlock.composerText
             }
           : null,
+        restoredQueuedDraft: state.restoredQueuedDraft
+          ? {
+              id: state.restoredQueuedDraft.id,
+              text: state.restoredQueuedDraft.text,
+              conversationId: state.restoredQueuedDraft.conversationId,
+              restoredAt: state.restoredQueuedDraft.restoredAt,
+              activeResponseAtRestore: state.restoredQueuedDraft.activeResponseAtRestore
+            }
+          : null,
         isGenerating: isGeneratingNow(),
         processQueueBusy: state.processQueueBusy,
         composerInterlock: state.composerInterlock
@@ -3094,6 +3714,13 @@
           value: state.streamStatus.value,
           checkedAt: state.streamStatus.checkedAt,
           pending: !!state.streamStatus.promise
+        },
+        composerTextCache: {
+          text: state.composerTextCache.text,
+          updatedAt: state.composerTextCache.updatedAt,
+          ageMs: state.composerTextCache.updatedAt ? Math.max(0, now() - state.composerTextCache.updatedAt) : 0,
+          hasEditor: !!state.composerTextCache.editor,
+          editorConnected: state.composerTextCache.editor ? state.composerTextCache.editor.isConnected !== false : false
         },
         lastHotkey: state.debug.lastHotkey,
         lastQueueAttempt: state.debug.lastQueueAttempt,
@@ -3190,11 +3817,14 @@
       resolveComposerEditorFromTarget,
       resolveQueueDraftText,
       removeQueuedDraftFromList,
+      shouldSuppressImmediateSendForRestoredDraft,
+      shouldHoldRestoredDraftInQueuePool,
       shouldArmManualSendInterlock,
       shouldTreatAssistantThinkingAsGenerating,
       hasText,
       shouldBlockComposerBeforeInput,
       shouldBlockComposerKeydownDuringInterlock,
+      shouldUseFullComposerInputPath,
       shouldPauseQueueForComposerDraft,
       shouldRepairQueueProgress
     };

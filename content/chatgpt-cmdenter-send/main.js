@@ -1,10 +1,41 @@
 (() => {
   'use strict';
 
+  const RUNTIME_STATE_KEY = '__aichat_cmdenter_send_runtime_state_v1__';
+  const runtimeDisposers = [];
+  const runtimeState = {
+    disposed: false,
+    disposeRuntime() {
+      if (runtimeState.disposed) return;
+      runtimeState.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+    }
+  };
+
   try {
-    if (globalThis.__aichat_cmdenter_send_installed__) return;
-    globalThis.__aichat_cmdenter_send_installed__ = true;
+    const prev = typeof globalThis === 'object' ? globalThis[RUNTIME_STATE_KEY] : null;
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
   } catch {}
+  try {
+    if (typeof globalThis === 'object') {
+      Object.defineProperty(globalThis, RUNTIME_STATE_KEY, { value: runtimeState, configurable: true, enumerable: false, writable: false });
+      globalThis.__aichat_cmdenter_send_installed__ = true;
+    }
+  } catch {
+    try { globalThis[RUNTIME_STATE_KEY] = runtimeState; } catch {}
+  }
+
+  function runtimeOn(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return;
+    try {
+      target.addEventListener(type, listener, options);
+      runtimeDisposers.push(() => {
+        try { target.removeEventListener(type, listener, options); } catch {}
+      });
+    } catch {}
+  }
 
   function getChatgptCore() {
     try {
@@ -14,7 +45,7 @@
     }
   }
 
-  const SITE = (() => {
+  function detectSiteFromLocation() {
     const host = String((typeof location === 'object' && location && location.hostname) || '').toLowerCase();
     if (host === 'chatgpt.com') return 'chatgpt';
     if (host === 'gemini.google.com') return 'gemini_app';
@@ -27,7 +58,17 @@
     if (host === 'grok.com') return 'grok';
     if (host === 'www.kimi.com' || host === 'kimi.com') return 'kimi';
     return 'unknown';
-  })();
+  }
+
+  let SITE = detectSiteFromLocation();
+
+  function getCurrentSite() {
+    const next = detectSiteFromLocation();
+    if (next && next !== 'unknown' && next !== SITE) SITE = next;
+    return SITE;
+  }
+
+  let lastShortcutSendAt = 0;
 
   function isElementNode(target) {
     if (!target || typeof target !== 'object') return false;
@@ -1125,6 +1166,7 @@
         if (sendControl && isStopLikeControl(sendControl)) return true;
         return false;
       }
+
     } catch {}
     return false;
   }
@@ -1320,8 +1362,12 @@
         try {
           if (getComputedStyle(button).pointerEvents === 'none') return false;
         } catch {}
-        button.click();
-        return true;
+        if (dispatchUserClick(button)) return true;
+        try {
+          button.click();
+          return true;
+        } catch {}
+        return false;
       }
 
       if (SITE === 'qwen') {
@@ -1427,7 +1473,12 @@
     dispatchEnter(promptEl, { shiftKey: false });
   }
 
+  function sendMessageFromShortcut(promptEl) {
+    sendMessage(promptEl);
+  }
+
   function handleKeyDown(event) {
+    getCurrentSite();
     if (event.key !== 'Enter') return;
     if (!event.isTrusted) return;
     if (event.isComposing || event.keyCode === 229) return;
@@ -1481,8 +1532,34 @@
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    if (wantsSend) sendMessage(promptEl);
+    if (wantsSend) {
+      lastShortcutSendAt = Date.now();
+      sendMessageFromShortcut(promptEl);
+    }
     else insertNewline(promptEl);
+  }
+
+  function handleKeyUp(event) {
+    getCurrentSite();
+    if (SITE !== 'kimi' && SITE !== 'ernie') return;
+    if (!event || event.key !== 'Enter') return;
+    if (!event.isTrusted) return;
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (event.isComposing || event.keyCode === 229) return;
+    if (Date.now() - lastShortcutSendAt < 900) return;
+
+    const deepActive = getDeepActiveElement();
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    const promptEl = getPromptElementFrom(event.target) || getPromptElementFrom(deepActive) || getPromptElementFrom(activeElement);
+    if (!promptEl) return;
+
+    try {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    } catch {}
+
+    lastShortcutSendAt = Date.now();
+    sendMessageFromShortcut(promptEl);
   }
 
   const testApi = Object.freeze({
@@ -1520,6 +1597,7 @@
 
   if (typeof window === 'object' && window && typeof window.addEventListener === 'function') {
     bootstrapInitialModelPresetForSite();
-    window.addEventListener('keydown', handleKeyDown, true);
+    runtimeOn(window, 'keydown', handleKeyDown, true);
+    runtimeOn(window, 'keyup', handleKeyUp, true);
   }
 })();

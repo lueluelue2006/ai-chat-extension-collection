@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 25;
+  const STYLE_VERSION = 27;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -26,10 +26,12 @@
     simpleTitle: { zh: '隐藏系统/工具/内部节点（简洁）', en: 'Hide system / tool / internal nodes (simple view)' },
     simpleLabel: { zh: '简洁', en: 'Simple' },
     guidesTitle: { zh: '彩色对齐竖线（类似 VSCode 缩进线）', en: 'Colored alignment guides (similar to VSCode indent guides)' },
-    guidesLabel: { zh: '彩线', en: 'Guides' },
+    guidesLabel: { zh: 'Lines', en: 'Lines' },
     refreshLabel: { zh: '刷新', en: 'Refresh' },
     exportLabel: { zh: '导出 JSON', en: 'Export JSON' },
     closeLabel: { zh: '关闭', en: 'Close' },
+    stateOnLabel: { zh: '开', en: 'On' },
+    stateOffLabel: { zh: '关', en: 'Off' },
     treeTooLarge: { zh: '对话树数据过大（>{size}MB），为稳定性已跳过加载', en: 'The conversation tree data is too large (>{size} MB), so loading was skipped for stability.' },
     nodeNotFoundInTree: { zh: '未在树数据中找到该节点', en: 'The node was not found in the tree data.' },
     turnNotFoundInPage: {
@@ -102,6 +104,13 @@
     const entry = MESSAGES[key];
     if (!entry) return formatTemplate(String(key || ''), vars);
     return formatTemplate(isChineseLocale() ? entry.zh : entry.en, vars);
+  }
+
+  function renderGuidesLabelHtml() {
+    const letters = ['L', 'i', 'n', 'e', 's']
+      .map((ch, i) => `<span class="line-letter line-letter-${i + 1}">${ch}</span>`)
+      .join('');
+    return `<span class="line-label" aria-hidden="true">${letters}</span>`;
   }
 
   function getConversationGraphApi() {
@@ -247,6 +256,71 @@
   const SUMMARY_FAST_REUSE_MAX_AGE_MS = 2500;
   const SUMMARY_CACHE_MAX_NODES = 1600;
   const SUMMARY_CACHE_DROP_DELAY_MS = SUMMARY_REUSE_MAX_AGE_MS + 1000;
+  const MESSAGE_TEXT_EXTRACT_LIMIT = 512;
+  const PERF_TREE_HEAVY_DELAY_MS = 1500;
+
+  function readPerfNumberAttr(name) {
+    try {
+      const raw = document.documentElement?.dataset?.[name];
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, n) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function getPerfPressureSnapshot() {
+    const html = document.documentElement;
+    const budgetLevel = readPerfNumberAttr('cgptperfBudget');
+    const mathNodes = readPerfNumberAttr('cgptperfMathCount');
+    const displayMathNodes = readPerfNumberAttr('cgptperfDisplayMathCount');
+    const codeNodes = readPerfNumberAttr('cgptperfCodeBlockCount');
+    const longCodeBlocks = readPerfNumberAttr('cgptperfLongCodeCount');
+    const turnCount = readPerfNumberAttr('cgptperfTurnCount');
+    const generating = isGeneratingNow();
+    const critical =
+      budgetLevel >= 3 ||
+      mathNodes >= 180 ||
+      displayMathNodes >= 56 ||
+      longCodeBlocks >= 2;
+    const heavy =
+      critical ||
+      html?.dataset?.cgptperfHeavy === '1' ||
+      budgetLevel >= 2 ||
+      mathNodes >= 100 ||
+      displayMathNodes >= 28 ||
+      codeNodes >= 18 ||
+      turnCount >= 40;
+    return {
+      budgetLevel,
+      mathNodes,
+      displayMathNodes,
+      codeNodes,
+      longCodeBlocks,
+      turnCount,
+      generating,
+      heavy,
+      critical
+    };
+  }
+
+  function collectBoundedElementText(root, hardCap = 96, nodeCap = 24) {
+    if (!(root instanceof Element)) return '';
+    let out = '';
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let seen = 0;
+      while (walker.nextNode()) {
+        seen += 1;
+        if (seen > nodeCap || out.length >= hardCap) break;
+        const text = String(walker.currentNode?.nodeValue || '').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+        out = `${out}${out ? ' ' : ''}${text}`;
+        if (out.length >= hardCap) break;
+      }
+    } catch {}
+    return out.length > hardCap ? out.slice(0, hardCap) : out;
+  }
 
   function isAbortError(err) {
     try {
@@ -363,6 +437,10 @@
     mainMenuRetryTimers: new Set(),
     mainMenuOwnerKey: `chatgpt-message-tree-${Math.random().toString(36).slice(2, 10)}`,
     mainMenuRunHandler: null,
+    branchSwitchHandler: null,
+    memoryReleaseHooksInstalled: false,
+    memoryVisibilityHandler: null,
+    memoryPagehideHandler: null,
     cleanup: null
   };
 
@@ -754,30 +832,101 @@
         #${PANEL_ID} .hdr{
           display: flex;
           align-items: center;
+          flex-wrap: wrap;
           gap: 8px;
           padding: 10px 10px;
           border-bottom: 1px solid rgba(255,255,255,0.10);
         }
         #${PANEL_ID} .hdr .title{
+          flex: 1 1 92px;
+          min-width: 82px;
           font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
           font-weight: 600;
           letter-spacing: 0.2px;
         }
-        #${PANEL_ID} .hdr .spacer{ flex: 1; }
+        #${PANEL_ID} .hdr .spacer{ display: none; }
         #${PANEL_ID} .hdr button{
           appearance: none;
-          border: 0;
+          border: 1px solid rgba(255,255,255,0.16);
           border-radius: 10px;
-          padding: 6px 10px;
-          background: rgba(255,255,255,0.12);
+          padding: 6px 9px;
+          background: rgba(255,255,255,0.10);
           color: rgba(255,255,255,0.92);
           cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
           font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          flex: 0 0 auto;
+          min-height: 34px;
+          max-width: 104px;
+          white-space: normal;
         }
-        #${PANEL_ID} .hdr button:hover{ background: rgba(255,255,255,0.18); }
+        #${PANEL_ID} .hdr button.close{ margin-left: auto; }
+        #${PANEL_ID} .hdr button:hover{
+          background: rgba(255,255,255,0.18);
+          border-color: rgba(255,255,255,0.24);
+        }
+        #${PANEL_ID} .hdr button:focus-visible{
+          outline: 2px solid rgba(125,211,252,0.95);
+          outline-offset: 2px;
+        }
+        #${PANEL_ID} .hdr button.toggle{
+          max-width: none;
+          white-space: nowrap;
+          color: rgba(226,232,240,0.82);
+          background: rgba(31,41,55,0.82);
+          border-color: rgba(148,163,184,0.26);
+        }
+        #${PANEL_ID} .hdr button.toggle::after{
+          content: attr(data-state-label);
+          min-width: 18px;
+          border-radius: 999px;
+          padding: 1px 5px 2px;
+          background: rgba(148,163,184,0.20);
+          color: rgba(226,232,240,0.76);
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1;
+          text-align: center;
+        }
         #${PANEL_ID} .hdr button.toggle[data-on="1"]{
-          background: rgba(56,189,248,0.18);
-          outline: 1px solid rgba(56,189,248,0.25);
+          color: rgb(236,253,245);
+          background: rgba(16,185,129,0.24);
+          border-color: rgba(52,211,153,0.90);
+          box-shadow:
+            inset 0 0 0 1px rgba(52,211,153,0.52),
+            0 0 0 1px rgba(5,150,105,0.16);
+          font-weight: 650;
+        }
+        #${PANEL_ID} .hdr button.toggle[data-on="1"]::after{
+          background: rgb(52,211,153);
+          color: rgb(3,47,31);
+        }
+        #${PANEL_ID} .hdr button.toggle[data-on="0"]{
+          color: rgba(203,213,225,0.74);
+          background: rgba(15,23,42,0.72);
+          border-color: rgba(148,163,184,0.22);
+        }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter{
+          display: inline-block;
+          font-weight: 800;
+          line-height: 1;
+        }
+        #${PANEL_ID} .hdr button.toggle.guides .line-label{
+          display: inline-flex;
+          gap: 0;
+          align-items: center;
+        }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter-1{ color: rgb(248,113,113); }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter-2{ color: rgb(251,191,36); }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter-3{ color: rgb(52,211,153); }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter-4{ color: rgb(96,165,250); }
+        #${PANEL_ID} .hdr button.toggle.guides .line-letter-5{ color: rgb(192,132,252); }
+        #${PANEL_ID} .hdr button.toggle.guides[data-on="0"] .line-letter{
+          opacity: 0.62;
+          filter: saturate(0.75);
         }
         #${PANEL_ID} .body{
           flex: 1;
@@ -1081,6 +1230,43 @@
       if (id) return String(id);
     } catch {}
     return '';
+  }
+
+  function getVisibleMessageIds() {
+    const ids = [];
+    const seen = new Set();
+    const add = (turn) => {
+      const id = getTurnMessageIdFromElement(turn);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    };
+
+    try {
+      const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getTurnArticles === 'function') {
+        const turns = core.getTurnArticles(document);
+        if (Array.isArray(turns) && turns.length) {
+          for (const turn of turns) add(turn);
+          if (ids.length) return ids;
+        }
+      }
+    } catch {}
+
+    try {
+      document.querySelectorAll(TURN_HOST_SELECTOR).forEach(add);
+    } catch {}
+    return ids;
+  }
+
+  function resolveVisibleCurrentNodeId(mapping, fallbackCurrentNodeId) {
+    try {
+      const api = getConversationGraphApi();
+      if (api && typeof api.resolveVisibleCurrentNodeId === 'function') {
+        return api.resolveVisibleCurrentNodeId(mapping, fallbackCurrentNodeId, { getVisibleMessageIds });
+      }
+    } catch {}
+    return String(fallbackCurrentNodeId || '');
   }
 
   function findVisibleTurnElementByMessageIds(messageIds) {
@@ -1407,7 +1593,7 @@
           <div class="title">${t('panelTitle')}</div>
           <div class="spacer"></div>
           <button type="button" class="toggle simple" title="${t('simpleTitle')}">${t('simpleLabel')}</button>
-          <button type="button" class="toggle guides" title="${t('guidesTitle')}">${t('guidesLabel')}</button>
+          <button type="button" class="toggle guides" title="${t('guidesTitle')}">${renderGuidesLabelHtml()}</button>
           <button type="button" class="refresh">${t('refreshLabel')}</button>
           <button type="button" class="export" title="${t('exportFullTreeJson')}">${t('exportLabel')}</button>
           <button type="button" class="close">${t('closeLabel')}</button>
@@ -1445,6 +1631,67 @@
     } catch {}
   }
 
+  function hasSafeInitialUiMount() {
+    try {
+      if (document.readyState === 'complete') return true;
+      if (document.getElementById('cgpt-compact-nav')) return true;
+      if (document.querySelector('[data-testid^="conversation-turn-"] [data-message-author-role], [data-message-author-role]')) return true;
+      const mainText = collectBoundedElementText(document.querySelector('main'), 64, 12).trim();
+      if (mainText && !/^(Light|Dark)?$/i.test(mainText)) return true;
+    } catch {}
+    return false;
+  }
+
+  function scheduleInitialUiMount() {
+    try {
+      if (state.initialUiMountScheduled) return;
+      state.initialUiMountScheduled = true;
+    } catch {}
+
+    const cleanupFns = [];
+    const cleanupListeners = () => {
+      while (cleanupFns.length) {
+        try { cleanupFns.pop()(); } catch {}
+      }
+    };
+    const finish = () => {
+      try {
+        if (state.initialUiMounted) return;
+        state.initialUiMounted = true;
+        cleanupListeners();
+        ensureUi();
+      } catch {}
+    };
+
+    if (hasSafeInitialUiMount()) {
+      finish();
+      return;
+    }
+
+    const maybeFinish = () => {
+      if (hasSafeInitialUiMount()) finish();
+    };
+
+    try {
+      const onReady = () => maybeFinish();
+      document.addEventListener('readystatechange', onReady);
+      cleanupFns.push(() => document.removeEventListener('readystatechange', onReady));
+    } catch {}
+    try {
+      window.addEventListener('load', finish, { once: true });
+      cleanupFns.push(() => window.removeEventListener('load', finish));
+    } catch {}
+    try {
+      const mo = new MutationObserver(maybeFinish);
+      mo.observe(document.documentElement || document, { childList: true, subtree: true });
+      cleanupFns.push(() => mo.disconnect());
+    } catch {}
+    try {
+      const timer = setTimeout(finish, 9000);
+      cleanupFns.push(() => clearTimeout(timer));
+    } catch {}
+  }
+
   function applyPrefsToUi() {
     try {
       ensureStyles();
@@ -1453,14 +1700,22 @@
 
     const simpleOn = state.prefs.simpleMode !== false;
     const guidesOn = state.prefs.guides !== false;
+    const applyToggleState = (btn, isOn, labelKey) => {
+      if (!btn) return;
+      const stateLabel = isOn ? t('stateOnLabel') : t('stateOffLabel');
+      btn.setAttribute('data-on', isOn ? '1' : '0');
+      btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+      btn.setAttribute('data-state-label', stateLabel);
+      btn.setAttribute('aria-label', `${t(labelKey)} ${stateLabel}`);
+    };
 
     try {
       const btn = state.panelEl?.querySelector?.('button.simple');
-      if (btn) btn.setAttribute('data-on', simpleOn ? '1' : '0');
+      applyToggleState(btn, simpleOn, 'simpleLabel');
     } catch {}
     try {
       const btn = state.panelEl?.querySelector?.('button.guides');
-      if (btn) btn.setAttribute('data-on', guidesOn ? '1' : '0');
+      applyToggleState(btn, guidesOn, 'guidesLabel');
     } catch {}
     try {
       state.treeEl?.classList?.toggle?.('guides', guidesOn);
@@ -1512,6 +1767,7 @@
       close: () => setOpen(false),
       toggle: () => setOpen(!state.open),
       dropCache: (reason) => dropLastDataIfClosed(reason || 'api'),
+      releaseMemory: (reason) => releaseTreeMemory(reason || 'api'),
       dispose: () => {
         try {
           state.cleanup?.();
@@ -1519,6 +1775,8 @@
       }
     });
   } catch {}
+
+  installMemoryReleaseHooks();
 
   function setUiHidden(hidden) {
     ensureUi();
@@ -1655,6 +1913,32 @@
     if (reason) state.lastLoadedAt = now();
   }
 
+  function releaseTreeMemory(reason = '', options = {}) {
+    const opts = options && typeof options === 'object' ? options : {};
+    clearConversationScopedData(`release:${reason || 'api'}`);
+    try {
+      if (state.treeEl) state.treeEl.textContent = '';
+    } catch {}
+    if (state.open && !document.hidden && opts.refresh !== false) {
+      scheduleRefresh(600, `release:${reason || 'api'}`);
+    }
+    return true;
+  }
+
+  function installMemoryReleaseHooks() {
+    try {
+      if (state.memoryReleaseHooksInstalled) return;
+      state.memoryReleaseHooksInstalled = true;
+      state.memoryVisibilityHandler = () => {
+        if (document.hidden) releaseTreeMemory('hidden', { refresh: false });
+        else if (state.open && state.dirty) scheduleRefresh(500, 'visible');
+      };
+      state.memoryPagehideHandler = () => releaseTreeMemory('pagehide', { refresh: false });
+      document.addEventListener('visibilitychange', state.memoryVisibilityHandler, true);
+      window.addEventListener('pagehide', state.memoryPagehideHandler, true);
+    } catch {}
+  }
+
   function handleRouteChange(nextHref, source = 'route') {
     try {
       const href = typeof nextHref === 'string' && nextHref ? nextHref : location.href;
@@ -1700,18 +1984,24 @@
 
   function getBridgeSummary() {
     try {
+      const pressure = getPerfPressureSnapshot();
+      if (!state.open && (pressure.critical || (pressure.generating && pressure.heavy))) {
+        return getReusableSummary(getConversationIdFromUrl());
+      }
+
       const cached = state.lastData;
       if (!cached || !cached.mapping || typeof cached.mapping !== 'object') return null;
 
       const prefs = state.prefs && typeof state.prefs === 'object' ? state.prefs : DEFAULT_PREFS;
-      const key = `${cached.conversationId || ''}|${cached.currentId || ''}|${prefs.simpleMode ? '1' : '0'}`;
+      const currentId = resolveVisibleCurrentNodeId(cached.mapping, cached.currentId);
+      const key = `${cached.conversationId || ''}|${currentId || ''}|${prefs.simpleMode ? '1' : '0'}`;
 
       const age = now() - (Number(state.lastSummaryAt) || 0);
       if (state.lastSummary && state.lastSummaryKey === key && age < SUMMARY_FAST_REUSE_MAX_AGE_MS) {
         return { ...state.lastSummary, isOpen: !!state.open };
       }
 
-      const graph = buildDisplayGraph(cached.mapping, cached.rootId, cached.currentId);
+      const graph = buildDisplayGraph(cached.mapping, cached.rootId, currentId);
       const stats = graph.stats;
       const pathIds = graph.pathMsgIds;
       const nodes = {};
@@ -2006,11 +2296,19 @@
       const parts = content?.parts;
 
       if (Array.isArray(parts)) {
-        const strings = parts.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim());
         const hasImagePart = parts.some(
           (p) => p && typeof p === 'object' && typeof p.content_type === 'string' && p.content_type.toLowerCase().includes('image')
         );
-        const text = strings.join(' ').trim();
+        let text = '';
+        for (const part of parts) {
+          if (typeof part !== 'string') continue;
+          const chunk = part.replace(/\s+/g, ' ').trim();
+          if (!chunk) continue;
+          const remaining = MESSAGE_TEXT_EXTRACT_LIMIT - text.length - (text ? 1 : 0);
+          if (remaining <= 0) break;
+          text = `${text}${text ? ' ' : ''}${chunk.slice(0, remaining)}`;
+          if (text.length >= MESSAGE_TEXT_EXTRACT_LIMIT) break;
+        }
         if (hasImagePart && text) return `[img] ${text}`;
         if (hasImagePart) return '[img]';
         if (text) return text;
@@ -2234,7 +2532,7 @@
     return true;
   }
 
-  function renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount }) {
+  function renderNodeRow({ nodeId, node, graphNode = null, isCurrent, isOnPath, isBranch, childrenCount }) {
     const row = document.createElement('span');
     row.className = 'node-row';
     if (isCurrent) row.classList.add('current');
@@ -2252,12 +2550,12 @@
     badge.textContent = role ? role[0].toUpperCase() : '·';
     row.appendChild(badge);
 
-    const text = msg ? extractTextFromMessage(msg) : t('rootLabel');
-    const snippet = formatSnippet(text);
+    const text = msg && !graphNode?.snippet ? extractTextFromMessage(msg) : '';
+    const snippet = graphNode?.snippet ? String(graphNode.snippet) : formatSnippet(text);
     const label = document.createElement('span');
     label.className = 'label';
     label.textContent = snippet || t('emptyLabel');
-    if (text && text !== snippet) label.title = text;
+    if (text && text !== snippet && text.length <= MESSAGE_TEXT_EXTRACT_LIMIT) label.title = text;
     row.appendChild(label);
 
     const meta = document.createElement('span');
@@ -2269,11 +2567,11 @@
     return row;
   }
 
-  function renderTree(mapping, rootId, currentId) {
+  function renderTree(mapping, rootId, currentId, prebuiltGraph = null) {
     ensureUi();
     if (!state.treeEl) return;
     state.treeEl.textContent = '';
-    const graph = buildDisplayGraph(mapping, rootId, currentId);
+    const graph = prebuiltGraph || buildDisplayGraph(mapping, rootId, currentId);
     const effectiveCurrent = graph.effectiveCurrentNodeId;
     const pathSet = graph.pathNodeSet;
     const visited = new Set();
@@ -2337,7 +2635,7 @@
 			      if (children.length) {
 		        el.open = true;
 		        const summary = document.createElement('summary');
-	        const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch, childrenCount: children.length });
+	        const row = renderNodeRow({ nodeId, node, graphNode, isCurrent, isOnPath, isBranch, childrenCount: children.length });
 	        summary.appendChild(row);
 	        el.appendChild(summary);
 	        bindNodeNavigate({ nodeId, node, clickableEl: summary, isDetailsNode: true });
@@ -2350,7 +2648,7 @@
 			        }
         el.appendChild(childrenWrap);
       } else {
-        const row = renderNodeRow({ nodeId, node, isCurrent, isOnPath, isBranch: false, childrenCount: 0 });
+        const row = renderNodeRow({ nodeId, node, graphNode, isCurrent, isOnPath, isBranch: false, childrenCount: 0 });
         el.appendChild(row);
         bindNodeNavigate({ nodeId, node, clickableEl: row, isDetailsNode: false });
       }
@@ -2368,9 +2666,10 @@
     if (!cached || !cached.mapping || typeof cached.mapping !== 'object') return;
     const mapping = cached.mapping;
     const rootId = cached.rootId;
-    const currentId = cached.currentId;
+      const currentId = resolveVisibleCurrentNodeId(mapping, cached.currentId);
 
-    const stats = buildDisplayGraph(mapping, rootId, currentId).stats;
+    const graph = buildDisplayGraph(mapping, rootId, currentId);
+    const stats = graph.stats;
     try {
       // Ensure we have enough guide rails for this conversation depth before rendering.
       ensureStyles(stats.maxDepth);
@@ -2378,7 +2677,7 @@
     applyPrefsToUi();
     setStatus(t('loadedConversation', { id: String(cached.conversationId || '').slice(0, 8) }));
     setStats(`nodes:${stats.nodeCount} messages:${stats.msgCount} branches:${stats.branchCount} leaves:${stats.leafCount}`);
-    renderTree(mapping, rootId, currentId);
+    renderTree(mapping, rootId, currentId, graph);
   }
 
   async function refreshConversation(reason = '', opts = {}) {
@@ -2418,12 +2717,13 @@
       if (latestRouteKey !== routeKeyAtStart || latestConversationId !== conversationId) return;
 
       const mapping = data?.mapping && typeof data.mapping === 'object' ? data.mapping : {};
-      const currentId = typeof data?.current_node === 'string' ? data.current_node : '';
-      const rootId = getRootId(mapping) || currentId;
+      const backendCurrentId = typeof data?.current_node === 'string' ? data.current_node : '';
+      const currentId = resolveVisibleCurrentNodeId(mapping, backendCurrentId);
+      const rootId = getRootId(mapping) || backendCurrentId || currentId;
 
       state.lastLoadedAt = now();
       state.dirty = false;
-      state.lastData = { conversationId, mapping, currentId, rootId };
+      state.lastData = { conversationId, mapping, currentId, backendCurrentId, rootId };
       if (state.open) renderFromCache();
     } catch (e) {
       if (isAbortError(e)) return;
@@ -2478,7 +2778,7 @@
 
   function buildFullTreeExportJson(cached) {
     const mapping = cached?.mapping && typeof cached.mapping === 'object' ? cached.mapping : {};
-    const currentNodeId = String(cached?.currentId || '');
+    const currentNodeId = resolveVisibleCurrentNodeId(mapping, String(cached?.currentId || ''));
     const rootNodeId = String(cached?.rootId || getRootId(mapping) || currentNodeId || '');
     const stats = buildDisplayGraph(mapping, rootNodeId, currentNodeId).stats;
     return {
@@ -2521,6 +2821,7 @@
 
   function scheduleRefresh(delayMs = 400, reason = 'auto') {
     try {
+      const pressure = getPerfPressureSnapshot();
       if (!state.open) {
         state.dirty = true;
         if (state.refreshTimer) {
@@ -2530,6 +2831,12 @@
         return;
       }
       if (state.refreshTimer) clearTimeout(state.refreshTimer);
+      const requestedDelay = Math.max(0, Number(delayMs) || 0);
+      const effectiveDelay = pressure.critical || (pressure.generating && pressure.heavy)
+        ? Math.max(requestedDelay, PERF_TREE_HEAVY_DELAY_MS)
+        : pressure.heavy
+          ? Math.max(requestedDelay, 900)
+          : requestedDelay;
       state.refreshTimer = setTimeout(() => {
         state.refreshTimer = 0;
         if (state.refreshPromise) {
@@ -2538,7 +2845,7 @@
             state.refreshPromise.finally(() => {
               state.refreshQueuedAfterPromise = false;
               if (state.disposed || !state.open || !state.dirty) return;
-              scheduleRefresh(80, `${reason}:queued`);
+              scheduleRefresh(getPerfPressureSnapshot().heavy ? 900 : 80, `${reason}:queued`);
             });
           }
           return;
@@ -2550,7 +2857,7 @@
           });
         state.refreshQueuedAfterPromise = false;
         state.refreshPromise = nextRefresh;
-      }, Math.max(0, Number(delayMs) || 0));
+      }, effectiveDelay);
     } catch {}
   }
 
@@ -2594,6 +2901,49 @@
     } catch {}
     state.generatingWatchTimer = 0;
     state.lastGenerating = false;
+  }
+
+  function isResponseSwitcherButton(target) {
+    try {
+      const el = target && target.nodeType === 1 ? target : target?.parentElement;
+      const btn = el?.closest?.('button');
+      if (!btn) return false;
+      const aria = String(btn.getAttribute('aria-label') || '');
+      return /^(Previous|Next) response$/i.test(aria) || (/response/i.test(aria) && /(previous|next)/i.test(aria));
+    } catch {
+      return false;
+    }
+  }
+
+  function installBranchSwitcherWatcher() {
+    try {
+      if (state.branchSwitchHandler) return;
+      state.branchSwitchHandler = (event) => {
+        try {
+          if (!isResponseSwitcherButton(event?.target)) return;
+          state.dirty = true;
+          const rerenderVisiblePath = () => {
+            try {
+              if (state.disposed || !state.open || !state.lastData) return;
+              renderFromCache();
+            } catch {}
+          };
+          setTimeout(rerenderVisiblePath, 140);
+          setTimeout(rerenderVisiblePath, 650);
+          scheduleRefresh(900, 'branch-switch');
+        } catch {}
+      };
+      document.addEventListener('click', state.branchSwitchHandler, true);
+    } catch {
+      state.branchSwitchHandler = null;
+    }
+  }
+
+  function uninstallBranchSwitcherWatcher() {
+    try {
+      if (state.branchSwitchHandler) document.removeEventListener('click', state.branchSwitchHandler, true);
+    } catch {}
+    state.branchSwitchHandler = null;
   }
 
   function installTurnsWatcher() {
@@ -2701,6 +3051,7 @@
 
     stopHrefWatcher();
     stopGeneratingWatcher();
+    uninstallBranchSwitcherWatcher();
     uninstallTurnsWatcher();
     uninstallQuickNavBridge();
     uninstallMainMenuRunBridge();
@@ -2712,6 +3063,16 @@
     } catch {}
     state.escHandler = null;
     state.escCloseInstalled = false;
+
+    try {
+      if (state.memoryVisibilityHandler) document.removeEventListener('visibilitychange', state.memoryVisibilityHandler, true);
+    } catch {}
+    try {
+      if (state.memoryPagehideHandler) window.removeEventListener('pagehide', state.memoryPagehideHandler, true);
+    } catch {}
+    state.memoryVisibilityHandler = null;
+    state.memoryPagehideHandler = null;
+    state.memoryReleaseHooksInstalled = false;
 
     try { document.getElementById(TOGGLE_ID)?.remove?.(); } catch {}
     try { document.getElementById(PANEL_ID)?.remove?.(); } catch {}
@@ -2737,10 +3098,11 @@
   state.scheduleRefresh = scheduleRefresh;
 
   state.prefs = loadPrefs();
-  ensureUi();
+  scheduleInitialUiMount();
   installEscClose();
   installQuickNavBridge();
   installMainMenuCommands();
+  installBranchSwitcherWatcher();
   installTurnsWatcher();
   startHrefWatcher();
 })();

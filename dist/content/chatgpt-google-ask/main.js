@@ -24,9 +24,6 @@
   const HANDOFF_FLAG = 'aichat_google_ask';
   const SEARCH_PROMPT = 'prompt';
   const HASH_QUERY = 'q';
-  const CONSUMER_KEY = 'chatgpt-google-ask';
-  const TARGET_MODEL = 'gpt-5-4-thinking';
-  const TARGET_EFFORT = 'min';
   const PROMPT_PREFIX = 'web search:\n';
   const SEND_BTN_SELECTORS = [
     '#composer-submit-button',
@@ -39,9 +36,7 @@
   const MAX_ATTEMPTS = 80;
   const ATTEMPT_DELAY_MS = 250;
 
-  let pendingPayloadOverride = null;
   let processRunning = false;
-  let consumerInstalled = false;
   let retryTimer = 0;
   let attempts = 0;
 
@@ -254,32 +249,6 @@
     }
   }
 
-  function installFetchConsumer() {
-    if (consumerInstalled) return;
-    consumerInstalled = true;
-
-    const consumerBase = window.__aichat_chatgpt_fetch_consumer_base_v1__;
-    const hub = window.__aichat_chatgpt_fetch_hub_v1__;
-    const registerConsumer =
-      consumerBase && typeof consumerBase.registerConsumer === 'function'
-        ? (key, handlers) => consumerBase.registerConsumer(key, handlers)
-        : hub && typeof hub.register === 'function'
-          ? (_key, handlers) => hub.register(handlers)
-          : null;
-    if (!registerConsumer) return;
-
-    registerConsumer(CONSUMER_KEY, {
-      priority: 116,
-      onConversationPayload: (payload) => {
-        if (!pendingPayloadOverride || !payload || typeof payload !== 'object') return payload;
-        payload.model = TARGET_MODEL;
-        payload.thinking_effort = TARGET_EFFORT;
-        pendingPayloadOverride = null;
-        return payload;
-      }
-    });
-  }
-
   async function processPendingQuery() {
     const handoff = getPendingPromptFromUrl();
     const prompt = handoff.prompt;
@@ -304,12 +273,10 @@
               continue;
             }
 
-            pendingPayloadOverride = { model: TARGET_MODEL, effort: TARGET_EFFORT };
             if (sendViaButton(sendButton)) {
               clearHandledParams();
               return;
             }
-            pendingPayloadOverride = null;
           } else if (!currentText || currentText === prompt) {
             if (!writeEditorText(prompt)) {
               await sleep(ATTEMPT_DELAY_MS);
@@ -323,12 +290,10 @@
               continue;
             }
 
-            pendingPayloadOverride = { model: TARGET_MODEL, effort: TARGET_EFFORT };
             if (sendViaButton(sendButton)) {
               clearHandledParams();
               return;
             }
-            pendingPayloadOverride = null;
           } else {
             await sleep(ATTEMPT_DELAY_MS);
             continue;
@@ -342,7 +307,6 @@
     }
   }
 
-  installFetchConsumer();
   void processPendingQuery();
 
   const scheduleRetry = () => {

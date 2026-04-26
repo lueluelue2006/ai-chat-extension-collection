@@ -844,9 +844,9 @@
     "edu-instant-shared": "#60a5fa",
     "enterprise-instant-shared": "#60a5fa"
   };
-  var PRO_FAMILY_MODEL_KEYS = ["gpt-5-4-pro", "gpt-5-2-pro", "gpt-5-1-pro"];
-  var THINKING_FAMILY_MODEL_KEYS = ["gpt-5-4-thinking", "gpt-5-2-thinking", "gpt-5-1-thinking"];
-  var INSTANT_FAMILY_MODEL_KEYS = ["gpt-5-3-instant", "gpt-5-2-instant", "gpt-5-1-instant"];
+  var PRO_FAMILY_MODEL_KEYS = ["gpt-5-5-pro", "gpt-5-4-pro", "gpt-5-2-pro"];
+  var THINKING_FAMILY_MODEL_KEYS = ["gpt-5-5-thinking", "gpt-5-4-thinking", "gpt-5-2-thinking"];
+  var INSTANT_FAMILY_MODEL_KEYS = ["gpt-5-3-instant", "gpt-5-2-instant"];
   function createRepeatedModelEntries(modelKeys, config) {
     const out = {};
     const base = config && typeof config === "object" ? config : {};
@@ -858,18 +858,16 @@
     return out;
   }
   var MODEL_DISPLAY_NAMES = {
+    "gpt-5-5-pro": "gpt-5.5-pro",
     "gpt-5-4-pro": "gpt-5.4-pro",
     "gpt-5-2-pro": "gpt-5.2-pro",
-    "gpt-5-1-pro": "gpt-5.1-pro",
     "gpt-4-5": "gpt-4.5",
+    "gpt-5-5-thinking": "gpt-5.5-thinking",
     "gpt-5-4-thinking": "gpt-5.4-thinking",
     "gpt-5-2-thinking": "gpt-5.2-thinking",
-    "gpt-5-1-thinking": "gpt-5.1-thinking",
     "gpt-5-3-instant": "gpt-5.3-instant",
     "gpt-5-2-instant": "gpt-5.2-instant",
-    "gpt-5-1-instant": "gpt-5.1-instant",
     o3: "o3",
-    "gpt-5-t-mini": "gpt-5-t-mini",
     "gpt-5-mini": "gpt-5-mini",
     alpha: "alpha"
   };
@@ -879,29 +877,45 @@
     ...THINKING_FAMILY_MODEL_KEYS,
     ...INSTANT_FAMILY_MODEL_KEYS,
     "o3",
-    "gpt-5-t-mini",
     "gpt-5-mini",
     "alpha"
   ];
   var LEGACY_NOMINAL_UNLIMITED_QUOTA = 1e4;
   var LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE = "hour3";
   var MODEL_KEY_ALIASES = {
-    "gpt-5-pro": "gpt-5-4-pro",
-    "gpt-5-pro-shared": "gpt-5-4-pro",
-    "gpt-5-thinking": "gpt-5-4-thinking",
-    "gpt-5-thinking-shared": "gpt-5-4-thinking",
+    "gpt-5-pro": "gpt-5-5-pro",
+    "gpt-5-pro-shared": "gpt-5-5-pro",
+    "gpt-5.5-pro": "gpt-5-5-pro",
+    "gpt-5.4-pro": "gpt-5-4-pro",
+    "gpt-5.2-pro": "gpt-5-2-pro",
+    "gpt-5-thinking": "gpt-5-5-thinking",
+    "gpt-5-thinking-shared": "gpt-5-5-thinking",
+    "gpt-5.5-thinking": "gpt-5-5-thinking",
+    "gpt-5.4-thinking": "gpt-5-4-thinking",
+    "gpt-5.2-thinking": "gpt-5-2-thinking",
     "gpt-5-instant": "gpt-5-3-instant",
     "gpt-5-instant-shared": "gpt-5-3-instant",
+    "gpt-5.3-instant": "gpt-5-3-instant",
+    "gpt-5.2-instant": "gpt-5-2-instant",
     "gpt-5": "gpt-5-3-instant",
-    "gpt-5-1": "gpt-5-1-instant",
     "gpt-5-2": "gpt-5-2-instant",
     "gpt-5-3": "gpt-5-3-instant",
     "o3-pro": "o3"
   };
+  var DEPRECATED_USAGE_MODEL_KEYS = /* @__PURE__ */ new Set(["gpt-5-t-mini"]);
+  function isDeprecatedUsageModelKey(modelKey) {
+    const key = String(modelKey || "").trim();
+    if (DEPRECATED_USAGE_MODEL_KEYS.has(key)) return true;
+    const parts = key.split("-");
+    return parts.length >= 3 && parts[0] === "gpt" && parts[1] === "5" && parts[2] === "1";
+  }
   function canonicalizeUsageModelKey(modelKey) {
     const key = String(modelKey || "").trim();
     if (!key) return "";
-    return MODEL_KEY_ALIASES[key] || key;
+    if (isDeprecatedUsageModelKey(key)) return "";
+    const canonicalKey = Object.prototype.hasOwnProperty.call(MODEL_KEY_ALIASES, key) ? MODEL_KEY_ALIASES[key] : key;
+    if (isDeprecatedUsageModelKey(canonicalKey)) return "";
+    return canonicalKey;
   }
   function displayModelName(modelKey) {
     const key = canonicalizeUsageModelKey(modelKey);
@@ -979,7 +993,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "free-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "free-instant-shared" }),
         o3: { quota: 0, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: 10, windowType: "daily" },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1003,7 +1016,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "go-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "go-instant-shared" }),
         o3: { quota: 0, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: 100, windowType: "daily" }
       }
     },
@@ -1027,7 +1039,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "k12-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "k12-instant-shared" }),
         o3: { quota: 0, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: 0, windowType: "daily" },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1051,7 +1062,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "plus-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "plus-instant-shared" }),
         o3: { quota: 100, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1080,7 +1090,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "team-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "team-instant-shared" }),
         o3: { quota: 100, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1109,7 +1118,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "edu-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "edu-instant-shared" }),
         o3: { quota: 100, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1138,7 +1146,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "enterprise-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "enterprise-instant-shared" }),
         o3: { quota: 100, windowType: "weekly" },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     },
@@ -1167,7 +1174,6 @@
         ...createRepeatedModelEntries(THINKING_FAMILY_MODEL_KEYS, { sharedGroup: "pro-thinking-shared" }),
         ...createRepeatedModelEntries(INSTANT_FAMILY_MODEL_KEYS, { sharedGroup: "pro-instant-shared" }),
         o3: { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
-        "gpt-5-t-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE },
         "gpt-5-mini": { quota: LEGACY_NOMINAL_UNLIMITED_QUOTA, windowType: LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE }
       }
     }
@@ -1481,7 +1487,12 @@
     let changed = false;
     Object.keys(models).forEach((rawKey) => {
       const canonicalKey = canonicalizeUsageModelKey(rawKey);
-      if (!canonicalKey || canonicalKey === rawKey) return;
+      if (!canonicalKey) {
+        delete models[rawKey];
+        changed = true;
+        return;
+      }
+      if (canonicalKey === rawKey) return;
       const source = models[rawKey];
       if (!source || typeof source !== "object") {
         delete models[rawKey];
@@ -2664,6 +2675,8 @@
 	  let __aichatUsageMonitorLastCleanupAt = 0;
 	  function recordModelUsageByModelId(modelId) {
 	    if (!usageData || typeof usageData !== "object") refreshUsageData();
+	    modelId = normalizeUsageModelKey(modelId);
+	    if (!modelId) return;
 	    const now = Date.now();
 	    // Avoid scanning all models on every request; monthly cleanup is enough.
 	    if (!__aichatUsageMonitorLastCleanupAt || now - __aichatUsageMonitorLastCleanupAt > 3e4) {

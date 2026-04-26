@@ -98,6 +98,14 @@
       modules: ["quicknav", "cmdenter_send"]
     },
     {
+      id: "meta_ai",
+      name: "Meta AI",
+      sub: "meta.ai",
+      matchPatterns: ["https://www.meta.ai/*", "https://meta.ai/*"],
+      quicknavPatterns: ["https://www.meta.ai/prompt/*", "https://meta.ai/prompt/*"],
+      modules: ["quicknav", "cmdenter_send"]
+    },
+    {
       id: "zai",
       name: "GLM",
       sub: "chat.z.ai",
@@ -119,7 +127,7 @@
       id: "quicknav",
       name: "QuickNav",
       sub: "\u5BF9\u8BDD\u5BFC\u822A / \u{1F4CC} \u6807\u8BB0 / \u6536\u85CF / \u9632\u81EA\u52A8\u6EDA\u52A8",
-      defaultEnabled: true,
+      defaultEnabled: false,
       hotkeys: ["\u2318\u2191/\u2318\u2193", "\u2325\u2191/\u2325\u2193", "\u2325/"],
       menuPreview: ["\u91CD\u7F6E\u95EE\u9898\u680F\u4F4D\u7F6E", "\u6E05\u7406\u8FC7\u671F\u68C0\u67E5\u70B9\uFF0830\u5929\uFF09", "\u6E05\u7406\u65E0\u6548\u6536\u85CF"],
       authors: ["lueluelue2006\uFF08\u539F\u59CB\u811A\u672C / MV3 \u6269\u5C55\u5C01\u88C5/\u6539\u9020\uFF09", "loongphy\uFF08\u6697\u8272\u6A21\u5F0F+\u56DE\u5F39\u8865\u4E01\uFF09"],
@@ -128,8 +136,9 @@
     },
     chatgpt_perf: {
       id: "chatgpt_perf",
-      name: "ChatGPT \u6027\u80FD\u4F18\u5316",
-      sub: "\u79BB\u5C4F\u865A\u62DF\u5316 + CSS contain",
+      name: "ChatGPT \u6027\u80FD\u534F\u8C03\u5668",
+      sub: "\u516C\u5F0F/\u957F\u4EE3\u7801\u538B\u529B\u63A2\u6D4B + \u70ED\u8DEF\u5F84\u964D\u8F7D",
+      defaultEnabled: false,
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later"
@@ -137,7 +146,7 @@
     openai_new_model_banner: {
       id: "openai_new_model_banner",
       name: "OpenAI \u65B0\u6A21\u578B\u6A2A\u5E45\u63D0\u793A",
-      sub: "\u76D1\u63A7\u5230\u8D44\u6E90\u53EF\u8BBF\u95EE\u65F6\uFF0C\u5728\u7F51\u9875\u5185\u663E\u793A\u5927\u6A2A\u5E45\uFF08\u907F\u514D\u7CFB\u7EDF\u901A\u77E5\u88AB\u5C4F\u853D\uFF09",
+      sub: "\u76D1\u63A7\u5230\u8D44\u6E90\u53EF\u7528\u65F6\uFF0C\u5728\u7F51\u9875\u5185\u663E\u793A\u5927\u6A2A\u5E45\uFF08\u907F\u514D\u7CFB\u7EDF\u901A\u77E5\u88AB\u5C4F\u853D\uFF09",
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
@@ -146,12 +155,15 @@
     chatgpt_thinking_toggle: {
       id: "chatgpt_thinking_toggle",
       name: "ChatGPT \u63A8\u7406\u5F3A\u5EA6/\u6A21\u578B \u5FEB\u6377\u5207\u6362",
-      sub: "\u2318O \u63A8\u7406\u5F3A\u5EA6 / \u2318J \u6A21\u578B\u5207\u6362",
+      sub: "\u2318O \u63A8\u7406\u5F3A\u5EA6 / \u2318J \u6A21\u578B\u5207\u6362 / \u7981\u7528 \u2318P / \u2318\u21E7P Light Pro \u53D1\u9001 / \u2318\u2325P Heavy Pro \u53D1\u9001",
       defaultEnabled: true,
-      hotkeys: ["\u2318O", "\u2318J"],
+      hotkeys: ["\u2318O", "\u2318J", "\u2318P", "\u2318\u21E7P", "\u2318\u2325P"],
       hotkeyControls: [
         { key: "chatgpt_thinking_toggle_hotkey_effort", label: "\u2318O" },
-        { key: "chatgpt_thinking_toggle_hotkey_model", label: "\u2318J" }
+        { key: "chatgpt_thinking_toggle_hotkey_model", label: "\u2318J" },
+        { key: "chatgpt_thinking_toggle_disable_cmd_p", label: "\u7981\u7528 \u2318P" },
+        { key: "chatgpt_thinking_toggle_hotkey_send_light_pro", label: "\u2318\u21E7P" },
+        { key: "chatgpt_thinking_toggle_hotkey_send_max_pro", label: "\u2318\u2325P" }
       ],
       hotkeyPolicy: {
         profile: "requires_meta_key",
@@ -281,11 +293,17 @@
     chatgpt_tex_copy_quote: {
       id: "chatgpt_tex_copy_quote",
       name: "ChatGPT TeX Copy & Quote",
-      sub: "\u590D\u5236/\u5F15\u7528\u542B KaTeX \u7684\u9009\u533A\u65F6\u4F18\u5148\u8FD8\u539F LaTeX\uFF0C\u5E76\u652F\u6301\u60AC\u505C\u63D0\u793A/\u53CC\u51FB\u590D\u5236",
+      sub: "\u9009\u533A\u591A\u6BB5 Quote / KaTeX \u8FD8\u539F LaTeX / \u60AC\u505C\u63D0\u793A / \u53CC\u51FB\u590D\u5236\uFF08\u53EF\u914D\u7F6E\uFF09",
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later",
-      upstream: "https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote"
+      upstream: "https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote",
+      references: [
+        {
+          label: "\u591A\u6BB5 Quote \u4EA4\u4E92\u53C2\u8003",
+          url: "https://github.com/pranay0064/chatgpt-ask-multi"
+        }
+      ]
     },
     chatgpt_export_conversation: {
       id: "chatgpt_export_conversation",
@@ -316,6 +334,7 @@
       id: "chatgpt_message_tree",
       name: "ChatGPT \u6D88\u606F\u6811",
       sub: "\u663E\u793A\u5F53\u524D\u5BF9\u8BDD\u7684\u5B8C\u6574\u6D88\u606F\u6811/\u5206\u652F\u7ED3\u6784\uFF08\u53F3\u4FA7\u9762\u677F\uFF09\uFF0C\u5E76\u652F\u6301\u5BFC\u51FA\u5B8C\u6574\u6811 JSON",
+      defaultEnabled: false,
       hotkeys: [],
       menuPreview: ["\u5BFC\u51FA\u5B8C\u6574\u6811\u4E3A JSON"],
       authors: ["lueluelue2006"],
@@ -332,7 +351,7 @@
     google_ask_gpt: {
       id: "google_ask_gpt",
       name: "Google \u641C\u7D22\u95EE GPT",
-      sub: "\u5728 Google \u641C\u7D22\u6846\u65C1\u52A0\u201C\u95EE GPT\u201D\uFF1A\u8DF3\u5230 ChatGPT 5.4 Thinking \u5E76\u81EA\u52A8\u53D1\u8D77\u8054\u7F51\u641C\u7D22\u63D0\u95EE",
+      sub: "\u5728 Google \u641C\u7D22\u6846\u65C1\u52A0\u201C\u95EE GPT\u201D\uFF1A\u8DF3\u5230 ChatGPT \u5E76\u81EA\u52A8\u53D1\u8D77\u8054\u7F51\u641C\u7D22\u63D0\u95EE",
       defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
@@ -372,9 +391,9 @@
     },
     genspark_force_sonnet45_thinking: {
       id: "genspark_force_sonnet45_thinking",
-      name: "Genspark Claude Thinking \u5F3A\u5236\u5207\u6362",
-      sub: "\u4EC5\u5BF9 Sonnet 4.5 \u542F\u7528 thinking \u5F3A\u5236\u5207\u6362\uFF0C\u5E76\u663E\u793A\u53EF\u6298\u53E0\u601D\u8003\u5757",
-      defaultEnabled: true,
+      name: "Genspark Sonnet 4.5 Thinking \u517C\u5BB9",
+      sub: "\u4EC5\u5728\u65E7 Sonnet 4.5 \u8BF7\u6C42\u4E0A\u6539\u5199\u4E3A thinking\uFF0C\u5E76\u663E\u793A\u53EF\u6298\u53E0\u601D\u8003\u5757\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF09",
+      defaultEnabled: false,
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later"

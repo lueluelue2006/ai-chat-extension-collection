@@ -2,15 +2,15 @@
   'use strict';
 
   const CONFIG = { maxPreviewLength: 12, animation: 250, refreshInterval: 2000, forceRefreshInterval: 10000, anchorOffset: 8 };
-  const STOP_BTN_SELECTOR = '[data-testid="stop-button"]';
+  const STOP_BTN_SELECTOR =
+    '[data-testid="stop-button"],button[aria-label*="Stop" i],button[title*="Stop" i],button[aria-label*="Cancel" i],button[title*="Cancel" i],button[aria-label*="停止" i],button[title*="停止" i],button[aria-label*="取消" i],button[title*="取消" i]';
   const BOUNDARY_EPS = 28;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
-  const FIXED_HEADER_HEIGHT_PX = 64;
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   // 存储键与检查点状态
-  const STORE_NS = 'genspark-quicknav';
-  const QUICKNAV_SITE_ID = 'genspark';
+  const STORE_NS = 'meta-ai-quicknav';
+  const QUICKNAV_SITE_ID = 'meta_ai';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
@@ -131,96 +131,86 @@
     }
   }
 
-  function isCompatBoolFlagSet(primaryName, legacyName) {
+  const META_AI_KEYS_BOUND_KEY = '__quicknavMetaAiKeysBoundV1';
+  const META_AI_KEYS_BOUND_LEGACY_KEY = '__cgptKeysBound';
+  const META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_KEY = '__quicknavMetaAiScrollLockUserIntentsBound';
+  const META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY = '__cgptScrollLockUserIntentsBound';
+  const META_AI_SCROLL_GUARDS_INSTALLED_KEY = '__quicknavMetaAiScrollGuardsInstalled';
+  const META_AI_SCROLL_GUARDS_INSTALLED_LEGACY_KEY = '__cgptScrollGuardsInstalled';
+  const META_AI_SCROLL_LOCK_BOUND_KEY = '__quicknavMetaAiScrollLockBound';
+  const META_AI_SCROLL_LOCK_BOUND_LEGACY_KEY = '__cgptScrollLockBound';
+  const META_AI_PIN_BOUND_KEY = '__quicknavMetaAiPinBound';
+  const META_AI_PIN_BOUND_LEGACY_KEY = '__cgptPinBound';
+
+  function readRuntimeFlag(primaryKey, legacyKey) {
     try {
       if (QUICKNAV_RUNTIME_GUARDS && typeof QUICKNAV_RUNTIME_GUARDS.readCompatBoolFlag === 'function') {
-        return QUICKNAV_RUNTIME_GUARDS.readCompatBoolFlag(primaryName, legacyName, window);
+        return QUICKNAV_RUNTIME_GUARDS.readCompatBoolFlag(primaryKey, legacyKey, window);
       }
     } catch {}
-    return !!(window[primaryName] || window[legacyName]);
+    try {
+      return !!(window[primaryKey] || window[legacyKey]);
+    } catch {
+      return false;
+    }
   }
 
-  function setCompatBoolFlag(primaryName, legacyName, value) {
+  function writeRuntimeFlag(primaryKey, legacyKey, value) {
     const normalized = !!value;
     try {
       if (QUICKNAV_RUNTIME_GUARDS && typeof QUICKNAV_RUNTIME_GUARDS.writeCompatBoolFlag === 'function') {
-        return QUICKNAV_RUNTIME_GUARDS.writeCompatBoolFlag(primaryName, legacyName, normalized, window);
+        return QUICKNAV_RUNTIME_GUARDS.writeCompatBoolFlag(primaryKey, legacyKey, normalized, window);
       }
     } catch {}
-    window[primaryName] = normalized;
-    window[legacyName] = normalized;
+    try { window[primaryKey] = normalized; } catch {}
+    try { window[legacyKey] = normalized; } catch {}
     return normalized;
   }
 
-  const GENSPARK_KEYS_BOUND_KEY = '__quicknavGensparkKeysBoundV1';
-  const GENSPARK_KEYS_BOUND_LEGACY_KEY = '__cgptKeysBound';
-  const GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_KEY = '__quicknavGensparkScrollLockUserIntentsBound';
-  const GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY = '__cgptScrollLockUserIntentsBound';
-  const GENSPARK_SCROLL_GUARDS_INSTALLED_KEY = '__quicknavGensparkScrollGuardsInstalled';
-  const GENSPARK_SCROLL_GUARDS_INSTALLED_LEGACY_KEY = '__cgptScrollGuardsInstalled';
-  const GENSPARK_SCROLL_LOCK_BOUND_KEY = '__quicknavGensparkScrollLockBound';
-  const GENSPARK_SCROLL_LOCK_BOUND_LEGACY_KEY = '__cgptScrollLockBound';
-  const GENSPARK_PIN_BOUND_KEY = '__quicknavGensparkPinBound';
-  const GENSPARK_PIN_BOUND_LEGACY_KEY = '__cgptPinBound';
-  const GENSPARK_SEND_EVENTS_BOUND_KEY = '__quicknavGensparkSendEventsBoundV1';
-
-  function isGensparkKeysBound() {
-    return isCompatBoolFlagSet(GENSPARK_KEYS_BOUND_KEY, GENSPARK_KEYS_BOUND_LEGACY_KEY);
+  function isMetaAiKeysBound() {
+    return readRuntimeFlag(META_AI_KEYS_BOUND_KEY, META_AI_KEYS_BOUND_LEGACY_KEY);
   }
 
-  function setGensparkKeysBound(value) {
-    return setCompatBoolFlag(GENSPARK_KEYS_BOUND_KEY, GENSPARK_KEYS_BOUND_LEGACY_KEY, value);
+  function setMetaAiKeysBound(value) {
+    return writeRuntimeFlag(META_AI_KEYS_BOUND_KEY, META_AI_KEYS_BOUND_LEGACY_KEY, value);
   }
 
-  function isGensparkScrollLockUserIntentsBound() {
-    return isCompatBoolFlagSet(GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_KEY, GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY);
+  function isMetaAiScrollLockUserIntentsBound() {
+    return readRuntimeFlag(META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_KEY, META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY);
   }
 
-  function setGensparkScrollLockUserIntentsBound(value) {
-    return setCompatBoolFlag(
-      GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_KEY,
-      GENSPARK_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY,
-      value
-    );
+  function setMetaAiScrollLockUserIntentsBound(value) {
+    return writeRuntimeFlag(META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_KEY, META_AI_SCROLL_LOCK_USER_INTENTS_BOUND_LEGACY_KEY, value);
   }
 
-  function isGensparkScrollGuardsInstalled() {
-    return isCompatBoolFlagSet(GENSPARK_SCROLL_GUARDS_INSTALLED_KEY, GENSPARK_SCROLL_GUARDS_INSTALLED_LEGACY_KEY);
+  function isMetaAiScrollGuardsInstalled() {
+    return readRuntimeFlag(META_AI_SCROLL_GUARDS_INSTALLED_KEY, META_AI_SCROLL_GUARDS_INSTALLED_LEGACY_KEY);
   }
 
-  function setGensparkScrollGuardsInstalled(value) {
-    return setCompatBoolFlag(GENSPARK_SCROLL_GUARDS_INSTALLED_KEY, GENSPARK_SCROLL_GUARDS_INSTALLED_LEGACY_KEY, value);
+  function setMetaAiScrollGuardsInstalled(value) {
+    return writeRuntimeFlag(META_AI_SCROLL_GUARDS_INSTALLED_KEY, META_AI_SCROLL_GUARDS_INSTALLED_LEGACY_KEY, value);
   }
 
-  function isGensparkScrollLockBound() {
-    return isCompatBoolFlagSet(GENSPARK_SCROLL_LOCK_BOUND_KEY, GENSPARK_SCROLL_LOCK_BOUND_LEGACY_KEY);
+  function isMetaAiScrollLockBound() {
+    return readRuntimeFlag(META_AI_SCROLL_LOCK_BOUND_KEY, META_AI_SCROLL_LOCK_BOUND_LEGACY_KEY);
   }
 
-  function setGensparkScrollLockBound(value) {
-    return setCompatBoolFlag(GENSPARK_SCROLL_LOCK_BOUND_KEY, GENSPARK_SCROLL_LOCK_BOUND_LEGACY_KEY, value);
+  function setMetaAiScrollLockBound(value) {
+    return writeRuntimeFlag(META_AI_SCROLL_LOCK_BOUND_KEY, META_AI_SCROLL_LOCK_BOUND_LEGACY_KEY, value);
   }
 
-  function isGensparkPinBound() {
-    return isCompatBoolFlagSet(GENSPARK_PIN_BOUND_KEY, GENSPARK_PIN_BOUND_LEGACY_KEY);
+  function isMetaAiPinBound() {
+    return readRuntimeFlag(META_AI_PIN_BOUND_KEY, META_AI_PIN_BOUND_LEGACY_KEY);
   }
 
-  function setGensparkPinBound(value) {
-    return setCompatBoolFlag(GENSPARK_PIN_BOUND_KEY, GENSPARK_PIN_BOUND_LEGACY_KEY, value);
-  }
-
-  function isGensparkSendEventsBound() {
-    return !!window[GENSPARK_SEND_EVENTS_BOUND_KEY];
-  }
-
-  function setGensparkSendEventsBound(value) {
-    window[GENSPARK_SEND_EVENTS_BOUND_KEY] = !!value;
-    return !!window[GENSPARK_SEND_EVENTS_BOUND_KEY];
+  function setMetaAiPinBound(value) {
+    return writeRuntimeFlag(META_AI_PIN_BOUND_KEY, META_AI_PIN_BOUND_LEGACY_KEY, value);
   }
 
   // 全局调试函数，用户可在控制台调用
-  const gensparkQuicknavDebugApi = {
+  const metaAiQuicknavDebugApi = {
     forceRefresh: () => {
-      console.log('Genspark QuickNav: 手动强制刷新');
+      console.log('Meta AI QuickNav: 手动强制刷新');
       TURN_SELECTOR = null;
       const ui = document.getElementById('cgpt-compact-nav')?._ui;
       if (ui) scheduleRefresh(ui);
@@ -246,8 +236,8 @@
       const styles = document.querySelectorAll('#cgpt-compact-nav-style');
       console.log(`找到 ${panels.length} 个导航面板`);
       console.log(`找到 ${styles.length} 个样式节点`);
-      console.log(`键盘事件已绑定: ${isGensparkKeysBound()}`);
-      console.log(`正在启动中: ${gensparkQuicknavBooting}`);
+      console.log(`键盘事件已绑定: ${isMetaAiKeysBound()}`);
+      console.log(`正在启动中: ${metaAiQuicknavBooting}`);
       if (panels.length > 1) {
         console.warn('检测到重叠面板！清理中...');
         panels.forEach((panel, index) => {
@@ -257,12 +247,7 @@
           }
         });
       }
-      return {
-        panels: panels.length,
-        styles: styles.length,
-        keysBound: isGensparkKeysBound(),
-        booting: gensparkQuicknavBooting
-      };
+      return { panels: panels.length, styles: styles.length, keysBound: isMetaAiKeysBound(), booting: metaAiQuicknavBooting };
     },
     testObserver: () => {
       const nav = document.getElementById('cgpt-compact-nav');
@@ -292,9 +277,9 @@
       return true;
     }
   };
-  window.gensparkQuicknavDebug = gensparkQuicknavDebugApi;
-  window.gensparkNavDebug = gensparkQuicknavDebugApi;
-  window.chatGptNavDebug = gensparkQuicknavDebugApi;
+  window.metaAiQuicknavDebug = metaAiQuicknavDebugApi;
+  window.metaAiNavDebug = metaAiQuicknavDebugApi;
+  window.chatGptNavDebug = metaAiQuicknavDebugApi; // backward compatible alias
 
   function registerMenuCommand(name, fn, metadata) {
     try {
@@ -378,7 +363,7 @@
   let lastScrollTs = 0;
   let currentActiveId = null;
   let currentActiveTurnPos = 0; // 当前激活 turn 在 qsTurns() 里的位置，用于减少扫描
-  let gensparkQuicknavBooting = false;
+  let metaAiQuicknavBooting = false;
   let refreshTimer = 0; // 新的尾随去抖定时器
   let lastStopCheckTs = 0;
   let lastHasStop = null;
@@ -464,23 +449,22 @@
       }
     }
     const checkContentLoaded = () => {
-      const turns = document.querySelectorAll('.conversation-statement, article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-id]');
-      return turns.length > 0;
+      try { return qsTurns().length > 0; } catch { return false; }
     };
     const boot = () => {
       // 二次校验：已有面板或正在启动就直接退出
       if (document.getElementById('cgpt-compact-nav')) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板已存在，跳过创建');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 面板已存在，跳过创建');
         return;
       }
-      if (gensparkQuicknavBooting) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 正在启动中，跳过重复创建');
+      if (metaAiQuicknavBooting) {
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 正在启动中，跳过重复创建');
         return;
       }
 
-      gensparkQuicknavBooting = true;
+      metaAiQuicknavBooting = true;
       try {
-        if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 开始创建面板');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 开始创建面板');
         const ui = createPanel();
         wirePanel(ui);
         initScrollLock(ui);
@@ -489,13 +473,20 @@
         watchSendEvents(ui); // 新增这一行
         bindAltPin(ui); // 绑定 Option+单击添加📌
         scheduleRefresh(ui);
-        if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 面板创建完成');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 面板创建完成');
       } finally {
-        gensparkQuicknavBooting = false;
+        metaAiQuicknavBooting = false;
       }
     };
     if (checkContentLoaded()) boot();
     else {
+      // Meta AI is an SPA: users may start at `/` and navigate to `/prompt/<id>` without reload.
+      // Avoid keeping a noisy global MutationObserver on non-conversation pages; the route watcher
+      // will re-run `init()` after navigation.
+      try {
+        const path = String(location.pathname || '');
+        if (!/^\/prompt\b/.test(path)) return;
+      } catch {}
       const observer = new MutationObserver(() => {
         if (checkContentLoaded()) { observer.disconnect(); boot(); }
       });
@@ -504,31 +495,25 @@
   }
 
   let currentUrl = location.href;
-  function detectUrlChange(payload = null) {
-    const eventPayload = payload && typeof payload === 'object' ? payload : null;
-    const nextHref = String((eventPayload && typeof eventPayload.href === 'string' ? eventPayload.href : location.href) || '').trim();
-    if (!nextHref) return;
-    const reason = eventPayload && typeof eventPayload.reason === 'string' && eventPayload.reason
-      ? eventPayload.reason
-      : 'url';
-    if (nextHref !== currentUrl) {
-      if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: URL变化，清理旧实例', currentUrl, '->', nextHref, `[${reason}]`);
-      currentUrl = nextHref;
+  function detectUrlChange() {
+    if (location.href !== currentUrl) {
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: URL变化，清理旧实例', currentUrl, '->', location.href);
+      currentUrl = location.href;
       const oldNav = document.getElementById('cgpt-compact-nav');
       if (oldNav) {
         if (oldNav._ui) {
           // 清理定时器
           if (oldNav._ui._forceRefreshTimer) {
             clearInterval(oldNav._ui._forceRefreshTimer);
-            if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 已清理定时器');
+            if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 已清理定时器');
           }
           // 断开MutationObserver
           if (oldNav._ui._mo) {
             try {
               oldNav._ui._mo.disconnect();
-              if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 已断开MutationObserver');
+              if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 已断开MutationObserver');
             } catch (e) {
-              if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 断开MutationObserver失败', e);
+              if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 断开MutationObserver失败', e);
             }
           }
           if (oldNav._ui.layout && typeof oldNav._ui.layout.destroy === 'function') {
@@ -540,10 +525,10 @@
         } catch {}
         oldNav._dragCleanup = null;
         oldNav.remove();
-        if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 已移除旧面板');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 已移除旧面板');
       }
       // 重置"正在启动"标志，避免新页面被卡住
-      gensparkQuicknavBooting = false;
+      metaAiQuicknavBooting = false;
       lastTurnCount = 0;
       TURN_SELECTOR = null; // 同时重置选择器缓存
       previewCache.clear();
@@ -556,77 +541,102 @@
     }
   }
 
-  function installRouteWatcher() {
+  // Prefer shared bridge route-change events (from MAIN-world scroll-guard) to avoid per-script history patching.
+  (function installRouteWatcher() {
     try {
       if (QUICKNAV_ROUTE_WATCH && typeof QUICKNAV_ROUTE_WATCH.installBridgeFirstWatcher === 'function') {
         const installed = QUICKNAV_ROUTE_WATCH.installBridgeFirstWatcher({
           target: window,
-          unsubKey: '__quicknavGensparkRouteUnsubV1',
-          pollKey: '__quicknavGensparkRoutePollV1',
+          unsubKey: '__quicknavMetaAiRouteUnsubV1',
+          pollKey: '__quicknavMetaAiRoutePollV1',
           pollMs: 1200,
-          onRouteChange: (eventPayload) => detectUrlChange(eventPayload || null)
+          onRouteChange: () => detectUrlChange()
         });
         if (installed && installed.installed) return;
       }
     } catch {}
     try {
-      if (!window.__quicknavGensparkRouteUnsubV1 || typeof window.__quicknavGensparkRouteUnsubV1 !== 'function') {
-        const bridge = window.__aichat_quicknav_bridge_v1__;
-        if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
-          try { bridge.ensureRouteListener(); } catch {}
-          window.__quicknavGensparkRouteUnsubV1 = bridge.on('routeChange', (eventPayload) => detectUrlChange(eventPayload || null));
-          return;
-        }
+      if (window.__quicknavMetaAiRouteUnsubV1 && typeof window.__quicknavMetaAiRouteUnsubV1 === 'function') return;
+      const bridge = window.__aichat_quicknav_bridge_v1__;
+      if (bridge && typeof bridge.ensureRouteListener === 'function' && typeof bridge.on === 'function') {
+        try { bridge.ensureRouteListener(); } catch {}
+        window.__quicknavMetaAiRouteUnsubV1 = bridge.on('routeChange', () => detectUrlChange());
+        return;
       }
     } catch {}
 
-    // Fallback: slow polling when bridge route channel is unavailable.
+    // Fallback: slow polling.
     try {
-      if (window.__quicknavGensparkRoutePollV1) return;
-      window.__quicknavGensparkRoutePollV1 = window.setInterval(
-        () => detectUrlChange({ href: location.href, reason: 'poll' }),
-        1200
-      );
+      if (window.__quicknavMetaAiRoutePollV1) return;
+      window.__quicknavMetaAiRoutePollV1 = window.setInterval(() => detectUrlChange(), 1200);
     } catch {}
-  }
-
-  installRouteWatcher();
+  })();
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
+  function getMetaAiConversationRoot(root = document) {
+    try {
+      if (root && root !== document) return root;
+      return (
+        document.querySelector('main [class*="group/scroller"]') ||
+        document.querySelector('main [class*="overflow-y-auto"][class*="overscroll-y-contain"]') ||
+        document.querySelector('main') ||
+        document
+      );
+    } catch {
+      return root || document;
+    }
+  }
+
+  function sortByTop(els) {
+    return Array.from(els || []).sort((a, b) => {
+      try {
+        return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+      } catch {
+        return 0;
+      }
+    });
+  }
+
+  function metaAiClassName(el) {
+    try { return String(el?.className || ''); } catch { return ''; }
+  }
+
+  function isMetaAiTurnElement(el) {
+    if (!(el instanceof Element)) return false;
+    const className = metaAiClassName(el);
+    const isUser = className.includes('group/user-message');
+    const isAssistant = el.getAttribute('data-testid') === 'assistant-message' || className.includes('group/assistant-message');
+    if (!isUser && !isAssistant) return false;
+    try {
+      const parentTurn = el.parentElement?.closest?.('[class*="group/user-message"], [data-testid="assistant-message"], [class*="group/assistant-message"]');
+      if (parentTurn) return false;
+    } catch {}
+    try {
+      const rect = el.getBoundingClientRect();
+      if (!rect || (!rect.width && !rect.height)) return false;
+    } catch {}
+    return true;
+  }
+
   function qsTurns(root = document) {
+    const baseRoot = getMetaAiConversationRoot(root);
     if (TURN_SELECTOR) {
-      const els = root.querySelectorAll(TURN_SELECTOR);
-      if (els.length) return Array.from(els);
+      const els = sortByTop(Array.from(baseRoot.querySelectorAll(TURN_SELECTOR)).filter(isMetaAiTurnElement));
+      if (els.length) return els;
       // 选择器失效则自动回退重选，避免每次 mutation 都清空缓存
       TURN_SELECTOR = null;
     }
     const selectors = [
-      // Genspark
-      '.conversation-statement',
-      // ChatGPT（原始）
-      'article[data-testid^="conversation-turn-"]',
-      '[data-testid^="conversation-turn-"]',
-      'div[data-message-id]',
-      'div[class*="group"][data-testid]',
-      // 新增备用选择器
-      '[data-testid*="conversation-turn"]',
-      '[data-testid*="message-"]',
-      'div[class*="turn"]',
-      'div[class*="message"]',
-      'div[class*="group"] div[data-message-author-role]',
-      'div[class*="conversation"] > div',
-      '[class*="chat"] > div',
-      '[role="presentation"] > div',
-      'main div[class*="group"]',
-      'main div[data-testid]'
+      // Meta AI current UI message roots.
+      '[class*="group/user-message"], [data-testid="assistant-message"], [class*="group/assistant-message"]'
     ];
 
     if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 检测对话选择器');
+      console.log('Meta AI QuickNav Debug: 检测对话选择器');
       for (const selector of selectors) {
-        const els = root.querySelectorAll(selector);
+        const els = baseRoot.querySelectorAll(selector);
         console.log(`- ${selector}: ${els.length} 个元素`);
         if (els.length > 0) {
           console.log('  样本元素:', els[0]);
@@ -635,212 +645,68 @@
     }
 
     for (const selector of selectors) {
-      const els = root.querySelectorAll(selector);
+      const els = sortByTop(Array.from(baseRoot.querySelectorAll(selector)).filter(isMetaAiTurnElement));
       if (els.length) {
         TURN_SELECTOR = selector;
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
-        return Array.from(els);
+        if (DEBUG || window.DEBUG_TEMP) console.log(`Meta AI QuickNav: 使用选择器 ${selector}, 找到 ${els.length} 个对话`);
+        return els;
       }
     }
 
-    if (DEBUG || window.DEBUG_TEMP) {
-      console.log('ChatGPT Navigation Debug: 所有预设选择器都失效，尝试智能检测');
-      console.log('页面中的所有可能对话元素:');
-      const potentialElements = [
-        ...root.querySelectorAll('div[class*="group"]'),
-        ...root.querySelectorAll('div[data-message-id]'),
-        ...root.querySelectorAll('article'),
-        ...root.querySelectorAll('[data-testid]'),
-        ...root.querySelectorAll('div[role="presentation"]')
-      ];
-      console.log('潜在元素数量:', potentialElements.length);
-    }
-
-    // 增强的fallback检测
-    const fallbackSelectors = [
-      '.conversation-statement',
-      'div[class*="group"], div[data-message-id]',
-      'div[class*="turn"], div[class*="message"]',
-      'main > div > div',
-      '[role="presentation"] > div'
-    ];
-
-    for (const fallbackSelector of fallbackSelectors) {
-      const candidates = [...root.querySelectorAll(fallbackSelector)].filter(el => {
-        // 检查是否包含消息相关的内容
-        return (
-          el.querySelector('div[data-message-author-role]') ||
-          el.querySelector('[data-testid*="user"]') ||
-          el.querySelector('[data-testid*="assistant"]') ||
-          el.querySelector('[data-author]') ||
-          el.querySelector('.markdown') ||
-          el.querySelector('.prose') ||
-          el.querySelector('.whitespace-pre-wrap') ||
-          (el.textContent && el.textContent.trim().length > 10)
-        );
-      });
-
-      if (candidates.length > 0) {
-        if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: Fallback选择器 ${fallbackSelector} 找到 ${candidates.length} 个候选对话`);
-        return candidates;
-      }
-    }
-
-    if (DEBUG) console.log('ChatGPT Navigation: 所有检测方法均失效');
+    if (DEBUG) console.log('Meta AI Navigation: 未找到任何对话 segment');
     return [];
   }
 
   function getTextPreview(el) {
     if (!el) return '';
     // 注意：innerText 会触发同步样式/布局计算（长对话非常慢），尽量只用 textContent
-    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!text) return '...';
+    const text = cleanMetaAiPreviewText((el.textContent || '').replace(/\s+/g, ' ').trim());
+    if (!text) return '';
     // 让 CSS 负责根据宽度省略，JS 只做上限裁剪以防极端超长文本
     const HARD_CAP = 600;
     return text.length > HARD_CAP ? text.slice(0, HARD_CAP) : text;
   }
 
-  const GENSPARK_TOOLCALL_PREFIX_RE = /^(?:(?:using\s*tool|tool\s*call|calling\s*tool|invoking\s*tool)\s*(?:[|｜:：\-–—>]|$)|(?:工具调用|调用工具)\s*(?:[|｜:：\-–—>]|$))/i;
-  const GENSPARK_THINKING_PREFIX_RE = /^(?:thinking|reasoning|思考(?:中|过程)?|推理(?:中|过程)?)(?:[\s.·•\-–—:：\]]|$)+/i;
-  const GENSPARK_TRANSIENT_HINT_RE = /\b(?:using\s*tool|tool\s*call|calling\s*tool|invoking\s*tool|thinking|reasoning)\b|(?:工具调用|调用工具|思考|推理)/i;
-  const GENSPARK_TOOL_META_LINE_RE = /^(?:input|query|args?|arguments|parameters?|tool|result|status|step|source|url)\b[\s:：=-]/i;
-  const GENSPARK_INLINE_TOOLCALL_MARKER_RE = /(?:using\s*tool|tool\s*call|calling\s*tool|invoking\s*tool|工具调用|调用工具)\s*[|｜:：\-–—>]/i;
-
-  function normalizeGensparkPreviewText(text, cap = 600) {
-    const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!cleaned) return '';
-    return cleaned.length > cap ? cleaned.slice(0, cap) : cleaned;
+  function isMetaAiPlaceholderPreview(text) {
+    return !String(text || '').trim() || String(text || '').trim() === '...';
   }
 
-  function isGensparkTransientLine(raw) {
-    const line = normalizeGensparkPreviewText(raw, 320);
-    if (!line || line === '...') return true;
-    if (/^[.…·•\-–—\s]+$/.test(line)) return true;
-    if (GENSPARK_TOOLCALL_PREFIX_RE.test(line)) return true;
-    if (GENSPARK_THINKING_PREFIX_RE.test(line) && line.length <= 240) return true;
-    if (line.length <= 32 && GENSPARK_TRANSIENT_HINT_RE.test(line)) return true;
-    return false;
+  function cleanMetaAiPreviewText(text) {
+    return String(text || '')
+      .replace(/\s+(Today|Yesterday)$/i, '')
+      .replace(/\s+\d{1,2}:\d{2}\s*(AM|PM)?$/i, '')
+      .trim();
   }
 
-  function isGensparkTransientPreviewText(text) {
-    const normalized = normalizeGensparkPreviewText(text);
-    if (!normalized || normalized === '...') return true;
-    if (/^[.…·•\-–—\s]+$/.test(normalized)) return true;
-    if (GENSPARK_TOOLCALL_PREFIX_RE.test(normalized) && normalized.length <= 320) return true;
-    if (GENSPARK_THINKING_PREFIX_RE.test(normalized) && normalized.length <= 240) return true;
-    if (normalized.length <= 48 && GENSPARK_TRANSIENT_HINT_RE.test(normalized) && !/[。！？.!?]/.test(normalized)) return true;
-    return false;
+  function pickMetaAiUserContent(el) {
+    if (!el) return null;
+    try {
+      const direct = el.querySelector('[class*="whitespace-pre-wrap"]');
+      if (direct && (direct.textContent || '').trim()) return direct;
+    } catch {}
+    try {
+      const box = el.querySelector('[class*="bg-fill-secondary"], [class*="bg-[--card-background-color]"]');
+      if (box && (box.textContent || '').trim()) return box;
+    } catch {}
+    return el;
   }
 
-  function stripGensparkInlineToolcallTail(raw) {
-    const source = String(raw || '');
-    if (!source) return '';
-    const match = GENSPARK_INLINE_TOOLCALL_MARKER_RE.exec(source);
-    if (!match) return source;
-    const idx = Number(match.index);
-    if (!(idx > 0)) return '';
-    return source.slice(0, idx).trim();
-  }
-
-  function stripGensparkTransientLeadingLines(raw) {
-    const lines = String(raw || '')
-      .split(/\r?\n+/)
-      .map((line) => normalizeGensparkPreviewText(line, 400))
-      .filter(Boolean);
-    if (!lines.length) return '';
-
-    let idx = 0;
-    while (idx < lines.length) {
-      const line = lines[idx];
-      if (isGensparkTransientLine(line)) {
-        idx += 1;
-        continue;
+  function pickMetaAiAssistantContent(el) {
+    try {
+      const blocks = el ? el.querySelectorAll?.('.markdown-content .ur-markdown, .markdown-content, .ur-markdown') : null;
+      if (blocks && blocks.length) {
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const t = (blocks[i].textContent || '').trim();
+          if (t) return blocks[i];
+        }
       }
-      if (idx > 0 && GENSPARK_TOOL_META_LINE_RE.test(line)) {
-        idx += 1;
-        continue;
-      }
-      break;
-    }
-
-    return normalizeGensparkPreviewText(lines.slice(idx).join(' '));
-  }
-
-  function parseGensparkAssistantPreviewText(raw) {
-    const source = String(raw || '');
-    if (!source) return { text: '...', transient: true };
-
-    const strippedLead = stripGensparkTransientLeadingLines(source);
-    const strippedTail = normalizeGensparkPreviewText(
-      stripGensparkInlineToolcallTail(strippedLead || source)
-    );
-    if (strippedTail) {
-      return { text: strippedTail, transient: isGensparkTransientPreviewText(strippedTail) };
-    }
-
-    if (strippedLead) {
-      return { text: strippedLead, transient: isGensparkTransientPreviewText(strippedLead) };
-    }
-
-    const fallback = normalizeGensparkPreviewText(source);
-    if (fallback) {
-      return { text: fallback, transient: isGensparkTransientPreviewText(fallback) };
-    }
-    return { text: '...', transient: true };
-  }
-
-  function collectGensparkAssistantCandidateTexts(el) {
-    const out = [];
-    const seen = new Set();
-    const push = (raw) => {
-      const text = String(raw || '');
-      if (!text) return;
-      if (seen.has(text)) return;
-      seen.add(text);
-      out.push(text);
-    };
-    const addFromSelector = (selector) => {
-      if (!el || typeof el.querySelectorAll !== 'function') return;
-      let nodes = [];
-      try { nodes = Array.from(el.querySelectorAll(selector) || []); }
-      catch { nodes = []; }
-      for (const node of nodes) {
-        if (!node) continue;
-        push(node.textContent || '');
-      }
-    };
-
-    // 优先完整容器：部分场景中 toolcall/thinking 与最终回答同卡，完整文本更容易提取出最终 tail。
-    push(el && el.textContent ? el.textContent : '');
-    addFromSelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"], .markdown, .prose, [data-message-content-part], p');
-    return out;
-  }
-
-  function getGensparkAssistantPreview(el) {
-    if (!el) return { text: '', transient: true };
-    const candidates = collectGensparkAssistantCandidateTexts(el);
-    let fallback = null;
-    for (const raw of candidates) {
-      const result = parseGensparkAssistantPreviewText(raw);
-      if (!result || !result.text) continue;
-      if (!result.transient) return result;
-      if (!fallback || fallback.text === '...') fallback = result;
-    }
-    return fallback || { text: '...', transient: true };
+    } catch {}
+    return null;
   }
 
   function getTurnKey(el) {
     if (!el) return '';
-    return (
-      el.getAttribute('data-message-id') ||
-      el.getAttribute('data-statement-id') ||
-      el.getAttribute('data-conversation-statement-id') ||
-      el.getAttribute('data-turn-id') ||
-      el.getAttribute('data-id') ||
-      el.getAttribute('data-testid') ||
-      el.id ||
-      ''
-    );
+    return el.getAttribute('data-message-id') || el.getAttribute('data-msg-id') || el.getAttribute('data-quicknav-key') || el.id || '';
   }
 
   function buildIndex(turnsOverride) {
@@ -851,97 +717,95 @@
     lastDomLastKey = turns.length ? getTurnKey(turns[turns.length - 1]) : '';
     turnIdToPos.clear();
     if (!turns.length) {
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 没有找到任何对话元素');
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 没有找到任何对话元素');
       return [];
     }
 
-    if (DEBUG) console.log(`ChatGPT Navigation: 开始分析 ${turns.length} 个对话元素`);
+    if (DEBUG) console.log(`Meta AI QuickNav: 开始分析 ${turns.length} 个对话元素`);
 
     let u = 0, a = 0;
     const list = [];
     for (let i = 0; i < turns.length; i++) {
       const el = turns[i];
       if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-      const attrTestId = el.getAttribute('data-testid') || '';
       if (!el.id) el.id = `cgpt-turn-${i + 1}`;
+      if (!el.getAttribute('data-quicknav-key')) {
+        try { el.setAttribute('data-quicknav-key', el.id); } catch {}
+      }
       turnIdToPos.set(el.id, i);
 
       const msgKey = getTurnKey(el);
+      const attrTestId = el.getAttribute('data-testid') || '';
       let role = roleCache.get(msgKey) || '';
 
       let isUser = role === 'user';
       let isAssistant = role === 'assistant';
       if (!isUser && !isAssistant) {
-        isUser = !!(
-          (el.classList && el.classList.contains('user')) ||
-          el.querySelector('[data-message-author-role="user"]') ||
-          el.querySelector('.text-message[data-author="user"]') ||
-          attrTestId.includes('user')
-        );
-        isAssistant = !!(
-          (el.classList && el.classList.contains('assistant')) ||
-          el.querySelector('[data-message-author-role="assistant"]') ||
-          el.querySelector('.text-message[data-author="assistant"]') ||
-          attrTestId.includes('assistant')
-        );
+        const className = metaAiClassName(el);
+        try {
+          isUser = className.includes('group/user-message');
+          isAssistant = attrTestId === 'assistant-message' || className.includes('group/assistant-message');
+        } catch {}
+
+        // Fallback heuristics.
+        if (!isUser && !isAssistant) {
+          try {
+            isUser = !!el.querySelector('[class*="whitespace-pre-wrap"], [class*="bg-fill-secondary"]');
+          } catch {}
+        }
+        if (!isUser && !isAssistant) {
+          try {
+            isAssistant = !!el.querySelector('.markdown-content, .ur-markdown');
+          } catch {}
+        }
         role = isUser ? 'user' : (isAssistant ? 'assistant' : '');
         if (role) roleCache.set(msgKey, role);
       }
 
       if (DEBUG && i < 3) {
-        console.log(`ChatGPT Navigation Debug - 元素 ${i}:`, {
+        console.log(`Meta AI QuickNav Debug - 元素 ${i}:`, {
           element: el,
           testId: attrTestId,
           isUser,
           isAssistant,
           userSelectors: {
-            authorRole: !!el.querySelector('[data-message-author-role="user"]'),
-            textMessage: !!el.querySelector('.text-message[data-author="user"]'),
-            testIdMatch: attrTestId.includes('user')
+            groupUserClass: metaAiClassName(el).includes('group/user-message'),
+            whitespace: !!el.querySelector('[class*="whitespace-pre-wrap"]')
           },
           assistantSelectors: {
-            authorRole: !!el.querySelector('[data-message-author-role="assistant"]'),
-            textMessage: !!el.querySelector('.text-message[data-author="assistant"]'),
-            testIdMatch: attrTestId.includes('assistant')
+            testIdMatch: attrTestId === 'assistant-message',
+            markdownContent: !!el.querySelector('.markdown-content, .ur-markdown')
           }
         });
       }
 
       if (!isUser && !isAssistant) {
-        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 角色识别失败`);
+        if (DEBUG && i < 5) console.log(`Meta AI QuickNav: 元素 ${i} 角色识别失败`);
         continue;
       }
 
-      const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS;
       let preview = previewCache.get(msgKey) || '';
-      let previewIsTransient = false;
+      const cachedPlaceholder = isMetaAiPlaceholderPreview(preview);
+      if (cachedPlaceholder) preview = '';
+      const shouldRecalcPreview = i >= turns.length - TAIL_RECALC_TURNS || cachedPlaceholder;
       if (!preview || shouldRecalcPreview) {
         let block = null;
         if (isUser) {
-          block = el.querySelector('[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]');
+          block = pickMetaAiUserContent(el);
         } else {
-          block = el.querySelector('.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]');
+          block = pickMetaAiAssistantContent(el) || el;
         }
-        if (isAssistant) {
-          const assistantPreview = getGensparkAssistantPreview(el || block);
-          preview = assistantPreview.text || '';
-          previewIsTransient = !!assistantPreview.transient;
-        } else {
-          preview = getTextPreview(block || el);
-        }
-        if (preview) {
-          if (isAssistant && previewIsTransient) previewCache.delete(msgKey);
-          else previewCache.set(msgKey, preview);
-        } else {
+        if (!block) block = el;
+        preview = getTextPreview(block);
+        if (isMetaAiPlaceholderPreview(preview)) {
+          preview = '';
           previewCache.delete(msgKey);
+        } else {
+          previewCache.set(msgKey, preview);
         }
       }
       if (!preview) {
-        if (DEBUG && i < 5) console.log(`ChatGPT Navigation: 元素 ${i} 无法提取预览文本`);
-        continue;
-      }
-      if (isAssistant && previewIsTransient) {
-        if (DEBUG && i < 5) console.log(`Genspark QuickNav: 跳过 transient 助手预览 ${preview}`);
+        if (DEBUG && i < 5) console.log(`Meta AI QuickNav: 元素 ${i} 无法提取预览文本`);
         continue;
       }
 
@@ -949,7 +813,7 @@
       list.push({ id: el.id, key: msgKey, idx: i, role: isUser ? 'user' : 'assistant', preview, seq });
     }
 
-    if (DEBUG) console.log(`ChatGPT Navigation: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
+    if (DEBUG) console.log(`Meta AI QuickNav: 成功识别 ${list.length} 个对话 (用户: ${u}, 助手: ${a})`);
     return list;
   }
 
@@ -1201,26 +1065,26 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 @keyframes pulse { 0% { background-color: rgba(255,243,205,0); } 20% { background-color: rgba(168,218,255,0.3); } 100% { background-color: rgba(255,243,205,0); } }
 `;
       document.head.appendChild(style);
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 已创建样式');
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 已创建样式');
     } else {
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 样式已存在，跳过创建');
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 样式已存在，跳过创建');
     }
 
     // 启动前清理多余面板（保险丝）
     const existingPanels = document.querySelectorAll('#cgpt-compact-nav');
     if (existingPanels.length > 0) {
-      if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 发现 ${existingPanels.length} 个已存在的面板，清理中...`);
+      if (DEBUG || window.DEBUG_TEMP) console.log(`Meta AI QuickNav: 发现 ${existingPanels.length} 个已存在的面板，清理中...`);
       existingPanels.forEach((panel, index) => {
         if (index > 0) { // 保留第一个，删除其他
           panel.remove();
-          if (DEBUG || window.DEBUG_TEMP) console.log(`ChatGPT Navigation: 已删除重复面板 ${index}`);
+          if (DEBUG || window.DEBUG_TEMP) console.log(`Meta AI QuickNav: 已删除重复面板 ${index}`);
         }
       });
       // 如果已经有面板存在，直接返回现有的
       if (existingPanels.length > 0) {
         const existingNav = existingPanels[0];
         if (existingNav._ui) {
-          if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 返回已存在的面板');
+          if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 返回已存在的面板');
           return existingNav._ui;
         }
       }
@@ -1246,7 +1110,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       </div>
     `;
     document.body.appendChild(nav);
-    try { nav.style.top = `${Math.max(60, getFixedHeaderHeight() + 8)}px`; } catch {}
     applySavedPosition(nav);
     let layout = {
       beginUserInteraction: () => {},
@@ -1259,7 +1122,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       layout = createLayoutManager(nav) || layout;
     } catch (err) {
-      if (DEBUG || window.DEBUG_TEMP) console.error('ChatGPT Navigation: 布局管理器初始化失败', err);
+      if (DEBUG || window.DEBUG_TEMP) console.error('Meta AI QuickNav: 布局管理器初始化失败', err);
     }
     enableDrag(nav, {
       onDragStart: () => { try { layout.beginUserInteraction(); } catch {} },
@@ -1346,7 +1209,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       state.rafId = requestAnimationFrame(() => {
         state.rafId = 0;
         state.pendingEval = false;
-        try { evaluateNow(reason); } catch (err) { if (DEBUG || window.DEBUG_TEMP) console.error('ChatGPT Navigation layout evaluate error:', err); }
+        try { evaluateNow(reason); } catch (err) { if (DEBUG || window.DEBUG_TEMP) console.error('Meta AI QuickNav layout evaluate error:', err); }
       });
     }
 
@@ -1607,7 +1470,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
 
     state.mutationObserver = new MutationObserver(() => scheduleEvaluation('mutation'));
-    try { state.mutationObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
+    try {
+      // Layout follow only needs to react to major layout DOM changes; avoid a hot `subtree:true` observer on the full page.
+      state.mutationObserver.observe(document.body, { childList: true, subtree: false });
+    } catch {}
 
     state.resizeHandler = () => scheduleEvaluation('resize');
     window.addEventListener('resize', state.resizeHandler, { passive: true });
@@ -2151,7 +2017,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     const base = buildIndex(turns);
     const next = composeWithPins(base);
-    if (DEBUG) console.log('ChatGPT Navigation: turns', next.length, '(含📌)');
+    if (DEBUG) console.log('Meta AI QuickNav: turns', next.length, '(含📌)');
     lastTurnCount = next.length;
     cacheIndex = next;
     renderList(ui);
@@ -2276,7 +2142,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function findTurnByKey(key) {
     const turns = qsTurns();
     for (const t of turns) {
-      const k = getTurnKey(t);
+      const k = t.getAttribute('data-message-id') || t.getAttribute('data-testid') || t.id;
       if (k === key) return t;
     }
     return null;
@@ -2317,7 +2183,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (closest) return closest;
     const doc = document.scrollingElement || document.documentElement;
     const candidates = [
-      document.querySelector('.conversation-statement')?.parentElement,
+      document.querySelector('main [class*="group/scroller"]'),
+      document.querySelector('main [class*="overflow-y-auto"][class*="overscroll-y-contain"]'),
+      document.querySelector('.chat-detail-main'),
+      document.querySelector('[class*="chat-detail-main"]'),
+      document.querySelector('.ds-scroll-area'),
       document.querySelector('[data-testid="conversation-turns"]')?.parentElement,
       document.querySelector('main'),
       document.querySelector('[role="main"]'),
@@ -2330,11 +2200,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return doc;
   }
 
-  let __cachedHeaderHeightPx = 0;
-  let __cachedHeaderHeightAt = 0;
-
   function getFixedHeaderHeight() {
-    return FIXED_HEADER_HEIGHT_PX;
+    const h = document.querySelector('header, [data-testid="top-nav"]');
+    if (!h) return 0;
+    const r = h.getBoundingClientRect();
+    return Math.max(0, r.height) + 12;
   }
 
   function findTurnAnchor(root) {
@@ -2361,7 +2231,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function scrollToTurn(el) {
     const anchor = findTurnAnchor(el) || el;
-    const margin = Math.max(0, getAnchorY());
+    const margin = Math.max(0, getFixedHeaderHeight());
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     try {
       anchor.style.scrollMarginTop = margin + 'px';
@@ -2432,7 +2302,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       refreshBtn.addEventListener('click', (e) => {
         if (e.shiftKey) {
           // Shift+点击 = 强制重新扫描
-          if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 强制重新扫描 (清除缓存选择器)');
+          if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 强制重新扫描 (清除缓存选择器)');
           TURN_SELECTOR = null; // 重置选择器缓存
           const originalBg = refreshBtn.style.background;
           const originalColor = refreshBtn.style.color;
@@ -2449,7 +2319,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       // 添加右键菜单功能
       refreshBtn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 右键强制重新扫描');
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 右键强制重新扫描');
         TURN_SELECTOR = null;
         const originalBg = refreshBtn.style.background;
         const originalColor = refreshBtn.style.color;
@@ -2489,8 +2359,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (topBtn) topBtn.addEventListener('click', () => jumpToEdge('top'));
     if (bottomBtn) bottomBtn.addEventListener('click', () => jumpToEdge('bottom'));
 
-    // 键盘事件只绑定一次：避免重复绑定
-    if (!isGensparkKeysBound()) {
+    // 键盘事件只绑定一次：避免路由切换后重复绑定
+    if (!isMetaAiKeysBound()) {
+      const getCurrentUi = () => {
+        try {
+          return document.getElementById('cgpt-compact-nav')?._ui || ui || null;
+        } catch {
+          return ui || null;
+        }
+      };
+
       const onKeydown = (e) => {
         const t = e.target;
         const tag = t && t.tagName;
@@ -2511,8 +2389,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         }
         // Alt+/ 面板显隐
         if (e.altKey && e.key === '/') {
-          const list = ui.nav.querySelector('.compact-list');
-          const toggleText = ui.nav.querySelector('.compact-toggle .toggle-text');
+          const currentUi = getCurrentUi();
+          if (!currentUi?.nav) return;
+          const list = currentUi.nav.querySelector('.compact-list');
+          const toggleText = currentUi.nav.querySelector('.compact-toggle .toggle-text');
+          if (!list) return;
           const isHidden = list.getAttribute('data-hidden') === '1';
           if (isHidden) { list.style.visibility = 'visible'; list.style.height = ''; list.style.overflow = ''; list.setAttribute('data-hidden', '0'); if (toggleText) toggleText.textContent = '−'; }
           else { list.style.visibility = 'hidden'; list.style.height = '0'; list.style.overflow = 'hidden'; list.setAttribute('data-hidden', '1'); if (toggleText) toggleText.textContent = '+'; }
@@ -2521,10 +2402,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       };
 
       document.addEventListener('keydown', onKeydown, { passive: false });
-      setGensparkKeysBound(true);
-      if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 已绑定键盘事件');
+      // 写入 canonical + legacy，兼容既有调试脚本。
+      setMetaAiKeysBound(true);
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 已绑定键盘事件');
     } else {
-      if (DEBUG || window.DEBUG_TEMP) console.log('Genspark QuickNav: 键盘事件已存在，跳过绑定');
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 键盘事件已存在，跳过绑定');
     }
   }
 
@@ -2591,7 +2473,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!nodes.length) {
       // 如果没有找到对话节点，尝试找到可能的对话容器
       const potentialContainers = [
-        document.querySelector('.conversation-statement')?.parentElement || document.querySelector('.conversation-statement'),
+        document.querySelector('main [class*="group/scroller"]'),
+        document.querySelector('main [class*="overflow-y-auto"][class*="overscroll-y-contain"]'),
         document.querySelector('[data-testid="conversation-turns"]'),
         document.querySelector('main[role="main"]'),
         document.querySelector('main'),
@@ -2602,7 +2485,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       ].filter(Boolean);
 
       if (DEBUG && potentialContainers.length > 1) {
-        console.log('ChatGPT Navigation: 没有找到对话，使用备用容器:', potentialContainers[0]);
+        console.log('Meta AI QuickNav: 没有找到对话，使用备用容器:', potentialContainers[0]);
       }
 
       return potentialContainers[0] || document.body;
@@ -2612,7 +2495,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     let a = nodes[0];
     while (a) {
       if (nodes.every(n => a.contains(n))) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 对话容器:', a);
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 对话容器:', a);
         return a;
       }
       a = a.parentElement;
@@ -2637,7 +2520,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
         // 尽量廉价地判断：在主区域/turn/markdown/消息块内的任何变更都算
         if (
-          t.closest('.conversation-statement') ||
+          t.closest('[class*="group/user-message"]') ||
+          t.closest('[data-testid="assistant-message"]') ||
+          t.closest('[class*="group/assistant-message"]') ||
+          t.closest('.markdown-content') || t.closest('.ur-markdown') ||
           t.closest('[data-testid="conversation-turns"]') ||
           t.closest('[data-message-author-role]') ||
           t.closest('[data-testid*="conversation-turn"]') ||
@@ -2811,14 +2697,26 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function getChatScrollContainer() {
     try {
-      const gs = document.querySelector('.conversation-statement');
-      const turns = document.querySelector('[data-testid="conversation-turns"]');
-      const msg = document.querySelector('[data-message-id]');
+      const directTargets = [
+        document.querySelector('main [class*="group/scroller"]'),
+        document.querySelector('main [class*="overflow-y-auto"][class*="overscroll-y-contain"]'),
+        document.querySelector('.chat-detail-main'),
+        document.querySelector('[class*="chat-detail-main"]'),
+        document.querySelector('.ds-scroll-area'),
+        document.querySelector('[data-testid="conversation-turns"]'),
+        document.querySelector('[data-message-id]')
+      ];
+      for (const target of directTargets) {
+        if (!target) continue;
+        const closest = findClosestScrollContainer(target);
+        if (closest) return closest;
+      }
+
       const main = document.querySelector('main') || document.querySelector('[role="main"]') || document.getElementById('main');
-      const target = gs || turns || msg || main || document.body;
-      const closest = findClosestScrollContainer(target);
+      const fallbackTarget = main || document.body;
+      const closest = findClosestScrollContainer(fallbackTarget);
       if (closest) return closest;
-      return getScrollRoot(target);
+      return getScrollRoot(fallbackTarget);
     } catch { return getScrollRoot(document.body); }
   }
 
@@ -2995,7 +2893,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       if (!el || el.nodeType !== 1) return false;
       return !!el.closest(
-        '.conversation-statement, [data-testid="conversation-turns"], [data-message-author-role], [data-message-id], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"], main, #main, [role="main"]'
+        '[data-testid="conversation-turns"], [data-message-author-role], [data-message-id], [data-testid^="conversation-turn-"], [data-testid*="conversation-turn"], main, #main, [role="main"]'
       );
     } catch { return false; }
   }
@@ -3012,8 +2910,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function bindScrollLockUserIntents() {
-    if (isGensparkScrollLockUserIntentsBound()) return;
-    setGensparkScrollLockUserIntentsBound(true);
+    if (isMetaAiScrollLockUserIntentsBound()) return;
+    setMetaAiScrollLockUserIntentsBound(true);
 
     const ignoreIfInNav = (t) => !!(t && t.closest && t.closest('#cgpt-compact-nav'));
     const mark = (e) => {
@@ -3105,8 +3003,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function installScrollGuards() {
-    if (isGensparkScrollGuardsInstalled()) return;
-    setGensparkScrollGuardsInstalled(true);
+    if (isMetaAiScrollGuardsInstalled()) return;
+    setMetaAiScrollGuardsInstalled(true);
     if (!ORIGINAL_SCROLL_INTO_VIEW) ORIGINAL_SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
     if (!ORIGINAL_SCROLL_TO) ORIGINAL_SCROLL_TO = window.scrollTo;
     if (!ORIGINAL_SCROLL_BY) ORIGINAL_SCROLL_BY = window.scrollBy;
@@ -3201,9 +3099,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       });
     }
     if (!hadSaved) applyDefaultScrollLockFromExtension(ui);
-    if (!isGensparkScrollLockBound()) {
+    if (!isMetaAiScrollLockBound()) {
       window.addEventListener('resize', () => { if (scrollLockEnabled) ensureScrollLockBindings(); }, { passive: true });
-      setGensparkScrollLockBound(true);
+      setMetaAiScrollLockBound(true);
     }
     if (scrollLockEnabled) {
       scrollLockLastPos = getScrollPos(scrollLockScrollEl || getChatScrollContainer());
@@ -3216,6 +3114,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function mutationTouchesConversation(node) {
     if (!node || node.nodeType !== 1) return false;
+    if (node.matches('[class*="group/user-message"], [data-testid="assistant-message"], [class*="group/assistant-message"], .markdown-content, .ur-markdown')) return true;
+    if (node.querySelector?.('[class*="group/user-message"], [data-testid="assistant-message"], [class*="group/assistant-message"], .markdown-content, .ur-markdown')) return true;
     if (node.matches('[data-testid^="conversation-turn-"], [data-testid*="conversation-turn"], [data-message-id], [data-message-author-role]')) return true;
     if (node.matches('.markdown, .prose, article')) return true;
     if (node.querySelector?.('[data-message-author-role], [data-message-id], .markdown, .prose')) return true;
@@ -3268,7 +3168,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   // 绑定 Option+单击 添加📌
   function bindAltPin(ui) {
-    if (isGensparkPinBound()) return;
+    if (isMetaAiPinBound()) return;
     // 非 Alt 点击锚点：阻止默认，避免文本选中/抖动
     document.addEventListener('mousedown', (e) => {
       const anc = e.target && e.target.closest && e.target.closest('.cgpt-pin-anchor');
@@ -3310,7 +3210,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         // 找到所属消息
         const turn = findTurnFromNode(nt);
         if (!turn) return;
-        const msgKey = getTurnKey(turn);
+        const msgKey = turn.getAttribute('data-message-id') || turn.getAttribute('data-testid') || turn.id;
         if (!msgKey) return;
 
         // 在点击位置插入隐形锚点
@@ -3339,7 +3239,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
     };
     document.addEventListener('click', onClick, true);
-    setGensparkPinBound(true);
+    setMetaAiPinBound(true);
   }
 
   function findTurnFromNode(node) {
@@ -3348,7 +3248,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     let el = node.closest('[data-cgpt-turn="1"]');
     if (el) return el;
     // 兜底：尝试已知选择器
-    el = node.closest('.conversation-statement, article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],div[data-message-id],div[class*="group"][data-testid]');
+    el = node.closest('[class*="group/user-message"], [data-testid="assistant-message"], [class*="group/assistant-message"], article[data-testid^="conversation-turn-"],[data-testid^="conversation-turn-"],div[data-message-id],div[class*="group"][data-testid]');
     return el;
   }
 
@@ -3580,53 +3480,190 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function watchSendEvents(ui) {
-    if (isGensparkSendEventsBound()) return;
-    setGensparkSendEventsBound(true);
+    if (window.__quicknavMetaAiSendEventsBoundV1) return;
+    window.__quicknavMetaAiSendEventsBoundV1 = true;
 
-    const isComposerForm = (form) => {
+    const META_AI_PROMPT_SELECTOR =
+      'textarea[placeholder*="Ask Meta AI" i], textarea[placeholder*="Describe an image or video" i], [role="textbox"]';
+    const META_AI_SEND_SELECTOR =
+      'button[aria-label="Send"], button[aria-label*="Send" i], button[type="submit"]';
+    const STOP_LIKE_QUERY =
+      '[data-testid*="stop" i],[aria-label*="Stop" i],[aria-label*="Cancel" i],[title*="Stop" i],[title*="Cancel" i],[name*="stop" i],[name*="cancel" i],[data-icon*="stop" i],[data-icon*="cancel" i],[icon*="stop" i],[icon*="cancel" i],[aria-label*="停止" i],[title*="停止" i],[aria-label*="取消" i],[title*="取消" i],[aria-label*="中止" i],[title*="中止" i],[aria-label*="终止" i],[title*="终止" i]';
+
+    const getUi = () => {
       try {
-        if (!form || typeof form.querySelector !== 'function') return false;
-        return !!(form.querySelector('#prompt-textarea') || form.querySelector('textarea[name="prompt-textarea"]'));
+        return document.getElementById('cgpt-compact-nav')?._ui || ui || null;
+      } catch {
+        return ui || null;
+      }
+    };
+
+    const asElement = (target) => {
+      if (target instanceof Element) return target;
+      if (target && target.parentElement instanceof Element) return target.parentElement;
+      return null;
+    };
+
+    const isInsideQuickNav = (target) => {
+      const el = asElement(target);
+      if (!el) return false;
+      try {
+        return !!el.closest('#cgpt-compact-nav');
       } catch {
         return false;
       }
     };
 
+    const hasMetaAiComposerMarker = (scope) => {
+      if (!(scope instanceof Element)) return false;
+      try {
+        if (scope.matches('form, [role="form"]') && scope.querySelector(META_AI_PROMPT_SELECTOR)) return true;
+      } catch {}
+      try {
+        const hasEditor = !!scope.querySelector?.(META_AI_PROMPT_SELECTOR);
+        const hasSendControl = !!scope.querySelector?.(META_AI_SEND_SELECTOR);
+        if (hasEditor && hasSendControl) return true;
+      } catch {}
+      return false;
+    };
+
+    const getMetaAiComposerScopeFrom = (target) => {
+      const el = asElement(target);
+      if (!el) return null;
+
+      try {
+        const byComposer = el.closest('form, [role="form"]');
+        if (byComposer && hasMetaAiComposerMarker(byComposer)) return byComposer;
+      } catch {}
+
+      try {
+        const byEditor = el.closest(META_AI_PROMPT_SELECTOR);
+        if (byEditor) {
+          let scope = byEditor;
+          for (let i = 0; scope && i < 8; i++, scope = scope.parentElement) {
+            if (hasMetaAiComposerMarker(scope)) return scope;
+          }
+          return byEditor.parentElement || byEditor;
+        }
+      } catch {}
+
+      try {
+        let scope = el;
+        for (let i = 0; scope && i < 8; i++, scope = scope.parentElement) {
+          if (hasMetaAiComposerMarker(scope)) return scope;
+        }
+      } catch {}
+
+      return null;
+    };
+
+    const queryStopLikeControl = (root) => {
+      try {
+        if (!root || typeof root.querySelector !== 'function') return null;
+        return root.querySelector(STOP_LIKE_QUERY);
+      } catch {
+        return null;
+      }
+    };
+
+    const isStopLikeControl = (el) => {
+      if (!(el instanceof Element)) return false;
+      try {
+        if (el.matches(STOP_BTN_SELECTOR)) return true;
+      } catch {}
+      try {
+        const testId = String(el.getAttribute?.('data-testid') || '');
+        const aria = String(el.getAttribute?.('aria-label') || '');
+        const title = String(el.getAttribute?.('title') || '');
+        const name = String(el.getAttribute?.('name') || '');
+        const className = String(el.className || '');
+        const text = String(el.textContent || '').slice(0, 180);
+        const combined = `${testId} ${aria} ${title} ${name} ${className} ${text}`;
+        if (/(stop|cancel)/i.test(combined)) return true;
+        if (/(停止|取消|中止|终止)/.test(combined)) return true;
+      } catch {}
+      return !!queryStopLikeControl(el);
+    };
+
+    const isComposerScope = (scope) => hasMetaAiComposerMarker(scope);
+
+    const isSendActionTarget = (target) => {
+      if (isInsideQuickNav(target)) return false;
+      const el = asElement(target);
+      if (!el) return false;
+      const sendButton = el.closest(META_AI_SEND_SELECTOR);
+      if (!sendButton) return false;
+      if (!getMetaAiComposerScopeFrom(sendButton)) return false;
+      if (isStopLikeControl(sendButton)) return false;
+      return true;
+    };
+
+    const isMetaAiPromptTarget = (target) => {
+      if (isInsideQuickNav(target)) return false;
+      const el = asElement(target);
+      if (!el) return false;
+      try {
+        const editor = el.closest(META_AI_PROMPT_SELECTOR);
+        if (!editor) return false;
+        return !!getMetaAiComposerScopeFrom(editor);
+      } catch {
+        return false;
+      }
+    };
+
+    document.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (!isSendActionTarget(e.target)) return;
+      armScrollLockGuard(2200);
+    }, true);
+
     // 点击发送按钮
     document.addEventListener('click', (e) => {
-      if (e.target && e.target.closest && e.target.closest('[data-testid="send-button"]')) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
-        armScrollLockGuard(2200);
-        startBurstRefresh(ui);
-      }
+      if (!isSendActionTarget(e.target)) return;
+      const currentUi = getUi();
+      if (!currentUi) return;
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 检测到发送按钮点击，启动突发刷新');
+      armScrollLockGuard(2200);
+      startBurstRefresh(currentUi);
     }, true);
 
     // 表单提交（覆盖 Enter 发送等路径）
     document.addEventListener('submit', (e) => {
       const form = e?.target;
-      if (!isComposerForm(form)) return;
-      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到表单提交，启动突发刷新');
+      if (!isComposerScope(form)) return;
+      const submitter = e?.submitter;
+      if (submitter && isStopLikeControl(submitter)) return;
+      const scope = getMetaAiComposerScopeFrom(form) || form;
+      const stopLike = queryStopLikeControl(scope) || queryStopLikeControl(document);
+      if (stopLike) return;
+      const currentUi = getUi();
+      if (!currentUi) return;
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 检测到表单提交，启动突发刷新');
       armScrollLockGuard(2200);
-      startBurstRefresh(ui);
+      startBurstRefresh(currentUi);
     }, true);
 
     // ⌘/Ctrl + Enter 发送
     document.addEventListener('keydown', (e) => {
-      const t = e.target;
-      if (!t) return;
-      const isTextarea = t.tagName === 'TEXTAREA' || t.isContentEditable;
-      if (isTextarea && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
-        armScrollLockGuard(2200);
-        startBurstRefresh(ui);
-      }
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+      if (!isMetaAiPromptTarget(e.target)) return;
+      const scope = getMetaAiComposerScopeFrom(e.target) || document.querySelector('form, [role="form"]') || document;
+      const stopLike = queryStopLikeControl(scope) || queryStopLikeControl(document);
+      if (stopLike) return;
+      const currentUi = getUi();
+      if (!currentUi) return;
+      if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 检测到快捷键发送，启动突发刷新');
+      armScrollLockGuard(2200);
+      startBurstRefresh(currentUi);
     }, true);
 
     // 回到前台时强制跑一次
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
-        scheduleRefresh(ui, { force: true });
+        const currentUi = getUi();
+        if (!currentUi) return;
+        if (DEBUG || window.DEBUG_TEMP) console.log('Meta AI QuickNav: 页面重新可见，强制刷新');
+        scheduleRefresh(currentUi, { force: true });
       }
     });
   }

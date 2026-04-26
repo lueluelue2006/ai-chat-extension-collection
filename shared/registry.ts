@@ -102,6 +102,14 @@
       modules: ['quicknav', 'cmdenter_send']
     },
     {
+      id: 'meta_ai',
+      name: 'Meta AI',
+      sub: 'meta.ai',
+      matchPatterns: ['https://www.meta.ai/*', 'https://meta.ai/*'],
+      quicknavPatterns: ['https://www.meta.ai/prompt/*', 'https://meta.ai/prompt/*'],
+      modules: ['quicknav', 'cmdenter_send']
+    },
+    {
       id: 'zai',
       name: 'GLM',
       sub: 'chat.z.ai',
@@ -124,7 +132,7 @@
 	      id: 'quicknav',
 	      name: 'QuickNav',
 	      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
-	      defaultEnabled: true,
+	      defaultEnabled: false,
 	      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
 	      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
 	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式+回弹补丁）'],
@@ -133,8 +141,9 @@
 	    },
     chatgpt_perf: {
       id: 'chatgpt_perf',
-      name: 'ChatGPT 性能优化',
-      sub: '离屏虚拟化 + CSS contain',
+      name: 'ChatGPT 性能协调器',
+      sub: '公式/长代码压力探测 + 热路径降载',
+      defaultEnabled: false,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later'
@@ -142,7 +151,7 @@
     openai_new_model_banner: {
       id: 'openai_new_model_banner',
       name: 'OpenAI 新模型横幅提示',
-      sub: '监控到资源可访问时，在网页内显示大横幅（避免系统通知被屏蔽）',
+      sub: '监控到资源可用时，在网页内显示大横幅（避免系统通知被屏蔽）',
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
@@ -151,12 +160,15 @@
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
       name: 'ChatGPT 推理强度/模型 快捷切换',
-      sub: '⌘O 推理强度 / ⌘J 模型切换',
+      sub: '⌘O 推理强度 / ⌘J 模型切换 / 禁用 ⌘P / ⌘⇧P Light Pro 发送 / ⌘⌥P Heavy Pro 发送',
       defaultEnabled: true,
-      hotkeys: ['⌘O', '⌘J'],
+      hotkeys: ['⌘O', '⌘J', '⌘P', '⌘⇧P', '⌘⌥P'],
       hotkeyControls: [
         { key: 'chatgpt_thinking_toggle_hotkey_effort', label: '⌘O' },
-        { key: 'chatgpt_thinking_toggle_hotkey_model', label: '⌘J' }
+        { key: 'chatgpt_thinking_toggle_hotkey_model', label: '⌘J' },
+        { key: 'chatgpt_thinking_toggle_disable_cmd_p', label: '禁用 ⌘P' },
+        { key: 'chatgpt_thinking_toggle_hotkey_send_light_pro', label: '⌘⇧P' },
+        { key: 'chatgpt_thinking_toggle_hotkey_send_max_pro', label: '⌘⌥P' }
       ],
       hotkeyPolicy: {
         profile: 'requires_meta_key',
@@ -286,11 +298,17 @@
     chatgpt_tex_copy_quote: {
       id: 'chatgpt_tex_copy_quote',
       name: 'ChatGPT TeX Copy & Quote',
-      sub: '复制/引用含 KaTeX 的选区时优先还原 LaTeX，并支持悬停提示/双击复制',
+      sub: '选区多段 Quote / KaTeX 还原 LaTeX / 悬停提示 / 双击复制（可配置）',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later',
-      upstream: 'https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote'
+      upstream: 'https://github.com/lueluelue2006/ChatGPT-Better-TeX-Quote',
+      references: [
+        {
+          label: '多段 Quote 交互参考',
+          url: 'https://github.com/pranay0064/chatgpt-ask-multi'
+        }
+      ]
     },
     chatgpt_export_conversation: {
       id: 'chatgpt_export_conversation',
@@ -321,6 +339,7 @@
       id: 'chatgpt_message_tree',
       name: 'ChatGPT 消息树',
       sub: '显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON',
+      defaultEnabled: false,
       hotkeys: [],
       menuPreview: ['导出完整树为 JSON'],
       authors: ['lueluelue2006'],
@@ -337,7 +356,7 @@
     google_ask_gpt: {
       id: 'google_ask_gpt',
       name: 'Google 搜索问 GPT',
-      sub: '在 Google 搜索框旁加“问 GPT”：跳到 ChatGPT 5.4 Thinking 并自动发起联网搜索提问',
+      sub: '在 Google 搜索框旁加“问 GPT”：跳到 ChatGPT 并自动发起联网搜索提问',
       defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
@@ -377,9 +396,9 @@
     },
     genspark_force_sonnet45_thinking: {
       id: 'genspark_force_sonnet45_thinking',
-      name: 'Genspark Claude Thinking 强制切换',
-      sub: '仅对 Sonnet 4.5 启用 thinking 强制切换，并显示可折叠思考块',
-      defaultEnabled: true,
+      name: 'Genspark Sonnet 4.5 Thinking 兼容',
+      sub: '仅在旧 Sonnet 4.5 请求上改写为 thinking，并显示可折叠思考块（默认关闭）',
+      defaultEnabled: false,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later'

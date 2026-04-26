@@ -313,8 +313,8 @@
     const joiner = /^zh/i.test(resolveUiLocale()) ? '，' : ', ';
     const msg = parts.length ? `${parts.join(joiner)}${more}` : '';
     elGpt53AlertText.textContent = /^zh/i.test(resolveUiLocale())
-      ? `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`
-      : `${unread} monitored resources are reachable: ${msg}`;
+      ? `检测到 ${unread} 条资源可用（每次检测都会提醒）：${msg}`
+      : `${unread} monitored resources are available: ${msg}`;
     elGpt53AlertCard.hidden = false;
     localizeBody();
   }
@@ -931,8 +931,8 @@
     elVersion.textContent = getRuntimeVersion() || 'unknown';
     setStatus(
       /^zh/i.test(resolveUiLocale())
-        ? '就绪\n非开发者用户请优先去 Releases 下载 dist.zip；检查更新只比对仓库 main 分支版本，可能会早于 Releases 发布，不会自动更新。'
-        : 'Ready\nIf you are not a developer, download dist.zip from Releases first. Update checks only compare against the version on main, which can appear before a Release is published. It does not auto-update the extension.'
+        ? '就绪'
+        : 'Ready'
     );
     void getSettings()
       .then((settings) => {

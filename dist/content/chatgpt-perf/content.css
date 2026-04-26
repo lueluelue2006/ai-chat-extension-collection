@@ -1,399 +1,57 @@
-/* ChatGPT Perf (Offscreen) - A: scheduling/visibility only */
+/*
+ * ChatGPT performance coordinator.
+ *
+ * The new UI already performs native turn-level content-visibility in many
+ * places. This stylesheet intentionally keeps default visual changes minimal;
+ * the JavaScript module primarily publishes pressure signals for sibling
+ * scripts such as QuickNav and scroll guard.
+ */
 
-/* Disabled:
-   applying content-visibility to raw, not-yet-classified ChatGPT turn hosts can race
-   with the app's own display-math render pipeline and leave empty KaTeX shells visible.
-   We only virtualize once the turn has been classified and tagged as `.cgptperf-turn`. */
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn {
-  contain: layout paint;
+html[data-cgptperf="1"] section[data-testid^="conversation-turn-"],
+html[data-cgptperf="1"] article[data-testid^="conversation-turn-"],
+html[data-cgptperf="1"] [data-testid^="conversation-turn-"] {
+  contain-intrinsic-size: auto 640px;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn[data-cgptperf-visible-auto='1']:not(.cgptperf-offscreen):not([data-cgptperf-parked='1']) {
-  content-visibility: auto;
-  contain: layout paint style;
-  contain-intrinsic-size: var(--cgptperf-visible-intrinsic-size, 1px 1600px);
+html[data-cgptperf-heavy="1"] section[data-testid^="conversation-turn-"],
+html[data-cgptperf-heavy="1"] article[data-testid^="conversation-turn-"],
+html[data-cgptperf-heavy="1"] [data-testid^="conversation-turn-"] {
+  overflow-anchor: auto;
 }
 
-/* Visible nested code/math scrollers are still hot even when the turn stays mounted.
-   Isolate repaint work and stop scroll chaining from fighting the outer chat scroller. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn :is(.cm-scroller, .cm-editor, pre, .katex-display > .katex) {
-  contain: paint;
+html[data-cgptperf-heavy="1"] pre.cgptperf-long-code,
+html[data-cgptperf-heavy="1"] .cm-editor.cgptperf-long-code {
+  contain: paint style;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn :is(.cm-scroller, pre, .katex-display > .katex) {
-  overscroll-behavior: contain;
+html[data-cgptperf-heavy="1"] [data-message-author-role="assistant"] .katex-display,
+html[data-cgptperf-heavy="1"] [data-message-author-role="assistant"] mjx-container[display="true"],
+html[data-cgptperf-heavy="1"] [data-message-author-role="assistant"] mjx-container[jax][display="true"] {
+  contain: paint style;
 }
 
-/* Oversized code blocks are memory- and paint-heavy even while visible.
-   Collapse their syntax-highlight subtree into a plain-text `pre` so inner scrolling stays cheaper. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] pre[data-cgptperf-lite-code='1'] {
-  display: block !important;
-  max-width: 100% !important;
-  overflow: auto !important;
-  white-space: pre !important;
-  word-break: normal !important;
-  overflow-wrap: normal !important;
-  contain: layout paint style;
-  font: inherit;
-  font-variant-ligatures: none;
-  tab-size: 2;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] pre[data-cgptperf-lite-code='1'][data-cgptperf-lite-code-view='plaintext'] {
-  cursor: text;
-  user-select: text;
-  max-block-size: min(var(--cgptperf-lite-code-plaintext-size, 999999px), 72vh);
-  scrollbar-gutter: stable both-edges;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] pre[data-cgptperf-lite-code='1'][data-cgptperf-lite-code-view='preview'][data-cgptperf-lite-code-collapsed='1'] {
-  min-block-size: var(--cgptperf-lite-code-block-size, auto);
-  overflow: hidden !important;
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
-  cursor: zoom-in;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] :is(.katex-display, mjx-container)[data-cgptperf-lite-math='1'] {
-  display: block;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.45;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(127, 127, 127, 0.22);
-  background: rgba(127, 127, 127, 0.06);
-  min-block-size: var(--cgptperf-lite-math-block-size, auto);
-  contain: layout paint style;
-}
-
-html[data-cgptperf='1'] :is(.katex-display, mjx-container)[data-cgptperf-mathml-fallback='1'] {
-  contain: none !important;
-  content-visibility: visible !important;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-html[data-cgptperf='1'] :is(.katex-display, mjx-container)[data-cgptperf-mathml-fallback='1'] math {
-  display: block math;
-}
-
-/* Deep Research whitelist:
-   its report panel uses fixed-position overlay; turn-host containment/offscreen virtualization can clip it.
-   Keep this scope minimal: only turn hosts that actually contain deep-research iframes. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen:has(iframe[src*='connector_openai_deep_research' i]) {
-  contain: none !important;
-  content-visibility: visible !important;
-  contain-intrinsic-size: none !important;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen {
-  contain: layout paint style;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-offscreen='1'] .cgptperf-turn.cgptperf-offscreen:not([data-cgptperf-parked='1']) {
-  content-visibility: auto;
-  contain: layout paint style;
-  contain-intrinsic-size: var(--cgptperf-intrinsic-size, 1px 420px);
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn[data-cgptperf-parked='1'] .cgptperf-parked-body {
-  display: block;
-  min-height: 1px;
-  width: 100%;
-  overflow: hidden;
-  pointer-events: none;
-  contain: layout paint style;
-  padding: 10px 0;
-  color: inherit;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn[data-cgptperf-parked='1'] .cgptperf-parked-preview {
-  display: -webkit-box;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
-  line-clamp: 6;
-  opacity: 0.72;
-  line-height: 1.55;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen pre,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen table {
-  contain: layout paint;
-  content-visibility: auto;
-  contain-intrinsic-size: 1px 700px;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > p,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > ul,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > ol,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > blockquote,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h1,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h2,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h3,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h4,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h5,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .markdown > h6 {
-  contain: layout paint;
-  content-visibility: auto;
-  contain-intrinsic-size: 1px 120px;
-}
-
-/* Copy compatibility: temporarily unfreeze content-visibility so ChatGPT can read the full DOM. */
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'],
-html[data-cgptperf='1'] .cgptperf-turn.cgptperf-offscreen[data-cgptperf-copy-unfreeze='1'] {
-  content-visibility: visible !important;
-  contain-intrinsic-size: none !important;
-}
-
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] pre,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] table,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .katex-display,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] mjx-container,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > p,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > ul,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > ol,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > blockquote,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h1,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h2,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h3,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h4,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h5,
-html[data-cgptperf='1'] .cgptperf-turn[data-cgptperf-copy-unfreeze='1'] .markdown > h6 {
-  content-visibility: visible !important;
-  contain-intrinsic-size: none !important;
-}
-
-/* Find-in-page compatibility: temporarily unfreeze virtualization so Ctrl/Cmd+F can match far content. */
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn.cgptperf-offscreen {
-  content-visibility: visible !important;
-  contain-intrinsic-size: none !important;
-}
-
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn pre,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn table,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .katex-display,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn mjx-container,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > p,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > ul,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > ol,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > blockquote,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h1,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h2,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h3,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h4,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h5,
-html[data-cgptperf='1'][data-cgptperf-find='1'] .cgptperf-turn .markdown > h6 {
-  content-visibility: visible !important;
-  contain-intrinsic-size: none !important;
-}
-
-/* KaTeX inline math can break if we apply content-visibility directly on `.katex`.
-   Keep light containment for `.katex`, and only use content-visibility for block-ish wrappers. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .katex {
-  contain: layout paint;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen .katex-display,
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-heavy='1'] .cgptperf-turn.cgptperf-offscreen mjx-container {
-  contain: layout paint;
-  content-visibility: auto;
-  contain-intrinsic-size: 1px 60px;
-}
-
-/* Some very long display equations overflow horizontally. Since we use `contain: paint` on messages,
-   overflowing math would otherwise be clipped; make the KaTeX display block itself horizontally scrollable. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'] .cgptperf-turn .katex-display > .katex {
-  overflow-x: auto;
-  overflow-y: hidden;
-  contain: layout;
-}
-
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] {
+html[data-cgptperf-noanim="1"] section[data-testid^="conversation-turn-"] *,
+html[data-cgptperf-noanim="1"] article[data-testid^="conversation-turn-"] *,
+html[data-cgptperf-noanim="1"] [data-testid^="conversation-turn-"] *,
+html[data-cgptperf-noanim="1"] #cgpt-compact-nav,
+html[data-cgptperf-noanim="1"] #cgpt-compact-nav * {
+  transition-duration: 0.001ms !important;
+  animation-duration: 0.001ms !important;
   scroll-behavior: auto !important;
 }
 
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-thread :where(*) {
-  /*
-    Force all animations/transitions to 0s for snappier UI.
-
-    NOTE:
-    Some ChatGPT sub-views (notably Deep Research) rely on at least one animation frame to
-    reach the final "open" state. We keep a tiny non-zero whitelist for Deep Research below.
-  */
-  animation-duration: 0s !important;
-  transition-duration: 0s !important;
-  animation-delay: 0s !important;
-  transition-delay: 0s !important;
-}
-
-/* Deep Research (turn-level): allow minimal durations even before the fullscreen overlay iframe is mounted. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[title='internal://deep-research']) :where(*),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .cgptperf-turn:has(iframe[src*='connector_openai_deep_research' i]) :where(*) {
-  animation-duration: 1ms !important;
-  transition-duration: 1ms !important;
-  animation-delay: 0s !important;
-  transition-delay: 0s !important;
-}
-
-/* Deep Research fullscreen overlay: keep a tiny non-zero duration so the view can reach its final open state. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .fixed:has(iframe[title='internal://deep-research']),
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] .fixed:has(iframe[title='internal://deep-research']) * {
-  animation-duration: 1ms !important;
-  transition-duration: 1ms !important;
-  animation-delay: 0s !important;
-  transition-delay: 0s !important;
-}
-
-/* Radix (used by ChatGPT) relies on animations to hide/unmount some popper content.
-   When we force animation duration to 0, some menus can get stuck visible in `data-state="closed"`.
-   Explicitly hide them in no-anim mode to avoid dropdowns staying on screen. */
-html[data-cgptperf='1'][data-cgptperf-enabled='1'][data-cgptperf-noanim='1'] [data-radix-menu-content][data-state='closed'] {
-  display: none !important;
-}
-
-#cgptperf-ui {
+#__cgpt_perf_mv3_overlay__ {
   position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: 2147483647;
-  font: 12px/1.2 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  pointer-events: none;
-}
-
-#cgptperf-ui * {
-  pointer-events: auto;
-}
-
-#cgptperf-ui button {
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
+  left: 10px;
+  bottom: 10px;
+  z-index: 2147483640;
+  max-width: min(360px, calc(100vw - 20px));
   padding: 6px 8px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-#cgptperf-ui button.cgptperf-toggle[data-enabled="0"] {
-  background: rgba(90, 90, 90, 0.55);
-  border-color: rgba(255, 255, 255, 0.28);
-}
-
-#cgptperf-ui button:hover {
-  background: rgba(0, 0, 0, 0.8);
-}
-
-#cgptperf-ui button[aria-pressed="true"] {
-  background: rgba(0, 120, 255, 0.75);
-  border-color: rgba(0, 120, 255, 0.9);
-}
-
-#cgptperf-ui button:focus {
-  outline: 2px solid rgba(255, 255, 255, 0.35);
-  outline-offset: 2px;
-}
-
-#cgptperf-ui .cgptperf-panel {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  min-width: 220px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.72);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
-
-#cgptperf-ui .cgptperf-panel button {
-  width: 100%;
-  text-align: left;
-}
-
-#cgptperf-ui .cgptperf-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-#cgptperf-ui .cgptperf-row span {
-  color: rgba(255, 255, 255, 0.88);
-}
-
-#cgptperf-ui .cgptperf-row input {
-  width: 96px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.25);
-  color: #fff;
-  padding: 4px 6px;
-  border-radius: 8px;
-  font: inherit;
-}
-
-#cgptperf-ui .cgptperf-row input:focus {
-  outline: 2px solid rgba(255, 255, 255, 0.35);
-  outline-offset: 2px;
-}
-
-#cgptperf-ui button.cgptperf-secondary {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-#cgptperf-ui button.cgptperf-secondary:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  #cgptperf-ui .cgptperf-panel {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background: rgba(0, 0, 0, 0.9);
-  }
-}
-
-html[data-cgptperf='1'] #cgptperf-toast {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 2147483647;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #e5e7eb;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   pointer-events: none;
-  font: 12px/1.25 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
-  padding: 8px 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  white-space: pre-wrap;
-  max-width: min(360px, calc(100vw - 24px));
-}
-
-html[data-cgptperf='1'] #cgptperf-toast[data-show='0'] {
-  display: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }

@@ -1,12 +1,9 @@
 (() => {
   'use strict';
 
-  const GUARD_KEY = '__aichat_genspark_codeblock_fold_v1__';
-  if (window[GUARD_KEY]) return;
-  Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
-
   if (window.top !== window) return;
 
+  const STATE_KEY = '__aichat_genspark_codeblock_fold_state_v1__';
   const STYLE_ID = '__aichat_genspark_codeblock_fold_style_v1__';
   const ATTR_PROCESSED = 'data-aichat-gs-codefold';
   const ATTR_STATE = 'data-aichat-gs-codefold-state';
@@ -25,8 +22,95 @@
   const MIN_LINES = 40;
   const MIN_HEIGHT_PX = 900;
 
+  const state = {
+    observer: null,
+    watchTimer: 0,
+    fullScanTimer: 0,
+    disposers: [],
+    disposed: false,
+    disposeRuntime() {
+      if (state.disposed) return;
+      state.disposed = true;
+      for (const dispose of state.disposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+      try { if (state.fullScanTimer) window.clearTimeout(state.fullScanTimer); } catch {}
+      state.fullScanTimer = 0;
+      try { if (state.watchTimer) window.clearInterval(state.watchTimer); } catch {}
+      state.watchTimer = 0;
+      try { state.observer?.disconnect?.(); } catch {}
+      state.observer = null;
+      try {
+        for (const pre of document.querySelectorAll(`pre[${ATTR_EXT_COPY}="1"]`)) {
+          const copyButton = findCopyButton(pre);
+          if (copyButton) copyButton.style.display = '';
+          pre.removeAttribute(ATTR_EXT_COPY);
+        }
+      } catch {}
+      try {
+        for (const pre of document.querySelectorAll(`pre[${ATTR_PROCESSED}="1"]`)) {
+          pre.classList.remove(COLLAPSED_CLASS);
+          pre.removeAttribute(ATTR_PROCESSED);
+          pre.removeAttribute(ATTR_STATE);
+        }
+      } catch {}
+      try {
+        for (const bar of document.querySelectorAll(`.${TOGGLE_BAR_CLASS}, .${TOOLBAR_CLASS}`)) bar.remove();
+      } catch {}
+      try {
+        for (const wrap of document.querySelectorAll(`.${CODE_WRAP_CLASS}[${ATTR_CODEWRAP}="1"]`)) {
+          const parent = wrap.parentNode;
+          if (!parent) continue;
+          while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+          wrap.remove();
+        }
+      } catch {}
+    }
+  };
+
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { window[STATE_KEY] = state; } catch {}
+  }
+
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    state.disposers.push(dispose);
+    return dispose;
+  }
+
+  function on(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return;
+    try {
+      target.addEventListener(type, listener, options);
+      addRuntimeDisposer(() => {
+        try { target.removeEventListener(type, listener, options); } catch {}
+      });
+    } catch {}
+  }
+
+  function timeout(fn, ms) {
+    if (typeof fn !== 'function') return 0;
+    let id = 0;
+    try {
+      id = window.setTimeout(() => {
+        if (state.disposed) return;
+        fn();
+      }, ms);
+      addRuntimeDisposer(() => {
+        try { window.clearTimeout(id); } catch {}
+      });
+    } catch {}
+    return id;
   }
 
   function isVisible(el) {
@@ -185,7 +269,7 @@
     if (!btn || btn.__aichatBound) return;
     Object.defineProperty(btn, '__aichatBound', { value: true });
 
-    btn.addEventListener('click', (e) => {
+    on(btn, 'click', (e) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -321,13 +405,13 @@
 
     if (!extBtn.__aichatBound) {
       Object.defineProperty(extBtn, '__aichatBound', { value: true });
-      extBtn.addEventListener('click', async (e) => {
+      on(extBtn, 'click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
         const ok = await copyText(getCodeText(pre));
         const old = extBtn.textContent;
         extBtn.textContent = ok ? 'Copied' : 'Copy failed';
-        setTimeout(() => {
+        timeout(() => {
           extBtn.textContent = old || 'Copy';
         }, ok ? 900 : 1400);
       });
@@ -372,20 +456,22 @@
   }
 
   function startActive() {
+    if (state.disposed) return;
     scan(document);
 
-    let fullScanTimer = 0;
     const armFullScan = (delay = 900) => {
       try {
-        if (fullScanTimer) clearTimeout(fullScanTimer);
-        fullScanTimer = setTimeout(() => {
-          fullScanTimer = 0;
+        if (state.fullScanTimer) clearTimeout(state.fullScanTimer);
+        state.fullScanTimer = setTimeout(() => {
+          state.fullScanTimer = 0;
+          if (state.disposed) return;
           scan(document);
         }, Math.max(0, Number(delay) || 0));
       } catch {}
     };
 
     const observer = new MutationObserver((mutations) => {
+      if (state.disposed) return;
       if (!isAiChatPage()) return;
       let shouldFullScan = false;
       for (const m of mutations) {
@@ -404,6 +490,7 @@
 
     try {
       observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      state.observer = observer;
     } catch {}
   }
 
@@ -417,9 +504,11 @@
     if (isAiChatPage()) return startActive();
 
     // Avoid doing work on non-chat agents pages; activate lazily once chat UI appears.
-    const watch = setInterval(() => {
+    state.watchTimer = setInterval(() => {
+      if (state.disposed) return;
       if (!isAiChatPage()) return;
-      clearInterval(watch);
+      clearInterval(state.watchTimer);
+      state.watchTimer = 0;
       startActive();
     }, 800);
   }

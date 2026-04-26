@@ -20,17 +20,7 @@
   })();
   if (!PATH_OK) return;
 
-  const GUARD_KEY = '__aichat_google_ask_gpt_v1__';
-  try {
-    if (window[GUARD_KEY]) return;
-    Object.defineProperty(window, GUARD_KEY, { value: true, configurable: true, enumerable: false, writable: false });
-  } catch {
-    try {
-      if (window[GUARD_KEY]) return;
-      window[GUARD_KEY] = true;
-    } catch {}
-  }
-
+  const STATE_KEY = '__aichat_google_ask_gpt_state_v1__';
   const STYLE_ID = '__aichat_google_ask_gpt_style_v1__';
   const BUTTON_ATTR = 'data-aichat-google-ask-gpt';
   const HANDOFF_FLAG = 'aichat_google_ask';
@@ -38,6 +28,52 @@
   const PROMPT_PREFIX = 'web search:\n';
   let observer = null;
   let ensureTimer = 0;
+  const runtimeDisposers = [];
+  const state = {
+    disposed: false,
+    disposeRuntime() {
+      if (state.disposed) return;
+      state.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+      try { observer?.disconnect?.(); } catch {}
+      observer = null;
+      try { if (ensureTimer) window.clearTimeout(ensureTimer); } catch {}
+      ensureTimer = 0;
+      try {
+        for (const button of document.querySelectorAll(`button[${BUTTON_ATTR}]`)) button.remove();
+      } catch {}
+    }
+  };
+
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { window[STATE_KEY] = state; } catch {}
+  }
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    runtimeDisposers.push(dispose);
+    return dispose;
+  }
+
+  function on(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return () => void 0;
+    try {
+      target.addEventListener(type, listener, options);
+    } catch {
+      return () => void 0;
+    }
+    return addRuntimeDisposer(() => {
+      try { target.removeEventListener(type, listener, options); } catch {}
+    });
+  }
 
   function getUiLocale() {
     try {
@@ -131,7 +167,13 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     const cleanQuery = String(query || '').trim();
     if (!cleanQuery) return;
     const target = buildChatGptUrl(cleanQuery);
-    const opened = window.open(target, '_blank', 'noopener,noreferrer');
+    const opened = window.open(target, '_blank');
+    if (opened) {
+      try {
+        opened.opener = null;
+      } catch {}
+      return;
+    }
     if (!opened) {
       try {
         location.href = target;
@@ -139,25 +181,42 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     }
   }
 
-  function findAnchorButton() {
-    const root =
-      document.querySelector('[role="search"]') ||
-      document.querySelector('form[action="/search"]') ||
-      document.querySelector('form[role="search"]');
+  function findSearchRoot() {
+    const input = getQueryInput();
+    const roots = [
+      input?.closest?.('[role="search"]'),
+      input?.closest?.('form'),
+      document.querySelector('[role="search"]'),
+      document.querySelector('form[action="/search"]'),
+      document.querySelector('form[role="search"]')
+    ];
+    for (const root of roots) {
+      if (root instanceof HTMLElement) return root;
+    }
+    return null;
+  }
+
+  function findAnchorElement() {
+    const root = findSearchRoot();
     if (!(root instanceof HTMLElement)) return null;
 
     const selectors = [
+      'button[type="submit"]',
+      'input[type="submit"]',
       'button[aria-label="Search"]',
       'button[aria-label*="Google Search" i]',
-      'button[aria-label*="Search" i]'
+      'button[aria-label*="Search" i]',
+      '[role="button"][aria-label*="Search" i]'
     ];
     for (const selector of selectors) {
       try {
-        const button = root.querySelector(selector);
-        if (button instanceof HTMLButtonElement) return button;
+        const el = root.querySelector(selector);
+        if (el instanceof HTMLElement) return el;
       } catch {}
     }
-    return null;
+
+    const input = getQueryInput();
+    return input instanceof HTMLElement ? input : null;
   }
 
   function updateButtonState(button) {
@@ -167,7 +226,7 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     button.disabled = disabled;
     button.title = disabled
       ? (isChineseLocale() ? '先在 Google 搜索框里输入问题' : 'Enter a query in Google first')
-      : (isChineseLocale() ? '用 ChatGPT 5.4 Thinking 继续问这个搜索词' : 'Continue this search in ChatGPT 5.4 Thinking');
+      : (isChineseLocale() ? '用 ChatGPT 继续问这个搜索词' : 'Continue this search in ChatGPT');
   }
 
   function bindInputSync(button) {
@@ -177,8 +236,11 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     input.dataset.aichatGoogleAskBound = '1';
 
     const sync = () => updateButtonState(button);
-    input.addEventListener('input', sync, true);
-    input.addEventListener('change', sync, true);
+    on(input, 'input', sync, true);
+    on(input, 'change', sync, true);
+    addRuntimeDisposer(() => {
+      try { delete input.dataset.aichatGoogleAskBound; } catch {}
+    });
   }
 
   function createButton() {
@@ -186,7 +248,8 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
     button.type = 'button';
     button.setAttribute(BUTTON_ATTR, '1');
     button.innerHTML = `<span class="__aichatGoogleAskIcon">G</span><span>${isChineseLocale() ? '问 GPT' : 'Ask GPT'}</span>`;
-    button.addEventListener(
+    on(
+      button,
       'click',
       (event) => {
         event.preventDefault();
@@ -201,12 +264,13 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
 
   function ensureButton() {
     ensureTimer = 0;
+    if (state.disposed) return;
     ensureStyle();
 
     let button = document.querySelector(`button[${BUTTON_ATTR}]`);
     if (!(button instanceof HTMLButtonElement)) {
-      const anchor = findAnchorButton();
-      if (!(anchor instanceof HTMLButtonElement)) return;
+      const anchor = findAnchorElement();
+      if (!(anchor instanceof HTMLElement)) return;
       button = createButton();
       anchor.insertAdjacentElement('afterend', button);
     }
@@ -216,14 +280,15 @@ button[${BUTTON_ATTR}] .__aichatGoogleAskIcon {
   }
 
   function scheduleEnsure() {
+    if (state.disposed) return;
     if (ensureTimer) return;
     ensureTimer = window.setTimeout(ensureButton, 80);
   }
 
   scheduleEnsure();
-  window.addEventListener('pageshow', scheduleEnsure, true);
-  window.addEventListener('popstate', scheduleEnsure, true);
-  document.addEventListener('readystatechange', scheduleEnsure, true);
+  on(window, 'pageshow', scheduleEnsure, true);
+  on(window, 'popstate', scheduleEnsure, true);
+  on(document, 'readystatechange', scheduleEnsure, true);
 
   observer = new MutationObserver(() => scheduleEnsure());
   try {

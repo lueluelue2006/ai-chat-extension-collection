@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI捷径 (AI Shortcuts)",
   "short_name": "AI捷径",
-  "version": "3.2.0",
+  "version": "3.2.2",
   "description": "多AI站点脚本合集",
   "permissions": [
     "scripting",
@@ -20,9 +20,11 @@
     "https://gemini.google.com/*",
     "https://grok.com/*",
     "https://kimi.com/*",
+    "https://meta.ai/*",
     "https://www.genspark.ai/*",
     "https://www.google.com/*",
-    "https://www.kimi.com/*"
+    "https://www.kimi.com/*",
+    "https://www.meta.ai/*"
   ],
   "background": {
     "service_worker": "background/sw.js"
@@ -38,9 +40,11 @@
         "https://gemini.google.com/*",
         "https://grok.com/*",
         "https://kimi.com/*",
+        "https://meta.ai/*",
         "https://www.genspark.ai/*",
         "https://www.google.com/*",
-        "https://www.kimi.com/*"
+        "https://www.kimi.com/*",
+        "https://www.meta.ai/*"
       ],
       "js": [
         "shared/i18n.js",

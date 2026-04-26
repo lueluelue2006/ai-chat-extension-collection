@@ -131,9 +131,28 @@
   }
 
   function enableRightTopDrag(element, handle, opts = {}) {
-    if (!element) return;
+    if (!element) return () => void 0;
     const dragHandle = handle || element;
-    if (!dragHandle || !dragHandle.addEventListener) return;
+    if (!dragHandle || !dragHandle.addEventListener) return () => void 0;
+
+    const bind = (target, type, listener, eventOpts) => {
+      if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') {
+        return () => void 0;
+      }
+      try {
+        target.addEventListener(type, listener, eventOpts);
+      } catch {
+        return () => void 0;
+      }
+      let active = true;
+      return () => {
+        if (!active) return;
+        active = false;
+        try {
+          target.removeEventListener(type, listener, eventOpts);
+        } catch {}
+      };
+    };
 
     const onDragStart = typeof opts.onDragStart === 'function' ? opts.onDragStart : null;
     const onDragMove = typeof opts.onDragMove === 'function' ? opts.onDragMove : null;
@@ -159,7 +178,19 @@
     let startRight = 0;
     let startTop = 0;
 
-    dragHandle.addEventListener('mousedown', (e) => {
+    const isDetached = () => {
+      try {
+        if (!element.isConnected) return true;
+        if (dragHandle !== element && dragHandle instanceof Node && !dragHandle.isConnected) return true;
+      } catch {}
+      return false;
+    };
+
+    const onMouseDown = (e) => {
+      if (isDetached()) {
+        cleanup();
+        return;
+      }
       if (!e || e.button !== 0) return;
       if (shouldStart) {
         try {
@@ -178,9 +209,13 @@
       const rect = element.getBoundingClientRect();
       startTop = rect.top;
       startRight = Math.max(0, (window.innerWidth || 0) - rect.right);
-    });
+    };
 
-    document.addEventListener('mousemove', (e) => {
+    const onMouseMove = (e) => {
+      if (isDetached()) {
+        cleanup();
+        return;
+      }
       if (!tracking) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
@@ -209,9 +244,9 @@
       try {
         e.preventDefault();
       } catch {}
-    });
+    };
 
-    document.addEventListener('mouseup', (e) => {
+    const onMouseUp = (e) => {
       if (!tracking) return;
       tracking = false;
       if (!dragStarted) return;
@@ -221,7 +256,21 @@
           onDragEnd(e);
         } catch {}
       }
-    });
+    };
+
+    const offDown = bind(dragHandle, 'mousedown', onMouseDown);
+    const offMove = bind(document, 'mousemove', onMouseMove);
+    const offUp = bind(document, 'mouseup', onMouseUp);
+
+    function cleanup() {
+      tracking = false;
+      dragStarted = false;
+      try { offDown(); } catch {}
+      try { offMove(); } catch {}
+      try { offUp(); } catch {}
+    }
+
+    return cleanup;
   }
 
   const api = {

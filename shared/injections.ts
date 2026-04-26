@@ -44,8 +44,11 @@
     'content/aishortcuts-kernel/scrolllock-bridge.js',
     'content/aishortcuts-kernel/observer-refresh.js'
   ] as const;
+  const CHATGPT_DOM_ADAPTER_FILE = 'content/chatgpt-dom-adapter.js';
   const CHATGPT_CORE_FILE = 'content/chatgpt-core.js';
   const CHATGPT_CORE_MAIN_FILE = 'content/chatgpt-core-main.js';
+  const CHATGPT_CORE_FILES = [CHATGPT_DOM_ADAPTER_FILE, CHATGPT_CORE_FILE] as const;
+  const CHATGPT_CORE_MAIN_FILES = [CHATGPT_DOM_ADAPTER_FILE, CHATGPT_CORE_MAIN_FILE] as const;
   const CHATGPT_CONVERSATION_GRAPH_FILE = 'content/chatgpt-conversation-graph.js';
   const CHATGPT_MAPPING_CLIENT_FILE = 'content/chatgpt-mapping-client/main.js';
   const CHATGPT_FETCH_HUB_FILE = 'content/chatgpt-fetch-hub/main.js';
@@ -63,12 +66,20 @@
     chatgpt: Object.freeze({
       chatgpt_thinking_toggle_hotkey_effort: true,
       chatgpt_thinking_toggle_hotkey_model: true,
+      chatgpt_thinking_toggle_hotkey_send_light_pro: true,
+      chatgpt_thinking_toggle_hotkey_send_max_pro: true,
       chatgpt_thinking_toggle_hotkeys_force: false,
       chatgpt_quick_deep_search_hotkeys: true,
       chatgpt_quick_deep_search_hotkeys_force: false,
       chatgpt_tab_queue_queue_shortcut: true,
       chatgpt_tab_queue_ctrl_c_clear: true,
       chatgpt_tab_queue_quicknav_mark: true,
+      chatgpt_tex_copy_quote_multi_quote: true,
+      chatgpt_tex_copy_quote_hide_native_quote: true,
+      chatgpt_tex_copy_quote_native_quote_patch: true,
+      chatgpt_tex_copy_quote_copy_latex: true,
+      chatgpt_tex_copy_quote_hover_tooltip: true,
+      chatgpt_tex_copy_quote_double_click_copy: true,
       chatgpt_quicknav_hide_native_outline: true
     }),
     qwen: Object.freeze({
@@ -193,12 +204,13 @@
 
     // === QuickNav per site ===
     const QUICKNAV_SITES: Array<{ siteId: string; js: string; runAt: string; matches: (r: RegistryLike) => string[] }> = [
-      { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_start', matches: (r) => siteQuickNavPatterns(r, 'chatgpt') },
+      { siteId: 'chatgpt', js: 'content/chatgpt-quicknav.js', runAt: 'document_idle', matches: (r) => siteQuickNavPatterns(r, 'chatgpt') },
       { siteId: 'qwen', js: 'content/qwen-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'qwen') },
       { siteId: 'kimi', js: 'content/kimi-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'kimi') },
       { siteId: 'deepseek', js: 'content/deepseek-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'deepseek') },
       { siteId: 'gemini_app', js: 'content/gemini-app-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'gemini_app') },
       { siteId: 'ernie', js: 'content/ernie-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'ernie') },
+      { siteId: 'meta_ai', js: 'content/meta-ai-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'meta_ai') },
       { siteId: 'zai', js: 'content/zai-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'zai') },
       { siteId: 'genspark', js: 'content/genspark-quicknav.js', runAt: 'document_end', matches: (r) => siteQuickNavPatterns(r, 'genspark') },
       { siteId: 'grok', js: 'content/grok-quicknav.js', runAt: 'document_end', matches: (r) => siteMatchPatterns(r, 'grok') }
@@ -217,7 +229,7 @@
           siteId === 'chatgpt'
             ? [
                 ...ISOLATED_BRIDGE_FILES,
-                CHATGPT_CORE_FILE,
+                ...CHATGPT_CORE_FILES,
                 'content/ui-pos-drag.js',
                 'content/menu-bridge.js',
                 ...QUICKNAV_KERNEL_FILES,
@@ -312,7 +324,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_perf',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-perf/content.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-perf/content.js'],
       css: ['content/chatgpt-perf/content.css'],
       runAt: 'document_start'
     });
@@ -331,7 +343,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-thinking-toggle/config-bridge.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-thinking-toggle/config-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -340,7 +352,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_thinking_toggle',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-thinking-toggle/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-thinking-toggle/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -350,7 +362,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_tab_queue',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-tab-queue/config-bridge.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-tab-queue/config-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -359,7 +371,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_tab_queue',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-tab-queue/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-tab-queue/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -369,7 +381,7 @@
       siteId: 'chatgpt',
       moduleId: 'cmdenter_send',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-cmdenter-send/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-cmdenter-send/main.js'],
       runAt: 'document_start'
     });
 
@@ -378,7 +390,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_sidebar_header_fix',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-sidebar-header-fix/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-sidebar-header-fix/main.js'],
       runAt: 'document_start'
     });
 
@@ -400,7 +412,20 @@
         siteId: 'google_search',
         moduleId: 'google_ask_gpt',
         matches: chatgpt,
-        js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-google-ask/main.js'],
+        js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, 'content/chatgpt-google-ask/main.js'],
+        runAt: 'document_start',
+        world: 'MAIN'
+      });
+    }
+
+    const metaAi = uniq(siteMatchPatterns(registry, 'meta_ai'));
+    if (metaAi.length) {
+      defs.push({
+        id: 'quicknav_meta_ai_cmdenter_send',
+        siteId: 'meta_ai',
+        moduleId: 'cmdenter_send',
+        matches: metaAi,
+        js: [...MAIN_BRIDGE_FILES, 'content/meta-ai-cmdenter-main.js'],
         runAt: 'document_start',
         world: 'MAIN'
       });
@@ -470,7 +495,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_readaloud_speed_controller',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-readaloud-speed-controller/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-readaloud-speed-controller/main.js'],
       runAt: 'document_start'
     });
 
@@ -480,7 +505,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_reply_timer',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-reply-timer/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-reply-timer/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -491,7 +516,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_usage_monitor',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-usage-monitor/bridge.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-usage-monitor/bridge.js'],
       runAt: 'document_start'
     });
 
@@ -502,7 +527,7 @@
       matches: chatgpt,
       js: [
         ...MAIN_BRIDGE_FILES,
-        CHATGPT_CORE_MAIN_FILE,
+        ...CHATGPT_CORE_MAIN_FILES,
         ...CHATGPT_FETCH_HUB_CONSUMER_FILES,
         'content/chatgpt-usage-monitor/main.js'
       ],
@@ -515,7 +540,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_download_file_fix',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-download-file-fix/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-download-file-fix/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -525,7 +550,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_strong_highlight_lite',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-strong-highlight-lite/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-strong-highlight-lite/main.js'],
       runAt: 'document_start'
     });
 
@@ -534,7 +559,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_quick_deep_search',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-quick-deep-search/config-bridge.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-quick-deep-search/config-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -543,7 +568,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_quick_deep_search',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-quick-deep-search/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-quick-deep-search/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -553,7 +578,16 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_hide_feedback_buttons',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, 'content/chatgpt-hide-feedback-buttons/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-hide-feedback-buttons/main.js'],
+      runAt: 'document_start'
+    });
+
+    defs.push({
+      id: 'quicknav_chatgpt_tex_copy_quote_config',
+      siteId: 'chatgpt',
+      moduleId: 'chatgpt_tex_copy_quote',
+      matches: chatgpt,
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, 'content/chatgpt-tex-copy-quote/config-bridge.js'],
       runAt: 'document_start'
     });
 
@@ -562,7 +596,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_tex_copy_quote',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, 'content/chatgpt-tex-copy-quote/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, 'content/chatgpt-tex-copy-quote/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -572,7 +606,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_export_conversation',
       matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, CHATGPT_CORE_FILE, CHATGPT_CONVERSATION_GRAPH_FILE, CHATGPT_MAPPING_CLIENT_FILE, 'content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
+      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, CHATGPT_CONVERSATION_GRAPH_FILE, CHATGPT_MAPPING_CLIENT_FILE, 'content/menu-bridge.js', 'content/chatgpt-export-conversation/main.js'],
       runAt: 'document_end'
     });
 
@@ -581,7 +615,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_image_message_edit',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-image-message-edit/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, 'content/chatgpt-image-message-edit/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });
@@ -591,8 +625,8 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_message_tree',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, CHATGPT_CONVERSATION_GRAPH_FILE, CHATGPT_MAPPING_CLIENT_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
-      runAt: 'document_start',
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, CHATGPT_CONVERSATION_GRAPH_FILE, CHATGPT_MAPPING_CLIENT_FILE, 'content/chatgpt-fetch-hub/main.js', 'content/chatgpt-message-tree/main.js'],
+      runAt: 'document_idle',
       world: 'MAIN'
     });
 
@@ -601,7 +635,7 @@
       siteId: 'chatgpt',
       moduleId: 'chatgpt_canvas_enhancements',
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, CHATGPT_CORE_MAIN_FILE, CHATGPT_MAPPING_CLIENT_FILE, 'content/chatgpt-canvas-enhancements/main.js'],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, CHATGPT_MAPPING_CLIENT_FILE, 'content/chatgpt-canvas-enhancements/main.js'],
       runAt: 'document_start',
       world: 'MAIN'
     });

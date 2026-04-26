@@ -42,7 +42,9 @@
   const TOPBAR_MODEL_BADGE_ATTR = 'data-qn-chatgpt-topbar-model-label';
   const TOPBAR_MODEL_BADGE_BUTTON_ATTR = 'data-qn-chatgpt-topbar-model-toggle';
   const TOPBAR_MODEL_BADGE_BUTTON_CLASS = 'qn-chatgpt-topbar-model-toggle';
-  const TOPBAR_MODEL_BADGE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v1__';
+  const TOPBAR_MODEL_BADGE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v2__';
+  const TOPBAR_MODEL_BADGE_SESSION_KEY = 'qn-chatgpt-topbar-model-label-v1';
+  const TOPBAR_MODEL_BADGE_SESSION_TTL_MS = 10 * 60 * 1000;
   const TOPBAR_PLACEHOLDER_ATTR = 'data-qn-chatgpt-topbar-actions-placeholder';
   const TOPBAR_RELOCATED_ATTR = 'data-qn-chatgpt-topbar-actions-relocated';
   const TOPBAR_SYNTHETIC_HOST_ATTR = 'data-qn-chatgpt-topbar-actions-synthetic';
@@ -68,6 +70,8 @@
   let topbarActionsHost = null;
   let topbarActionsPlaceholder = null;
   let topbarModelToggleBusy = false;
+  let topbarLastModelBadgeLabel = readStoredTopbarBadgeLabel();
+  let topbarMenuSelectionBadgeUntil = 0;
 
   const trackedOffs = [];
   const trackedObservers = new Set();
@@ -482,9 +486,13 @@
     const raw = String(input || '').trim();
     if (!raw) return '';
     const compact = raw.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (/\binstant\b/.test(compact) || compact === 'gpt-5-3') return 'Instant';
+    if (
+      /\binstant\b/.test(compact) ||
+      /(?:^|[^a-z0-9])gpt[-.]5[-.]3(?:[^a-z0-9]|$)/.test(compact) ||
+      compact.endsWith('-instant')
+    ) return 'Instant';
     if (/\b(light|heavy)(?:\s+thinking)?\b/.test(compact) || /\bthinking\b/.test(compact) || /思考|推理/.test(compact)) return 'Thinking';
-    if (/\b(standard|extended)(?:\s+pro)?\b/.test(compact) || /\b(?:extended\s+)?pro\b/.test(compact) || /专业|标准|扩展/.test(compact)) return 'Pro';
+    if (/\b(?:standard|extended)\s+pro\b/.test(compact) || /\b(?:extended\s+)?pro\b/.test(compact) || /专业/.test(compact)) return 'Pro';
     if (/\blatest\b/.test(compact)) return 'Latest';
     if (/^gpt-\d+(?:\.\d+)?(?:-[a-z0-9]+)*$/.test(compact)) {
       if (compact.endsWith('-thinking')) return 'Thinking';
@@ -492,6 +500,93 @@
       return compact.toUpperCase();
     }
     return raw;
+  }
+
+  function isTopbarModelFamilyLabel(label) {
+    const text = String(label || '').trim();
+    return /^(Instant|Thinking|Pro|Latest)$/i.test(text) || /^GPT[-.]/i.test(text);
+  }
+
+  function cleanTopbarBadgeLabel(label) {
+    const text = prettifyModelIdentifier(label);
+    if (!text || text.toLowerCase() === 'chatgpt') return '';
+    if (!isTopbarModelFamilyLabel(text)) return '';
+    return text;
+  }
+
+  function readStoredTopbarBadgeLabel() {
+    try {
+      const raw = sessionStorage.getItem(TOPBAR_MODEL_BADGE_SESSION_KEY);
+      if (!raw) return '';
+      const parsed = JSON.parse(raw);
+      const label = cleanTopbarBadgeLabel(parsed?.label);
+      const at = Number(parsed?.at || 0);
+      if (!label || !Number.isFinite(at) || Date.now() - at > TOPBAR_MODEL_BADGE_SESSION_TTL_MS) return '';
+      return label;
+    } catch {
+      return '';
+    }
+  }
+
+  function writeStoredTopbarBadgeLabel(label) {
+    try {
+      sessionStorage.setItem(TOPBAR_MODEL_BADGE_SESSION_KEY, JSON.stringify({ label, at: Date.now() }));
+    } catch {}
+  }
+
+  function rememberTopbarBadgeLabel(label) {
+    const text = cleanTopbarBadgeLabel(label);
+    if (text) {
+      topbarLastModelBadgeLabel = text;
+      writeStoredTopbarBadgeLabel(text);
+    }
+    return text;
+  }
+
+  function readExistingTopbarBadgeLabel(actionsHost) {
+    if (!(actionsHost instanceof HTMLElement)) return topbarLastModelBadgeLabel;
+    const button = actionsHost.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
+    const candidates = [
+      actionsHost.getAttribute?.(TOPBAR_MODEL_BADGE_ATTR),
+      button?.dataset?.label,
+      button?.textContent,
+      topbarLastModelBadgeLabel
+    ];
+    for (const candidate of candidates) {
+      const label = cleanTopbarBadgeLabel(candidate);
+      if (label) return label;
+    }
+    return '';
+  }
+
+  function readMenuOptionModelLabel(option) {
+    if (!(option instanceof HTMLElement)) return '';
+    const primaryText = String(option.innerText || option.textContent || '')
+      .split(/\n+/)
+      .map((part) => part.trim())
+      .filter(Boolean)[0] || '';
+    const combined = [
+      option.getAttribute?.('data-testid'),
+      option.getAttribute?.('aria-label'),
+      option.getAttribute?.('data-value'),
+      primaryText
+    ].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
+    return cleanTopbarBadgeLabel(combined);
+  }
+
+  function rememberTopbarModelSelectionFromEvent(event) {
+    try {
+      const target = event?.target instanceof Element ? event.target : null;
+      const option = target?.closest?.('[role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], button');
+      if (!(option instanceof HTMLElement)) return;
+      const inModelMenu = option.closest?.('[role="menu"], [role="listbox"], [data-radix-menu-content], [cmdk-list]');
+      if (!(inModelMenu instanceof HTMLElement)) return;
+      const label = readMenuOptionModelLabel(option);
+      if (!label) return;
+      rememberTopbarBadgeLabel(label);
+      topbarMenuSelectionBadgeUntil = Date.now() + 2500;
+      scheduleTopbarEnsure('model-menu-selection');
+    } catch {}
   }
 
   function readTopbarModelBadgeLabel(modelButton) {
@@ -522,6 +617,19 @@
 
     const text = prettifyModelIdentifier(String(modelButton?.innerText || modelButton?.textContent || '').trim());
     if (text && text.toLowerCase() !== 'chatgpt') return text;
+    return '';
+  }
+
+  function resolveTopbarModelBadgeLabel(modelButton, actionsHost = null) {
+    if (Date.now() < topbarMenuSelectionBadgeUntil) {
+      const selectedLabel = cleanTopbarBadgeLabel(topbarLastModelBadgeLabel);
+      if (selectedLabel) return selectedLabel;
+    }
+    const liveLabel = rememberTopbarBadgeLabel(readTopbarModelBadgeLabel(modelButton));
+    if (liveLabel) return liveLabel;
+    const fallbackLabel = readExistingTopbarBadgeLabel(actionsHost);
+    const existingLabel = cleanTopbarBadgeLabel(fallbackLabel);
+    if (existingLabel) return existingLabel;
     return '';
   }
 
@@ -576,12 +684,14 @@
       } catch {}
     } catch {}
     finally {
-      topbarModelToggleBusy = false;
-      try {
-        button?.removeAttribute?.('aria-busy');
-        button?.classList?.remove('is-busy');
-      } catch {}
-      scheduleTopbarEnsure('badge-toggle');
+      setTrackedTimeout(() => {
+        topbarModelToggleBusy = false;
+        try {
+          button?.removeAttribute?.('aria-busy');
+          button?.classList?.remove('is-busy');
+        } catch {}
+        scheduleTopbarEnsure('badge-toggle');
+      }, 420);
     }
   }
 
@@ -673,7 +783,7 @@
       if (window.innerWidth < TOPBAR_MIN_WIDTH_PX) return false;
       const rowWidth = Number(modelRow.getBoundingClientRect?.().width || 0);
       const modelWidth = Number(modelButton.getBoundingClientRect?.().width || 0);
-      const badgeWidth = estimateModelBadgeWidth(readTopbarModelBadgeLabel(modelButton));
+      const badgeWidth = estimateModelBadgeWidth(resolveTopbarModelBadgeLabel(modelButton, actionsHost));
       let hostWidth = Number(actionsHost.getBoundingClientRect?.().width || 0);
       const badgeButton = actionsHost.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
       const badgeButtonWidth = Number(badgeButton?.getBoundingClientRect?.().width || 0);
@@ -691,7 +801,7 @@
 
   function syncTopbarModelBadge(modelRow, modelButton, actionsHost) {
     if (!modelRow || !modelButton || !(actionsHost instanceof HTMLElement)) return false;
-    const label = readTopbarModelBadgeLabel(modelButton);
+    const label = resolveTopbarModelBadgeLabel(modelButton, actionsHost);
     if (!label) {
       try {
         actionsHost.removeAttribute(TOPBAR_MODEL_BADGE_ATTR);
@@ -792,6 +902,7 @@
         topbarHeaderObserver.observe(header, {
           childList: true,
           subtree: true,
+          characterData: true,
           attributes: true,
           attributeFilter: [TOPBAR_MODEL_META_ATTR, 'aria-label', 'data-state']
         });
@@ -808,7 +919,7 @@
     if (!modelButton || !modelRow || !header) return false;
     const actionsHost = findTopbarActionsHost(header, modelRow);
     if (!actionsHost) return false;
-    const expectedBadge = readTopbarModelBadgeLabel(modelButton);
+    const expectedBadge = resolveTopbarModelBadgeLabel(modelButton, actionsHost);
     const currentBadge = String(actionsHost.getAttribute?.(TOPBAR_MODEL_BADGE_ATTR) || '').trim();
     const badgeButton = actionsHost.querySelector?.(`[${TOPBAR_MODEL_BADGE_BUTTON_ATTR}="1"]`);
     if (modelRow.classList?.contains?.(TOPBAR_INLINE_MODEL_ROW_CLASS)) {
@@ -828,9 +939,9 @@
 
   function installTopbarRouteSync() {
     topbarRouteKey = currentRouteKey();
-    if (topbarRouteBound && topbarRoutePollTimer) return;
+    if (topbarRouteBound) return;
     const core = getChatGptCore();
-    if (!topbarRouteBound && core && typeof core.onRouteChange === 'function') {
+    if (core && typeof core.onRouteChange === 'function') {
       const off = core.onRouteChange(() => {
         topbarRouteKey = currentRouteKey();
         enterTopbarRouteRecovery();
@@ -843,6 +954,7 @@
         } catch {}
       });
       topbarRouteBound = true;
+      return;
     }
     if (!topbarRoutePollTimer) {
       topbarRoutePollTimer = window.setInterval(() => {
@@ -852,7 +964,7 @@
         if (changed) enterTopbarRouteRecovery();
         if (!changed && !topbarNeedsRepair() && !isTopbarRouteRecovering()) return;
         runTopbarStartupPasses(changed ? 'route-poll' : 'repair-poll');
-      }, 500);
+      }, 900);
       trackOff(() => {
         if (topbarRoutePollTimer) {
           try {
@@ -1000,7 +1112,6 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 .${TOPBAR_MODEL_BADGE_BUTTON_CLASS}.is-busy,
 .${TOPBAR_MODEL_BADGE_BUTTON_CLASS}[aria-busy=\"true\"]{
 	  opacity: .72 !important;
-	  cursor: progress !important;
 }
 .${TOPBAR_INLINE_ACTIONS_CLASS} .flex.items-center{
 	  gap: 4px !important;
@@ -1023,6 +1134,8 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
   });
 
   addTrackedListener(window, 'resize', () => scheduleTopbarEnsure('resize'), { passive: true });
+  addTrackedListener(document, 'pointerup', rememberTopbarModelSelectionFromEvent, true);
+  addTrackedListener(document, 'click', rememberTopbarModelSelectionFromEvent, true);
   addTrackedListener(document, 'visibilitychange', () => {
     try {
       if (!document.hidden) scheduleTopbarEnsure('visible');

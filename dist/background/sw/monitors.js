@@ -8,18 +8,8 @@
   const GPT53_URLS_KEY = String(ns.storage?.GPT53_PROBE_URLS_KEY || "aichat_ai_shortcuts_gpt53_probe_urls_v1");
   const GPT53_STATE_KEY = String(ns.storage?.GPT53_PROBE_STATE_KEY || "aichat_ai_shortcuts_gpt53_probe_state_v1");
   const GPT53_ALERTS_KEY = String(ns.storage?.GPT53_PROBE_ALERTS_KEY || "aichat_ai_shortcuts_gpt53_probe_alerts_v1");
-  const GPT53_DEFAULT_ICON_BASE = "https://developers.openai.com/images/api/models/icons/";
-  const GPT53_DEFAULT_MODEL_ICONS = Object.freeze([
-    "gpt-5.5",
-    "gpt-5.4-codex",
-    "gpt-5.4-codex-max",
-    "gpt-5.4-max",
-    "gpt-5.5-codex",
-    "gpt-5.5-pro",
-    "gpt-image-2"
-  ]);
   const GPT53_MONITOR = Object.freeze({
-    defaultUrls: Object.freeze(GPT53_DEFAULT_MODEL_ICONS.map((name) => `${GPT53_DEFAULT_ICON_BASE}${name}.png`)),
+    defaultUrls: Object.freeze([]),
     alarmName: GPT53_ALARM_NAME,
     legacyAlarmName: GPT53_LEGACY_ALARM_NAME,
     intervalMin: 60,
@@ -136,7 +126,7 @@
     return parts.length ? `${parts.join(separator)}${more}` : "";
   }
   function normalizeGpt53ProbeUrls(input) {
-    if (input == null) return [...GPT53_MONITOR.defaultUrls];
+    if (input == null) return [];
     const rawLines = (() => {
       if (Array.isArray(input)) return input;
       if (typeof input === "string") return input.split(/\r?\n/);
@@ -172,7 +162,7 @@
       const raw = items?.[GPT53_MONITOR.urlsKey];
       return normalizeGpt53ProbeUrls(raw);
     } catch {
-      return [...GPT53_MONITOR.defaultUrls];
+      return [];
     }
   }
   async function setGpt53Urls(next) {
@@ -181,7 +171,7 @@
       await ns.chrome.storageSet("local", { [GPT53_MONITOR.urlsKey]: urls });
       return urls;
     } catch {
-      return [...GPT53_MONITOR.defaultUrls];
+      return [];
     }
   }
   async function getGpt53State() {
@@ -192,6 +182,7 @@
         const isLegacy = Object.prototype.hasOwnProperty.call(raw, "available") && Object.prototype.hasOwnProperty.call(raw, "status");
         if (isLegacy) {
           const url = GPT53_MONITOR.defaultUrls[0];
+          if (!url) return null;
           return {
             checkedAt: Number(raw.checkedAt) || 0,
             items: {
@@ -234,6 +225,10 @@
     }
     return 0;
   }
+  function isGpt53AvailableStatus(status) {
+    const n = Number(status) || 0;
+    return n >= 200 && n < 300;
+  }
   async function runGpt53Probe(options = {}) {
     const silent = !!options?.silent;
     try {
@@ -252,14 +247,12 @@
     const nextItems = {};
     const availableNow = [];
     for (const url of urls) {
-      const prevAvailable = !!prevItems?.[url]?.available;
       const status = await fetchUrlStatus(url);
       if (!status) {
-        nextItems[url] = { available: prevAvailable, status: 0, checkedAt, error: "fetch_failed" };
-        if (prevAvailable) availableNow.push({ url, status: 0 });
+        nextItems[url] = { available: false, status: 0, checkedAt, error: "fetch_failed" };
         continue;
       }
-      const available = status !== 404;
+      const available = isGpt53AvailableStatus(status);
       nextItems[url] = { available, status, checkedAt, error: "" };
       if (available) availableNow.push({ url, status });
     }
@@ -282,9 +275,9 @@
           title,
           message: availableNow.length === 1 ? monitorText(
             settings,
-            `\u68C0\u6D4B\u5230\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`,
-            `A monitored resource is now reachable: ${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
-          ) : monitorText(settings, `\u68C0\u6D4B\u5230 ${availableNow.length} \u4E2A\u8D44\u6E90\u53EF\u8BBF\u95EE\uFF1A${msg}`, `${availableNow.length} monitored resources are now reachable: ${msg}`),
+            `\u68C0\u6D4B\u5230\u8D44\u6E90\u53EF\u7528\uFF1A${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`,
+            `A monitored resource is now available: ${formatGpt53AlertLine({ url: availableNow[0]?.url, status: availableNow[0]?.status })}`
+          ) : monitorText(settings, `\u68C0\u6D4B\u5230 ${availableNow.length} \u4E2A\u8D44\u6E90\u53EF\u7528\uFF1A${msg}`, `${availableNow.length} monitored resources are now available: ${msg}`),
           priority: 2
         });
       } catch {

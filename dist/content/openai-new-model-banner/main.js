@@ -56,7 +56,7 @@
       appName: 'AI捷径',
       openOptionsFailed: '无法自动打开配置页，请从扩展图标进入“扩展程序选项”。',
       checkedAt: '检测时间：{value}',
-      notification: '检测到 {count} 条资源可访问（每次检测都会提醒）：{msg}\n\n要关闭此提示：打开配置并清空 URL 列表（删除全部 URL 后保存）。'
+      notification: '检测到 {count} 条资源可用（每次检测都会提醒）：{msg}\n\n要关闭此提示：打开配置并清空 URL 列表（删除全部 URL 后保存）。'
     };
     const en = {
       bannerTitle: 'OpenAI model alert',
@@ -64,7 +64,7 @@
       appName: 'AI Shortcuts',
       openOptionsFailed: 'Could not open the settings page automatically. Please open Extension Options from the extension icon.',
       checkedAt: 'Checked at: {value}',
-      notification: '{count} monitored resources are now reachable: {msg}\n\nTo stop these alerts, open Settings and clear the entire URL list.'
+      notification: '{count} monitored resources are now available: {msg}\n\nTo stop these alerts, open Settings and clear the entire URL list.'
     };
     const table = isChineseLocale() ? zh : en;
     return String(table[key] || '').replaceAll('{count}', String(vars.count ?? '')).replaceAll('{msg}', String(vars.msg ?? '')).replaceAll('{value}', String(vars.value ?? ''));
@@ -182,9 +182,9 @@
     title.className = 'title';
     title.textContent = msg('bannerTitle');
 
-    const msg = document.createElement('div');
-    msg.className = 'msg';
-    msg.textContent = '';
+    const messageEl = document.createElement('div');
+    messageEl.className = 'msg';
+    messageEl.textContent = '';
 
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -200,7 +200,7 @@
     actions.appendChild(btnOptions);
 
     card.appendChild(title);
-    card.appendChild(msg);
+    card.appendChild(messageEl);
     card.appendChild(meta);
     card.appendChild(actions);
 
@@ -213,7 +213,7 @@
     state.shadow = shadow;
     state.wrapper = wrap;
     state.titleEl = title;
-    state.msgEl = msg;
+    state.msgEl = messageEl;
     state.metaEl = meta;
     state.btnOptions = btnOptions;
 
@@ -340,9 +340,9 @@
 
   function renderFromAlerts(raw, checkedAt) {
     const alerts = normalizeAlerts(raw);
-    const msg = buildAlertMessage(alerts);
+    const alertMessage = buildAlertMessage(alerts);
     const count = Math.max(Number(alerts.unread) || 0, Array.isArray(alerts.events) ? alerts.events.length : 0);
-    if (!count || !msg) return hide();
+    if (!count || !alertMessage) return hide();
     const lastAt = (() => {
       try {
         const ev = Array.isArray(alerts.events) && alerts.events.length ? alerts.events[alerts.events.length - 1] : null;
@@ -353,7 +353,7 @@
     })();
     show({
       title: msg('bannerTitle'),
-      message: msg('notification', { count, msg }),
+      message: msg('notification', { count, msg: alertMessage }),
       checkedAt: lastAt || Number(checkedAt) || safeNow()
     });
   }

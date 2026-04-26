@@ -19,6 +19,7 @@
     'quicknav_gpt53_probe_state_v1',
     'quicknav_gpt53_probe_alerts_v1'
   ]);
+  const MIGRATION_CHATGPT_TEX_DOUBLE_CLICK_DEFAULT_ON = 'chatgpt_tex_copy_quote_double_click_copy_default_on_v1';
 
   let SHARED_CONFIG_LOADED = false;
   let DEFAULT_SETTINGS: any = { enabled: true, metaKeyMode: 'auto', localeMode: 'auto', sites: {}, scrollLockDefaults: {}, siteModules: {} };
@@ -251,45 +252,59 @@
       localeMode: normalizeLocaleMode(DEFAULT_SETTINGS?.localeMode, 'auto'),
       sites: { ...DEFAULT_SETTINGS.sites },
       scrollLockDefaults: { ...DEFAULT_SETTINGS.scrollLockDefaults },
-      siteModules: deepCloneJsonSafe(DEFAULT_SETTINGS.siteModules)
+      siteModules: deepCloneJsonSafe(DEFAULT_SETTINGS.siteModules),
+      migrations: {}
     };
     try {
-      if (!input || typeof input !== 'object') return out;
-      if (typeof input.enabled === 'boolean') out.enabled = input.enabled;
-      out.metaKeyMode = normalizeMetaKeyMode(input.metaKeyMode, out.metaKeyMode);
-      out.localeMode = normalizeLocaleMode(input.localeMode, out.localeMode);
-      if (input.sites && typeof input.sites === 'object') {
-        for (const key of Object.keys(DEFAULT_SETTINGS.sites || {})) {
-          if (typeof input.sites[key] === 'boolean') out.sites[key] = input.sites[key];
+      if (input && typeof input === 'object') {
+        if (typeof input.enabled === 'boolean') out.enabled = input.enabled;
+        out.metaKeyMode = normalizeMetaKeyMode(input.metaKeyMode, out.metaKeyMode);
+        out.localeMode = normalizeLocaleMode(input.localeMode, out.localeMode);
+        if (input.sites && typeof input.sites === 'object') {
+          for (const key of Object.keys(DEFAULT_SETTINGS.sites || {})) {
+            if (typeof input.sites[key] === 'boolean') out.sites[key] = input.sites[key];
+          }
         }
-      }
-      if (input.scrollLockDefaults && typeof input.scrollLockDefaults === 'object') {
-        for (const key of Object.keys(DEFAULT_SETTINGS.scrollLockDefaults || {})) {
-          if (typeof input.scrollLockDefaults[key] === 'boolean') out.scrollLockDefaults[key] = input.scrollLockDefaults[key];
+        if (input.scrollLockDefaults && typeof input.scrollLockDefaults === 'object') {
+          for (const key of Object.keys(DEFAULT_SETTINGS.scrollLockDefaults || {})) {
+            if (typeof input.scrollLockDefaults[key] === 'boolean') out.scrollLockDefaults[key] = input.scrollLockDefaults[key];
+          }
         }
-      }
-      if (input.siteModules && typeof input.siteModules === 'object') {
-        for (const siteId of Object.keys(DEFAULT_SETTINGS.siteModules || {})) {
-          const rawMods = input.siteModules?.[siteId];
-          if (!rawMods || typeof rawMods !== 'object') continue;
-          const outMods = out.siteModules?.[siteId];
-          if (!outMods || typeof outMods !== 'object') continue;
-          for (const modId of Object.keys(outMods)) {
-            if (typeof rawMods[modId] === 'boolean') {
-              outMods[modId] = rawMods[modId];
-              continue;
-            }
-            const legacyIds = getLegacyModuleIdsForCanonical(modId);
-            for (const legacyId of legacyIds) {
-              if (typeof rawMods[legacyId] === 'boolean') {
-                outMods[modId] = rawMods[legacyId];
-                break;
+        if (input.siteModules && typeof input.siteModules === 'object') {
+          for (const siteId of Object.keys(DEFAULT_SETTINGS.siteModules || {})) {
+            const rawMods = input.siteModules?.[siteId];
+            if (!rawMods || typeof rawMods !== 'object') continue;
+            const outMods = out.siteModules?.[siteId];
+            if (!outMods || typeof outMods !== 'object') continue;
+            for (const modId of Object.keys(outMods)) {
+              if (typeof rawMods[modId] === 'boolean') {
+                outMods[modId] = rawMods[modId];
+                continue;
+              }
+              const legacyIds = getLegacyModuleIdsForCanonical(modId);
+              for (const legacyId of legacyIds) {
+                if (typeof rawMods[legacyId] === 'boolean') {
+                  outMods[modId] = rawMods[legacyId];
+                  break;
+                }
               }
             }
           }
         }
+        if (input.migrations && typeof input.migrations === 'object') {
+          for (const [key, value] of Object.entries(input.migrations)) {
+            if (typeof value === 'boolean') out.migrations[key] = value;
+          }
+        }
       }
     } catch {}
+    if (out.migrations?.[MIGRATION_CHATGPT_TEX_DOUBLE_CLICK_DEFAULT_ON] !== true) {
+      const chatgptMods = out.siteModules?.chatgpt;
+      if (chatgptMods && typeof chatgptMods === 'object') {
+        chatgptMods.chatgpt_tex_copy_quote_double_click_copy = true;
+      }
+      out.migrations[MIGRATION_CHATGPT_TEX_DOUBLE_CLICK_DEFAULT_ON] = true;
+    }
     return out;
   }
 
@@ -321,6 +336,8 @@
           if (typeof rawMods[modId] !== 'boolean') return true;
         }
       }
+      if (!raw.migrations || typeof raw.migrations !== 'object') return true;
+      if (raw.migrations[MIGRATION_CHATGPT_TEX_DOUBLE_CLICK_DEFAULT_ON] !== true) return true;
       return false;
     } catch {
       return true;

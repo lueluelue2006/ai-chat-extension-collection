@@ -24,6 +24,7 @@
   const VERY_HEAVY_SCROLL_ACTIVE_UPDATE_DELAY_MS = 520;
   const VERY_HEAVY_SCROLL_FALLBACK_SCAN_DELAY_MS = 760;
   const QUICKNAV_LARGE_INDEX_THRESHOLD = 80;
+  const QUICKNAV_NATIVE_STRESS_CACHE_MS = 2500;
   const QUICKNAV_LIST_AUTOREVEAL_MS = 1800;
   const DEFAULT_FOLLOW_MARGIN = Math.max(CONFIG.anchorOffset || 8, 12);
   const DEFAULT_NAV_TOP = 1;
@@ -39,7 +40,7 @@
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
-  const CHAT_ROUTE_LOADING_POLL_MS = 120;
+  const CHAT_ROUTE_LOADING_POLL_MS = 280;
   const CHATGPT_ROUTE_WATCH_POLL_MS = 350;
   const PREVIEW_CACHE_HARD_CAP = 1800;
   const ROLE_CACHE_HARD_CAP = 1800;
@@ -55,6 +56,9 @@
   const QUICKNAV_SITE_ID = 'chatgpt';
   const WIDTH_KEY = `${STORE_NS}:nav-width`;
   const POS_KEY = `${STORE_NS}:nav-pos`;
+  const HYDRATION_INDEX_KEY_PREFIX = `${STORE_NS}:hydration-index:`;
+  const HYDRATION_INDEX_TTL_MS = 12 * 60 * 60 * 1000;
+  const HYDRATION_INDEX_HARD_CAP = 240;
   const CP_KEY_PREFIX = `${STORE_NS}:cp:`; // + 会话 key
   const CP_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 检查点保留 30 天
   let cpSet = new Set();          // 仅用于快速 membership（遗留）
@@ -72,8 +76,8 @@
   const SCROLL_LOCK_DRIFT = 16;
   const SCROLL_LOCK_IDLE_MS = 120;
   const SCROLL_LOCK_INTENT_MS = 1200;
-  const SCROLL_LOCK_FAST_RESTORE_DELAY_MS = 16;
-  const SCROLL_LOCK_NORMAL_RESTORE_DELAY_MS = 140;
+  const SCROLL_LOCK_CODE_INTENT_MS = 4200;
+  const SCROLL_LOCK_CODE_INTENT_DATASET_KEY = 'quicknavCodeIntentUntil';
   let scrollLockEnabled = false;
   let scrollLockScrollEl = null;
   let __cgptChatScrollContainer = null;
@@ -81,11 +85,11 @@
   let scrollLockBoundTarget = null;
   let scrollLockLastUserTs = 0;
   let scrollLockLastUserIntentTs = 0;
+  let scrollLockLastCodeBlockIntentTs = 0;
   let scrollLockLastMutationTs = 0;
   let scrollLockLastPos = 0;
   let scrollLockStablePos = 0; // 用户视角的基准位置
   let scrollLockRestoreTimer = 0;
-  let scrollLockRestoring = false;
   let scrollLockGuardUntil = 0;
   let scrollLockPointerActive = false;
   let scrollLockUserTouched = false;
@@ -94,6 +98,40 @@
   let navJumpStabilizerCtrl = null;
   let ORIGINAL_SCROLL_INTO_VIEW = null;
   let ORIGINAL_SCROLL_TO = null;
+
+  function readCodeIntentUntilFromDataset() {
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return 0;
+      const n = Number(docEl.dataset?.[SCROLL_LOCK_CODE_INTENT_DATASET_KEY] || 0);
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function bumpCodeIntentUntil(ms = SCROLL_LOCK_CODE_INTENT_MS) {
+    const dur = Math.max(0, Math.round(Number(ms) || 0));
+    const nextUntil = Date.now() + dur;
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return nextUntil;
+      const prev = Number(docEl.dataset?.[SCROLL_LOCK_CODE_INTENT_DATASET_KEY] || 0);
+      const safePrev = Number.isFinite(prev) ? prev : 0;
+      const next = Math.max(safePrev, nextUntil);
+      docEl.dataset[SCROLL_LOCK_CODE_INTENT_DATASET_KEY] = String(next);
+      return next;
+    } catch {
+      return nextUntil;
+    }
+  }
+
+  function hasRecentCodeBlockIntent(now = Date.now()) {
+    const ts = Number(scrollLockLastCodeBlockIntentTs) || 0;
+    if (ts && (now - ts) <= SCROLL_LOCK_CODE_INTENT_MS) return true;
+    const until = readCodeIntentUntilFromDataset();
+    return !!until && now < until;
+  }
   let ORIGINAL_SCROLL_BY = null;
   let ORIGINAL_ELEM_SCROLL_TO = null;
   let ORIGINAL_ELEM_SCROLL_BY = null;
@@ -1171,7 +1209,13 @@
         return null;
       }
     },
-    softCleanup: (reason = '') => {
+    softCleanup: (reason = '', options = {}) => {
+      const reasonText = String(reason || '');
+      const opts = options && typeof options === 'object' ? options : {};
+      const memoryOnly =
+        opts.refresh === false ||
+        /^mem[:/-]/i.test(reasonText) ||
+        /^(hidden|pagehide|visibility-hidden|quicknav-hidden)$/i.test(reasonText);
       const before = (() => {
         try {
           return getChatgptNavDebugApi()?.getStats?.();
@@ -1180,10 +1224,16 @@
         }
       })();
 
+      try {
+        if (opts.releaseCore !== false) getChatgptCoreApi()?.releaseMemory?.(`quicknav:${reasonText || 'softCleanup'}`);
+      } catch {}
+
       try { previewCache?.clear?.(); } catch {}
       try { roleCache?.clear?.(); } catch {}
       try { turnIdToPos?.clear?.(); } catch {}
       try { cachedTurnIds = []; } catch {}
+      try { cachedTurnAppendMarkers = []; } catch {}
+      try { cacheBaseIndex = []; } catch {}
 
       try {
         for (const [reqId, p] of treeNavigatePending.entries()) {
@@ -1205,7 +1255,7 @@
 
       try {
         const ui = document.getElementById('cgpt-compact-nav')?._ui;
-        if (ui) scheduleRefresh(ui, { force: true, delay: 120 });
+        if (ui && !memoryOnly) scheduleRefresh(ui, { force: true, delay: 120 });
       } catch {}
 
       const after = (() => {
@@ -1220,8 +1270,9 @@
         console.log('[QuickNav] softCleanup', { reason, before, after });
       } catch {}
 
-      return { reason, before, after };
+      return { reason: reasonText, before, after, memoryOnly };
     },
+    releaseMemory: (reason = '') => getChatgptNavDebugApi()?.softCleanup?.(reason || 'api', { refresh: false, releaseCore: true }),
     getTreeSummary: () => treeSummary,
     testObserver: () => {
       const nav = document.getElementById('cgpt-compact-nav');
@@ -1392,6 +1443,157 @@
     }
   }
 
+  function getCgptPerfBudgetFromAttrs() {
+    try {
+      const raw = document.documentElement?.dataset?.cgptperfBudget;
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, n) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function readCgptPerfNumberAttr(name) {
+    try {
+      const raw = document.documentElement?.dataset?.[name];
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, n) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function getQuicknavPerfPressureSnapshot() {
+    const budgetLevel = getCgptPerfBudgetFromAttrs();
+    const html = document.documentElement;
+    const hotPathActive = html?.dataset?.cgptperfHot === '1';
+    const heavyEnabled = html?.dataset?.cgptperfHeavy === '1';
+    const generating = isChatgptGenerating();
+    const turnCount = Math.max(
+      cacheIndex.length || 0,
+      readCgptPerfNumberAttr('cgptperfTurnCount')
+    );
+    const mathNodes = readCgptPerfNumberAttr('cgptperfMathCount');
+    const displayMathNodes = readCgptPerfNumberAttr('cgptperfDisplayMathCount');
+    const codeNodes = readCgptPerfNumberAttr('cgptperfCodeBlockCount');
+    const longCodeBlocks = readCgptPerfNumberAttr('cgptperfLongCodeCount');
+    const critical =
+      budgetLevel >= 3 ||
+      mathNodes >= 180 ||
+      displayMathNodes >= 56 ||
+      longCodeBlocks >= 2;
+    const heavy =
+      critical ||
+      heavyEnabled ||
+      budgetLevel >= 2 ||
+      mathNodes >= 100 ||
+      displayMathNodes >= 28 ||
+      codeNodes >= 18 ||
+      turnCount >= 40;
+    const hot =
+      critical ||
+      hotPathActive ||
+      (generating && (budgetLevel >= 1 || mathNodes >= 45 || displayMathNodes >= 14 || codeNodes >= 8 || turnCount >= 18));
+    return { hot, heavy, critical, mathNodes, displayMathNodes, codeNodes, longCodeBlocks, turnCount, perfBudget: budgetLevel, generating };
+  }
+
+  function shouldQuicknavPreferSoftRefresh(stress = null) {
+    const s = stress || getQuicknavPerfPressureSnapshot();
+    return !!(s.critical || s.perfBudget >= 3 || s.heavy || (lastDomTurnCount || 0) > 120);
+  }
+
+  function shouldQuicknavDeferForceRefresh(stress = null) {
+    const s = stress || getQuicknavPerfPressureSnapshot();
+    return !!(s.generating && (s.critical || s.heavy || s.perfBudget >= 2));
+  }
+
+  function getQuicknavNativeStressSnapshot() {
+    const ts = Date.now();
+    const routeKey = getRouteKey();
+    const perfPressure = getQuicknavPerfPressureSnapshot();
+    const cacheKey = [
+      routeKey,
+      cacheIndex.length,
+      perfPressure.perfBudget,
+      perfPressure.hot ? 1 : 0,
+      perfPressure.heavy ? 1 : 0,
+      perfPressure.turnCount,
+      perfPressure.mathNodes,
+      perfPressure.displayMathNodes,
+      perfPressure.codeNodes,
+      perfPressure.longCodeBlocks
+    ].join('::');
+    try {
+      if (
+        nativeStressCache.value &&
+        nativeStressCache.key === cacheKey &&
+        ts - Number(nativeStressCache.at || 0) < QUICKNAV_NATIVE_STRESS_CACHE_MS
+      ) {
+        return nativeStressCache.value;
+      }
+    } catch {}
+
+    if (perfPressure.perfBudget >= 2 || perfPressure.hot || perfPressure.heavy) {
+      nativeStressCache = { at: ts, key: cacheKey, value: perfPressure };
+      return perfPressure;
+    }
+
+    try {
+      if (document.documentElement?.dataset?.cgptperfExtreme === '1') {
+        const turnCount = perfPressure.turnCount || cacheIndex.length || lastDomTurnCount || 0;
+        const generating = !!perfPressure.generating;
+        const value = {
+          ...perfPressure,
+          turnCount,
+          heavy: !!(perfPressure.heavy || turnCount >= 30),
+          hot: !!(perfPressure.hot || (generating && turnCount >= 12)),
+          critical: !!perfPressure.critical
+        };
+        nativeStressCache = { at: ts, key: cacheKey, value };
+        return value;
+      }
+    } catch {}
+
+    const perfBudget = perfPressure.perfBudget;
+    let root = null;
+    let turnCount = perfPressure.turnCount || cacheIndex.length;
+    try {
+      const snapshot = getChatgptTurnRecordsSnapshot(false);
+      if (snapshot && typeof snapshot === 'object') {
+        if (snapshot.root instanceof HTMLElement) root = snapshot.root;
+        if (Array.isArray(snapshot.turns) && snapshot.turns.length) turnCount = snapshot.turns.length;
+      }
+    } catch {}
+    if (!root) {
+      try {
+        root = document.querySelector('[data-testid="conversation-turns"]') || document.querySelector('main') || document.body;
+      } catch {
+        root = document.body;
+      }
+    }
+
+    let mathNodes = 0;
+    let displayMathNodes = 0;
+    let codeNodes = 0;
+    try {
+      mathNodes = root?.querySelectorAll?.('.katex, .katex-display, mjx-container, math')?.length || 0;
+    } catch {}
+    try {
+      displayMathNodes = root?.querySelectorAll?.('.katex-display, mjx-container[display="true"], mjx-container[jax][display="true"]')?.length || 0;
+    } catch {}
+    try {
+      codeNodes = root?.querySelectorAll?.('pre, .cm-editor')?.length || 0;
+    } catch {}
+
+    const generating = isChatgptGenerating();
+    const critical = perfBudget >= 3 || mathNodes >= 180 || displayMathNodes >= 56;
+    const heavy = critical || perfBudget >= 2 || mathNodes >= 100 || displayMathNodes >= 28 || codeNodes >= 18 || turnCount >= 40;
+    const hot = critical || (generating && (perfBudget >= 1 || mathNodes >= 45 || displayMathNodes >= 14 || codeNodes >= 8 || turnCount >= 18));
+    const value = { hot, heavy, critical, mathNodes, displayMathNodes, codeNodes, longCodeBlocks: perfPressure.longCodeBlocks || 0, turnCount, perfBudget, generating };
+    nativeStressCache = { at: ts, key: cacheKey, value };
+    return value;
+  }
+
   function isChatgptTurnOffscreen(turnEl) {
     try {
       const core = getChatgptCoreApi();
@@ -1429,11 +1631,15 @@
   let currentActiveId = null;
   let currentActiveTurnPos = 0; // 当前激活 turn 在 qsTurns() 里的位置，用于减少扫描
   let quicknavUiInteractionUntil = 0;
+  let nativeStressCache = { at: 0, key: '', value: null };
+  let fixedHeaderHeightCache = { at: 0, width: 0, value: 0 };
   let __cgptBooting = false;
   let refreshTimer = 0; // 新的尾随去抖定时器
   let refreshTailTimer = 0;
   let routeRecoveryUntil = 0;
   let routeRecoveryTimer = 0;
+  let emptyHydrationTimer = 0;
+  let initialIndexCatchupTimer = 0;
   let lastStopCheckTs = 0;
   let lastHasStop = null;
   let __cgptKeydownHandler = null;
@@ -1476,6 +1682,7 @@
     cachedTurnAppendMarkers = [];
     cacheIndex = [];
     cacheBaseIndex = [];
+    hydrationCacheActive = false;
     lastUserSeq = 0;
     lastAssistantSeq = 0;
     lastTurnCount = 0;
@@ -1506,6 +1713,50 @@
     routeRecoveryUntil = 0;
   }
 
+  function stopEmptyHydrationWatch() {
+    try {
+      if (emptyHydrationTimer) cancelScopedInterval(emptyHydrationTimer);
+    } catch {}
+    emptyHydrationTimer = 0;
+  }
+
+  function armEmptyHydrationWatch(ui, reason = 'empty-hydration') {
+    try {
+      if (!ui || emptyHydrationTimer || !isChatRoute()) return;
+      let attempts = 0;
+      emptyHydrationTimer = scopeInterval(conversationScope, () => {
+        try {
+          if (document.hidden) return;
+          const nav = document.getElementById('cgpt-compact-nav');
+          const currentUi = nav && nav._ui ? nav._ui : ui;
+          if (!currentUi || !isChatRoute()) {
+            stopEmptyHydrationWatch();
+            return;
+          }
+          if (cacheIndex.length) {
+            stopEmptyHydrationWatch();
+            return;
+          }
+          attempts += 1;
+          if (attempts > 40) {
+            stopEmptyHydrationWatch();
+            return;
+          }
+          const rawTurns = getRawConversationTurnCount();
+          updateQuicknavEmptyState(currentUi);
+          if (rawTurns <= 0) return;
+          TURN_SELECTOR = null;
+          observeChat(currentUi);
+          scheduleRefresh(currentUi, { force: true, soft: false, delay: 0 });
+          if (cacheIndex.length) stopEmptyHydrationWatch();
+        } catch {
+          stopEmptyHydrationWatch();
+        }
+      }, 250);
+      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: armEmptyHydrationWatch', reason);
+    } catch {}
+  }
+
   function isRouteRecoveryActive() {
     return !!(routeRecoveryUntil && Date.now() < routeRecoveryUntil);
   }
@@ -1526,7 +1777,7 @@
 
   function getRawConversationTurnCount() {
     try {
-      const direct = document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR).length;
+      const direct = getDirectConversationTurns().length;
       if (direct > 0) return direct;
     } catch {}
     try {
@@ -1565,6 +1816,69 @@
     return 0;
   }
 
+  function getDirectConversationTurns() {
+    try {
+      const turns = Array.from(document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR));
+      return turns.filter((turn) => {
+        try {
+          return turn instanceof HTMLElement && isLikelyConversationTurnNode(turn);
+        } catch {
+          return turn instanceof HTMLElement;
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  function stopInitialIndexCatchup() {
+    try {
+      if (initialIndexCatchupTimer) cancelScopedTimeout(initialIndexCatchupTimer);
+    } catch {}
+    initialIndexCatchupTimer = 0;
+  }
+
+  function armInitialIndexCatchup(ui, reason = 'initial-catchup') {
+    try {
+      stopInitialIndexCatchup();
+      if (!ui || !isChatRoute()) return;
+      let attempts = 0;
+      const tick = () => {
+        try {
+          initialIndexCatchupTimer = 0;
+          if (document.hidden || !isChatRoute()) return;
+          const nav = document.getElementById('cgpt-compact-nav');
+          const currentUi = nav && nav._ui ? nav._ui : ui;
+          if (!currentUi || !nav || !nav.isConnected) return;
+          const rawTurns = getDirectConversationTurns().length || getRawConversationTurnCount();
+          const baseCount = Array.isArray(cacheBaseIndex) ? cacheBaseIndex.length : 0;
+          const needsCatchup =
+            rawTurns > 0 &&
+            (baseCount < rawTurns || hasPlaceholderPreviews(cacheIndex) || hasPlaceholderPreviews(cacheBaseIndex));
+          if (needsCatchup) {
+            TURN_SELECTOR = null;
+            observeChat(currentUi);
+            scheduleRefresh(currentUi, { force: true, soft: false, delay: 0 });
+          }
+          const nextBaseCount = Array.isArray(cacheBaseIndex) ? cacheBaseIndex.length : 0;
+          const done =
+            rawTurns > 0 &&
+            nextBaseCount >= rawTurns &&
+            !hasPlaceholderPreviews(cacheIndex) &&
+            !hasPlaceholderPreviews(cacheBaseIndex);
+          if (done) return;
+          attempts += 1;
+          if (attempts >= 36) return;
+          initialIndexCatchupTimer = scopeTimeout(conversationScope, tick, rawTurns > 0 ? 220 : 420);
+        } catch {
+          stopInitialIndexCatchup();
+        }
+      };
+      tick();
+      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: armInitialIndexCatchup', reason);
+    } catch {}
+  }
+
   function captureCurrentRouteTurnMarkers(turnsOverride = null) {
     try {
       const turns = Array.isArray(turnsOverride) ? turnsOverride : qsTurns();
@@ -1595,9 +1909,15 @@
   function isLikelyConversationTurnNode(el) {
     try {
       if (!(el instanceof Element)) return false;
-      if (el.matches?.(CHATGPT_TURN_SELECTOR)) return true;
       if (el.hasAttribute?.('data-message-id') || el.hasAttribute?.('data-message-author-role')) return true;
       if (el.querySelector?.('[data-message-id], [data-message-author-role]')) return true;
+      if (!el.matches?.(CHATGPT_TURN_SELECTOR)) return false;
+      const hasMessageShell = !!el.querySelector?.(
+        '[data-message-id], [data-message-author-role], .text-message[data-author], .markdown, .prose, .whitespace-pre-wrap, div[data-message-content-part]'
+      );
+      if (!hasMessageShell) return false;
+      const text = getTextPreview(el);
+      return !isPlaceholderPreview(text);
     } catch {}
     return false;
   }
@@ -1650,6 +1970,10 @@
       if (panel._ro && typeof panel._ro.disconnect === 'function') panel._ro.disconnect();
     } catch {}
     panel._ro = null;
+    try {
+      if (typeof panel._dragCleanup === 'function') panel._dragCleanup();
+    } catch {}
+    panel._dragCleanup = null;
 
     try {
       if (removeNode) panel.remove();
@@ -1687,6 +2011,8 @@
     } catch {}
     forceRefreshTimer = 0;
     stopRouteRecovery();
+    stopEmptyHydrationWatch();
+    stopInitialIndexCatchup();
     try {
       if (treeSummaryReqTimer) cancelScopedTimeout(treeSummaryReqTimer);
     } catch {}
@@ -2154,6 +2480,13 @@
   }
 
   function scheduleRefresh(ui, { delay = 80, force = false, soft = null } = {}) {
+    try {
+      if (!force && document.documentElement?.dataset?.cgptperfExtreme === '1') {
+        const pressure = getQuicknavPerfPressureSnapshot();
+        if (pressure.generating && pressure.turnCount >= 12) delay = Math.max(Number(delay) || 0, 900);
+        else if (pressure.heavy) delay = Math.max(Number(delay) || 0, 520);
+      }
+    } catch {}
     if (QUICKNAV_OBSERVER_REFRESH && typeof QUICKNAV_OBSERVER_REFRESH.scheduleDebounced === 'function') {
       const next = QUICKNAV_OBSERVER_REFRESH.scheduleDebounced({
         timerId: refreshTimer,
@@ -2179,9 +2512,11 @@
       refreshTimer = 0;
       pending = false; // 旧标志直接归零，防止误伤
       try {
-        const useSoft = soft === null ? (lastDomTurnCount || 0) > 120 : !!soft;
+        const stress = getQuicknavNativeStressSnapshot();
+        const useSoft = soft === null ? shouldQuicknavPreferSoftRefresh(stress) : !!soft;
+        const effectiveForce = !!force && !shouldQuicknavDeferForceRefresh(stress);
         const oldCount = cacheIndex.length;
-        refreshIndex(ui, { force, soft: useSoft });
+        refreshIndex(ui, { force: effectiveForce, soft: useSoft });
         const newCount = cacheIndex.length;
 
         // 如果刷新期间 turn 数变化，再来一次"收尾"（防抖窗口内很常见）
@@ -2192,9 +2527,14 @@
           }
           refreshTailTimer = scopeTimeout(conversationScope, () => {
             refreshTailTimer = 0;
-            refreshIndex(ui, { force: true });
+            const tailStress = getQuicknavNativeStressSnapshot();
+            const tailSoft = shouldQuicknavPreferSoftRefresh(tailStress);
+            refreshIndex(ui, {
+              force: !shouldQuicknavDeferForceRefresh(tailStress),
+              soft: tailSoft
+            });
             scheduleActiveUpdateNow();
-          }, 120);
+          }, stress.critical ? 900 : stress.heavy ? 520 : 120);
         } else {
           scheduleActiveUpdateNow();
         }
@@ -2202,6 +2542,11 @@
         if (DEBUG || window.DEBUG_TEMP) console.error('scheduleRefresh error:', e);
       }
     }
+  }
+
+  function schedulePinStateRefresh(ui) {
+    if (!ui) return;
+    scheduleRefresh(ui, { delay: 0, force: true, soft: false });
   }
 
   function checkStreamingState(ui, force = false) {
@@ -2213,7 +2558,7 @@
       lastHasStop = hasStop;
       return hasStop;
     }
-    if (lastHasStop && !hasStop && ui) scheduleRefresh(ui, { force: true });
+    if (lastHasStop && !hasStop && ui) scheduleRefresh(ui, { force: true, delay: shouldQuicknavPreferSoftRefresh() ? 650 : 80 });
     lastHasStop = hasStop;
     return hasStop;
   }
@@ -2293,6 +2638,8 @@
         installNativeOutlineVisibilityWatcher();
         scheduleNativeOutlineVisibilityBurst(ui, 0);
         scheduleRefresh(ui);
+        armEmptyHydrationWatch(ui, 'panel-boot');
+        armInitialIndexCatchup(ui, 'panel-boot');
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 面板创建完成');
       } finally {
         __cgptBooting = false;
@@ -2383,9 +2730,8 @@
       } catch {}
     };
 
-    // Prefer shared core/bridge (MAIN-world route hook), but always keep a lightweight
-    // secondary URL poll because ChatGPT can occasionally miss route events during
-    // heavy SPA hydration on long conversations.
+    // Prefer shared core/bridge route hooks. Avoid stacking a secondary poll on top of
+    // them because long hydrated conversations can turn that into a persistent scan loop.
     try {
       const core = globalThis.__aichat_chatgpt_core_v1__;
       if (core && typeof core.onRouteChange === 'function') {
@@ -2396,7 +2742,6 @@
           scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
           scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
         } catch {}
-        installSecondaryRoutePoll();
         return;
       }
     } catch {}
@@ -2419,7 +2764,6 @@
             scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
             scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
           } catch {}
-          installSecondaryRoutePoll();
           return;
         }
       }
@@ -2439,7 +2783,6 @@
           scopeOn(runtimeScope, window, 'popstate', detectUrlChange);
           scopeOn(runtimeScope, window, 'hashchange', detectUrlChange);
         } catch {}
-        installSecondaryRoutePoll();
         return;
       }
     } catch {}
@@ -2485,9 +2828,10 @@
             nextTurnCount !== (lastDomTurnCount || 0);
           if (!hasStructuralDelta) return;
 
+          const stress = getQuicknavNativeStressSnapshot();
           scheduleRefresh(currentUi, {
-            delay: nextTurnCount > 120 ? 120 : 30,
-            soft: nextTurnCount > 120
+            delay: stress.critical ? 900 : stress.heavy ? 280 : nextTurnCount > 120 ? 120 : 30,
+            soft: shouldQuicknavPreferSoftRefresh(stress)
           });
         } catch (err) {
           if (DEBUG || window.DEBUG_TEMP) console.error('ChatGPT Navigation: core turns watcher error', err);
@@ -2578,10 +2922,23 @@
       } catch {}
     };
 
-    // ChatGPT often churns direct body children during initial router bootstrap.
-    // Mount after a short quiet window so the panel appears once and avoids a visible wipe/rebuild.
+    // ChatGPT hydrates a large streamed React document. Mount only after hydration
+    // has either produced real turn DOM or the page has reached load complete, so
+    // our fixed panel does not become an extra body child during React hydration.
     const INITIAL_BODY_QUIET_MS = 1400;
-    const INITIAL_MOUNT_MAX_WAIT_MS = 3200;
+    const INITIAL_MOUNT_MAX_WAIT_MS = 9000;
+
+    const hasHydratedChatSurface = () => {
+      try {
+        if (!isConversationViewRoute()) return true;
+        if (document.readyState === 'complete') return true;
+        if (document.querySelector('[data-testid^="conversation-turn-"] [data-message-author-role], [data-message-author-role]')) return true;
+        const main = document.querySelector('main');
+        const mainText = String(main?.textContent || '').trim();
+        if (mainText && !/^(Light|Dark)?$/i.test(mainText)) return true;
+      } catch {}
+      return false;
+    };
 
     const armStableInitialMount = () => {
       let quietTimer = 0;
@@ -2622,6 +2979,46 @@
       maxTimer = scopeTimeout(runtimeScope, finish, INITIAL_MOUNT_MAX_WAIT_MS);
     };
 
+    const armHydrationAwareInitialMount = () => {
+      if (hasHydratedChatSurface()) {
+        armStableInitialMount();
+        return;
+      }
+
+      let done = false;
+      let maxTimer = 0;
+      let mo = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        try { if (maxTimer) cancelScopedTimeout(maxTimer); } catch {}
+        try { mo?.disconnect?.(); } catch {}
+        try { document.removeEventListener('readystatechange', onReadyState); } catch {}
+        try { window.removeEventListener('load', finish); } catch {}
+        maxTimer = 0;
+        mo = null;
+        armStableInitialMount();
+      };
+      const onReadyState = () => {
+        if (hasHydratedChatSurface()) finish();
+      };
+      try {
+        document.addEventListener('readystatechange', onReadyState);
+        window.addEventListener('load', finish, { once: true });
+      } catch {}
+      try {
+        mo = scopeObserver(runtimeScope, () => {
+          if (hasHydratedChatSurface()) finish();
+        });
+        if (mo && document.body && typeof mo.observe === 'function') {
+          mo.observe(document.body, { childList: true, subtree: true });
+        }
+      } catch {
+        mo = null;
+      }
+      maxTimer = scopeTimeout(runtimeScope, finish, INITIAL_MOUNT_MAX_WAIT_MS);
+    };
+
     try {
       if (document.readyState === 'loading') {
         scopeOn(
@@ -2629,7 +3026,7 @@
           document,
           'DOMContentLoaded',
           () => {
-            armStableInitialMount();
+            armHydrationAwareInitialMount();
           },
           { once: true }
         );
@@ -2637,7 +3034,7 @@
       }
     } catch {}
 
-    armStableInitialMount();
+    armHydrationAwareInitialMount();
   });
 
   function qsTurns(root = document) {
@@ -2663,20 +3060,19 @@
       if (core && typeof core.getTurnsSnapshot === 'function' && root === document) {
         const snapshot = core.getTurnsSnapshot(false);
         const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
-        if (turns.length) {
-          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
-          if (!isRouteRecoveryActive()) return turns;
-        }
         let liveTurns = null;
         try {
-          const direct = Array.from(document.querySelectorAll(CHATGPT_TURN_HOST_SELECTOR));
+          const direct = getDirectConversationTurns();
           if (direct.length) liveTurns = direct;
         } catch {}
         if (Array.isArray(liveTurns) && liveTurns.length > turns.length) {
           TURN_SELECTOR = CHATGPT_TURN_HOST_SELECTOR;
           return liveTurns;
         }
-        if (turns.length) return turns;
+        if (turns.length) {
+          TURN_SELECTOR = typeof core.getTurnSelector === 'function' ? core.getTurnSelector() : CHATGPT_TURN_SELECTOR;
+          return turns;
+        }
       }
       if (core && typeof core.getTurnArticles === 'function') {
         const turns = core.getTurnArticles(root);
@@ -2747,7 +3143,7 @@
         if (!(el instanceof Element)) return false;
         if (isExtensionOwnedTurnCandidate(el)) return false;
         if (el.closest?.('[role="banner"], header, nav')) return false;
-        if (el.matches?.(CHATGPT_TURN_SELECTOR)) return true;
+        if (el.matches?.(CHATGPT_TURN_SELECTOR)) return isLikelyConversationTurnNode(el);
         if (el.matches?.('div[data-message-id], [data-message-author-role]')) return true;
         if (el.querySelector?.('[data-message-author-role], [data-message-id], .text-message[data-author], .markdown, .prose, .whitespace-pre-wrap')) return true;
       } catch {}
@@ -2918,6 +3314,41 @@
     return out || '...';
   }
 
+  function isPlaceholderPreview(preview) {
+    const value = String(preview || '').trim();
+    return !value || value === '...' || value === '…';
+  }
+
+  function hasPlaceholderPreviews(list = cacheIndex) {
+    try {
+      return Array.isArray(list) && list.some((item) => item && isPlaceholderPreview(item.preview));
+    } catch {
+      return false;
+    }
+  }
+
+  function getTurnPreviewBlock(el, role) {
+    if (!el || typeof el.querySelector !== 'function') return null;
+    try {
+      if (role === 'user') {
+        return el.querySelector(
+          '[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]'
+        );
+      }
+      return el.querySelector(
+        '.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]'
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function readFreshTurnPreview(el, role) {
+    const block = getTurnPreviewBlock(el, role);
+    const preview = getTextPreview(block);
+    return isPlaceholderPreview(preview) ? '' : preview;
+  }
+
   function getTurnKey(el) {
     if (!el) return '';
     return el.getAttribute('data-message-id') || el.getAttribute('data-testid') || el.id || '';
@@ -2947,6 +3378,70 @@
       if (turnId) return turnId;
     } catch {}
     return '';
+  }
+
+  function findRecordTurnElement(record, idx, currentEl = null, keyHint = '') {
+    try {
+      if (currentEl instanceof HTMLElement && currentEl.isConnected !== false) {
+        const hasCurrentContent =
+          !!getTurnMessageId(currentEl, null) ||
+          !!currentEl.querySelector?.('[data-message-author-role], [data-message-id]') ||
+          !!String(currentEl.textContent || '').trim();
+        if (hasCurrentContent) return currentEl;
+      }
+    } catch {}
+
+    const candidates = [];
+    const add = (value) => {
+      const text = String(value || '').trim();
+      if (!text || candidates.includes(text)) return;
+      candidates.push(text);
+    };
+
+    try { add(record?.msgId); } catch {}
+    try { add(record?.turnId); } catch {}
+    try { add(record?.stableTurnId); } catch {}
+    try { add(record?.key); } catch {}
+    add(keyHint);
+
+    for (const value of candidates) {
+      try {
+        const byMsgId = document.querySelector(`[data-message-id="${cssEscape(value)}"]`);
+        const msgTurn = byMsgId
+          ? byMsgId.closest(CHATGPT_TURN_HOST_SELECTOR) || byMsgId.closest('[data-testid^="conversation-turn-"], [data-testid*="conversation-turn"]')
+          : null;
+        if (msgTurn instanceof HTMLElement) return msgTurn;
+      } catch {}
+      try {
+        const byTestId = document.querySelector(
+          `section[data-testid="${cssEscape(value)}"], article[data-testid="${cssEscape(value)}"], [data-testid="${cssEscape(value)}"]`
+        );
+        if (byTestId instanceof HTMLElement) return byTestId;
+      } catch {}
+      try {
+        const byTurnId = document.querySelector(
+          `section[data-turn-id="${cssEscape(value)}"], article[data-turn-id="${cssEscape(value)}"], [data-turn-id="${cssEscape(value)}"]`
+        );
+        if (byTurnId instanceof HTMLElement) return byTurnId;
+      } catch {}
+      try {
+        const byId = document.getElementById(value);
+        if (byId instanceof HTMLElement) return byId;
+      } catch {}
+    }
+
+    try {
+      const n = Number(idx);
+      if (Number.isInteger(n) && n >= 0) {
+        const testId = `conversation-turn-${n + 1}`;
+        const byIndex = document.querySelector(
+          `section[data-testid="${testId}"], article[data-testid="${testId}"], [data-testid="${testId}"]`
+        );
+        if (byIndex instanceof HTMLElement) return byIndex;
+      }
+    } catch {}
+
+    return null;
   }
 
   function getTurnAppendMarker(turnEl) {
@@ -3050,27 +3545,21 @@
 
     const shouldRecalcPreview = i >= fullLen - TAIL_RECALC_TURNS;
     let preview = !shouldRecalcPreview && nodeMeta.msgKey === msgKey ? String(nodeMeta.preview || '') : '';
-    if (!preview) preview = previewCache.get(msgKey) || '';
+    if (isPlaceholderPreview(preview)) preview = '';
+    if (!preview) {
+      preview = previewCache.get(msgKey) || '';
+      if (isPlaceholderPreview(preview)) preview = '';
+    }
     let block = null;
     if (!preview || shouldRecalcPreview) {
-      try {
-        if (isUser) {
-          block = el.querySelector(
-            '[data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"] div[data-message-content-part], [data-message-author-role="user"] .prose, div[data-message-author-role="user"] p, .text-message[data-author="user"]'
-          );
-        } else {
-          block = el.querySelector(
-            '.deep-research-result, .border-token-border-sharp .markdown, [data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] .prose, [data-message-author-role="assistant"] div[data-message-content-part], div[data-message-author-role="assistant"] p, .text-message[data-author="assistant"]'
-          );
-        }
-      } catch {
-        block = null;
-      }
+      block = getTurnPreviewBlock(el, isUser ? 'user' : 'assistant');
       preview = getTextPreview(block);
-      if (preview) {
+      if (!isPlaceholderPreview(preview)) {
         nodeMeta.msgKey = msgKey;
         nodeMeta.preview = preview;
         setBoundedMapValue(previewCache, msgKey, preview, PREVIEW_CACHE_HARD_CAP);
+      } else {
+        preview = '...';
       }
     }
     if (!preview) {
@@ -3117,7 +3606,7 @@
       ? turnRecordsOverride
       : (() => {
       try {
-        const snapshot = getChatgptTurnRecordsSnapshot(false);
+        const snapshot = getChatgptTurnRecordsSnapshot(hasPlaceholderPreviews());
         const records = Array.isArray(snapshot?.records) ? snapshot.records : null;
         if (!records || !records.length) return null;
         return records;
@@ -3141,13 +3630,16 @@
       const list = [];
       for (let i = 0; i < turnRecords.length; i++) {
         const record = turnRecords[i];
-        const el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
+        let el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
         const role = String(record?.role || '');
         if (role !== 'user' && role !== 'assistant') {
           if (el) clearSyntheticTurnMarkers(el);
           continue;
         }
-        const msgId = String(record?.msgId || '');
+        const rawMsgId = String(record?.msgId || '');
+        const rawKey = String(record?.key || rawMsgId || record?.stableTurnId || (el ? getTurnKey(el) : '') || '');
+        el = findRecordTurnElement(record, i, el, rawKey) || el;
+        const msgId = rawMsgId || (el ? getTurnMessageId(el, null) : '');
         const msgKey = String(record?.key || msgId || record?.stableTurnId || (el ? getTurnKey(el) : '') || '');
         const itemId = getRecordBackedTurnId(record, i, el, msgKey);
         if (el) {
@@ -3168,7 +3660,13 @@
           msgId,
           idx: i,
           role,
-          preview: String(record?.preview || '...') || '...',
+          preview: (() => {
+            const fromRecord = String(record?.preview || '');
+            const shouldFreshTail = i >= Math.max(0, turnRecords.length - TAIL_RECALC_TURNS);
+            if (!shouldFreshTail && msgId && !isPlaceholderPreview(fromRecord)) return fromRecord;
+            const fresh = readFreshTurnPreview(el, role);
+            return fresh || (isPlaceholderPreview(fromRecord) ? '...' : fromRecord);
+          })(),
           seq,
           mounted: !!el,
           queued: !!tabQueueState?.queued,
@@ -3381,14 +3879,17 @@
       const base = Array.isArray(cacheBaseIndex) ? cacheBaseIndex : [];
       for (let i = start; i < recordsArr.length; i++) {
         const record = recordsArr[i];
-        const el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
+        let el = record?.turnEl instanceof HTMLElement ? record.turnEl : null;
         const role = String(record?.role || '');
         if (role !== 'user' && role !== 'assistant') {
           if (el) clearSyntheticTurnMarkers(el);
           continue;
         }
-        const msgId = String(record?.msgId || '');
-        const msgKey = String(record?.key || msgId || (el ? getTurnKey(el) : '') || '');
+        const rawMsgId = String(record?.msgId || '');
+        const rawKey = String(record?.key || rawMsgId || record?.stableTurnId || (el ? getTurnKey(el) : '') || '');
+        el = findRecordTurnElement(record, i, el, rawKey) || el;
+        const msgId = rawMsgId || (el ? getTurnMessageId(el, null) : '');
+        const msgKey = String(record?.key || msgId || record?.stableTurnId || (el ? getTurnKey(el) : '') || '');
         const itemId = getRecordBackedTurnId(record, i, el, msgKey);
         if (el) {
           if (!el.id) el.id = itemId;
@@ -3407,7 +3908,13 @@
           msgId,
           idx: i,
           role,
-          preview: String(record?.preview || '...') || '...',
+          preview: (() => {
+            const fromRecord = String(record?.preview || '');
+            const shouldFreshTail = i >= Math.max(0, recordsArr.length - TAIL_RECALC_TURNS);
+            if (!shouldFreshTail && msgId && !isPlaceholderPreview(fromRecord)) return fromRecord;
+            const fresh = readFreshTurnPreview(el, role);
+            return fresh || (isPlaceholderPreview(fromRecord) ? '...' : fromRecord);
+          })(),
           seq,
           mounted: !!el,
           queued: !!tabQueueState?.queued,
@@ -3634,6 +4141,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 .compact-text { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
 .compact-number { display:inline-block; margin-right:4px; font-weight:600; color:var(--cgpt-nav-text-muted); font-size:11px; }
 .compact-empty { padding:10px; text-align:center; color:var(--cgpt-nav-text-muted); font-size:11px; background:var(--cgpt-nav-panel-bg); border-radius:var(--cgpt-nav-radius-lg); pointer-events:auto; min-height:20px; line-height:1.4; border:1px dashed var(--cgpt-nav-border-muted); }
+.compact-list[data-hydration-cache] .compact-item { opacity:.72; pointer-events:none; }
 
 /* 收藏与锚点 */
   .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
@@ -4339,7 +4847,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     try {
       const api = globalThis.__aichat_ui_pos_drag_v1__;
       if (api && typeof api.enableRightTopDrag === 'function') {
-        api.enableRightTopDrag(nav, header, opts || {});
+        const off = api.enableRightTopDrag(nav, header, opts || {});
+        if (typeof off === 'function') nav._dragCleanup = off;
         return;
       }
     } catch {}
@@ -4414,6 +4923,166 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   // ===== 检查点与宽度调整 =====
   function getConvKey() { try { return location.pathname || 'root'; } catch { return 'root'; } }
+
+  function getHydrationIndexStorageKey(convKey = getConvKey()) {
+    return HYDRATION_INDEX_KEY_PREFIX + String(convKey || 'root');
+  }
+
+  function toHydrationIndexItem(item, i) {
+    try {
+      if (!item || typeof item !== 'object') return null;
+      const role = String(item.role || '').trim();
+      if (role !== 'user' && role !== 'assistant') return null;
+      const preview = String(item.preview || '').replace(/\s+/g, ' ').trim();
+      if (isPlaceholderPreview(preview)) return null;
+      const key = String(item.key || item.msgId || `turn:${i + 1}`).trim();
+      if (!key) return null;
+      const idx = Number.isInteger(item.idx) ? item.idx : i;
+      const seq = Number.isInteger(item.seq) ? item.seq : i + 1;
+      return {
+        key,
+        msgId: String(item.msgId || '').trim(),
+        idx,
+        role,
+        preview: preview.length > 600 ? preview.slice(0, 600) : preview,
+        seq
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function saveHydrationIndex(list) {
+    try {
+      if (!isConversationViewRoute()) return;
+      const raw = Array.isArray(list) ? list : [];
+      if (!raw.length) return;
+      const items = [];
+      const offset = Math.max(0, raw.length - HYDRATION_INDEX_HARD_CAP);
+      for (let i = offset; i < raw.length; i++) {
+        const item = toHydrationIndexItem(raw[i], i);
+        if (item) items.push(item);
+      }
+      if (!items.length) return;
+      window.localStorage.setItem(
+        getHydrationIndexStorageKey(),
+        JSON.stringify({
+          v: 1,
+          at: Date.now(),
+          route: getConvKey(),
+          count: raw.length,
+          items
+        })
+      );
+    } catch {}
+  }
+
+  function loadHydrationIndex(convKey = getConvKey()) {
+    try {
+      const raw = window.localStorage.getItem(getHydrationIndexStorageKey(convKey));
+      if (!raw) return [];
+      const payload = JSON.parse(raw);
+      const at = Number(payload?.at || 0);
+      if (!at || Date.now() - at > HYDRATION_INDEX_TTL_MS) return [];
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const out = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = toHydrationIndexItem(items[i], i);
+        if (!item) continue;
+        out.push({
+          id: `cgpt-hydration-turn-${i + 1}`,
+          key: item.key,
+          msgId: item.msgId,
+          idx: Number.isInteger(item.idx) ? item.idx : i,
+          role: item.role,
+          preview: item.preview,
+          seq: Number.isInteger(item.seq) ? item.seq : i + 1,
+          mounted: false,
+          hydrating: true
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  function mergeHydrationPreviewFallback(liveList, cachedList) {
+    try {
+      const live = Array.isArray(liveList) ? liveList : [];
+      const cached = Array.isArray(cachedList) ? cachedList : [];
+      if (!live.length || !cached.length) return live;
+      const byIdx = new Map();
+      for (let i = 0; i < cached.length; i++) {
+        const item = cached[i];
+        if (!item || typeof item !== 'object') continue;
+        const idx = Number.isInteger(item.idx) ? item.idx : i;
+        byIdx.set(idx, item);
+      }
+      return live.map((item, i) => {
+        if (!item || !isPlaceholderPreview(item.preview)) return item;
+        const cachedItem = byIdx.get(Number.isInteger(item.idx) ? item.idx : i) || cached[i] || null;
+        const preview = String(cachedItem?.preview || '').replace(/\s+/g, ' ').trim();
+        if (isPlaceholderPreview(preview)) return item;
+        return Object.assign({}, item, {
+          preview,
+          hydrationPreviewFallback: true
+        });
+      });
+    } catch {
+      return Array.isArray(liveList) ? liveList : [];
+    }
+  }
+
+  function mergeCachedPlaceholderPreviewFallback(liveList, cachedList) {
+    try {
+      const live = Array.isArray(liveList) ? liveList : [];
+      const cached = Array.isArray(cachedList) ? cachedList : [];
+      if (!live.length || !cached.length || !hasPlaceholderPreviews(live)) return live;
+
+      const byMsgId = new Map();
+      const byKey = new Map();
+      const byIdx = new Map();
+      const remember = (item, i) => {
+        if (!item || typeof item !== 'object') return;
+        const role = String(item.role || '').trim();
+        if (role !== 'user' && role !== 'assistant') return;
+        const preview = String(item.preview || '').replace(/\s+/g, ' ').trim();
+        if (isPlaceholderPreview(preview)) return;
+        const msgId = String(item.msgId || '').trim();
+        const key = String(item.key || '').trim();
+        const idx = Number.isInteger(item.idx) ? item.idx : i;
+        const value = { role, preview, msgId, key, idx };
+        if (msgId) byMsgId.set(`${role}:${msgId}`, value);
+        if (key) byKey.set(`${role}:${key}`, value);
+        if (Number.isInteger(idx)) byIdx.set(`${role}:${idx}`, value);
+      };
+
+      for (let i = 0; i < cached.length; i += 1) remember(cached[i], i);
+
+      return live.map((item, i) => {
+        if (!item || !isPlaceholderPreview(item.preview)) return item;
+        const role = String(item.role || '').trim();
+        if (role !== 'user' && role !== 'assistant') return item;
+        const msgId = String(item.msgId || '').trim();
+        const key = String(item.key || '').trim();
+        const idx = Number.isInteger(item.idx) ? item.idx : i;
+        const candidate =
+          (msgId ? byMsgId.get(`${role}:${msgId}`) : null) ||
+          (key ? byKey.get(`${role}:${key}`) : null) ||
+          (Number.isInteger(idx) ? byIdx.get(`${role}:${idx}`) : null);
+        const preview = String(candidate?.preview || '').replace(/\s+/g, ' ').trim();
+        if (isPlaceholderPreview(preview)) return item;
+        return Object.assign({}, item, {
+          preview,
+          hydrationPreviewFallback: true
+        });
+      });
+    } catch {
+      return Array.isArray(liveList) ? liveList : [];
+    }
+  }
+
   function isWeakTurnKey(key) {
     if (typeof key !== 'string' || !key) return false;
     return /^conversation-turn-\d+$/i.test(key) || /^cgpt-turn-\d+$/i.test(key);
@@ -4818,6 +5487,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   let cacheIndex = [];
   // Base list without pins (used for incremental updates to avoid rebuilding the whole list on append).
   let cacheBaseIndex = [];
+  let hydrationCacheActive = false;
   let lastUserSeq = 0;
   let lastAssistantSeq = 0;
 
@@ -5127,9 +5797,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const shouldValidateFavorites = !!filterFav || favSet.size > 0;
     const validKeys = shouldValidateFavorites ? new Set(nextFull.map(i => i.key)) : null;
     // Early boot can render before the message index is ready; avoid clearing persisted favorites on an empty snapshot.
-    const favRemoved = validKeys instanceof Set && validKeys.size > 0 ? runFavoritesGC(false, validKeys) : 0;
+    const favRemoved = validKeys instanceof Set && validKeys.size > 0 ? runFavoritesGC(true, validKeys) : 0;
     if (favRemoved) updateStarBtnState(ui);
     const next = filterFav ? nextFull.filter(it => favSet.has(it.key)) : nextFull;
+    try {
+      list.toggleAttribute('data-hydration-cache', !!(hydrationCacheActive && next.length));
+    } catch {}
     if (!next.length) {
       const hasDirectTurnDom = (() => {
         try {
@@ -5151,7 +5824,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         );
       list.innerHTML = `<div class="compact-empty">${shouldShowLoading ? getQuicknavEmptyLabel(false) : getQuicknavEmptyLabel(!!filterFav)}</div>`;
       try {
-        list._qnRenderState = { len: 0, lastKey: '', filterFav: !!filterFav };
+        list._qnRenderState = { len: 0, lastKey: '', filterFav: !!filterFav, hydration: false };
       } catch {}
       queueScrollbarState();
       return;
@@ -5190,6 +5863,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         node.title = 'Option+单击删除📌';
         node.innerHTML = `<span class="pin-label">${escapeHtml(item.preview)}</span><button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       } else {
+        if (item.hydrating) node.classList.add('is-hydration-cache');
         const branchBadge = branchCount ? `<span class="branch-badge" title="分支：${branchCount}">[${branchCount}]</span>` : '';
         node.innerHTML = `<span class="compact-number">${item.idx + 1}.</span><span class="compact-text" title="${escapeAttr(item.preview)}">${escapeHtml(item.preview)}</span>${branchBadge}<button class="fav-toggle ${fav ? 'active' : ''}" type="button" title="收藏/取消收藏">★</button>`;
       }
@@ -5204,8 +5878,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const prevLen = prev && Number.isFinite(prev.len) ? prev.len : 0;
       const prevLastKey = prev ? String(prev.lastKey || '') : '';
       const prevFilterFav = prev ? !!prev.filterFav : false;
+      const prevHydration = prev ? !!prev.hydration : false;
+      const renderedHasPlaceholder = Array.from(list.querySelectorAll('.compact-text, .pin-label')).some((el) => isPlaceholderPreview(el.textContent));
 
       const canAppend =
+        !hydrationCacheActive &&
+        !prevHydration &&
+        !renderedHasPlaceholder &&
         !filterFav &&
         !prevFilterFav &&
         prevLen > 0 &&
@@ -5221,7 +5900,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const frag = document.createDocumentFragment();
         for (let i = prevLen; i < next.length; i++) frag.appendChild(createRow(next[i]));
         list.appendChild(frag);
-        list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false };
+        list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false, hydration: false };
         queueScrollbarState();
         scheduleActiveUpdateNow();
         return;
@@ -5229,6 +5908,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
       // Tail patch: on long chats, avoid full rebuild when only the last few previews change (e.g. after streaming).
       const canPatchTail =
+        !hydrationCacheActive &&
+        !prevHydration &&
+        !renderedHasPlaceholder &&
         !filterFav &&
         !prevFilterFav &&
         prevLen > 0 &&
@@ -5243,7 +5925,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         let ok = true;
         for (let i = next.length - tail; i < next.length; i++) {
           const row = list.children[i];
-          if (!row || String(row.dataset?.key || '') !== String(next[i].key || '')) {
+          if (
+            !row ||
+            String(row.dataset?.key || '') !== String(next[i].key || '') ||
+            String(row.dataset?.msgId || '') !== String(next[i].msgId || '')
+          ) {
             ok = false;
             break;
           }
@@ -5276,7 +5962,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
               } catch {}
             }
           }
-          list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false };
+          list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: false, hydration: false };
           queueScrollbarState();
           scheduleActiveUpdateNow();
           return;
@@ -5290,7 +5976,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     for (const item of next) frag.appendChild(createRow(item));
     list.appendChild(frag);
     try {
-      list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: !!filterFav };
+      list._qnRenderState = { len: next.length, lastKey: String(next[next.length - 1].key || ''), filterFav: !!filterFav, hydration: !!hydrationCacheActive };
     } catch {}
 
     queueScrollbarState();
@@ -5340,7 +6026,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             cpMap.delete(pinId);
             if (favSet.has(pinId)) { favSet.delete(pinId); favMeta.delete(pinId); saveFavSet(); updateStarBtnState(ui); }
             saveCPSet();
-            renderList(ui);
+            schedulePinStateRefresh(ui);
             return;
           }
         }
@@ -5372,11 +6058,35 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       force = true;
       soft = false;
     }
-    const turnRecordSnapshot = getChatgptTurnRecordsSnapshot(false);
-    const turnRecords = Array.isArray(turnRecordSnapshot?.records) ? turnRecordSnapshot.records : null;
-    const snapshotTurns = Array.isArray(turnRecordSnapshot?.turns)
+    const hasCachedPlaceholders = hasPlaceholderPreviews(cacheIndex) || hasPlaceholderPreviews(cacheBaseIndex);
+    const stress = getQuicknavNativeStressSnapshot();
+    const deferForceRecords = shouldQuicknavDeferForceRefresh(stress);
+    const forceTurnRecordRefresh = (!!force || hasCachedPlaceholders) && !deferForceRecords;
+    let turnRecordSnapshot = getChatgptTurnRecordsSnapshot(forceTurnRecordRefresh);
+    let turnRecords = Array.isArray(turnRecordSnapshot?.records) ? turnRecordSnapshot.records : null;
+    let snapshotTurns = Array.isArray(turnRecordSnapshot?.turns)
       ? turnRecordSnapshot.turns.filter((item) => item instanceof HTMLElement)
       : null;
+    const directTurns = getDirectConversationTurns();
+    const recordCount = Array.isArray(turnRecords) ? turnRecords.length : 0;
+    const snapshotCount = Array.isArray(snapshotTurns) ? snapshotTurns.length : 0;
+    if (directTurns.length > Math.max(recordCount, snapshotCount) && !deferForceRecords) {
+      try {
+        turnRecordSnapshot = getChatgptTurnRecordsSnapshot(true);
+        turnRecords = Array.isArray(turnRecordSnapshot?.records) ? turnRecordSnapshot.records : null;
+        snapshotTurns = Array.isArray(turnRecordSnapshot?.turns)
+          ? turnRecordSnapshot.turns.filter((item) => item instanceof HTMLElement)
+          : null;
+      } catch {}
+    }
+    const nextRecordCount = Array.isArray(turnRecords) ? turnRecords.length : 0;
+    const nextSnapshotCount = Array.isArray(snapshotTurns) ? snapshotTurns.length : 0;
+    const useDirectTurns = directTurns.length > Math.max(nextRecordCount, nextSnapshotCount);
+    if (useDirectTurns) {
+      turnRecords = null;
+      snapshotTurns = directTurns;
+      TURN_SELECTOR = CHATGPT_TURN_HOST_SELECTOR;
+    }
     const turns = snapshotTurns && (snapshotTurns.length || (Array.isArray(turnRecords) && turnRecords.length))
       ? snapshotTurns
       : qsTurns();
@@ -5397,24 +6107,67 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const turnCount = structural.count;
     const firstKey = structural.firstKey;
     const lastKey = structural.lastKey;
+    if (turnCount === 0 && isConversationViewRoute() && !filterFav) {
+      const hydrated = hydrationCacheActive && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length
+        ? cacheBaseIndex
+        : loadHydrationIndex();
+      if (hydrated.length) {
+        hydrationCacheActive = true;
+        cacheBaseIndex = hydrated;
+        cacheIndex = hydrated;
+        lastTurnCount = hydrated.length;
+        renderList(ui);
+        scheduleNativeOutlineVisibilityBurst(ui);
+        return true;
+      }
+    }
     const prevDomCount = lastDomTurnCount;
     const unchanged = turnCount === lastDomTurnCount && firstKey === lastDomFirstKey && lastKey === lastDomLastKey;
-    if (soft && !force && unchanged && cacheIndex.length && turnCount > 0) return false;
+    if (soft && !force && unchanged && cacheIndex.length && turnCount > 0 && !hasCachedPlaceholders) return false;
 
+    const wasHydrationCacheActive = !!hydrationCacheActive;
+    const hydrationCacheLen = wasHydrationCacheActive && Array.isArray(cacheBaseIndex) ? cacheBaseIndex.length : 0;
     const base = (() => {
+      if (wasHydrationCacheActive) {
+        const full = buildIndex(turns, turnRecords);
+        const liveStillShort = hydrationCacheLen > 0 && full.length < hydrationCacheLen;
+        let merged = liveStillShort ? full : mergeHydrationPreviewFallback(full, cacheBaseIndex);
+        if (!liveStillShort) merged = mergeCachedPlaceholderPreviewFallback(merged, cacheBaseIndex);
+        const liveHasPlaceholders = hasPlaceholderPreviews(merged);
+        if (liveStillShort) {
+          try { scheduleRefresh(ui, { force: true, soft: false, delay: 650 }); } catch {}
+          return null;
+        }
+        if (liveHasPlaceholders) {
+          try { scheduleRefresh(ui, { force: true, soft: false, delay: 650 }); } catch {}
+        }
+        cacheBaseIndex = merged;
+        return merged;
+      }
       try {
-        if (!force && canAppendTurns(turns, prevDomCount, turnRecords) && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length) {
+        if (!wasHydrationCacheActive && !force && !hasCachedPlaceholders && canAppendTurns(turns, prevDomCount, turnRecords) && Array.isArray(cacheBaseIndex) && cacheBaseIndex.length) {
           return appendTurnsToBaseIndex(turns, prevDomCount, turnRecords);
         }
       } catch {}
-      const full = buildIndex(turns, turnRecords);
+      let full = buildIndex(turns, turnRecords);
+      full = mergeCachedPlaceholderPreviewFallback(full, cacheBaseIndex);
       cacheBaseIndex = full;
       return full;
     })();
+    if (!base) {
+      renderList(ui);
+      scheduleNativeOutlineVisibilityBurst(ui);
+      return true;
+    }
     const next = composeWithPins(base);
     if (DEBUG) console.log('ChatGPT Navigation: turns', next.length, '(含📌)');
     lastTurnCount = next.length;
     cacheIndex = next;
+    hydrationCacheActive = false;
+    try {
+      if (turnCount > 0 && base.length && !hasPlaceholderPreviews(base)) saveHydrationIndex(base);
+    } catch {}
+    if (next.length) stopEmptyHydrationWatch();
     if (turnCount > 0 && pendingPreviousRouteTurnMarkers.length) pendingPreviousRouteTurnMarkers = [];
     // Keep per-conversation caches bounded.
     try { maybeTrimTurnCaches(turns); } catch {}
@@ -5764,10 +6517,29 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function getFixedHeaderHeight() {
+    const ts = Date.now();
+    const width = Number(window.innerWidth || 0);
+    const stress = getQuicknavNativeStressSnapshot();
+    const ttl = stress.hot || stress.critical ? 4000 : 900;
+    if (
+      fixedHeaderHeightCache.at &&
+      fixedHeaderHeightCache.width === width &&
+      ts - Number(fixedHeaderHeightCache.at || 0) < ttl
+    ) {
+      return fixedHeaderHeightCache.value;
+    }
+    if ((stress.hot || stress.critical) && fixedHeaderHeightCache.at) {
+      return fixedHeaderHeightCache.value;
+    }
     const h = document.querySelector('header, [data-testid="top-nav"]');
-    if (!h) return 0;
+    if (!h) {
+      fixedHeaderHeightCache = { at: ts, width, value: 0 };
+      return 0;
+    }
     const r = h.getBoundingClientRect();
-    return Math.max(0, r.height) + 12;
+    const value = Math.max(0, r.height) + 12;
+    fixedHeaderHeightCache = { at: ts, width, value };
+    return value;
   }
 
   function findTurnAnchor(root) {
@@ -5997,7 +6769,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     cancelNavJumpStabilizer();
     // ChatGPT can shift layout shortly after a jump (images, code blocks, virtualization).
     // Stabilize the alignment, but immediately stop if the user starts scrolling.
-    if (behavior === 'auto') startNavJumpStabilizer(target, margin, { maxMs: 1200, seq: ++navJumpSeq });
+    const shouldStabilize = false;
+    if (shouldStabilize) startNavJumpStabilizer(target, margin, { maxMs: 1200, seq: ++navJumpSeq });
 
     // Highlight the whole turn, not just the first paragraph (more obvious).
     try {
@@ -6366,10 +7139,41 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } catch {}
   }
 
+  function getFavoriteCreated(rawValue) {
+    if (rawValue && typeof rawValue === 'object' && typeof rawValue.created === 'number') return rawValue.created;
+    if (typeof rawValue === 'number') return rawValue;
+    return 0;
+  }
+
+  function pruneStoredFavorites(validKeys, onlyPins = false) {
+    try {
+      if (!(validKeys instanceof Set) || validKeys.size === 0) return 0;
+      const raw = window.localStorage.getItem(getFavKeys());
+      if (!raw) return 0;
+      const obj = JSON.parse(raw || '{}');
+      if (!obj || typeof obj !== 'object') return 0;
+      const now = Date.now();
+      let removed = 0;
+      for (const k of Object.keys(obj)) {
+        if (onlyPins && !(typeof k === 'string' && k.startsWith('pin-'))) continue;
+        const created = getFavoriteCreated(obj[k]);
+        if (!validKeys.has(k) || !created || (now - created) > FAV_TTL_MS) {
+          delete obj[k];
+          if (favSet && favSet.has(k)) favSet.delete(k);
+          if (favMeta && favMeta.has(k)) favMeta.delete(k);
+          removed++;
+        }
+      }
+      if (removed) window.localStorage.setItem(getFavKeys(), JSON.stringify(obj));
+      return removed;
+    } catch {
+      return 0;
+    }
+  }
+
   // 移除不存在于 validKeys 的收藏，返回移除数量
   function runFavoritesGC(saveAfter = false, validKeys = null, onlyPins = false) {
     try {
-      if (!favSet || !(favSet instanceof Set) || favSet.size === 0) return 0;
       const valid = validKeys instanceof Set ? validKeys : new Set();
       // 如果没提供 validKeys，就尽量构造一个
       if (!(validKeys instanceof Set)) {
@@ -6378,13 +7182,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
       let removed = 0;
       const now = Date.now();
-      for (const k of Array.from(favSet.values())) {
-        if (onlyPins && !(typeof k === 'string' && k.startsWith('pin-'))) continue;
-        const meta = favMeta.get(k) || { created: 0 };
-        if (!valid.has(k) || !meta.created || (now - meta.created) > FAV_TTL_MS) { favSet.delete(k); favMeta.delete(k); removed++; }
+      if (favSet && favSet instanceof Set && favSet.size > 0) {
+        for (const k of Array.from(favSet.values())) {
+          if (onlyPins && !(typeof k === 'string' && k.startsWith('pin-'))) continue;
+          const meta = favMeta.get(k) || { created: 0 };
+          if (!valid.has(k) || !meta.created || (now - meta.created) > FAV_TTL_MS) { favSet.delete(k); favMeta.delete(k); removed++; }
+        }
       }
       if (removed && saveAfter) saveFavSet();
-      return removed;
+      const storedRemoved = saveAfter ? pruneStoredFavorites(valid, onlyPins) : 0;
+      return removed + storedRemoved;
     } catch { return 0; }
   }
 
@@ -6532,9 +7339,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     } else {
       const observeSubtree = shouldObserveTurnsSubtree(target);
       const mo = scopeObserver(conversationScope, (muts) => {
-        const isLongChat = (lastDomTurnCount || 0) > 120;
+        const stress = getQuicknavNativeStressSnapshot();
+        const isLongChat = (lastDomTurnCount || 0) > 120 || !!stress.heavy;
         const hasStop = checkStreamingState(ui);
-        const useSoft = isLongChat && !!hasStop;
+        const useSoft = isLongChat || shouldQuicknavPreferSoftRefresh(stress);
         handleScrollLockMutations(muts, !!hasStop);
 
         // Avoid refreshing on every subtree mutation. We only need to rebuild the index
@@ -6570,7 +7378,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
         if (!turnsChanged) return;
 
-        const delay = isLongChat ? (hasStop ? 420 : 140) : 80;
+        const delay = stress.critical ? (hasStop ? 1200 : 900) : isLongChat ? (hasStop ? 720 : 280) : 80;
         scheduleRefresh(ui, { delay, soft: useSoft });
         maybeRefreshTreeSummary(delay + 180);
       }, target, {
@@ -6620,6 +7428,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         scheduleRefresh(ui, { force: true, soft: false });
         return;
       }
+      if (!hasStop && rawCount > 0 && rawCount > (Array.isArray(cacheBaseIndex) ? cacheBaseIndex.length : 0)) {
+        TURN_SELECTOR = null;
+        observeChat(ui);
+        scheduleRefresh(ui, { force: true, soft: false });
+        return;
+      }
       // 某些切换会话场景：turn selector 暂时抓不到元素（一直 0），这里强制重绑+刷新，避免长期“暂无对话”
       if (!hasStop && count === 0 && lastDomTurnCount === 0) {
         observeChat(ui);
@@ -6627,7 +7441,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         return;
       }
       if (!hasStop && count === lastDomTurnCount) return;
-      scheduleRefresh(ui, { force: hasStop, soft: !hasStop && (lastDomTurnCount || 0) > 120 });
+      const stress = getQuicknavNativeStressSnapshot();
+      const deferForce = shouldQuicknavDeferForceRefresh(stress);
+      scheduleRefresh(ui, {
+        force: !!hasStop && !deferForce,
+        soft: deferForce || shouldQuicknavPreferSoftRefresh(stress)
+      });
       maybeRefreshTreeSummary(hasStop ? 360 : 520);
     }, 10000);
     ui._forceRefreshTimer = forceRefreshTimer;
@@ -6979,10 +7798,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // so we cannot use `evt.isTrusted` to infer user scroll. Instead, rely on explicit intent signals.
     void evt;
     const recentUserIntent = (now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS || !!scrollLockPointerActive;
+    const recentCodeBlockIntent = hasRecentCodeBlockIntent(now);
     const allowNav = isNavAllowScroll();
 
     // 用户主动滚动：先更新基准，避免被“回弹”误伤
-    const userLikely = allowNav || recentUserIntent;
+    const userLikely = allowNav || recentUserIntent || recentCodeBlockIntent;
     if (userLikely) {
       scrollLockLastUserTs = now;
       scrollLockStablePos = pos;
@@ -6991,27 +7811,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       return;
     }
 
-    // 仅在“新回复变更窗口”内回弹，避免用户正常滚动抽搐
-    const recentMutation = (now - (scrollLockLastMutationTs || 0)) <= 2500;
-    const restoreWindow = guardActive || recentMutation;
-    const UP_JUMP = Math.max(SCROLL_LOCK_DRIFT * 4, 64);
-    if (!scrollLockRestoring && scrollLockEnabled && restoreWindow && !allowNav && !recentUserIntent) {
-      if (pos > scrollLockStablePos + SCROLL_LOCK_DRIFT) {
-        scrollLockRestoring = true;
-        setScrollPos(sc, scrollLockStablePos);
-        scopeTimeout(conversationScope, () => { scrollLockRestoring = false; }, 80);
-        return;
-      }
-      // 某些站点在流式输出/重渲染时会把 scrollTop 复位到 0，属于程序行为而非用户滚动；这里需要“拉回”到用户基准位置
-      if (pos < scrollLockStablePos - UP_JUMP) {
-        scrollLockRestoring = true;
-        setScrollPos(sc, scrollLockStablePos);
-        scopeTimeout(conversationScope, () => { scrollLockRestoring = false; }, 120);
-        return;
-      }
-    }
-
-    if (scrollLockRestoring) return;
+    // ChatGPT 的真正滚动拦截已经收口到 main-world guard。
+    // 这里不再执行“事后回弹”，只保留用户基准更新，避免两套执行器互相打架。
+    void guardActive;
     scrollLockLastPos = pos;
   }
 
@@ -7072,6 +7874,17 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }, Math.min(ms, 900));
   }
 
+  function syncScrollLockBaselineToCurrentPos(force = false) {
+    if (!scrollLockEnabled) return;
+    const sc = ensureScrollLockBindings();
+    if (!sc) return;
+    const pos = getScrollPos(sc);
+    scrollLockStablePos = pos;
+    scrollLockLastPos = pos;
+    scrollLockLastUserTs = Date.now();
+    postScrollLockBaselineToMainWorld(pos, force);
+  }
+
   function armScrollLockGuard(ms = 2000) {
     if (!scrollLockEnabled) return;
     const sc = ensureScrollLockBindings();
@@ -7117,7 +7930,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
             ? target.parentElement
             : null;
       if (!el || !el.closest) return false;
-      return !!el.closest('.cm-scroller, .cm-editor, pre, code, [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]');
+      if (el.closest('.cm-scroller, .cm-editor, pre, code, [id="code-block-viewer"], [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]')) {
+        return true;
+      }
+      const overflowEl = el.closest('.overflow-y-auto, .overflow-auto, .overflow-scroll, [class*="overflow-y-auto"], [class*="overflow-auto"], [class*="overflow-scroll"]');
+      if (!(overflowEl instanceof HTMLElement)) return false;
+      if (!overflowEl.closest('[data-testid^="conversation-turn-"], [data-message-id], .markdown, .prose')) return false;
+      const rangeY = Math.max(0, (overflowEl.scrollHeight || 0) - (overflowEl.clientHeight || 0));
+      const rangeX = Math.max(0, (overflowEl.scrollWidth || 0) - (overflowEl.clientWidth || 0));
+      if (rangeY < 1 && rangeX < 1) return false;
+      return !!overflowEl.querySelector('pre, code, [id="code-block-viewer"], [data-testid*="code"], [class*="codeBlock"], [class*="CodeBlock"]');
     } catch {
       return false;
     }
@@ -7214,11 +8036,13 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       if (ignoreIfInNav(e?.target)) return;
       if (isCodeBlockInteraction(e?.target)) {
         const now = Date.now();
+        scrollLockLastCodeBlockIntentTs = now;
         scrollLockLastUserIntentTs = now;
         scrollLockLastUserTs = now;
+        bumpCodeIntentUntil(SCROLL_LOCK_CODE_INTENT_MS);
         if ((now - lastCodeBlockIntentAt) >= 220) {
           lastCodeBlockIntentAt = now;
-          allowNavScrollFor(1400);
+          syncScrollLockBaselineToCurrentPos();
         }
         return;
       }
@@ -7241,8 +8065,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           }
           if (isSendAction(e?.target)) return; // never allow send-triggered autoscroll to redefine baseline
           if (isCodeBlockInteraction(e?.target)) {
-            scrollLockLastUserIntentTs = Date.now();
-            allowNavScrollFor(1400);
+            const now = Date.now();
+            scrollLockLastCodeBlockIntentTs = now;
+            scrollLockLastUserIntentTs = now;
+            scrollLockLastUserTs = now;
+            bumpCodeIntentUntil(SCROLL_LOCK_CODE_INTENT_MS);
+            syncScrollLockBaselineToCurrentPos(true);
             return;
           }
           if (isSidebarToggle(e?.target) || isCopyCode(e?.target)) {
@@ -7293,6 +8121,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function shouldBlockScrollFor(target) {
     if (!scrollLockEnabled) return false;
     if (isNavAllowScroll()) return false;
+    if (hasRecentCodeBlockIntent()) return false;
     const sc = getChatScrollContainer();
     if (!sc) return false;
     if (scrollLockGuardUntil && Date.now() > scrollLockGuardUntil && (Date.now() - scrollLockLastUserTs) < 200) return false;
@@ -7322,6 +8151,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
   function shouldBlockScrollTop(scroller, nextTop) {
     if (!scrollLockEnabled || isNavAllowScroll()) return false;
+    if (hasRecentCodeBlockIntent()) return false;
     const sc = scroller || getChatScrollContainer();
     if (!sc) return false;
     const current = getScrollPos(sc);
@@ -7465,32 +8295,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
     if (!relevant) return;
     scrollLockLastMutationTs = Date.now();
-    scrollLockGuardUntil = scrollLockLastMutationTs + 2000; // 2s 内更积极地回弹
+    scrollLockGuardUntil = scrollLockLastMutationTs + 2000;
     const scroller = ensureScrollLockBindings();
     if (!scroller) return;
-    const baseline = Number.isFinite(scrollLockStablePos) ? scrollLockStablePos : (Number.isFinite(scrollLockLastPos) ? scrollLockLastPos : getScrollPos(scroller));
     if (scrollLockRestoreTimer) cancelScopedTimeout(scrollLockRestoreTimer);
-    const inGuardWindow = Date.now() < (scrollLockGuardUntil || 0);
-    const restoreDelay = inGuardWindow ? SCROLL_LOCK_FAST_RESTORE_DELAY_MS : SCROLL_LOCK_NORMAL_RESTORE_DELAY_MS;
-    scrollLockRestoreTimer = scopeTimeout(conversationScope, () => {
-      scrollLockRestoreTimer = 0;
-      if (!scrollLockEnabled) return;
-      if (isNavAllowScroll()) return;
-      const intentGap = Date.now() - (scrollLockLastUserIntentTs || 0);
-      if (intentGap <= SCROLL_LOCK_INTENT_MS || scrollLockPointerActive) return;
-      const sc = ensureScrollLockBindings();
-      if (!sc) return;
-      const current = getScrollPos(sc);
-      const drift = current - baseline;
-      const UP_JUMP = Math.max(SCROLL_LOCK_DRIFT * 4, 64);
-      const stillGuarded = Date.now() < (scrollLockGuardUntil || 0);
-      const userIdleLongEnough = (Date.now() - scrollLockLastUserTs) > SCROLL_LOCK_IDLE_MS;
-      if ((drift > SCROLL_LOCK_DRIFT || drift < -UP_JUMP) && (stillGuarded || userIdleLongEnough)) {
-        scrollLockRestoring = true;
-        setScrollPos(sc, baseline);
-        scopeTimeout(conversationScope, () => { scrollLockRestoring = false; }, 80);
-      }
-    }, restoreDelay);
+    postScrollLockStateToMainWorld();
+    postScrollLockBaselineToMainWorld(getScrollPos(scroller), true);
   }
 
   function bindActiveTracking() {
@@ -7537,22 +8347,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
               if (v && v.anchorId === anc.id) { pid = k; break; }
             }
           }
-	          if (pid && cpMap.has(pid)) {
-	            cpMap.delete(pid);
-	            try { anc.remove(); } catch {}
-	            const currentUi = getUi();
-	            if (favSet.has(pid)) {
-	              favSet.delete(pid);
-	              favMeta.delete(pid);
-	              saveFavSet();
-	              if (currentUi) updateStarBtnState(currentUi);
-	            }
-	            saveCPSet();
-	            if (currentUi) scheduleRefresh(currentUi);
-	            e.preventDefault();
-	            e.stopPropagation();
-	            return;
-	          }
+          if (pid && cpMap.has(pid)) {
+            cpMap.delete(pid);
+            try { anc.remove(); } catch {}
+            const currentUi = getUi();
+            if (favSet.has(pid)) {
+              favSet.delete(pid);
+              favMeta.delete(pid);
+              saveFavSet();
+              if (currentUi) updateStarBtnState(currentUi);
+            }
+            saveCPSet();
+            schedulePinStateRefresh(currentUi);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
         }
         e.preventDefault();
         e.stopPropagation();
@@ -7585,22 +8395,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         // 新增：图钉默认自动加入收藏夹
         try {
           if (!favSet || !(favSet instanceof Set)) loadFavSet();
-	          favSet.add(pinId);
-	          favMeta.set(pinId, { created: Date.now() });
-	          saveFavSet();
-	          const currentUi = getUi();
-	          if (currentUi) updateStarBtnState(currentUi);
-	        } catch {}
-	        saveCPSet();
-	        runCheckpointGC(true);
-	        {
-	          const currentUi = getUi();
-	          if (currentUi) scheduleRefresh(currentUi);
-	        }
-	      } catch (err) {
-	        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
-	      }
-	    };
+          favSet.add(pinId);
+          favMeta.set(pinId, { created: Date.now() });
+          saveFavSet();
+          const currentUi = getUi();
+          if (currentUi) updateStarBtnState(currentUi);
+        } catch {}
+        saveCPSet();
+        runCheckpointGC(true);
+        {
+          const currentUi = getUi();
+          schedulePinStateRefresh(currentUi);
+        }
+      } catch (err) {
+        if (DEBUG || window.DEBUG_TEMP) console.error('添加📌失败:', err);
+      }
+    };
     scopeOn(conversationScope, document, 'click', onClick, true);
   }
 
@@ -7832,9 +8642,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function startBurstRefresh(ui, ms = 3200, step = 160) {
     if (!ui) return;
     const now = Date.now();
-    const isLongChat = (lastDomTurnCount || 0) > 120;
+    const initialStress = getQuicknavNativeStressSnapshot();
+    const isLongChat = (lastDomTurnCount || 0) > 120 || !!initialStress.heavy;
     __cgptSendBurstUi = ui;
-    __cgptSendBurstStep = isLongChat ? Math.max(step, 700) : Math.max(120, step);
+    __cgptSendBurstStep = initialStress.critical ? Math.max(step, 1200) : isLongChat ? Math.max(step, 820) : Math.max(120, step);
 
     // One real send may trigger multiple events (click + submit + keydown).
     // Coalesce them into one burst window to avoid timer stacks.
@@ -7859,11 +8670,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
 
       const hasStop = !!checkStreamingState(navUi, true);
+      const stress = getQuicknavNativeStressSnapshot();
       if (hasStop) {
-        if (isLongChat) scheduleRefresh(navUi, { delay: 260, soft: true });
+        if (stress.critical) scheduleRefresh(navUi, { delay: 900, soft: true });
+        else if (isLongChat || stress.heavy) scheduleRefresh(navUi, { delay: 620, soft: true });
         else scheduleRefresh(navUi, { delay: 120, soft: false });
       } else {
-        scheduleRefresh(navUi, { force: true });
+        scheduleRefresh(navUi, {
+          force: !shouldQuicknavDeferForceRefresh(stress),
+          soft: shouldQuicknavPreferSoftRefresh(stress)
+        });
       }
 
       if (Date.now() >= (__cgptSendBurstEndAt || 0)) {
@@ -7957,21 +8773,27 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
     }, true);
 
-    // 回到前台时强制跑一次
-    scopeOn(conversationScope, document, 'visibilitychange', () => {
-      if (!document.hidden) {
-        try { detectUrlChange(); } catch {}
-        const currentUi = getUi();
-        if (!currentUi) return;
-        if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
-        scheduleRefresh(currentUi, { force: true });
-      }
-    });
-  }
+	    // 回到前台时强制跑一次
+	    scopeOn(conversationScope, document, 'visibilitychange', () => {
+	      if (document.hidden) {
+	        try { getChatgptNavDebugApi()?.releaseMemory?.('hidden'); } catch {}
+	        return;
+	      }
+	      try { detectUrlChange(); } catch {}
+	      const currentUi = getUi();
+	      if (!currentUi) return;
+	      if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 页面重新可见，强制刷新');
+	      scheduleRefresh(currentUi, { force: true });
+	    });
+	  }
 
   function onAnyScroll(e) {
     const target = e?.target;
     if (target && target !== document && target !== document.documentElement && target !== document.body && isCodeBlockInteraction(target)) {
+      return;
+    }
+    if (isNavAllowScroll()) {
+      lastScrollTs = Date.now();
       return;
     }
     if (scrollTicking) return;
@@ -7987,6 +8809,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const perf = getChatgptPerfSnapshot();
     if (perf?.hotPathActive) return true;
     if (perf?.heavyEnabled) return true;
+    if (getQuicknavNativeStressSnapshot().heavy) return true;
     try {
       if (document.documentElement?.dataset?.cgptperfHot === '1') return true;
       if (document.documentElement?.dataset?.cgptperfHeavy === '1') return true;
@@ -7996,6 +8819,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function shouldUseVeryHeavyActiveTracking() {
+    if (getQuicknavNativeStressSnapshot().critical) return true;
     return shouldThrottleActiveTracking() && cacheIndex.length >= QUICKNAV_LARGE_INDEX_THRESHOLD;
   }
 
@@ -8013,6 +8837,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function shouldSuspendActiveTracking() {
     const perf = getChatgptPerfSnapshot();
     if (perf?.hotPathActive) return cacheIndex.length >= 8;
+    const nativeStress = getQuicknavNativeStressSnapshot();
+    if (nativeStress.critical) return true;
+    if (nativeStress.hot) return cacheIndex.length >= 8;
     try {
       if (document.documentElement?.dataset?.cgptperfHot === '1') return cacheIndex.length >= 8;
     } catch {}
@@ -8039,6 +8866,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function scheduleActiveUpdateNow() {
+    if (isNavAllowScroll()) {
+      scheduleActiveUpdateDebounced(scrollLockEnabled ? 760 : 520);
+      return;
+    }
     if (shouldSuspendActiveTracking()) {
       scheduleActiveUpdateDebounced(HOT_SCROLL_ACTIVE_UPDATE_DELAY_MS);
       return;

@@ -1,12 +1,9 @@
 (() => {
   'use strict';
 
-  const GUARD_KEY = '__aichat_genspark_credit_balance_v1__';
-  if (window[GUARD_KEY]) return;
-  Object.defineProperty(window, GUARD_KEY, { value: true, configurable: false, enumerable: false, writable: false });
-
   if (window.top !== window) return;
 
+  const STATE_KEY = '__aichat_genspark_credit_balance_state_v1__';
   const STYLE_ID = '__aichat_genspark_credit_balance_style_v1__';
   const POS_STORAGE_KEY = 'aichat_genspark_credit_balance_pos_v1';
 
@@ -27,6 +24,64 @@
   const PANEL_WIDTH = 280;
   const PANEL_TOP_OFFSET = 5;
   const DRAG_THRESHOLD_PX = 4;
+
+  const runtimeDisposers = [];
+  const state = {
+    disposed: false,
+    disposeRuntime() {
+      if (state.disposed) return;
+      state.disposed = true;
+      for (const dispose of runtimeDisposers.splice(0)) {
+        try { dispose(); } catch {}
+      }
+      for (const id of [HOVER_BOX_ID, WINDOW_ID, STYLE_ID]) {
+        try { document.getElementById(id)?.remove?.(); } catch {}
+      }
+    }
+  };
+
+  try {
+    const prev = window[STATE_KEY];
+    if (prev && typeof prev.disposeRuntime === 'function') prev.disposeRuntime();
+  } catch {}
+
+  try {
+    Object.defineProperty(window, STATE_KEY, { value: state, configurable: true, enumerable: false, writable: false });
+  } catch {
+    try { window[STATE_KEY] = state; } catch {}
+  }
+
+  function addRuntimeDisposer(dispose) {
+    if (typeof dispose !== 'function') return () => void 0;
+    runtimeDisposers.push(dispose);
+    return dispose;
+  }
+
+  function on(target, type, listener, options) {
+    if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') return () => void 0;
+    try {
+      target.addEventListener(type, listener, options);
+    } catch {
+      return () => void 0;
+    }
+    return addRuntimeDisposer(() => {
+      try { target.removeEventListener(type, listener, options); } catch {}
+    });
+  }
+
+  function interval(fn, ms) {
+    if (typeof fn !== 'function') return 0;
+    let id = 0;
+    try {
+      id = window.setInterval(fn, ms);
+    } catch {
+      return 0;
+    }
+    addRuntimeDisposer(() => {
+      try { window.clearInterval(id); } catch {}
+    });
+    return id;
+  }
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -78,7 +133,7 @@
   async function ensureBody() {
     if (document.body) return document.body;
     if (document.readyState !== 'loading') return document.body;
-    await new Promise((resolve) => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    await new Promise((resolve) => on(document, 'DOMContentLoaded', resolve, { once: true }));
     return document.body;
   }
 
@@ -387,6 +442,7 @@
       state.showTimer = 0;
       state.hideTimer = 0;
     }
+    addRuntimeDisposer(clearTimers);
 
     function openPanel() {
       elWindow.classList.add(SHOW_CLASS);
@@ -494,31 +550,33 @@
       openPanel();
     }
 
-    elHoverBox.addEventListener('pointerenter', () => {
+    on(elHoverBox, 'pointerenter', () => {
       state.hoveringDot = true;
       scheduleOpen();
     });
-    elHoverBox.addEventListener('pointerleave', () => {
+    on(elHoverBox, 'pointerleave', () => {
       state.hoveringDot = false;
       scheduleClose();
     });
-    elWindow.addEventListener('pointerenter', () => {
+    on(elWindow, 'pointerenter', () => {
       state.hoveringPanel = true;
       scheduleOpen();
     });
-    elWindow.addEventListener('pointerleave', () => {
+    on(elWindow, 'pointerleave', () => {
       state.hoveringPanel = false;
       scheduleClose();
     });
 
-    elHoverBox.addEventListener(
+    on(
+      elHoverBox,
       'pointerdown',
       (e) => {
         beginDrag(e, elHoverBox);
       },
       { passive: true }
     );
-    elHeader.addEventListener(
+    on(
+      elHeader,
       'pointerdown',
       (e) => {
         if (elRefreshButton && elRefreshButton.contains(e.target)) return;
@@ -526,11 +584,11 @@
       },
       { passive: true }
     );
-    elHeader.addEventListener('click', onHeaderClick);
+    on(elHeader, 'click', onHeaderClick);
 
-    window.addEventListener('pointermove', onPointerMove, { passive: false });
-    window.addEventListener('pointerup', (e) => void endDrag(e), { passive: true });
-    window.addEventListener('pointercancel', (e) => void endDrag(e), { passive: true });
+    on(window, 'pointermove', onPointerMove, { passive: false });
+    on(window, 'pointerup', (e) => void endDrag(e), { passive: true });
+    on(window, 'pointercancel', (e) => void endDrag(e), { passive: true });
 
     // Ensure initial state is consistent
     clearTimers();
@@ -540,6 +598,7 @@
   async function boot() {
     injectStyles();
     await ensureBody();
+    if (state.disposed) return;
 
     if (document.getElementById(HOVER_BOX_ID) || document.getElementById(WINDOW_ID)) return;
 
@@ -588,19 +647,19 @@
 
     setupInteractions({ elHoverBox, elWindow, elHeader, elRefreshButton: refreshButton, persistPos });
 
-    refreshButton.addEventListener('click', (e) => {
+    on(refreshButton, 'click', (e) => {
       e.stopPropagation();
       void fetchAccountInfo(elContent);
     });
 
-    window.addEventListener('resize', () => {
+    on(window, 'resize', () => {
       const curr = readHoverBoxPos(elHoverBox);
       applyHoverBoxPos(elHoverBox, curr);
       syncWindowPos(elHoverBox, elWindow);
     });
 
     void fetchAccountInfo(elContent);
-    setInterval(() => void fetchAccountInfo(elContent), REFRESH_INTERVAL_MS);
+    interval(() => void fetchAccountInfo(elContent), REFRESH_INTERVAL_MS);
 
     // 给 layout 一个机会取到真实高度（用于 clamp）
     await sleep(0);

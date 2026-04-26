@@ -15,7 +15,7 @@
     {
       moduleId: 'google_ask_gpt',
       renderer: 'basicToggle',
-      hintText: '说明：仅在 Google 搜索页显示“问 GPT”按钮；点击后会新开 ChatGPT，并自动用 5.4 Thinking 发起联网搜索提问。'
+      hintText: '说明：仅在 Google 搜索页显示“问 GPT”按钮；点击后会新开 ChatGPT，并自动发起联网搜索提问。'
     },
     { moduleId: 'chatgpt_sidebar_header_fix', renderer: 'basicToggle' },
     {
@@ -27,7 +27,8 @@
     {
       moduleId: 'genspark_force_sonnet45_thinking',
       renderer: 'basicToggle',
-      hintText: '说明：在 Genspark AI Chat 中将 Sonnet 4.5 自动改为 thinking 版本，并在回复区内联显示“可展开思考块（默认仅最后 5 行）”。'
+      hintText:
+        '说明：兼容旧版 Genspark AI Chat 的 Sonnet 4.5 thinking 请求改写。当前 Genspark 默认模型已切到 Opus 4.6，因此该模块默认关闭；手动开启后只会改写已知 Sonnet 4.5 模型，并在回复区内联显示“可展开思考块（默认仅最后 5 行）”。'
     }
   ]);
 })();

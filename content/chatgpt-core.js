@@ -5,7 +5,9 @@
   // Goal: reduce duplicated brittle selectors / route polling across ChatGPT-only modules.
 
   const API_KEY = '__aichat_chatgpt_core_v1__';
-  const API_VERSION = 9;
+  const DOM_ADAPTER_KEY = '__aichat_chatgpt_dom_adapter_v1__';
+  const API_VERSION = 11;
+  const DOM_ADAPTER_MIN_VERSION = 1;
   const BRIDGE_CHANNEL = 'quicknav';
   const BRIDGE_V = 1;
   const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
@@ -80,7 +82,7 @@
   const MODEL_SWITCHER_SELECTOR =
     'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
   const COMPOSER_MODE_TOKEN_RE =
-    /\b(?:instant|thinking|pro|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
+    /\b(?:instant|thinking|pro|light|heavy|standard|extended|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
   const DIRECT_TURN_HOST_SELECTOR = prefixSelectorList(':scope >', TURN_HOST_SELECTOR);
   const WRAPPED_TURN_HOST_SELECTOR = prefixSelectorList(':scope > *', TURN_HOST_SELECTOR);
 
@@ -147,7 +149,17 @@
     }
   }
 
+  function getDomAdapter() {
+    try {
+      const api = globalThis[DOM_ADAPTER_KEY] || window[DOM_ADAPTER_KEY] || null;
+      if (api && typeof api === 'object' && Number(api.version || 0) >= DOM_ADAPTER_MIN_VERSION) return api;
+    } catch {}
+    return null;
+  }
+
   function getConversationIdFromUrl(url) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getConversationIdFromUrl === 'function') return adapter.getConversationIdFromUrl(url);
     try {
       const u = new URL(String(url || ''), location.href);
       const parts = String(u.pathname || '')
@@ -174,6 +186,8 @@
   }
 
   function getRoute() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getRoute === 'function') return adapter.getRoute();
     const href = (() => {
       try {
         return String(location.href || '');
@@ -200,6 +214,8 @@
   }
 
   function getEditorEl() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getEditorEl === 'function') return adapter.getEditorEl();
     // Real editor is usually ProseMirror; keep fallbacks.
     try {
       const list = Array.from(document.querySelectorAll('.ProseMirror[contenteditable="true"]'));
@@ -223,6 +239,8 @@
   }
 
   function getComposerForm(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getComposerForm === 'function') return adapter.getComposerForm(editorEl);
     try {
       const el = editorEl || getEditorEl();
       return el?.closest?.('form') || null;
@@ -232,6 +250,8 @@
   }
 
   function getModelSwitcherButton() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getModelSwitcherButton === 'function') return adapter.getModelSwitcherButton();
     try {
       const visible = pickBottomMostVisible(Array.from(document.querySelectorAll(MODEL_SWITCHER_SELECTOR)).filter(isVisibleElement));
       if (visible) return visible;
@@ -244,6 +264,8 @@
   }
 
   function readCurrentModelLabel() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.readCurrentModelLabel === 'function') return adapter.readCurrentModelLabel();
     try {
       const button = getModelSwitcherButton();
       const aria = String(button?.getAttribute?.('aria-label') || '').trim();
@@ -257,10 +279,13 @@
   }
 
   function readComposerModeLabel(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.readComposerModeLabel === 'function') return adapter.readComposerModeLabel(editorEl);
     try {
       const form = getComposerForm(editorEl);
       const buttons = Array.from(form?.querySelectorAll?.("button[aria-haspopup='menu'],button") || []);
       for (const button of buttons) {
+        if (!isVisibleElement(button)) continue;
         const text = String(button?.innerText || button?.textContent || '').trim();
         const aria = String(button?.getAttribute?.('aria-label') || '').trim();
         const combined = `${text} ${aria}`.trim();
@@ -272,21 +297,35 @@
   }
 
   function findSendButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.findSendButton === 'function') return adapter.findSendButton(editorEl);
     const form = getComposerForm(editorEl);
     const root = form || document;
     try {
-      return (
+      const direct =
         root.querySelector('#composer-submit-button') ||
         root.querySelector('button[data-testid="send-button"]') ||
         root.querySelector('button[aria-label*="Send" i]') ||
-        null
-      );
+        root.querySelector('button[type="submit"]');
+      if (direct) return direct;
+      const buttons = Array.from(root.querySelectorAll('button'));
+      for (const button of buttons) {
+        const text = String(button?.innerText || button?.textContent || '').trim();
+        const aria = String(button?.getAttribute?.('aria-label') || '').trim();
+        const combined = `${text} ${aria}`.trim();
+        if (!combined) continue;
+        if (/\bstop\b/i.test(combined)) continue;
+        if (/\b(send|submit)\b/i.test(combined) || /发送|提交/.test(combined)) return button;
+      }
+      return null;
     } catch {
       return null;
     }
   }
 
   function findStopButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.findStopButton === 'function') return adapter.findStopButton(editorEl);
     const form = getComposerForm(editorEl);
     const root = form || document;
     try {
@@ -297,6 +336,8 @@
   }
 
   function isGenerating(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.isGenerating === 'function') return !!adapter.isGenerating(editorEl);
     return !!findStopButton(editorEl);
   }
 
@@ -313,6 +354,8 @@
   }
 
   function clickSendButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.clickSendButton === 'function') return !!adapter.clickSendButton(editorEl);
     try {
       const btn = findSendButton(editorEl);
       if (!(btn instanceof HTMLElement)) return false;
@@ -327,6 +370,8 @@
   }
 
   function clickStopButton(editorEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.clickStopButton === 'function') return !!adapter.clickStopButton(editorEl);
     try {
       const btn = findStopButton(editorEl);
       if (!(btn instanceof HTMLElement)) return false;
@@ -339,6 +384,8 @@
   }
 
   function normalizeTurnElement(el) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.normalizeTurnElement === 'function') return adapter.normalizeTurnElement(el);
     try {
       if (!(el instanceof Element)) return null;
       if (el.matches(TURN_HOST_SELECTOR)) return el;
@@ -346,6 +393,28 @@
     } catch {
       return null;
     }
+  }
+
+  function isLikelyConversationTurnElement(turnEl) {
+    try {
+      if (!(turnEl instanceof Element)) return false;
+      const role = inferTurnRole(turnEl);
+      if (role === 'user' || role === 'assistant') return true;
+      if (getMessageId(turnEl) || getTurnId(turnEl)) return true;
+
+      const bodyEl = findTurnBodyEl(turnEl, role);
+      const hasMessageShell = !!turnEl.querySelector?.(
+        '[data-message-id], [data-message-author-role], .text-message[data-author], .markdown, .prose, .whitespace-pre-wrap, div[data-message-content-part]'
+      );
+      if (!hasMessageShell) return false;
+
+      const text = collectTurnPreviewText(bodyEl instanceof Element ? bodyEl : turnEl, {
+        hardCap: 64,
+        nodeCap: 32
+      });
+      return !!text;
+    } catch {}
+    return false;
   }
 
   const chatScrollWatch = (() => ({
@@ -362,6 +431,8 @@
   }))();
 
   function getTurnsRoot() {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnsRoot === 'function') return adapter.getTurnsRoot();
     try {
       const stable = document.querySelector('[data-testid="conversation-turns"]');
       if (stable) return stable;
@@ -369,14 +440,25 @@
     // Newer ChatGPT builds may not expose a stable `conversation-turns` container.
     // Fall back to a narrow ancestor derived from the first turn host.
     try {
-      const first = normalizeTurnElement(document.querySelector(TURN_SELECTOR));
+      const allTurns = [];
+      const seen = new Set();
+      for (const item of Array.from(document.querySelectorAll(TURN_SELECTOR))) {
+        const turn = normalizeTurnElement(item);
+        if (!turn || seen.has(turn)) continue;
+        if (!isLikelyConversationTurnElement(turn)) continue;
+        seen.add(turn);
+        allTurns.push(turn);
+      }
+      const first = allTurns[0] || null;
       if (first) {
-        // Prefer a list container whose *direct* children are turn hosts (cheap + ignores inner streaming mutations).
+        // Prefer the smallest ancestor that still covers every normalized turn.
+        // Current ChatGPT wraps each turn in its own div, so the first direct-turn
+        // wrapper can contain only one turn.
         let cur = first.parentElement;
         const MAX_DEPTH = 12;
         for (let i = 0; cur && cur !== document.body && cur !== document.documentElement && i < MAX_DEPTH; i++) {
           try {
-            if (cur.querySelector?.(DIRECT_TURN_HOST_SELECTOR)) return cur;
+            if (allTurns.every((turn) => cur.contains(turn))) return cur;
           } catch {}
           cur = cur.parentElement;
         }
@@ -391,11 +473,15 @@
     return document;
   }
 
-  function getTurnArticles(root) {
+  function getTurnArticles(root, options = null) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnArticles === 'function') return adapter.getTurnArticles(root, options);
+    const forceFresh = !!(options && typeof options === 'object' && options.forceFresh);
     try {
       const cachedRoot = turnsWatch.cachedRoot;
       const cachedTurns = turnsWatch.cachedTurns;
       const useCached =
+        !forceFresh &&
         Array.isArray(cachedTurns) &&
         cachedTurns.length &&
         (!root || root === document || root === cachedRoot);
@@ -410,6 +496,7 @@
       for (const item of list) {
         const turn = normalizeTurnElement(item);
         if (!turn || seen.has(turn)) continue;
+        if (!isLikelyConversationTurnElement(turn)) continue;
         seen.add(turn);
         normalized.push(turn);
       }
@@ -445,6 +532,8 @@
   }
 
   function getChatScrollContainer(force = false) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getChatScrollContainer === 'function') return adapter.getChatScrollContainer(force);
     const ts = now();
     if (!force) {
       try {
@@ -547,6 +636,8 @@
   }
 
   function getVisibleTurnWindow(force = false, marginPx = 0) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getVisibleTurnWindow === 'function') return adapter.getVisibleTurnWindow(force, marginPx);
     const snapshot = getTurnsSnapshot(force);
     const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
     const scroller = getChatScrollContainer(force);
@@ -634,7 +725,9 @@
     const prevRoot = turnsWatch.cachedRoot;
     const prevTurns = Array.isArray(turnsWatch.cachedTurns) ? turnsWatch.cachedTurns : [];
     const prevSet = prevRoot === normalizedRoot ? new Set(prevTurns) : null;
-    const turns = getTurnArticles(normalizedRoot);
+    // Force a DOM rescan here. This is the single path that is allowed to replace the
+    // cached turn list, so reading `cachedTurns` would freeze the snapshot after appends.
+    const turns = getTurnArticles(normalizedRoot, { forceFresh: true });
     const turnsSet = new Set(turns);
     const rootChanged = prevRoot !== normalizedRoot;
 
@@ -686,6 +779,8 @@
   }
 
   function getTurnsSnapshot(force = false) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnsSnapshot === 'function') return adapter.getTurnsSnapshot(force);
     const root = turnsWatch.root && turnsWatch.root.isConnected ? turnsWatch.root : getTurnsRoot();
     if (
       !force &&
@@ -788,6 +883,45 @@
     turnsWatch.timer = 0;
   }
 
+  function clearVisibleTurnWindowCache() {
+    try {
+      visibleTurnsWatch.ts = 0;
+      visibleTurnsWatch.turnsVersion = 0;
+      visibleTurnsWatch.scroller = null;
+      visibleTurnsWatch.marginPx = 0;
+      visibleTurnsWatch.result = null;
+    } catch {}
+    try {
+      chatScrollWatch.scroller = null;
+      chatScrollWatch.at = 0;
+    } catch {}
+  }
+
+  function releaseTurnNodeCaches(reason = '') {
+    const before = {
+      turns: Array.isArray(turnsWatch.cachedTurns) ? turnsWatch.cachedTurns.length : 0,
+      records: 0
+    };
+    try {
+      const cached = turnRecordsWatch?.cachedSnapshot;
+      before.records = Array.isArray(cached?.records) ? cached.records.length : 0;
+    } catch {}
+    try {
+      turnsWatch.cachedRoot = null;
+      turnsWatch.cachedTurns = [];
+      turnsWatch.pendingAddedTurns.clear();
+      turnsWatch.version += 1;
+    } catch {}
+    clearVisibleTurnWindowCache();
+    try {
+      turnRecordsWatch.cachedSnapshot = null;
+      turnRecordsWatch.metaByTurn = new WeakMap();
+      turnRecordsWatch.recordsVersion += 1;
+      publishTurnRecordDebugAttrs({ records: [], recordsVersion: turnRecordsWatch.recordsVersion });
+    } catch {}
+    return { reason: String(reason || ''), before };
+  }
+
   function ensureTurnsRouteListener() {
     if (turnsWatch.routeUnsub) return;
     // Prefer the shared bridge; avoid patching history.
@@ -798,6 +932,7 @@
         turnsWatch.routeUnsub = bridge.on('routeChange', () => {
           try {
             if (!turnsWatch.listeners.size) return;
+            releaseTurnNodeCaches('route');
             detachTurnsObserver();
             stopTurnsBootstrap();
             ensureTurnsObserver(true);
@@ -904,6 +1039,7 @@
         if (!turnsWatch.listeners.size) {
           detachTurnsObserver();
           stopTurnsBootstrap();
+          releaseTurnNodeCaches('idle');
           try {
             if (typeof turnsWatch.routeUnsub === 'function') turnsWatch.routeUnsub();
           } catch {}
@@ -914,6 +1050,8 @@
   }
 
   function getTurnRole(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnRole === 'function') return adapter.getTurnRole(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-turn') || '').trim();
       if (v) return v;
@@ -931,6 +1069,8 @@
   }
 
   function getTurnId(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getTurnId === 'function') return adapter.getTurnId(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-turn-id') || '').trim();
       if (v) return v;
@@ -939,6 +1079,8 @@
   }
 
   function getMessageId(turnEl) {
+    const adapter = getDomAdapter();
+    if (adapter && typeof adapter.getMessageId === 'function') return adapter.getMessageId(turnEl);
     try {
       const v = String(turnEl?.getAttribute?.('data-message-id') || '').trim();
       if (v) return v;
@@ -1120,6 +1262,11 @@
     return '...';
   }
 
+  function isPlaceholderPreview(preview) {
+    const value = String(preview || '').trim();
+    return !value || value === '...' || value === '…';
+  }
+
   function getTurnAppendMarker(turnEl) {
     try {
       const msgId = getMessageId(turnEl);
@@ -1144,7 +1291,7 @@
     metaByTurn: new WeakMap()
   }))();
 
-  function buildTurnRecord(turnEl, index, turnsVersion) {
+  function buildTurnRecord(turnEl, index, turnsVersion, { forcePreview = false } = {}) {
     if (!(turnEl instanceof HTMLElement)) return null;
     const role = inferTurnRole(turnEl);
     const msgId = getMessageId(turnEl);
@@ -1162,10 +1309,12 @@
     })();
     let preview =
       cached &&
+      !forcePreview &&
       cached.msgId === msgId &&
       cached.role === role &&
       cached.key === key &&
-      cached.appendMarker === appendMarker
+      cached.appendMarker === appendMarker &&
+      !isPlaceholderPreview(cached.preview)
         ? String(cached.preview || '')
         : '';
     if (!preview) preview = getTurnPreview(turnEl, bodyEl, role);
@@ -1187,7 +1336,7 @@
         role,
         msgId,
         appendMarker,
-        preview: record.preview
+        preview: isPlaceholderPreview(record.preview) ? '' : record.preview
       });
     } catch {}
     return record;
@@ -1231,7 +1380,9 @@
     const turns = Array.isArray(baseSnapshot?.turns) ? baseSnapshot.turns.filter((item) => item instanceof HTMLElement) : [];
     const records = [];
     for (let i = 0; i < turns.length; i += 1) {
-      const record = buildTurnRecord(turns[i], i, baseSnapshot?.turnsVersion);
+      const record = buildTurnRecord(turns[i], i, baseSnapshot?.turnsVersion, {
+        forcePreview: !!force || i >= Math.max(0, turns.length - 2)
+      });
       if (record) records.push(record);
     }
 
@@ -1268,7 +1419,20 @@
   }
 
   function getTurnRecordsSnapshot(force = false) {
-    if (!force && turnRecordsWatch.cachedSnapshot) return turnRecordsWatch.cachedSnapshot;
+    if (!force && turnRecordsWatch.cachedSnapshot) {
+      try {
+        const cached = turnRecordsWatch.cachedSnapshot;
+        const cachedRecords = Array.isArray(cached?.records) ? cached.records : [];
+        const cachedTurns = Array.isArray(cached?.turns) ? cached.turns : [];
+        const hasPlaceholder = cachedRecords.some((record) => isPlaceholderPreview(record?.preview));
+        if (hasPlaceholder) return refreshTurnRecordsSnapshot(null, { force: true });
+        if (cachedRecords.length || cachedTurns.length) return cached;
+        const liveTurns = getTurnsSnapshot(false);
+        if (!Array.isArray(liveTurns?.turns) || liveTurns.turns.length === 0) return cached;
+      } catch {
+        return turnRecordsWatch.cachedSnapshot;
+      }
+    }
     return refreshTurnRecordsSnapshot(null, { force });
   }
 
@@ -1587,6 +1751,10 @@
       state.lastCleanupAt = ts;
 
       try {
+        releaseTurnNodeCaches(`mem:${level}`);
+      } catch {}
+
+      try {
         // Keep cleanup lightweight; split view has been removed.
       } catch {}
 
@@ -1673,22 +1841,48 @@
       }
     } catch {}
 
-	    return Object.freeze({
-	      sample: () => readSample(),
-	      history: () => state.samples.slice(),
-	      tick,
+		    return Object.freeze({
+		      sample: () => readSample(),
+		      history: () => state.samples.slice(),
+		      tick,
 	      cleanup: (reason) => {
 	        const sample = readSample();
 	        if (sample) emergencyCleanup(String(reason || 'manual'), sample);
 	      }
-	    });
-	  })();
+		    });
+		  })();
 
-  const api = Object.freeze({
+  function installMemoryReleaseHooks() {
+    try {
+      if (globalThis.__aichat_chatgpt_core_memory_hooks_v1__) return;
+      Object.defineProperty(globalThis, '__aichat_chatgpt_core_memory_hooks_v1__', {
+        value: true,
+        configurable: true,
+        enumerable: false,
+        writable: true
+      });
+    } catch {}
+    const releaseIfHidden = () => {
+      try {
+        if (document.hidden) releaseTurnNodeCaches('hidden');
+      } catch {}
+    };
+    try {
+      document.addEventListener('visibilitychange', releaseIfHidden, true);
+    } catch {}
+    try {
+      window.addEventListener('pagehide', () => releaseTurnNodeCaches('pagehide'), true);
+    } catch {}
+  }
+
+  installMemoryReleaseHooks();
+
+	  const api = Object.freeze({
     version: API_VERSION,
     now,
     safeCall,
     getRoute,
+    getDomAdapter,
     getConversationIdFromUrl,
     getEditorEl,
     getComposerForm,
@@ -1717,10 +1911,11 @@
     getPerfSnapshot: () => perfRuntime.getSnapshot(),
     setPerfSnapshot: (next) => perfRuntime.update(next),
     clearPerfSnapshot: () => perfRuntime.clear(),
-    onPerfStateChange: (cb) => perfRuntime.onChange(cb),
-    isTurnOffscreen: (turnEl) => perfRuntime.isOffscreen(turnEl),
-    memGuard
-  });
+	    onPerfStateChange: (cb) => perfRuntime.onChange(cb),
+	    isTurnOffscreen: (turnEl) => perfRuntime.isOffscreen(turnEl),
+    releaseMemory: (reason) => releaseTurnNodeCaches(reason || 'api'),
+	    memGuard
+	  });
 
   try {
     Object.defineProperty(globalThis, API_KEY, { value: api, configurable: true, enumerable: false, writable: false });

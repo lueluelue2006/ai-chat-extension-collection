@@ -34,6 +34,7 @@
   const elPanelSelectionSub = document.getElementById('panelSelectionSub');
   const elPanelSelectionMeta = document.getElementById('panelSelectionMeta');
   const elPanelInfoWrap = document.getElementById('panelInfoWrap');
+  const btnPanelInfo = document.getElementById('panelInfoBtn');
   const elPanelInfoCard = document.getElementById('panelInfoCard');
   const elMetaKeyProfileState = document.getElementById('metaKeyProfileState');
   const elMetaKeyProfilePill = document.getElementById('metaKeyProfilePill');
@@ -80,6 +81,7 @@
   const CGPT_PERF_STORAGE_KEY = 'cgpt_perf_mv3_settings_v1';
   const CGPT_PERF_DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
+    extremeMode: true,
     virtualizeOffscreen: true,
     optimizeHeavyBlocks: true,
     disableAnimations: true,
@@ -572,8 +574,8 @@
     const joiner = isChineseUi() ? '，' : ', ';
     const msg = parts.length ? `${parts.join(joiner)}${more}` : '';
     elGpt53AlertText.textContent = localeText(
-      `检测到 ${unread} 条资源可访问（每次检测都会提醒）：${msg}`,
-      `${unread} monitored resources are reachable (each check will alert again): ${msg}`
+      `检测到 ${unread} 条资源可用（每次检测都会提醒）：${msg}`,
+      `${unread} monitored resources are available (each check will alert again): ${msg}`
     );
     elGpt53AlertBox.hidden = false;
   }
@@ -690,6 +692,7 @@
     const s = raw && typeof raw === 'object' ? raw : {};
     return {
       enabled: typeof s.enabled === 'boolean' ? s.enabled : CGPT_PERF_DEFAULT_SETTINGS.enabled,
+      extremeMode: typeof s.extremeMode === 'boolean' ? s.extremeMode : CGPT_PERF_DEFAULT_SETTINGS.extremeMode,
       virtualizeOffscreen:
         typeof s.virtualizeOffscreen === 'boolean' ? s.virtualizeOffscreen : CGPT_PERF_DEFAULT_SETTINGS.virtualizeOffscreen,
       optimizeHeavyBlocks:
@@ -1642,11 +1645,33 @@
     const authors = Array.isArray(def?.authors) ? def.authors.map((v) => String(v || '').trim()).filter(Boolean) : [];
     const license = typeof def?.license === 'string' ? def.license.trim() : '';
     const upstream = typeof def?.upstream === 'string' ? def.upstream.trim() : '';
+    const references = Array.isArray(def?.references) ? def.references : [];
     const entries = [];
     if (authors.length) entries.push({ label: localeText('作者', 'Author'), text: authors.join(' / ') });
     if (license) entries.push({ label: localeText('许可', 'License'), text: license });
     if (upstream) entries.push({ label: localeText('上游', 'Upstream'), url: upstream });
+    for (const ref of references) {
+      const url = typeof ref?.url === 'string' ? ref.url.trim() : '';
+      if (!url) continue;
+      const label = typeof ref?.label === 'string' && ref.label.trim()
+        ? ref.label.trim()
+        : localeText('参考', 'Reference');
+      entries.push({ label, url });
+    }
     return entries;
+  }
+
+  function setPanelInfoClickOpen(open) {
+    if (!elPanelInfoWrap || !btnPanelInfo) return;
+    const nextOpen = !!open && !elPanelInfoWrap.hidden;
+    elPanelInfoWrap.classList.toggle('is-open', nextOpen);
+    if (nextOpen) elPanelInfoWrap.classList.remove('is-hover-suppressed');
+    btnPanelInfo.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+  }
+
+  function suppressPanelInfoHover(suppress) {
+    if (!elPanelInfoWrap) return;
+    elPanelInfoWrap.classList.toggle('is-hover-suppressed', !!suppress);
   }
 
   function renderPanelInfoEntries(entries) {
@@ -1655,6 +1680,8 @@
 
     const list = Array.isArray(entries) ? entries.filter((entry) => entry && (entry.text || entry.url)) : [];
     if (!list.length) {
+      setPanelInfoClickOpen(false);
+      suppressPanelInfoHover(false);
       elPanelInfoWrap.hidden = true;
       elPanelInfoCard.setAttribute('aria-hidden', 'true');
       return;
@@ -1947,7 +1974,7 @@
   }
 
   async function renderChatGPTPerfModuleSettings(siteId, token) {
-    addModuleHeader('chatgpt_perf', 'ChatGPT 性能优化', '离屏虚拟化与 CSS contain，减少长对话卡顿（设置写入 storage.sync）。');
+    addModuleHeader('chatgpt_perf', 'ChatGPT 性能协调器', '探测公式/长代码/长任务压力，并让其它 ChatGPT 脚本在热路径降载（设置写入 storage.sync）。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -1991,34 +2018,39 @@
         title: '只控制该模块内部逻辑；若关闭“启用该模块注入”，这里不会生效。'
       },
       {
+        key: 'extremeMode',
+        label: '极致性能模式（默认开）',
+        title: '输入和生成期间尽量只发布热路径信号，延后全量压力采样；长对话只采样首尾与可见消息。'
+      },
+      {
         key: 'virtualizeOffscreen',
-        label: '离屏虚拟化（默认开）',
-        title: '核心优化：将离屏消息变为 content-visibility:auto，减少长对话滚动/渲染压力。'
+        label: '安全离屏协调（默认开）',
+        title: '仅发布离屏/重压状态与兼容标记；当前不会默认替换或移除 ChatGPT 消息 DOM。'
       },
       {
         key: 'optimizeHeavyBlocks',
-        label: '重内容优化（默认开）',
-        title: '对 pre/table/公式/段落块等高开销内容使用 contain/content-visibility，减少长回复卡顿。'
+        label: '重内容压力检测（默认开）',
+        title: '检测公式、长代码、DOM 体量和长任务，用于让 QuickNav/滚动保护等脚本主动降载。'
       },
       {
         key: 'disableAnimations',
-        label: '禁用动画/过渡（默认开）',
-        title: '将对话线程范围内的动画/过渡 duration 置 0，减少合成与重绘开销；避免误伤整个站点页面。'
+        label: '热路径禁用动画/过渡（默认开）',
+        title: '仅在检测到 hot 状态时缩短扩展 UI 与对话区动画，减少重压滚动期间的额外绘制。'
       },
       {
         key: 'boostDuringInput',
-        label: '输入/交互加速（默认开）',
-        title: '在输入/编辑/发送等交互期间临时收紧预加载边距，优先保证点击/发送流畅。'
+        label: '输入/交互热路径标记（默认开）',
+        title: '在输入、编辑、发送、点击等交互后短暂发布 hot 状态，让其它脚本避开同步扫描。'
       },
       {
         key: 'unfreezeOnFind',
-        label: 'Ctrl/Cmd+F 临时解冻（默认开）',
-        title: '使用查找时临时关闭虚拟化，确保能搜到远处内容（之后自动恢复）。'
+        label: '保留 Ctrl/Cmd+F 兼容开关（默认开）',
+        title: '兼容旧设置；当前默认路径不冻结消息 DOM，因此通常不需要额外解冻。'
       },
       {
         key: 'showOverlay',
-        label: '显示页面内性能菜单（默认关）',
-        title: '开启后在页面左下角显示“性能”按钮，可随时切换开关并测量一次交互卡顿。'
+        label: '显示页面内压力状态（默认关）',
+        title: '开启后在页面左下角显示预算等级、hot 状态、DOM 节点和公式数量。'
       }
     ];
 
@@ -2053,7 +2085,7 @@
     const rowMargin = document.createElement('div');
     rowMargin.className = 'formRow rangeRow';
     const leftMargin = document.createElement('span');
-    leftMargin.textContent = 'rootMarginPx（越大越不激进）';
+    leftMargin.textContent = '压力阈值保守度（越大越不激进）';
 
     const marginStep = 50;
     const marginBaseMax = 4000;
@@ -2123,7 +2155,7 @@
     elModuleSettings.appendChild(rowMargin);
 
     addPanelDivider();
-    addPanelTitle('状态检测', '从已打开的 ChatGPT 页面读取 <html data-cgptperf*> 属性，确认设置是否已应用。');
+    addPanelTitle('状态检测', '从已打开的 ChatGPT 页面读取压力预算、公式/代码/长任务指标，确认协调器是否已应用。');
 
     const btnProbe = document.createElement('button');
     btnProbe.type = 'button';
@@ -2283,6 +2315,26 @@
     rowHotkeyJ.appendChild(inputHotkeyJ);
     elModuleSettings.appendChild(rowHotkeyJ);
 
+    const rowDisableCmdP = document.createElement('label');
+    rowDisableCmdP.className = 'formRow';
+    const leftDisableCmdP = document.createElement('span');
+    leftDisableCmdP.textContent = '禁用 ⌘P（阻止浏览器打印）';
+    const inputDisableCmdP = document.createElement('input');
+    inputDisableCmdP.type = 'checkbox';
+    inputDisableCmdP.checked = getSiteModuleSetting(siteId, 'chatgpt_thinking_toggle_disable_cmd_p', true);
+    inputDisableCmdP.addEventListener('change', () => {
+      const checked = !!inputDisableCmdP.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_thinking_toggle_disable_cmd_p = checked;
+      });
+    });
+    rowDisableCmdP.appendChild(leftDisableCmdP);
+    rowDisableCmdP.appendChild(inputDisableCmdP);
+    elModuleSettings.appendChild(rowDisableCmdP);
+
     const rowForce = document.createElement('label');
     rowForce.className = 'formRow';
     const leftForce = document.createElement('span');
@@ -2310,7 +2362,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J（可分别关闭）；并在发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。若你把键盘能力设为“无 Meta 键”，这里只会保留模块注入，快捷键默认停用。';
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J（可分别关闭），并默认拦截 ⌘P，避免误开浏览器打印；发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。若你把键盘能力设为“无 Meta 键”，这里只会保留模块注入，⌘O/⌘J 默认停用。';
     elModuleSettings.appendChild(hint);
   }
 
@@ -2748,56 +2800,69 @@
     };
 
     const MODEL_DISPLAY_NAMES = {
+      'gpt-5-5-pro': 'gpt-5.5-pro',
       'gpt-5-4-pro': 'gpt-5.4-pro',
       'gpt-5-2-pro': 'gpt-5.2-pro',
-      'gpt-5-1-pro': 'gpt-5.1-pro',
       'gpt-4-5': 'gpt-4.5',
+      'gpt-5-5-thinking': 'gpt-5.5-thinking',
       'gpt-5-4-thinking': 'gpt-5.4-thinking',
       'gpt-5-2-thinking': 'gpt-5.2-thinking',
-      'gpt-5-1-thinking': 'gpt-5.1-thinking',
       'gpt-5-3-instant': 'gpt-5.3-instant',
       'gpt-5-2-instant': 'gpt-5.2-instant',
-      'gpt-5-1-instant': 'gpt-5.1-instant',
       o3: 'o3',
-      'gpt-5-t-mini': 'gpt-5-t-mini',
       'gpt-5-mini': 'gpt-5-mini',
       alpha: 'alpha'
     };
     const MODEL_DISPLAY_ORDER = [
+      'gpt-5-5-pro',
       'gpt-5-4-pro',
       'gpt-5-2-pro',
-      'gpt-5-1-pro',
       'gpt-4-5',
+      'gpt-5-5-thinking',
       'gpt-5-4-thinking',
       'gpt-5-2-thinking',
-      'gpt-5-1-thinking',
       'gpt-5-3-instant',
       'gpt-5-2-instant',
-      'gpt-5-1-instant',
       'o3',
-      'gpt-5-t-mini',
       'gpt-5-mini',
       'alpha'
     ];
     const LEGACY_NOMINAL_UNLIMITED_QUOTA = 10000;
     const LEGACY_NOMINAL_UNLIMITED_WINDOW_TYPE = 'hour3';
     const MODEL_KEY_ALIASES = {
-      'gpt-5-pro': 'gpt-5-4-pro',
-      'gpt-5-pro-shared': 'gpt-5-4-pro',
-      'gpt-5-thinking': 'gpt-5-4-thinking',
-      'gpt-5-thinking-shared': 'gpt-5-4-thinking',
+      'gpt-5-pro': 'gpt-5-5-pro',
+      'gpt-5-pro-shared': 'gpt-5-5-pro',
+      'gpt-5.5-pro': 'gpt-5-5-pro',
+      'gpt-5.4-pro': 'gpt-5-4-pro',
+      'gpt-5.2-pro': 'gpt-5-2-pro',
+      'gpt-5-thinking': 'gpt-5-5-thinking',
+      'gpt-5-thinking-shared': 'gpt-5-5-thinking',
+      'gpt-5.5-thinking': 'gpt-5-5-thinking',
+      'gpt-5.4-thinking': 'gpt-5-4-thinking',
+      'gpt-5.2-thinking': 'gpt-5-2-thinking',
       'gpt-5-instant': 'gpt-5-3-instant',
       'gpt-5-instant-shared': 'gpt-5-3-instant',
+      'gpt-5.3-instant': 'gpt-5-3-instant',
+      'gpt-5.2-instant': 'gpt-5-2-instant',
       'gpt-5': 'gpt-5-3-instant',
-      'gpt-5-1': 'gpt-5-1-instant',
       'gpt-5-2': 'gpt-5-2-instant',
       'gpt-5-3': 'gpt-5-3-instant',
       'o3-pro': 'o3'
     };
+    const DEPRECATED_USAGE_MODEL_KEYS = new Set(['gpt-5-t-mini']);
+    const isDeprecatedUsageModelKey = (modelKey) => {
+      const key = String(modelKey || '').trim();
+      if (DEPRECATED_USAGE_MODEL_KEYS.has(key)) return true;
+      const parts = key.split('-');
+      return parts.length >= 3 && parts[0] === 'gpt' && parts[1] === '5' && parts[2] === '1';
+    };
     const canonicalizeUsageModelKey = (modelKey) => {
       const key = String(modelKey || '').trim();
       if (!key) return '';
-      return MODEL_KEY_ALIASES[key] || key;
+      if (isDeprecatedUsageModelKey(key)) return '';
+      const canonicalKey = Object.prototype.hasOwnProperty.call(MODEL_KEY_ALIASES, key) ? MODEL_KEY_ALIASES[key] : key;
+      if (isDeprecatedUsageModelKey(canonicalKey)) return '';
+      return canonicalKey;
     };
     const isUsagePanelKnownModelKey = (modelKey) => MODEL_DISPLAY_ORDER.includes(canonicalizeUsageModelKey(modelKey));
     const displayModelName = (modelKey) => {
@@ -2839,7 +2904,12 @@
       let changed = false;
       Object.keys(models).forEach((rawKey) => {
         const canonicalKey = canonicalizeUsageModelKey(rawKey);
-        if (!canonicalKey || canonicalKey === rawKey) return;
+        if (!canonicalKey) {
+          delete models[rawKey];
+          changed = true;
+          return;
+        }
+        if (canonicalKey === rawKey) return;
         const source = models[rawKey];
         if (!source || typeof source !== 'object') {
           delete models[rawKey];
@@ -3104,7 +3174,8 @@
       for (const [rawKey, model] of Object.entries(usageData?.models || {})) {
         if (String(model?.sharedGroup || '') !== String(groupId)) continue;
         if (!Array.isArray(model?.requests)) continue;
-        const modelKey = canonicalizeUsageModelKey(rawKey) || rawKey;
+        const modelKey = canonicalizeUsageModelKey(rawKey);
+        if (!modelKey) continue;
         model.requests
           .map((req) => tsOf(req))
           .filter((ts) => typeof ts === 'number' && !Number.isNaN(ts) && now - ts < windowDuration)
@@ -3944,7 +4015,7 @@
   }
 
   function renderChatGPTTexCopyQuoteModuleSettings(siteId) {
-    addModuleHeader('chatgpt_tex_copy_quote', 'ChatGPT TeX Copy & Quote', '增强 ChatGPT 的复制/引用：优先复制 KaTeX 的原始 LaTeX。');
+    addModuleHeader('chatgpt_tex_copy_quote', 'ChatGPT TeX Copy & Quote', '增强 ChatGPT 的复制/引用：选区可追加多段 Markdown Quote，并优先还原 KaTeX 的原始 LaTeX。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -3966,10 +4037,74 @@
     rowInject.appendChild(inputInject);
     elModuleSettings.appendChild(rowInject);
 
+    addPanelTitle('交互选项', '这些开关会实时写入配置；已打开的 ChatGPT 页面通常会在下一次选择、复制、悬停或点击时生效。');
+
+    const optionRows = [
+      {
+        key: 'chatgpt_tex_copy_quote_multi_quote',
+        label: '选中文本后显示 Quote 按钮',
+        hint: '关闭后不会弹出自定义 Quote；原生 Quote 不受这个开关影响。'
+      },
+      {
+        key: 'chatgpt_tex_copy_quote_hide_native_quote',
+        label: '显示自定义 Quote 时隐藏原生 Quote',
+        hint: '关闭后保留 ChatGPT 原生 Quote/Ask ChatGPT 控件，适合对比或临时回退。'
+      },
+      {
+        key: 'chatgpt_tex_copy_quote_native_quote_patch',
+        label: '原生 Quote 也尝试替换为 LaTeX',
+        hint: '只在选区包含 KaTeX 公式时短时间补丁输入框；关闭后原生 Quote 完全按 ChatGPT 自己的逻辑处理。'
+      },
+      {
+        key: 'chatgpt_tex_copy_quote_copy_latex',
+        label: '复制含公式选区时写入 LaTeX',
+        hint: '关闭后不拦截 copy 事件，浏览器和 ChatGPT 原生复制结果保持原样。'
+      },
+      {
+        key: 'chatgpt_tex_copy_quote_hover_tooltip',
+        label: '悬停公式显示 LaTeX 提示',
+        hint: '关闭后不会显示公式悬停气泡，也会清掉已经显示的提示。'
+      },
+      {
+        key: 'chatgpt_tex_copy_quote_double_click_copy',
+        label: '双击公式复制 LaTeX',
+        hint: '关闭后双击公式不再写剪贴板，避免误触覆盖剪贴板。'
+      }
+    ];
+
+    for (const opt of optionRows) {
+      const row = document.createElement('label');
+      row.className = 'formRow';
+      const left = document.createElement('span');
+      left.textContent = opt.label;
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = getSiteModuleSetting(siteId, opt.key, true);
+      input.addEventListener('change', () => {
+        const checked = !!input.checked;
+        patchQuickNavSettings((next) => {
+          next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+          next.siteModules[siteId] =
+            next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+          next.siteModules[siteId][opt.key] = checked;
+        });
+      });
+      row.appendChild(left);
+      row.appendChild(input);
+      elModuleSettings.appendChild(row);
+
+      if (opt.hint) {
+        const optionHint = document.createElement('div');
+        optionHint.className = 'smallHint';
+        optionHint.textContent = opt.hint;
+        elModuleSettings.appendChild(optionHint);
+      }
+    }
+
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块在页面主世界（MAIN world）通过事件驱动处理复制/引用：复制时仅在选区含 .katex 时改写剪贴板为原始 LaTeX；点击原生 Quote 时仅对该次引用做补丁替换（不再全局重载 Range/Selection）。交互：悬停公式 0.8s 显示 LaTeX 提示，双击公式复制 LaTeX 并弹出提示。关闭模块后已打开页面可能需要刷新才会完全停用。';
+      '说明：该模块在页面主世界（MAIN world）通过事件驱动处理复制/引用，不全局重载 Range/Selection。默认行为保持开启：选中文本后显示轻量 Quote 按钮，可重复追加多段；选区含 .katex 时优先还原 LaTeX；复制含公式选区时改写剪贴板；悬停公式 0.8s 显示 LaTeX 提示；双击公式复制 LaTeX。关闭模块注入后，已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 
@@ -4581,6 +4716,37 @@
       }
     };
     void run();
+  });
+
+  btnPanelInfo?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const isOpen = !!elPanelInfoWrap?.classList.contains('is-open');
+    setPanelInfoClickOpen(!isOpen);
+    suppressPanelInfoHover(isOpen);
+  });
+  elPanelInfoWrap?.addEventListener('pointerleave', () => {
+    suppressPanelInfoHover(false);
+  });
+  elPanelInfoWrap?.addEventListener('pointerenter', () => {
+    if (!elPanelInfoWrap?.classList.contains('is-open')) suppressPanelInfoHover(false);
+  });
+  elPanelInfoCard?.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+  document.addEventListener('click', (event) => {
+    try {
+      if (!elPanelInfoWrap || elPanelInfoWrap.hidden) return;
+      if (event.target instanceof Node && elPanelInfoWrap.contains(event.target)) return;
+      setPanelInfoClickOpen(false);
+      suppressPanelInfoHover(false);
+    } catch {}
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      setPanelInfoClickOpen(false);
+      suppressPanelInfoHover(!!elPanelInfoWrap?.matches(':hover'));
+    }
   });
 
   // Load the current monitor config/status once on open so users can edit immediately.

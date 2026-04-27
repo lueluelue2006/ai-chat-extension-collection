@@ -98,6 +98,8 @@
   const CGPT_READALOUD_SPEED_DEFAULT = 1.8;
   const CGPT_READALOUD_SPEED_MIN = 0.01;
   const CGPT_READALOUD_SPEED_MAX = 100;
+  const QDS_DEFAULT_SEARCH_HOTKEY = 'S';
+  const QDS_DEFAULT_SEARCH_PROMPT = 'ultra think and deeper websearch\n\n';
 
   const CGPT_USAGE_MONITOR_PLAN_STORAGE_KEY = 'cgpt_usage_monitor_plan_type_v1';
   const CGPT_USAGE_MONITOR_PLAN_DEFAULT = 'team';
@@ -975,6 +977,16 @@
     return typeof value === 'boolean' ? value : fallback;
   }
 
+  function getSiteModuleStringSetting(siteId, key, fallback = '') {
+    const value = currentSettings?.siteModules?.[siteId]?.[key];
+    return typeof value === 'string' ? value : fallback;
+  }
+
+  function normalizeQdsSearchHotkey(value) {
+    const text = String(value || '').trim().toUpperCase();
+    return /^[A-Z]$/.test(text) ? text : QDS_DEFAULT_SEARCH_HOTKEY;
+  }
+
   function getModuleHotkeyPolicy(moduleId) {
     const def = MODULES?.[moduleId];
     return def?.hotkeyPolicy && typeof def.hotkeyPolicy === 'object' ? def.hotkeyPolicy : null;
@@ -1592,7 +1604,7 @@
       for (const key of keys) {
         const av = aMods?.[key];
         const bv = bMods?.[key];
-        if (typeof bv !== 'boolean') continue;
+        if (typeof bv !== 'boolean' && typeof bv !== 'string') continue;
         if (bv !== av) out.push({ op: 'set', path: ['siteModules', siteId, key], value: bv });
       }
     }
@@ -3998,7 +4010,7 @@
     addModuleHeader(
       'chatgpt_quick_deep_search',
       '快捷深度搜索（译/搜/思）',
-      '仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）（不注入按钮，更稳）。'
+      '仅快捷键：可配置 Ctrl+字母（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）（不注入按钮，更稳）。'
     );
 
     const rowInject = document.createElement('label');
@@ -4026,7 +4038,7 @@
     const rowHotkeys = document.createElement('label');
     rowHotkeys.className = 'formRow';
     const leftHotkeys = document.createElement('span');
-    leftHotkeys.textContent = '启用 Ctrl+S / T / Y / Z 快捷键';
+    leftHotkeys.textContent = '启用 Ctrl 快捷键';
     const inputHotkeys = document.createElement('input');
     inputHotkeys.type = 'checkbox';
     inputHotkeys.checked = getSiteModuleSetting(siteId, 'chatgpt_quick_deep_search_hotkeys', true);
@@ -4042,6 +4054,65 @@
     rowHotkeys.appendChild(leftHotkeys);
     rowHotkeys.appendChild(inputHotkeys);
     elModuleSettings.appendChild(rowHotkeys);
+
+    const rowSearchHotkey = document.createElement('label');
+    rowSearchHotkey.className = 'formRow';
+    const leftSearchHotkey = document.createElement('span');
+    leftSearchHotkey.textContent = '搜索快捷键字母';
+    const inputSearchHotkey = document.createElement('input');
+    inputSearchHotkey.type = 'text';
+    inputSearchHotkey.inputMode = 'latin';
+    inputSearchHotkey.autocomplete = 'off';
+    inputSearchHotkey.spellcheck = false;
+    inputSearchHotkey.maxLength = 1;
+    inputSearchHotkey.className = 'hotkeyLetterInput';
+    inputSearchHotkey.value = normalizeQdsSearchHotkey(
+      getSiteModuleStringSetting(siteId, 'chatgpt_quick_deep_search_search_hotkey', QDS_DEFAULT_SEARCH_HOTKEY)
+    );
+    inputSearchHotkey.addEventListener('focus', () => inputSearchHotkey.select());
+    inputSearchHotkey.addEventListener('input', () => {
+      inputSearchHotkey.value = normalizeQdsSearchHotkey(inputSearchHotkey.value);
+    });
+    inputSearchHotkey.addEventListener('change', () => {
+      const value = normalizeQdsSearchHotkey(inputSearchHotkey.value);
+      inputSearchHotkey.value = value;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_quick_deep_search_search_hotkey = value;
+      });
+    });
+    rowSearchHotkey.appendChild(leftSearchHotkey);
+    rowSearchHotkey.appendChild(inputSearchHotkey);
+    elModuleSettings.appendChild(rowSearchHotkey);
+
+    const rowSearchPrompt = document.createElement('label');
+    rowSearchPrompt.className = 'formRow textAreaRow';
+    const leftSearchPrompt = document.createElement('span');
+    leftSearchPrompt.textContent = '搜索时插入的文本';
+    const inputSearchPrompt = document.createElement('textarea');
+    inputSearchPrompt.rows = 4;
+    inputSearchPrompt.spellcheck = false;
+    inputSearchPrompt.className = 'moduleTextArea';
+    inputSearchPrompt.value = getSiteModuleStringSetting(
+      siteId,
+      'chatgpt_quick_deep_search_search_prompt',
+      QDS_DEFAULT_SEARCH_PROMPT
+    );
+    inputSearchPrompt.addEventListener('change', () => {
+      const value = String(inputSearchPrompt.value || '').trim() ? inputSearchPrompt.value : QDS_DEFAULT_SEARCH_PROMPT;
+      inputSearchPrompt.value = value;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_quick_deep_search_search_prompt = value;
+      });
+    });
+    rowSearchPrompt.appendChild(leftSearchPrompt);
+    rowSearchPrompt.appendChild(inputSearchPrompt);
+    elModuleSettings.appendChild(rowSearchPrompt);
 
     const rowForce = document.createElement('label');
     rowForce.className = 'formRow';
@@ -4070,7 +4141,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；不会改写 ChatGPT 请求里的模型字段，会保留页面当前选择的模型与推理强度。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。';
+      '说明：触发搜索快捷键后，会把自定义文本插入到输入框开头并自动发送；自定义文本中可写 {input} 作为原输入占位符。不会改写 ChatGPT 请求里的模型字段，会保留页面当前选择的模型与推理强度。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。';
     elModuleSettings.appendChild(hint);
   }
 

@@ -1193,7 +1193,44 @@ a {
   font-weight: 600;
 }
 
+.formRow input[type='text'],
+.formRow textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panelStrong);
+  color: var(--text);
+  font: inherit;
+}
+
+.formRow input.hotkeyLetterInput {
+  width: 58px;
+  text-align: center;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.formRow.textAreaRow {
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 460px);
+  align-items: start;
+}
+
+.formRow textarea.moduleTextArea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font: 13px/1.5 ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 .formRow input[type='number']:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-outline) 50%);
+}
+
+.formRow input[type='text']:focus,
+.formRow textarea:focus {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border-outline) 50%);
 }
@@ -1385,6 +1422,11 @@ textarea.codeBox {
   }
 
   .formRow.rangeRow {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .formRow.textAreaRow {
     grid-template-columns: 1fr;
     gap: 10px;
   }

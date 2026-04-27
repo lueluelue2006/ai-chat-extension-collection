@@ -277,13 +277,14 @@
             const outMods = out.siteModules?.[siteId];
             if (!outMods || typeof outMods !== 'object') continue;
             for (const modId of Object.keys(outMods)) {
-              if (typeof rawMods[modId] === 'boolean') {
+              const defaultValue = DEFAULT_SETTINGS.siteModules?.[siteId]?.[modId];
+              if (typeof rawMods[modId] === typeof defaultValue) {
                 outMods[modId] = rawMods[modId];
                 continue;
               }
               const legacyIds = getLegacyModuleIdsForCanonical(modId);
               for (const legacyId of legacyIds) {
-                if (typeof rawMods[legacyId] === 'boolean') {
+                if (typeof rawMods[legacyId] === typeof defaultValue) {
                   outMods[modId] = rawMods[legacyId];
                   break;
                 }
@@ -333,7 +334,7 @@
         const rawMods = raw.siteModules?.[siteId];
         if (!rawMods || typeof rawMods !== 'object') return true;
         for (const modId of Object.keys(expectedMods)) {
-          if (typeof rawMods[modId] !== 'boolean') return true;
+          if (typeof rawMods[modId] !== typeof expectedMods[modId]) return true;
         }
       }
       if (!raw.migrations || typeof raw.migrations !== 'object') return true;
@@ -522,7 +523,8 @@
         if (!KNOWN_SITE_IDS.has(siteId)) continue;
         const allow = KNOWN_SITE_MODULE_KEYS.get(siteId);
         if (!allow || !allow.has(key)) continue;
-        if (typeof op.value === 'boolean') {
+        const expected = DEFAULT_SETTINGS.siteModules?.[siteId]?.[key];
+        if (typeof op.value === typeof expected) {
           if (!next.siteModules[siteId] || typeof next.siteModules[siteId] !== 'object') next.siteModules[siteId] = {};
           next.siteModules[siteId][key] = op.value;
         }

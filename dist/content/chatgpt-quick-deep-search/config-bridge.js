@@ -7,6 +7,10 @@
   const SETTINGS_KEY = 'aichat_ai_shortcuts_settings_v1';
   const LEGACY_SETTINGS_KEY = 'quicknav_settings';
   const DS_HOTKEYS_KEY = 'aichatQuickDeepSearchHotkeysEnabled';
+  const DS_SEARCH_HOTKEY_KEY = 'aichatQuickDeepSearchSearchHotkey';
+  const DS_SEARCH_PROMPT_KEY = 'aichatQuickDeepSearchSearchPrompt';
+  const DEFAULT_SEARCH_HOTKEY = 'S';
+  const DEFAULT_SEARCH_PROMPT = 'ultra think and deeper websearch\n\n';
 
   const prevState = (() => {
     try {
@@ -95,7 +99,13 @@
   const storageListenerOffs = new Set();
   let attrObserver = null;
   let disposed = false;
-  const pending = { enabled: true, timer: 0, tries: 0 };
+  const pending = {
+    enabled: true,
+    searchHotkey: DEFAULT_SEARCH_HOTKEY,
+    searchPrompt: DEFAULT_SEARCH_PROMPT,
+    timer: 0,
+    tries: 0
+  };
 
   function normalizeMetaKeyMode(mode) {
     const value = String(mode || '').trim().toLowerCase();
@@ -117,6 +127,16 @@
     if (mode === 'has_meta') return true;
     if (mode === 'no_meta') return false;
     return detectHasMetaKeyCapability();
+  }
+
+  function normalizeSearchHotkey(value) {
+    const text = String(value || '').trim().toUpperCase();
+    return /^[A-Z]$/.test(text) ? text : DEFAULT_SEARCH_HOTKEY;
+  }
+
+  function normalizeSearchPrompt(value) {
+    if (typeof value !== 'string') return DEFAULT_SEARCH_PROMPT;
+    return value.trim() ? value : DEFAULT_SEARCH_PROMPT;
   }
 
   function addStorageOnChangedListener(fn) {
@@ -151,6 +171,18 @@
     }
   }
 
+  function writeStringDataset(key, val) {
+    if (disposed) return false;
+    try {
+      if (!document.documentElement || !document.documentElement.dataset) return false;
+      const next = String(val || '');
+      if (document.documentElement.dataset[key] !== next) document.documentElement.dataset[key] = next;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function scheduleFlush(delayMs) {
     if (disposed) return;
     try {
@@ -166,7 +198,11 @@
 
   function flushPending() {
     if (disposed) return;
-    if (writeBoolDataset(DS_HOTKEYS_KEY, pending.enabled)) {
+    if (
+      writeBoolDataset(DS_HOTKEYS_KEY, pending.enabled) &&
+      writeStringDataset(DS_SEARCH_HOTKEY_KEY, pending.searchHotkey) &&
+      writeStringDataset(DS_SEARCH_PROMPT_KEY, pending.searchPrompt)
+    ) {
       pending.tries = 0;
       return;
     }
@@ -183,6 +219,8 @@
       const force = typeof mods?.chatgpt_quick_deep_search_hotkeys_force === 'boolean' ? mods.chatgpt_quick_deep_search_hotkeys_force : false;
       const hasMetaKey = resolveHasMetaKey(settings);
       pending.enabled = !!hotkeys && (!!hasMetaKey || !!force);
+      pending.searchHotkey = normalizeSearchHotkey(mods?.chatgpt_quick_deep_search_search_hotkey);
+      pending.searchPrompt = normalizeSearchPrompt(mods?.chatgpt_quick_deep_search_search_prompt);
       flushPending();
     } catch {}
   }
@@ -194,7 +232,11 @@
       if (!html) return;
       attrObserver = bridgeScope.observer(html, () => scheduleFlush(0), {
         attributes: true,
-        attributeFilter: ['data-aichat-quick-deep-search-hotkeys-enabled']
+        attributeFilter: [
+          'data-aichat-quick-deep-search-hotkeys-enabled',
+          'data-aichat-quick-deep-search-search-hotkey',
+          'data-aichat-quick-deep-search-search-prompt'
+        ]
       });
     } catch {}
   }

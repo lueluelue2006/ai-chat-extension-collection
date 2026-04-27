@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.7-74c0fc" alt="Current version 4.0.7">
+  <img src="https://img.shields.io/badge/current-4.0.8-74c0fc" alt="Current version 4.0.8">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.8 补丁
+
+这个补丁把 ChatGPT 快捷深度搜索从硬编码热键/硬编码提示词，升级为可配置的轻量工作流。
+
+| 方向 | 更新 |
+| --- | --- |
+| 快捷深度搜索 | 设置页新增搜索快捷键字母配置，默认仍是 `Ctrl+S` |
+| 快捷深度搜索 | 设置页新增搜索插入文本配置，支持 `{input}` 占位符来控制原输入放置位置 |
+| 设置/存储 | per-module 设置支持受控字符串字段，并加入验证规则防止配置桥接回退 |
 
 ### 4.0.7 补丁
 
@@ -261,6 +271,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.8
+
+This patch makes ChatGPT Quick Deep Search configurable instead of keeping the search hotkey and inserted instruction hardcoded.
+
+| Area | Update |
+| --- | --- |
+| Quick deep search | Adds an options-page search hotkey letter setting; the default remains `Ctrl+S` |
+| Quick deep search | Adds an options-page inserted-text setting, including `{input}` placeholder support for exact prompt layout |
+| Settings / storage | Allows controlled string fields in per-module settings and adds regression checks for the config bridge |
 
 ### Release 4.0.7
 

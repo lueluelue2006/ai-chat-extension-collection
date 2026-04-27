@@ -16,7 +16,7 @@
     localeMode: string;
     sites: Record<string, boolean>;
     scrollLockDefaults: Record<string, boolean>;
-    siteModules: Record<string, Record<string, boolean>>;
+    siteModules: Record<string, Record<string, boolean | string>>;
   };
   type ContentScriptDef = {
     id: string;
@@ -88,6 +88,13 @@
     })
   });
 
+  const EXTRA_SITE_MODULE_STRING_SETTINGS: Readonly<Record<string, Readonly<Record<string, string>>>> = Object.freeze({
+    chatgpt: Object.freeze({
+      chatgpt_quick_deep_search_search_hotkey: 'S',
+      chatgpt_quick_deep_search_search_prompt: 'ultra think and deeper websearch\n\n'
+    })
+  });
+
   function normalizeStringArray(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
     return input.map((x) => String(x || '').trim()).filter(Boolean);
@@ -153,7 +160,7 @@
   function buildDefaultSettings(registry: RegistryLike): DefaultSettings {
     const sites: Record<string, boolean> = {};
     const scrollLockDefaults: Record<string, boolean> = {};
-    const siteModules: Record<string, Record<string, boolean>> = {};
+    const siteModules: Record<string, Record<string, boolean | string>> = {};
 
     for (const s of getRegistrySites(registry)) {
       const siteId = String(s?.id || '');
@@ -173,6 +180,12 @@
       if (extra && typeof extra === 'object') {
         for (const [k, v] of Object.entries(extra)) {
           if (typeof v === 'boolean') siteModules[siteId][k] = v;
+        }
+      }
+      const extraStrings = EXTRA_SITE_MODULE_STRING_SETTINGS?.[siteId];
+      if (extraStrings && typeof extraStrings === 'object') {
+        for (const [k, v] of Object.entries(extraStrings)) {
+          if (typeof v === 'string') siteModules[siteId][k] = v;
         }
       }
     }
@@ -649,6 +662,7 @@
     LEGACY_CONTENT_SCRIPT_IDS: Object.freeze([...LEGACY_CONTENT_SCRIPT_IDS]),
     EXTRA_HOST_PERMISSIONS,
     EXTRA_SITE_MODULE_FLAGS,
+    EXTRA_SITE_MODULE_STRING_SETTINGS,
     buildDefaultSettings,
     buildContentScriptDefs
   });

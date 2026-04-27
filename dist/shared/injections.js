@@ -54,6 +54,12 @@
       qwen_thinking_toggle_hotkeys_force: false
     })
   });
+  const EXTRA_SITE_MODULE_STRING_SETTINGS = Object.freeze({
+    chatgpt: Object.freeze({
+      chatgpt_quick_deep_search_search_hotkey: "S",
+      chatgpt_quick_deep_search_search_prompt: "ultra think and deeper websearch\n\n"
+    })
+  });
   function normalizeStringArray(input) {
     if (!Array.isArray(input)) return [];
     return input.map((x) => String(x || "").trim()).filter(Boolean);
@@ -127,6 +133,12 @@
       if (extra && typeof extra === "object") {
         for (const [k, v] of Object.entries(extra)) {
           if (typeof v === "boolean") siteModules[siteId][k] = v;
+        }
+      }
+      const extraStrings = EXTRA_SITE_MODULE_STRING_SETTINGS?.[siteId];
+      if (extraStrings && typeof extraStrings === "object") {
+        for (const [k, v] of Object.entries(extraStrings)) {
+          if (typeof v === "string") siteModules[siteId][k] = v;
         }
       }
     }
@@ -540,6 +552,7 @@
     LEGACY_CONTENT_SCRIPT_IDS: Object.freeze([...LEGACY_CONTENT_SCRIPT_IDS]),
     EXTRA_HOST_PERMISSIONS,
     EXTRA_SITE_MODULE_FLAGS,
+    EXTRA_SITE_MODULE_STRING_SETTINGS,
     buildDefaultSettings,
     buildContentScriptDefs
   });

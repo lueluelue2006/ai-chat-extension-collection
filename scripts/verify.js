@@ -1185,10 +1185,20 @@ function verifyGoogleAskGptHandoff(runtimeDefs) {
     }
   }
 
-  for (const required of ['SEARCH_PROMPT', 'clearHandledParams', 'writeEditorText', 'sendViaButton']) {
+  for (const required of [
+    'SEARCH_PROMPT',
+    'clearHandledParams',
+    'writeEditorText',
+    'sendViaButton',
+    "document.execCommand('selectAll'",
+    'clickSendButton'
+  ]) {
     if (!receiverSource.includes(required)) {
       failures.push(`content/chatgpt-google-ask/main.js is missing handoff workflow guard ${required}`);
     }
+  }
+  if (receiverSource.includes('selectNodeContents(editor)')) {
+    failures.push('content/chatgpt-google-ask/main.js must not use Range.selectNodeContents(editor) for ProseMirror replacement');
   }
 
   return {
@@ -2296,6 +2306,7 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
   const cmdenterSource = readText('content/chatgpt-cmdenter-send/main.js');
   const thinkingToggleSource = readText('content/chatgpt-thinking-toggle/main.js');
   const quickDeepSearchSource = readText('content/chatgpt-quick-deep-search/main.js');
+  const quickDeepSearchConfigSource = readText('content/chatgpt-quick-deep-search/config-bridge.js');
   const replyTimerSource = readText('content/chatgpt-reply-timer/main.js');
   const sidebarHeaderSource = readText('content/chatgpt-sidebar-header-fix/main.js');
   const readaloudSource = readText('content/chatgpt-readaloud-speed-controller/main.js');
@@ -2460,17 +2471,75 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
 
   for (const required of [
     'DS_HOTKEYS_KEY',
+    'DS_SEARCH_HOTKEY_KEY',
+    'DS_SEARCH_PROMPT_KEY',
+    'DEFAULT_SEARCH_HOTKEY',
+    'DEFAULT_SEARCH_PROMPT',
     'areHotkeysEnabled',
+    'getConfiguredSearchHotkey',
+    'getConfiguredSearchPrompt',
+    'buildFinalSearchText',
     '__aichat_chatgpt_core_main_v1__',
     'removeLegacyQdsButtons',
     'findSendButton',
     'isStopButton',
     'editorEl',
     'disposeRuntime',
-    'clickSendButton'
+    'clickSendButton',
+    ".replace(/\\s+/g, ' ')"
   ]) {
     if (!quickDeepSearchSource.includes(required)) {
       failures.push(`content/chatgpt-quick-deep-search/main.js is missing ${required}`);
+    }
+  }
+  for (const required of [
+    'DS_SEARCH_HOTKEY_KEY',
+    'DS_SEARCH_PROMPT_KEY',
+    'DEFAULT_SEARCH_HOTKEY',
+    'DEFAULT_SEARCH_PROMPT',
+    'chatgpt_quick_deep_search_search_hotkey',
+    'chatgpt_quick_deep_search_search_prompt',
+    'normalizeSearchHotkey',
+    'writeStringDataset',
+    'data-aichat-quick-deep-search-search-hotkey',
+    'data-aichat-quick-deep-search-search-prompt'
+  ]) {
+    if (!quickDeepSearchConfigSource.includes(required)) {
+      failures.push(`content/chatgpt-quick-deep-search/config-bridge.js is missing configurable QDS support: ${required}`);
+    }
+  }
+  for (const required of [
+    'EXTRA_SITE_MODULE_STRING_SETTINGS',
+    "chatgpt_quick_deep_search_search_hotkey: 'S'",
+    "chatgpt_quick_deep_search_search_prompt: 'ultra think and deeper websearch\\n\\n'"
+  ]) {
+    if (!injectionsSource.includes(required)) {
+      failures.push(`shared/injections.ts is missing QDS string default support: ${required}`);
+    }
+  }
+  for (const required of [
+    'QDS_DEFAULT_SEARCH_HOTKEY',
+    'QDS_DEFAULT_SEARCH_PROMPT',
+    'getSiteModuleStringSetting',
+    'normalizeQdsSearchHotkey',
+    '搜索快捷键字母',
+    '搜索时插入的文本',
+    'chatgpt_quick_deep_search_search_hotkey = value',
+    'chatgpt_quick_deep_search_search_prompt = value',
+    '自定义文本中可写 {input}'
+  ]) {
+    if (!optionsSource.includes(required)) {
+      failures.push(`options/options.js is missing configurable QDS settings UI: ${required}`);
+    }
+  }
+  for (const required of [
+    'typeof rawMods[modId] === typeof defaultValue',
+    'typeof rawMods[legacyId] === typeof defaultValue',
+    'typeof rawMods[modId] !== typeof expectedMods[modId]',
+    'typeof op.value === typeof expected'
+  ]) {
+    if (!storageSource.includes(required)) {
+      failures.push(`background/sw/storage.ts is missing string site-module settings support: ${required}`);
     }
   }
   for (const stale of ['payload.model', 'payload.thinking_effort', 'pendingModelSwitch', '强制使用 gpt-5', 'force this one send to use gpt-5']) {

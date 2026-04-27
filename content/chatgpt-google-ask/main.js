@@ -197,13 +197,12 @@
       if (editor.isContentEditable) {
         try {
           editor.focus();
-          const range = document.createRange();
-          range.selectNodeContents(editor);
-          const sel = window.getSelection();
-          sel?.removeAllRanges();
-          sel?.addRange(range);
+          document.execCommand('selectAll', false, null);
+          document.execCommand('insertText', false, '');
           document.execCommand('insertText', false, finalText);
           editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: finalText }));
+          editor.blur();
+          editor.focus();
           return true;
         } catch {}
       }
@@ -225,6 +224,13 @@
   function sendViaButton(btn) {
     try {
       if (!(btn instanceof HTMLElement)) return false;
+      const c = core();
+      if (c && typeof c.clickSendButton === 'function') {
+        try {
+          if (c.clickSendButton(editorEl())) return true;
+        } catch {}
+      }
+
       const form = btn.closest('form');
       if (form) {
         if (typeof form.requestSubmit === 'function') form.requestSubmit(btn);

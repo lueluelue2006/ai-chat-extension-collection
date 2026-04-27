@@ -261,10 +261,10 @@
     chatgpt_quick_deep_search: {
       id: 'chatgpt_quick_deep_search',
       name: '快捷深度搜索（译/搜/思）',
-      sub: '仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）',
+      sub: '仅快捷键：可配置 Ctrl+字母（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）',
       defaultEnabled: true,
       hotkeys: ['Ctrl+S', 'Ctrl+T', 'Ctrl+Y', 'Ctrl+Z'],
-      hotkeyControls: [{ key: 'chatgpt_quick_deep_search_hotkeys', label: 'Ctrl+S / Ctrl+T / Ctrl+Y / Ctrl+Z' }],
+      hotkeyControls: [{ key: 'chatgpt_quick_deep_search_hotkeys', label: 'Ctrl+S（可改） / Ctrl+T / Ctrl+Y / Ctrl+Z' }],
       hotkeyPolicy: {
         profile: 'prefer_meta_key',
         forceKey: 'chatgpt_quick_deep_search_hotkeys_force'

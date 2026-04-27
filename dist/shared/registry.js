@@ -256,10 +256,10 @@
     chatgpt_quick_deep_search: {
       id: "chatgpt_quick_deep_search",
       name: "\u5FEB\u6377\u6DF1\u5EA6\u641C\u7D22\uFF08\u8BD1/\u641C/\u601D\uFF09",
-      sub: "\u4EC5\u5FEB\u6377\u952E\uFF1ACtrl+S\uFF08\u641C\uFF09/ Ctrl+T\uFF08\u601D\uFF09/ Ctrl+Y|Ctrl+Z\uFF08\u8BD1\uFF09",
+      sub: "\u4EC5\u5FEB\u6377\u952E\uFF1A\u53EF\u914D\u7F6E Ctrl+\u5B57\u6BCD\uFF08\u641C\uFF09/ Ctrl+T\uFF08\u601D\uFF09/ Ctrl+Y|Ctrl+Z\uFF08\u8BD1\uFF09",
       defaultEnabled: true,
       hotkeys: ["Ctrl+S", "Ctrl+T", "Ctrl+Y", "Ctrl+Z"],
-      hotkeyControls: [{ key: "chatgpt_quick_deep_search_hotkeys", label: "Ctrl+S / Ctrl+T / Ctrl+Y / Ctrl+Z" }],
+      hotkeyControls: [{ key: "chatgpt_quick_deep_search_hotkeys", label: "Ctrl+S\uFF08\u53EF\u6539\uFF09 / Ctrl+T / Ctrl+Y / Ctrl+Z" }],
       hotkeyPolicy: {
         profile: "prefer_meta_key",
         forceKey: "chatgpt_quick_deep_search_hotkeys_force"

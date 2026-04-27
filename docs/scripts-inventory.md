@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.0.7
-- Generated: 2026-04-28 00:08
+- Version: 4.0.8
+- Generated: 2026-04-28 00:49
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -77,7 +77,7 @@
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-strong-highlight-lite/main.js`
-- `chatgpt_quick_deep_search`: 快捷深度搜索（译/搜/思） — 仅快捷键：Ctrl+S（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）
+- `chatgpt_quick_deep_search`: 快捷深度搜索（译/搜/思） — 仅快捷键：可配置 Ctrl+字母（搜）/ Ctrl+T（思）/ Ctrl+Y|Ctrl+Z（译）
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-quick-deep-search/config-bridge.js`

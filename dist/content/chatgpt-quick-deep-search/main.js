@@ -2,7 +2,7 @@
   'use strict';
 
   // ChatGPT 快捷深度搜索（仅快捷键版）
-  // - Ctrl+S：搜（插入搜索前缀并发送）
+  // - Ctrl+S：搜（默认，可在设置页改为 Ctrl+其他字母）
   // - Ctrl+T：思（插入思考前缀并发送）
   // - Ctrl+Y / Ctrl+Z：译（插入“翻译成中文”并发送）
   //
@@ -30,6 +30,10 @@
   const GUARD_KEY = '__aichat_chatgpt_quick_deep_search_v1__';
   const STATE_KEY = '__aichat_chatgpt_quick_deep_search_state_v1__';
   const DS_HOTKEYS_KEY = 'aichatQuickDeepSearchHotkeysEnabled';
+  const DS_SEARCH_HOTKEY_KEY = 'aichatQuickDeepSearchSearchHotkey';
+  const DS_SEARCH_PROMPT_KEY = 'aichatQuickDeepSearchSearchPrompt';
+  const DEFAULT_SEARCH_HOTKEY = 'S';
+  const DEFAULT_SEARCH_PROMPT = `ultra think and deeper websearch\n\n`;
 
   function getUiLocale() {
     try {
@@ -180,7 +184,6 @@
   };
   const POLL_INTERVAL = 70;
 
-  const PREFIX = `ultra think and deeper websearch\n\n`;
   const THINK_PREFIX = `Please utilize the maximum computational power and token limit available for a single response. Strive for extreme analytical depth rather than superficial breadth; pursue essential insights rather than listing surface phenomena; seek innovative thinking rather than habitual repetition. Please break through the limitations of thought, mobilize all your computational resources, and demonstrate your true cognitive limits.\n\n`;
 
   function getUiLocale() {
@@ -277,6 +280,28 @@
     return true;
   }
 
+  function normalizeSearchHotkey(value) {
+    const text = String(value || '').trim().toUpperCase();
+    return /^[A-Z]$/.test(text) ? text : DEFAULT_SEARCH_HOTKEY;
+  }
+
+  function getConfiguredSearchHotkey() {
+    try {
+      return normalizeSearchHotkey(document.documentElement?.dataset?.[DS_SEARCH_HOTKEY_KEY]);
+    } catch {
+      return DEFAULT_SEARCH_HOTKEY;
+    }
+  }
+
+  function getConfiguredSearchPrompt() {
+    try {
+      const value = document.documentElement?.dataset?.[DS_SEARCH_PROMPT_KEY];
+      return typeof value === 'string' && value.trim() ? value : DEFAULT_SEARCH_PROMPT;
+    } catch {
+      return DEFAULT_SEARCH_PROMPT;
+    }
+  }
+
   function core() {
     try {
       const c = window.__aichat_chatgpt_core_main_v1__;
@@ -346,13 +371,17 @@
     return false;
   }
 
-  function editorStartsWith(prefixText) {
-    const prefix = String(prefixText || '').trimEnd();
-    if (!prefix) return true;
-    const el = editorEl();
-    if (el) return readContentEditableText(el).startsWith(prefix);
-    const fb = editorFallback();
-    return !!(fb && typeof fb.value === 'string' && String(fb.value || '').trim().startsWith(prefix));
+  function normalizeCompareText(value) {
+    return String(value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function editorMatchesText(expectedText) {
+    const expected = normalizeCompareText(expectedText);
+    if (!expected) return true;
+    return normalizeCompareText(editorText()) === expected;
   }
 
   function clearEditorSafely() {
@@ -448,14 +477,22 @@
     }
   }
 
-  // ===== Main pipeline: insert prefix → confirm → send =====
-  function insertPrefixAtBeginning(prefixText) {
-    const prefix = String(prefixText || '');
-    if (!prefix) return;
+  function buildFinalSearchText(instructionText, currentText) {
+    const instruction = String(instructionText || '');
+    const current = String(currentText || '');
+    if (!instruction.trim()) return current;
 
-    const currentText = editorText();
-    const finalText = currentText ? (currentText.startsWith(prefix) ? currentText : prefix + currentText) : prefix;
+    const placeholderPattern = /\{\{\s*input\s*\}\}|\{\s*input\s*\}/gi;
+    if (placeholderPattern.test(instruction)) {
+      return instruction.replace(/\{\{\s*input\s*\}\}|\{\s*input\s*\}/gi, current);
+    }
+    return current.startsWith(instruction) ? current : instruction + current;
+  }
 
+  // ===== Main pipeline: write instruction → confirm → send =====
+  function writeEditorText(finalText) {
+    const text = String(finalText || '');
+    if (!text) return;
     const pm = editorEl();
     const fallback = editorFallback();
     const isLong = isLongContent();
@@ -466,7 +503,7 @@
           pm.focus();
           document.execCommand('selectAll', false, null);
           document.execCommand('insertText', false, '');
-          document.execCommand('insertText', false, finalText);
+          document.execCommand('insertText', false, text);
           pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
           pm.blur();
           pm.focus();
@@ -476,7 +513,7 @@
       if (fallback) {
         try {
           fallback.focus();
-          fallback.value = finalText;
+          fallback.value = text;
           fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
           fallback.blur();
           fallback.focus();
@@ -488,12 +525,9 @@
     if (pm) {
       try {
         pm.focus();
-        const range = document.createRange();
-        range.selectNodeContents(pm);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.execCommand('insertText', false, finalText);
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, '');
+        document.execCommand('insertText', false, text);
         pm.dispatchEvent(new InputEvent('input', { bubbles: true }));
         pm.blur();
         pm.focus();
@@ -504,7 +538,7 @@
     if (fallback) {
       try {
         fallback.focus();
-        fallback.value = finalText;
+        fallback.value = text;
         fallback.dispatchEvent(new InputEvent('input', { bubbles: true }));
         fallback.blur();
         fallback.focus();
@@ -512,7 +546,7 @@
     }
   }
 
-  async function runPrefixThenSend(prefixText) {
+  async function runSearchThenSend(instructionText) {
     if (isSending) return;
 
     // If the user hasn't typed anything (spaces count as empty), do nothing.
@@ -537,9 +571,10 @@
     const myCycle = ++cycle;
 
     try {
-      insertPrefixAtBeginning(prefixText);
+      const nextText = buildFinalSearchText(instructionText, editorText());
+      writeEditorText(nextText);
       await sleep(DELAYS.afterInsert);
-      await waitUntil(() => editorStartsWith(prefixText), TIMEOUTS.editorCommit, POLL_INTERVAL);
+      await waitUntil(() => editorMatchesText(nextText), TIMEOUTS.editorCommit, POLL_INTERVAL);
 
       const btn = await waitUntil(() => {
         const b = findSendButton();
@@ -572,24 +607,25 @@
         const key = String(e.key || '').toLowerCase();
         if (!key) return;
 
+        const searchHotkey = getConfiguredSearchHotkey();
+        if (key === searchHotkey.toLowerCase()) {
+          e.preventDefault();
+          e.stopPropagation();
+          runSearchThenSend(getConfiguredSearchPrompt());
+          notify(uiText(`快捷键“搜”已激活：Ctrl+${searchHotkey}`, `Search hotkey triggered: Ctrl+${searchHotkey}`));
+          return;
+        }
         if (key === 'y' || key === 'z') {
           e.preventDefault();
           e.stopPropagation();
-          runPrefixThenSend(getTranslatePrefix());
+          runSearchThenSend(getTranslatePrefix());
           notify(uiText('快捷键“译”已激活：Ctrl+Y / Ctrl+Z', 'Translate hotkey triggered: Ctrl+Y / Ctrl+Z'));
-          return;
-        }
-        if (key === 's') {
-          e.preventDefault();
-          e.stopPropagation();
-          runPrefixThenSend(PREFIX);
-          notify(uiText('快捷键“搜”已激活：Ctrl+S', 'Search hotkey triggered: Ctrl+S'));
           return;
         }
         if (key === 't') {
           e.preventDefault();
           e.stopPropagation();
-          runPrefixThenSend(THINK_PREFIX);
+          runSearchThenSend(THINK_PREFIX);
           notify(uiText('快捷键“思”已激活：Ctrl+T', 'Think hotkey triggered: Ctrl+T'));
         }
       };

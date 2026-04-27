@@ -127,7 +127,7 @@
 
   const BRIDGE_NONCE = getBridgeNonce();
 
-  function postBridgeMessage(type, payload = null) {
+  function buildBridgeMessage(type, payload = null) {
     try {
       const msg = Object.assign(
         {
@@ -139,24 +139,48 @@
         payload && typeof payload === 'object' ? payload : {}
       );
       msg.type = String(type || '');
-      if (!msg.type) return;
+      if (!msg.type) return null;
+      return msg;
+    } catch {}
+    return null;
+  }
+
+  function postBridgeMessage(type, payload = null) {
+    try {
+      const msg = buildBridgeMessage(type, payload);
+      if (!msg) return;
       window.postMessage(msg, '*');
     } catch {}
   }
 
+  function dispatchBridgeMessageSync(type, payload = null) {
+    try {
+      const msg = buildBridgeMessage(type, payload);
+      if (!msg) return false;
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: msg,
+          origin: location.origin,
+          source: window
+        })
+      );
+      return true;
+    } catch {}
+    return false;
+  }
+
   function postQueuedSendProtectBridge(item, phase, extra = null) {
     try {
-      postBridgeMessage(
-        BRIDGE_TAB_QUEUE_SEND_PROTECT,
-        Object.assign(
-          {
-            phase: String(phase || ''),
-            itemId: item?.id || '',
-            conversationId: item?.conversationId || ''
-          },
-          extra && typeof extra === 'object' ? extra : {}
-        )
+      const payload = Object.assign(
+        {
+          phase: String(phase || ''),
+          itemId: item?.id || '',
+          conversationId: item?.conversationId || ''
+        },
+        extra && typeof extra === 'object' ? extra : {}
       );
+      dispatchBridgeMessageSync(BRIDGE_TAB_QUEUE_SEND_PROTECT, payload);
+      postBridgeMessage(BRIDGE_TAB_QUEUE_SEND_PROTECT, payload);
     } catch {}
   }
 
@@ -3280,6 +3304,9 @@
       : null;
     const queuePoolHold = buildRestoredDraftQueuePoolHold(restoredQueuedDraft);
     const item = enqueueDraft(text, { queuePoolHold });
+    postQueuedSendProtectBridge(item, 'queued', {
+      source: 'queue-current-draft'
+    });
     const suppressImmediateSend = shouldSuppressImmediateSendForRestoredDraft({
       restoredQueuedDraftActive: !!restoredQueuedDraft,
       queueLength: state.queue.length

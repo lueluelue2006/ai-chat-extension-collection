@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.2-74c0fc" alt="Current version 4.0.2">
+  <img src="https://img.shields.io/badge/current-4.0.3-74c0fc" alt="Current version 4.0.3">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.3 补丁
+
+这个补丁继续加固 QuickNav 滚动锁和 Tab Queue 自动发送池之间的边界。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 滚动锁 | Tab 入队后、composer 被清空前就同步通知 QuickNav 保护锁定基线，避免 queued message 发送时仍触发 ChatGPT 原生跳底部 |
+| Tab Queue | 保护信号改为同步 `dispatchEvent` + 异步 `postMessage` 双通道，覆盖入队、写回 composer、程序化点击发送和确认发送阶段 |
+| 验证 | 在真实 ChatGPT 对话中锁定到中段位置后用真实 `Tab` 入队并等待自动发送完成：队列清空、锁定开启、`scrollTop=2800`、baseline=2800 |
 
 ### 4.0.2 补丁
 
@@ -211,6 +221,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.3
+
+This patch further hardens the boundary between QuickNav scroll lock and the Tab Queue automatic send pool.
+
+| Area | Update |
+| --- | --- |
+| QuickNav scroll lock | Tab Queue now synchronously notifies QuickNav after queueing and before clearing the composer, preventing queued sends from triggering ChatGPT's native jump-to-bottom behavior |
+| Tab Queue | Send-protection delivery now uses both synchronous `dispatchEvent` and asynchronous `postMessage`, covering queueing, composer write-back, programmatic send clicks, and send confirmation |
+| Verification | Tested in a real ChatGPT conversation from a mid-thread locked position with real `Tab` queueing and automatic send completion: queue emptied, lock stayed enabled, `scrollTop=2800`, baseline=2800 |
 
 ### Release 4.0.2
 

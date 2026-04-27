@@ -1996,7 +1996,9 @@ function verifyChatgptComposerWorkflowHardening() {
     'aichatTabQueueClearAll',
     'aichatTabQueueMore',
     'BRIDGE_TAB_QUEUE_SEND_PROTECT',
+    'function dispatchBridgeMessageSync',
     'function postQueuedSendProtectBridge',
+    "postQueuedSendProtectBridge(item, 'queued'",
     "postQueuedSendProtectBridge(head, 'prepare'",
     "postQueuedSendProtectBridge(head, 'before-click'",
     "postQueuedSendProtectBridge(head, 'confirmed'"

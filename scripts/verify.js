@@ -1835,7 +1835,8 @@ function verifyChatgptQuicknavScrollLockReliability() {
     failures.push('content/chatgpt-quicknav.js scroll-lock restore must keep nav and code-block scroll intents allowed');
   }
   for (const required of [
-    'const GUARD_VERSION = 10',
+    'const GUARD_VERSION = 11',
+    'function getCoreChatScroller',
     'function readNavExpectedFromDataset',
     'function isExpectedAllowedTarget',
     'isAllowed(ts, targetTop)',

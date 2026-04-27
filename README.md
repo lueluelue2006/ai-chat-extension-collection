@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.3-74c0fc" alt="Current version 4.0.3">
+  <img src="https://img.shields.io/badge/current-4.0.5-74c0fc" alt="Current version 4.0.5">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,26 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.5 补丁
+
+这个补丁修复临时对话和已打开页面里 QuickNav 滚动锁仍可能守错滚动容器的问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 滚动锁 | MAIN-world scroll guard 升级到 v11，已打开页面也能热升级到新的拦截逻辑 |
+| QuickNav 滚动锁 | ChatGPT 场景优先使用 core 返回的真实 `DIV` 滚动容器，避免临时对话首条消息后仍标记 `HTML` |
+| 验证 | 真实临时对话和普通 `/c/...` 对话中，锁定到中段后用真实 `Tab` 入队自动发送，生成完成后 `scrollTop` 保持在锁定基线 |
+
+### 4.0.4 补丁
+
+这个补丁继续修复临时对话里的 QuickNav 滚动锁基线问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 滚动锁 | 临时对话首条消息后如果滚动容器重建，会重新确认当前容器，避免锁还绑定在旧容器上 |
+| QuickNav 滚动锁 | 对输入框聚焦、键盘滚动、系统辅助滚动等没有 `wheel` 信号的可见滚动，非生成/非突变窗口内会同步为新的锁定基线 |
+| Tab Queue | Tab Queue 自动发送仍保留发送期保护，不会把发送触发的原生跳底部误认为用户滚动 |
 
 ### 4.0.3 补丁
 
@@ -221,6 +241,26 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.5
+
+This patch fixes a remaining QuickNav scroll-lock container mismatch in temporary chats and already-open pages.
+
+| Area | Update |
+| --- | --- |
+| QuickNav scroll lock | Upgrades the MAIN-world scroll guard to v11 so open ChatGPT tabs can hot-upgrade the interceptor |
+| QuickNav scroll lock | Prefers ChatGPT core's real `DIV` chat scroller over a stale `HTML` fallback after temporary-chat hydration |
+| Verification | In real temporary and normal `/c/...` chats, real `Tab` queue sends preserved the locked mid-thread `scrollTop` through send and response completion |
+
+### Release 4.0.4
+
+This patch further fixes QuickNav scroll-lock baseline tracking in temporary chats.
+
+| Area | Update |
+| --- | --- |
+| QuickNav scroll lock | Revalidates the active chat scroller after temporary-chat hydration replaces the initial scroll root |
+| QuickNav scroll lock | Treats visible keyboard/accessibility scrolls as user baseline updates when ChatGPT is not generating and no recent conversation mutation is active |
+| Tab Queue | Keeps the automatic-send guard active, so send-triggered native jump-to-bottom behavior is still restored instead of accepted as user intent |
 
 ### Release 4.0.3
 

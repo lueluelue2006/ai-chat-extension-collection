@@ -77,6 +77,8 @@
   const SCROLL_LOCK_IDLE_MS = 120;
   const SCROLL_LOCK_INTENT_MS = 1200;
   const SCROLL_LOCK_CODE_INTENT_MS = 4200;
+  const SCROLL_LOCK_UNKNOWN_SCROLL_IDLE_MS = 900;
+  const SCROLL_LOCK_UNKNOWN_SCROLL_MUTATION_GRACE_MS = 1400;
   const SCROLL_LOCK_CODE_INTENT_DATASET_KEY = 'quicknavCodeIntentUntil';
   const SCROLL_LOCK_NAV_EXPECTED_TOP_DATASET_KEY = 'quicknavNavExpectedTop';
   const SCROLL_LOCK_NAV_EXPECTED_UNTIL_DATASET_KEY = 'quicknavNavExpectedUntil';
@@ -7691,8 +7693,16 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
 	    try {
 	      // Hot path: reuse the last known scroll container when possible.
+	      // ChatGPT temporary chats can replace the scroll root after the first send.
+	      // Keep the cache only while it still owns the current main area.
 	      const cached = __cgptChatScrollContainer || scrollLockScrollEl;
-	      if (cached && cached.nodeType === 1 && cached.isConnected) {
+        const main = document.getElementById('main') || document.querySelector('main');
+	      if (
+          cached &&
+          cached.nodeType === 1 &&
+          cached.isConnected &&
+          (!main || cached === main || cached.contains?.(main) || isWindowScroller(cached))
+        ) {
 	        __cgptChatScrollContainer = cached;
 	        return cached;
 	      }
@@ -7949,7 +7959,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   }
 
   function handleScrollLockUserScroll(evt) {
-    const sc = scrollLockScrollEl || getChatScrollContainer();
+    const sc = ensureScrollLockBindings();
     if (!sc) return;
     const now = Date.now();
     const pos = getScrollPos(sc);
@@ -7975,6 +7985,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       return;
     }
 
+    if (shouldAcceptUnsignaledScrollAsUser(sc, pos, now)) {
+      scrollLockLastUserTs = now;
+      scrollLockStablePos = pos;
+      scrollLockLastPos = pos;
+      postScrollLockBaselineToMainWorld(pos, true);
+      return;
+    }
+
     // MAIN-world guard blocks most page-side autoscroll. This fallback catches the
     // remaining race window: native scroll anchoring, guard reinjection, and
     // ChatGPT hydration that writes scrollTop before the guard sees the new baseline.
@@ -7985,6 +8003,53 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     void guardActive;
     scrollLockLastPos = pos;
+  }
+
+  function shouldAcceptUnsignaledScrollAsUser(scroller, pos, now = Date.now()) {
+    if (!scrollLockEnabled) return false;
+    if (!scroller) return false;
+    if (hasRecentCodeBlockIntent(now)) return false;
+    if (isNavAllowScroll() || hasActiveNavExpectedTop(now)) return false;
+    if (isChatgptGenerating()) return false;
+
+    const current = Number(pos);
+    if (!Number.isFinite(current) || current < 0) return false;
+    const previous = Number(scrollLockLastPos);
+    const baseline = Number(scrollLockStablePos);
+    if (!Number.isFinite(previous) || !Number.isFinite(baseline)) return false;
+    if (Math.abs(current - previous) < 2 && Math.abs(current - baseline) < 2) return false;
+
+    const sinceMutation = now - (Number(scrollLockLastMutationTs) || 0);
+    if (sinceMutation >= 0 && sinceMutation <= SCROLL_LOCK_UNKNOWN_SCROLL_MUTATION_GRACE_MS) return false;
+
+    const guardActive = !!scrollLockGuardUntil && now < Number(scrollLockGuardUntil);
+    const maxTop = getScrollMax(scroller);
+    const nearBottom =
+      Number.isFinite(maxTop) &&
+      maxTop > 0 &&
+      current >= Math.max(0, maxTop - Math.max(BOUNDARY_EPS, SCROLL_LOCK_DRIFT * 4));
+    if (guardActive && nearBottom && current > baseline + SCROLL_LOCK_DRIFT) return false;
+
+    if (guardActive && sinceMutation >= 0 && sinceMutation <= Math.max(SCROLL_LOCK_UNKNOWN_SCROLL_MUTATION_GRACE_MS, SCROLL_LOCK_IDLE_MS * 4)) {
+      return false;
+    }
+
+    const sinceKnownUser = now - Math.max(Number(scrollLockLastUserTs) || 0, Number(scrollLockLastUserIntentTs) || 0);
+    if (sinceKnownUser >= 0 && sinceKnownUser <= SCROLL_LOCK_UNKNOWN_SCROLL_IDLE_MS) return true;
+
+    const active = document.activeElement;
+    const editableFocused =
+      !!active &&
+      (
+        active.isContentEditable ||
+        active.getAttribute?.('contenteditable') === 'true' ||
+        active.tagName === 'TEXTAREA' ||
+        active.tagName === 'INPUT' ||
+        active.getAttribute?.('role') === 'textbox'
+      );
+    if (editableFocused && Math.abs(current - baseline) >= SCROLL_LOCK_DRIFT) return true;
+
+    return !guardActive && Math.abs(current - baseline) >= SCROLL_LOCK_DRIFT;
   }
 
   function bindScrollLockTarget(scroller) {
@@ -8447,6 +8512,8 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (!hadSaved) applyDefaultScrollLockFromExtension(ui);
     if (!readRuntimeGuardFlag(CHATGPT_SCROLL_LOCK_BOUND_KEY, CHATGPT_SCROLL_LOCK_BOUND_LEGACY_KEY)) {
       scopeOn(conversationScope, window, 'resize', () => { if (scrollLockEnabled) ensureScrollLockBindings(); }, { passive: true });
+      scopeOn(conversationScope, document, 'scroll', handleScrollLockUserScroll, { passive: true, capture: true });
+      scopeOn(conversationScope, window, 'scroll', handleScrollLockUserScroll, { passive: true, capture: true });
       writeRuntimeGuardFlag(CHATGPT_SCROLL_LOCK_BOUND_KEY, CHATGPT_SCROLL_LOCK_BOUND_LEGACY_KEY, true);
     }
     if (scrollLockEnabled) {

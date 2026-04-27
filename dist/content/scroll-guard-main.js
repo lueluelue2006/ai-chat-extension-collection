@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 10;
+    const GUARD_VERSION = 11;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -346,6 +346,11 @@
             // right after send and allow one visible downward "jump" before correction.
             __baselineDatasetCached = nextTop;
             __baselineDatasetCachedAt = now();
+            try {
+              __cachedScroller = null;
+              __cachedScrollerAt = 0;
+              refreshScrollerMarker(getChatScroller());
+            } catch {}
           }
           return;
         }
@@ -573,11 +578,25 @@
     } catch {}
   }
 
+  function getCoreChatScroller() {
+    try {
+      if (HOST !== 'chatgpt.com') return null;
+      const core = window.__aichat_chatgpt_core_main_v1__ || null;
+      if (!core || typeof core.getChatScrollContainer !== 'function') return null;
+      const sc = core.getChatScrollContainer(false);
+      return sc && sc.isConnected ? sc : null;
+    } catch {
+      return null;
+    }
+  }
+
   function refreshScrollerMarker(scroller = null) {
     try {
       if (!STATE.enabled) return clearScrollerMarker();
+      const coreScroller = getCoreChatScroller();
       const sc =
         (scroller && scroller.isConnected ? scroller : null) ||
+        (coreScroller && coreScroller.isConnected ? coreScroller : null) ||
         (__cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null) ||
         getGeminiScroller() ||
         detectChatScrollerFallback();
@@ -592,15 +611,23 @@
 
   function getChatScroller() {
     const t = now();
-    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) return __cachedScroller;
-    __cachedScrollerAt = t;
-    let sc = null;
-    try {
-      const core = window.__aichat_chatgpt_core_main_v1__ || null;
-      if (core && typeof core.getChatScrollContainer === 'function') {
-        sc = core.getChatScrollContainer(false);
+    if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) {
+      if (HOST === 'chatgpt.com' && isWindowScroller(__cachedScroller)) {
+        const coreScroller = getCoreChatScroller();
+        if (coreScroller && !isWindowScroller(coreScroller)) {
+          __cachedScroller = coreScroller;
+          __cachedScrollerAt = t;
+          try {
+            if (STATE.enabled) refreshScrollerMarker(__cachedScroller);
+            else clearScrollerMarker();
+          } catch {}
+          return __cachedScroller;
+        }
       }
-    } catch {}
+      return __cachedScroller;
+    }
+    __cachedScrollerAt = t;
+    let sc = getCoreChatScroller();
     if (!sc) sc = getGeminiScroller() || detectChatScrollerFallback();
     __cachedScroller = sc || null;
     try {

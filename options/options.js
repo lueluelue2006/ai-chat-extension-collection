@@ -4070,7 +4070,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；并通过共享 fetch hub 让“这一次发送”强制使用 gpt-5（仅生效一次）。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。';
+      '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；不会改写 ChatGPT 请求里的模型字段，会保留页面当前选择的模型与推理强度。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。';
     elModuleSettings.appendChild(hint);
   }
 

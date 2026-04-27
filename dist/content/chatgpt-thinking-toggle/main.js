@@ -45,7 +45,6 @@
   const PULSE_RGB_LOW = '56,189,248'; // blue
   const PULSE_RGB_HIGH = '239,68,68'; // red
   const SEND_LIGHT_PRO_TTL_MS = 15_000;
-  const LIGHT_PRO_MODEL_FALLBACK = 'gpt-5-4-pro';
   const DS_SEND_LIGHT_PRO_KEY = 'aichatHotkeySendLightProEnabled';
   const DS_SEND_MAX_PRO_KEY = 'aichatHotkeySendMaxProEnabled';
   const DS_DISABLE_CMD_P_KEY = 'aichatHotkeyDisableCmdPEnabled';
@@ -411,7 +410,7 @@ button.${HINT_CLASS}::after {
 
   function deriveProModel(model) {
     const source = String(model || '').trim();
-    if (!source) return LIGHT_PRO_MODEL_FALLBACK;
+    if (!source) return '';
 
     if (/\bgpt-[\d.]+-pro\b/i.test(source)) return source;
 
@@ -421,7 +420,7 @@ button.${HINT_CLASS}::after {
     const familyMatch = source.match(/\b(gpt-[\d.]+)\b/i);
     if (familyMatch?.[1]) return `${familyMatch[1]}-pro`;
 
-    return LIGHT_PRO_MODEL_FALLBACK;
+    return '';
   }
 
   function armProSendOverride(model = '', effort = 'min', label = 'Light Pro') {
@@ -469,7 +468,8 @@ button.${HINT_CLASS}::after {
     const action = normalizeText(payload.action || '');
     if (action && action !== 'next') return { applied: false, reason: 'non_next_action' };
 
-    payload.model = deriveProModel(payload.model || pending.model || '');
+    const nextModel = deriveProModel(payload.model || pending.model || '');
+    if (nextModel) payload.model = nextModel;
     payload.thinking_effort = String(pending.effort || 'min');
     clearProSendOverride();
     return { applied: true, model: payload.model || '', effort: payload.thinking_effort || '', label: pending.label || '' };

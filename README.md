@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.6-74c0fc" alt="Current version 4.0.6">
+  <img src="https://img.shields.io/badge/current-4.0.7-74c0fc" alt="Current version 4.0.7">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.7 补丁
+
+这个补丁继续清理 ChatGPT 请求模型风险，确认 Google Search 问 GPT 不会改写模型，并移除另一个旧 Pro 模型兜底。
+
+| 方向 | 更新 |
+| --- | --- |
+| Google Search 问 GPT | 静态复核转发链路：只写入 ChatGPT 输入框并点击发送，不改写 `payload.model` / `thinking_effort` |
+| Thinking Toggle | 特殊 Pro 发送不再在无法识别当前模型时硬塞 `gpt-5-4-pro`，避免旧模型兜底风险 |
+| 快捷深度搜索 | 修正设置页旧文案，并增加验证规则防止 `gpt-5` 强制改写逻辑回归 |
 
 ### 4.0.6 补丁
 
@@ -251,6 +261,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.7
+
+This patch continues the ChatGPT request-model audit, confirms Google Search Ask GPT does not rewrite ChatGPT payload models, and removes another stale Pro-model fallback.
+
+| Area | Update |
+| --- | --- |
+| Google Search Ask GPT | Static audit confirms the handoff only writes the ChatGPT composer and clicks send; it does not rewrite `payload.model` or `thinking_effort` |
+| Thinking Toggle | Special Pro send no longer falls back to hardcoded `gpt-5-4-pro` when the current model cannot be derived |
+| Quick deep search | Fixes stale settings copy and adds verification guards against reintroducing forced `gpt-5` payload rewrites |
 
 ### Release 4.0.6
 

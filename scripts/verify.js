@@ -2307,6 +2307,8 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
   const strongHighlightSource = readText('content/chatgpt-strong-highlight-lite/main.js');
   const canvasEnhancementsSource = readText('content/chatgpt-canvas-enhancements/main.js');
   const optionsSource = readText('options/options.js');
+  const i18nSource = readText('shared/i18n.js');
+  const inventorySource = readText('docs/scripts-inventory.md');
   const failures = [];
 
   const defs = Array.isArray(runtimeDefs) ? runtimeDefs : [];
@@ -2470,6 +2472,25 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
     if (!quickDeepSearchSource.includes(required)) {
       failures.push(`content/chatgpt-quick-deep-search/main.js is missing ${required}`);
     }
+  }
+  for (const stale of ['payload.model', 'payload.thinking_effort', 'pendingModelSwitch', '强制使用 gpt-5', 'force this one send to use gpt-5']) {
+    if (quickDeepSearchSource.includes(stale)) {
+      failures.push(`content/chatgpt-quick-deep-search/main.js must not force ChatGPT model payloads (${stale})`);
+    }
+  }
+  for (const [relPath, source] of [
+    ['shared/i18n.js', i18nSource],
+    ['options/options.js', optionsSource],
+    ['docs/scripts-inventory.md', inventorySource]
+  ]) {
+    for (const stale of ['强制使用 gpt-5', 'force this one send to use gpt-5']) {
+      if (source.includes(stale)) {
+        failures.push(`${relPath} still describes quick deep search as forcing stale gpt-5 (${stale})`);
+      }
+    }
+  }
+  if (thinkingToggleSource.includes("const LIGHT_PRO_MODEL_FALLBACK = 'gpt-5-4-pro'")) {
+    failures.push('content/chatgpt-thinking-toggle/main.js must not hardcode gpt-5-4-pro as a Pro-send fallback');
   }
   for (const staleId of ['o4-mini-button', 'o4-think-button', 'o4-translate-inline-btn']) {
     if (!quickDeepSearchSource.includes(staleId)) {

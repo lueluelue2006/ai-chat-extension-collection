@@ -379,7 +379,7 @@
     '注意：开启后会拦截输入框 Enter 行为（只允许 ⌘/Ctrl+Enter 发送）。若你习惯 Enter 直接发送，请不要开启。': 'When enabled, Enter is intercepted in the composer so only ⌘/Ctrl+Enter sends. Leave this off if you prefer plain Enter to send.',
     '启用 Ctrl+S / T / Y / Z 快捷键': 'Enable Ctrl+S / T / Y / Z hotkeys',
     '无 Meta 键时仍强制启用这组 Ctrl 快捷键': 'Force-enable this Ctrl hotkey group without a Meta key',
-    '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；并通过共享 fetch hub 让“这一次发送”强制使用 gpt-5（仅生效一次）。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。': 'When triggered, the hotkey inserts the matching prefix at the start of the composer and sends automatically. It also uses the shared fetch hub to force this one send to use gpt-5 once. When keyboard capability is treated as “no Meta key”, this Ctrl hotkey group is disabled by default to avoid browser or system conflicts.',
+    '说明：触发快捷键后，会把对应前缀插入到输入框开头并自动发送；不会改写 ChatGPT 请求里的模型字段，会保留页面当前选择的模型与推理强度。当键盘能力按“无 Meta 键”处理时，这组 Ctrl 快捷键默认停用，避免与浏览器或系统快捷键冲突。': 'When triggered, the hotkey inserts the matching prefix at the start of the composer and sends automatically. It does not rewrite the ChatGPT request model field, preserving the model and reasoning effort currently selected on the page. When keyboard capability is treated as “no Meta key”, this Ctrl hotkey group is disabled by default to avoid browser or system shortcuts.',
     '启用 Tab 队列发送 / ⌥↑ / Alt+↑ 取回最近一条': 'Enable Tab queue send / restore the latest item with ⌥↑ / Alt+↑',
     '启用 Ctrl+C 清空输入框（仅有 Meta 键时生效）': 'Enable Ctrl+C to clear the composer (only when a Meta key is available)',
     '为 QuickNav 中由队列发出的用户消息保留橙色标记': 'Keep the orange QuickNav mark on messages sent from the queue',

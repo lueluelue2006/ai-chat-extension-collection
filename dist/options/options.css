@@ -28,8 +28,8 @@
   --shadow-md: 0 14px 34px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 26px 56px rgba(15, 23, 42, 0.12);
   --focusRing: 0 0 0 3px rgba(84, 213, 255, 0.2);
-  --card-radius: 22px;
-  --btn-radius: 14px;
+  --card-radius: 8px;
+  --btn-radius: 10px;
   --trans-smooth: 180ms ease;
   --ok: #059669;
   --warn: #c97712;
@@ -185,23 +185,28 @@ a {
   z-index: 10;
   width: 100%;
   margin: 0;
-  padding: 24px 28px 18px;
+  padding: 16px 28px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 92%, transparent 8%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 
+.headerMain {
+  min-width: 0;
+  padding-right: 430px;
+}
+
 .titleRow {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .titleLogo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   box-shadow: var(--shadow-sm);
   user-select: none;
   -webkit-user-drag: none;
@@ -209,23 +214,24 @@ a {
 
 .title {
   font-family: var(--font-display);
-  font-size: 29px;
+  font-size: 24px;
   font-weight: 780;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--ink);
+  line-height: 1.15;
 }
 
 .subtitle {
-  margin-top: 10px;
-  max-width: 640px;
+  margin-top: 5px;
+  max-width: 720px;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .headerControls {
   position: absolute;
-  top: 22px;
+  top: 14px;
   right: 28px;
   display: flex;
   flex-direction: row;
@@ -313,28 +319,168 @@ a {
   width: 100%;
   max-width: 1580px;
   margin: 0 auto;
-  padding: 18px 28px 36px;
+  padding: 14px 28px 34px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .card {
   margin-top: 0;
-  padding: 20px 22px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
   background: var(--panel);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .cardTitle {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: var(--ink);
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 720;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+}
+
+.cardEyebrow {
+  margin-bottom: 4px;
+  color: var(--accentStrong);
+  font: 650 11px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.74fr) minmax(520px, 1.26fr);
+  gap: 12px;
+}
+
+.masterCard {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 12px;
+}
+
+.masterToggle {
+  width: fit-content;
+}
+
+.installNote {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.searchCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.searchCardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.searchShortcut {
+  min-width: 42px;
+  height: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panelInset);
+  color: var(--muted);
+  font: 700 12px/1 var(--font-mono);
+}
+
+.globalSearchWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.globalSearch {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 72px 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panelInset);
+  color: var(--text);
+  font: inherit;
+}
+
+.globalSearch:focus-visible {
+  outline: none;
+  box-shadow: var(--focusRing);
+}
+
+.globalSearchClear {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panelStrong);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.globalSearchClear:hover {
+  color: var(--accentStrong);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border) 70%);
+}
+
+.searchSummary {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.filterPills,
+.quickJump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterPill,
+.quickJumpBtn {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panelInset);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.filterPill:hover,
+.quickJumpBtn:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border) 70%);
+  background: color-mix(in srgb, var(--accentSoft) 50%, var(--panelInset) 50%);
+}
+
+.filterPill.active {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border) 56%);
+  background: color-mix(in srgb, var(--accentSoft) 70%, var(--panelStrong) 30%);
+  color: var(--accentStrong);
 }
 
 .configCard {
@@ -345,7 +491,7 @@ a {
 }
 
 .sectionHead {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding: 0 2px;
 }
 
@@ -368,9 +514,9 @@ a {
 
 .shortcutProfileCard {
   margin-bottom: 12px;
-  padding: 18px 18px 16px;
+  padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 8px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--accentSoft) 24%, var(--panel) 76%), var(--panel));
   box-shadow: var(--shadow-sm);
 }
@@ -402,7 +548,7 @@ a {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelInset) 78%, var(--accentSoft) 22%);
   color: var(--accentStrong);
   font: 600 11px/1.4 var(--font-mono);
@@ -421,10 +567,10 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
+  min-height: 42px;
   padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--text);
   cursor: pointer;
@@ -472,7 +618,7 @@ a {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid transparent;
   cursor: pointer;
   font-weight: 650;
@@ -508,12 +654,12 @@ a {
   display: grid;
   grid-template-columns: minmax(220px, 0.84fr) minmax(260px, 1fr) minmax(360px, 1.36fr);
   gap: 0;
-  min-height: 620px;
-  height: min(74vh, 780px);
+  min-height: 560px;
+  height: min(68vh, 720px);
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 8px;
   background: var(--panel);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -565,7 +711,7 @@ a {
   padding: 11px 14px;
   margin-bottom: 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--text);
   font: inherit;
@@ -627,7 +773,7 @@ a {
   width: 28px;
   height: 28px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--muted);
   font: 700 13px/1 var(--font-mono);
@@ -651,7 +797,7 @@ a {
   max-width: min(320px, calc(100vw - 64px));
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelStrong) 94%, var(--panelSoft) 6%);
   box-shadow: var(--shadow-lg);
   opacity: 0;
@@ -719,7 +865,7 @@ a {
   font-size: 20px;
   line-height: 1.35;
   font-weight: 760;
-  letter-spacing: -0.018em;
+  letter-spacing: 0;
   word-break: break-word;
 }
 
@@ -747,7 +893,7 @@ a {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--muted);
   font-size: 12px;
@@ -768,7 +914,7 @@ a {
   align-items: center;
   padding: 11px 12px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
 }
@@ -825,7 +971,7 @@ a {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--warn) 44%, var(--border-outline) 56%);
   background: color-mix(in srgb, var(--panelStrong) 84%, rgba(245, 158, 11, 0.14) 16%);
   color: var(--warn);
@@ -841,7 +987,7 @@ a {
   width: min(280px, calc(100vw - 96px));
   padding: 11px 12px;
   border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border-outline) 76%);
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelStrong) 92%, var(--panel) 8%);
   box-shadow: var(--shadow-lg);
   color: var(--text);
@@ -876,7 +1022,7 @@ a {
   width: auto;
   margin-top: 8px;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelInset) 70%, var(--accentSoft) 30%);
   color: var(--muted);
   font: 600 11px/1.4 var(--font-mono);
@@ -906,7 +1052,7 @@ a {
   min-height: 180px;
   padding: 18px;
   border: 1px dashed color-mix(in srgb, var(--accent) 18%, var(--border) 82%);
-  border-radius: 18px;
+  border-radius: 8px;
   background: var(--panelInset);
   text-align: center;
 }
@@ -945,7 +1091,7 @@ a {
   margin-top: 14px;
   padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--panelInset);
 }
 
@@ -1001,7 +1147,7 @@ a {
   width: 100%;
   padding: 11px 14px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--text);
   font: inherit;
@@ -1028,7 +1174,7 @@ a {
   gap: 12px;
   padding: 11px 12px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .formRow:hover {
@@ -1040,7 +1186,7 @@ a {
   width: 130px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--panelStrong);
   color: var(--text);
   font: inherit;
@@ -1094,7 +1240,7 @@ a {
   margin-top: 12px;
   padding: 12px 13px;
   border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border) 76%);
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelStrong) 88%, rgba(245, 158, 11, 0.12) 12%);
 }
 
@@ -1115,7 +1261,7 @@ a {
   margin-top: 12px;
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--border) 70%);
-  border-radius: 18px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--panelStrong) 84%, rgba(249, 115, 22, 0.12) 16%);
 }
 
@@ -1136,7 +1282,7 @@ a {
   margin-top: 12px;
   padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--text);
   font: 13px/1.6 ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
@@ -1219,7 +1365,7 @@ textarea.codeBox {
   min-height: 40px;
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--panelInset);
   color: var(--muted);
   font-size: 13px;
@@ -1229,6 +1375,10 @@ textarea.codeBox {
 }
 
 @media (max-width: 860px) {
+  .overviewGrid {
+    grid-template-columns: 1fr;
+  }
+
   .triGrid {
     grid-template-columns: 1fr;
     height: auto;
@@ -1242,11 +1392,15 @@ textarea.codeBox {
 
 @media (max-width: 720px) {
   .header {
-    padding: 24px 20px 14px;
+    padding: 18px 20px 14px;
   }
 
   .main {
-    padding: 0 20px 24px;
+    padding: 12px 20px 24px;
+  }
+
+  .headerMain {
+    padding-right: 0;
   }
 
   .headerControls {
@@ -1261,7 +1415,7 @@ textarea.codeBox {
   }
 
   .title {
-    font-size: 28px;
+    font-size: 24px;
   }
 
   .titleLogo {
@@ -1271,7 +1425,7 @@ textarea.codeBox {
 
   .card,
   .configCard {
-    padding: 18px;
+    padding: 14px;
   }
 
   .grid,

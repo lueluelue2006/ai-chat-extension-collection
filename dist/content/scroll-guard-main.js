@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 9;
+    const GUARD_VERSION = 10;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -173,6 +173,7 @@
   // ChatGPT uses a tighter threshold to reduce visible "one-step jump" after send.
   // Other sites keep the standard threshold to avoid over-correcting micro reflows.
   const DRIFT = HOST === 'chatgpt.com' ? 8 : 16;
+  const NAV_TARGET_TOLERANCE = 96;
   const MAX_ALLOW_MS = 8000;
   const SCROLLER_ATTR = 'data-quicknav-scrolllock-scroller';
   const ANCHOR_STYLE_ID = '__quicknav_scrolllock_anchor_style__';
@@ -193,6 +194,8 @@
   let __allowUntilDatasetCachedAt = 0;
   let __baselineDatasetCached = null;
   let __baselineDatasetCachedAt = 0;
+  let __navExpectedDatasetCached = null;
+  let __navExpectedDatasetCachedAt = 0;
   let __perfHotDatasetCached = false;
   let __perfHotDatasetCachedAt = 0;
 
@@ -251,6 +254,27 @@
     return __baselineDatasetCached;
   }
 
+  function readNavExpectedFromDataset(ts = now()) {
+    const last = Number(__navExpectedDatasetCachedAt || 0);
+    if (ts - last < 40) return __navExpectedDatasetCached;
+    __navExpectedDatasetCachedAt = ts;
+    const top = readNumberDataset('quicknavNavExpectedTop');
+    const until = readNumberDataset('quicknavNavExpectedUntil');
+    __navExpectedDatasetCached =
+      top != null && top >= 0 && until != null && until > ts
+        ? { top: Math.max(0, Math.round(top)), until }
+        : null;
+    return __navExpectedDatasetCached;
+  }
+
+  function isExpectedAllowedTarget(targetTop, ts = now()) {
+    const expected = readNavExpectedFromDataset(ts);
+    if (!expected) return true;
+    const target = Number(targetTop);
+    if (!Number.isFinite(target)) return false;
+    return Math.abs(target - expected.top) <= NAV_TARGET_TOLERANCE;
+  }
+
   function readPerfHotFromDataset(ts = now()) {
     const last = Number(__perfHotDatasetCachedAt || 0);
     if (ts - last < 80) return __perfHotDatasetCached;
@@ -264,7 +288,7 @@
     return __perfHotDatasetCached;
   }
 
-  function isAllowed(ts = now()) {
+  function isAllowed(ts = now(), targetTop = null) {
     // Do not bypass scroll-lock just because the page is hot/heavy. On long ChatGPT
     // threads, allowing send-time autoscroll forces the browser to materialize the
     // whole range between the user's reading position and the composer.
@@ -273,10 +297,10 @@
       syncEnabledFromDataset(ts);
     } catch {}
     if (!STATE.enabled) return true;
-    if (ts < (STATE.allowUntil || 0)) return true;
+    if (ts < (STATE.allowUntil || 0)) return isExpectedAllowedTarget(targetTop, ts);
     // Cross-world allow window: use DOM dataset (survives hot reinject; auto-expires).
     const until = readAllowUntilFromDataset(ts);
-    if (until && ts < until) return true;
+    if (until && ts < until) return isExpectedAllowedTarget(targetTop, ts);
     return false;
   }
 
@@ -731,20 +755,20 @@
     if (cached) {
       if (isWindowScroller(cached)) return false;
       if (el !== cached) return false;
-      if (isAllowed(ts)) return false;
       const baseline = getBaselineTop(cached);
       const targetTop = Number(nextTop);
       if (!Number.isFinite(targetTop)) return false;
+      if (isAllowed(ts, targetTop)) return false;
       if (targetTop > baseline + DRIFT) return true;
       return false;
     }
 
-    if (isAllowed(ts)) return false;
     const sc = getChatScroller();
     if (!sc || isWindowScroller(sc) || el !== sc) return false;
     const baseline = getBaselineTop(sc);
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
+    if (isAllowed(ts, targetTop)) return false;
     if (targetTop > baseline + DRIFT) return true;
     return false;
   }
@@ -759,33 +783,35 @@
     const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
     if (cached) {
       if (!isWindowScroller(cached)) return false;
-      if (isAllowed(ts)) return false;
       const baseline = getBaselineTop(cached);
       const targetTop = Number(nextTop);
       if (!Number.isFinite(targetTop)) return false;
+      if (isAllowed(ts, targetTop)) return false;
       if (targetTop > baseline + DRIFT) return true;
       return false;
     }
 
-    if (isAllowed(ts)) return false;
     const sc = getChatScroller();
     if (!sc || !isWindowScroller(sc)) return false;
     const baseline = getBaselineTop(sc);
     const targetTop = Number(nextTop);
     if (!Number.isFinite(targetTop)) return false;
+    if (isAllowed(ts, targetTop)) return false;
     if (targetTop > baseline + DRIFT) return true;
     return false;
   }
 
   function shouldBlockIntoView(target) {
     if (shouldBypassCodeIntoView(target)) return false;
-    if (isAllowed()) return false;
+    const ts = now();
     const sc = getChatScroller();
     if (!sc || !target || !target.getBoundingClientRect) return false;
 
     const r = readRectCached(target);
     if (!r) return false;
     if (isWindowScroller(sc)) {
+      const targetTop = getScrollPos(sc) + Number(r.top || 0);
+      if (isAllowed(ts, targetTop)) return false;
       // Only block downward scroll.
       const bottom = (window.innerHeight || 0) - 4;
       return r.bottom > bottom + 1;
@@ -799,6 +825,8 @@
 
     const sr = readRectCached(sc);
     if (!sr) return false;
+    const targetTop = getScrollPos(sc) + (Number(r.top || 0) - Number(sr.top || 0));
+    if (isAllowed(ts, targetTop)) return false;
     // Only block if target is below the visible viewport of scroller.
     return r.bottom > sr.bottom + 1;
   }

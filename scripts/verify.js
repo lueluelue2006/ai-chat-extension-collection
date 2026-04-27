@@ -1791,6 +1791,62 @@ function verifyChatgptPerfStructureHardening() {
   };
 }
 
+function verifyChatgptQuicknavScrollLockReliability() {
+  const quicknavSource = readText('content/chatgpt-quicknav.js');
+  const scrollGuardSource = readText('content/scroll-guard-main.js');
+  const failures = [];
+
+  for (const required of [
+    'function shouldRestoreScrollLockPosition',
+    'function restoreScrollLockPosition',
+    'function scheduleScrollLockRestore',
+    'function markNavProgrammaticScroll',
+    'function isExpectedNavProgrammaticPosition',
+    'scrollLockNavIntentUntil',
+    'scrollLockNavProgrammaticUntil',
+    'scrollLockNavExpectedTop',
+    'scrollLockLastExplicitUserScrollTs',
+    'quicknavNavExpectedTop',
+    'SCROLL_LOCK_NAV_TARGET_TOLERANCE',
+    "scheduleScrollLockRestore('nav-allow-expired'",
+    "scheduleScrollLockRestore('nav-unexpected-programmatic'",
+    "scheduleScrollLockRestore('scroll-event'",
+    "scheduleScrollLockRestore('mutation'",
+    "60000])",
+    'postScrollLockBaselineToMainWorld(scrollLockStablePos, true)'
+  ]) {
+    if (!quicknavSource.includes(required)) {
+      failures.push(`content/chatgpt-quicknav.js is missing scroll-lock reliability guard: ${required}`);
+    }
+  }
+
+  if (quicknavSource.includes('postScrollLockBaselineToMainWorld(getScrollPos(scroller), true)')) {
+    failures.push('content/chatgpt-quicknav.js must not promote the current mutation-time scroll position to the locked baseline');
+  }
+  if (!quicknavSource.includes('cancelScrollLockRestoreSchedule()')) {
+    failures.push('content/chatgpt-quicknav.js must cancel pending scroll-lock restore timers on route cleanup/disable');
+  }
+  if (!quicknavSource.includes('isNavAllowScroll() && (!hasActiveNavExpectedTop(now) || isExpectedNavProgrammaticPosition(current, now))') || !quicknavSource.includes('hasRecentCodeBlockIntent(now)')) {
+    failures.push('content/chatgpt-quicknav.js scroll-lock restore must keep nav and code-block scroll intents allowed');
+  }
+  for (const required of [
+    'const GUARD_VERSION = 10',
+    'function readNavExpectedFromDataset',
+    'function isExpectedAllowedTarget',
+    'isAllowed(ts, targetTop)',
+    'quicknavNavExpectedUntil'
+  ]) {
+    if (!scrollGuardSource.includes(required)) {
+      failures.push(`content/scroll-guard-main.js is missing target-aware nav allow guard: ${required}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function verifyChatgptQuicknavTurnCandidateHardening() {
   const quicknavSource = readText('content/chatgpt-quicknav.js');
   const failures = [];
@@ -1925,11 +1981,43 @@ function verifyChatgptComposerWorkflowHardening() {
     'shouldUseFullComposerInputPathForState',
     'if (!shouldUseFullComposerInputPathForState())',
     'if (!action && !interlockActive) return',
-    'if (!interlockActive) return'
+    'if (!interlockActive) return',
+    'queuePreviewMaxItems: 10',
+    'restoreLatestQueuedDraftFromPreview',
+    'clearQueuedDrafts',
+    'clearPreviewContents',
+    'aichatTabQueueToolbar',
+    'aichatTabQueueRestoreLatest',
+    'aichatTabQueueClearAll',
+    'aichatTabQueueMore'
   ]) {
     if (!tabQueueSource.includes(required)) {
       failures.push(`content/chatgpt-tab-queue/main.js is missing ${required}`);
     }
+  }
+
+  const popupSource = readText('popup/popup.js');
+  const popupHtmlSource = readText('popup/popup.html');
+  const popupCssSource = readText('popup/popup.css');
+  for (const required of [
+    'exportDiagnostics',
+    'collectActivePageDiagnostics',
+    'AISHORTCUTS_DIAG_GET_DUMP',
+    'executePageDiagnosticScript',
+    'rawConversationText: false',
+    'rawComposerText: false',
+    'chrome.scripting.executeScript',
+    'summarizeSettingsForDiagnostics'
+  ]) {
+    if (!popupSource.includes(required)) {
+      failures.push(`popup/popup.js is missing diagnostics support ${required}`);
+    }
+  }
+  if (!popupHtmlSource.includes('id="exportDiagnostics"')) {
+    failures.push('popup/popup.html is missing the diagnostics export button');
+  }
+  if (!popupCssSource.includes('.btnDiagnostics')) {
+    failures.push('popup/popup.css is missing diagnostics button styling');
   }
 
   for (const required of [
@@ -2555,6 +2643,70 @@ function verifyGrokQuicknavHardening(runtimeDefs) {
   };
 }
 
+function verifyOptionsSearchRedesign() {
+  const optionsHtml = readText('options/options.html');
+  const optionsCss = readText('options/options.css');
+  const optionsSource = readText('options/options.js');
+  const i18nSource = readText('shared/i18n.js');
+  const failures = [];
+
+  for (const required of [
+    'id="globalSettingsSearch"',
+    'id="globalSettingsSearchClear"',
+    'id="globalSearchSummary"',
+    'class="filterPill active"',
+    'class="quickJumpBtn"',
+    'data-module="chatgpt_tab_queue"',
+    'data-module="chatgpt_tex_copy_quote"'
+  ]) {
+    if (!optionsHtml.includes(required)) {
+      failures.push(`options/options.html is missing options search UI support: ${required}`);
+    }
+  }
+
+  for (const required of [
+    'globalSearchText',
+    'activeSearchFilter',
+    'MODULE_SEARCH_KEYWORDS',
+    'modulePassesActiveFilter',
+    'renderSearchControls',
+    'jumpToModule',
+    "key === 'k'",
+    "key === '/'"
+  ]) {
+    if (!optionsSource.includes(required)) {
+      failures.push(`options/options.js is missing options search behavior: ${required}`);
+    }
+  }
+
+  for (const required of [
+    '.overviewGrid',
+    '.globalSearch',
+    '.filterPill',
+    '.quickJumpBtn',
+    '--card-radius: 8px'
+  ]) {
+    if (!optionsCss.includes(required)) {
+      failures.push(`options/options.css is missing options search styling: ${required}`);
+    }
+  }
+
+  for (const required of [
+    "'查找设置': 'Find settings'",
+    "'搜索全部设置、脚本、快捷键…': 'Search all settings, scripts, hotkeys…'",
+    "'没有匹配结果': 'No matching results'"
+  ]) {
+    if (!i18nSource.includes(required)) {
+      failures.push(`shared/i18n.js is missing options search translation: ${required}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function main() {
   const syntax = checkScriptSyntax();
   if (syntax.failures.length) {
@@ -2779,6 +2931,14 @@ function main() {
   }
   console.log('ChatGPT perf structure hardening: OK');
 
+  const quicknavScrollLockReliability = verifyChatgptQuicknavScrollLockReliability();
+  if (!quicknavScrollLockReliability.ok) {
+    console.error(`ChatGPT QuickNav scroll-lock reliability: FAIL (${quicknavScrollLockReliability.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT QuickNav scroll-lock reliability: OK');
+
   const quicknavTurnCandidateHardening = verifyChatgptQuicknavTurnCandidateHardening();
   if (!quicknavTurnCandidateHardening.ok) {
     console.error(`ChatGPT QuickNav turn candidate hardening: FAIL (${quicknavTurnCandidateHardening.reason})`);
@@ -2818,6 +2978,14 @@ function main() {
     return;
   }
   console.log('ChatGPT small feature hardening: OK');
+
+  const optionsSearchRedesign = verifyOptionsSearchRedesign();
+  if (!optionsSearchRedesign.ok) {
+    console.error(`Options search redesign: FAIL (${optionsSearchRedesign.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('Options search redesign: OK');
 
   const grokQuicknavHardening = verifyGrokQuicknavHardening(runtimeDefs);
   if (!grokQuicknavHardening.ok) {

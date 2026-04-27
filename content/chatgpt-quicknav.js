@@ -78,6 +78,9 @@
   const SCROLL_LOCK_INTENT_MS = 1200;
   const SCROLL_LOCK_CODE_INTENT_MS = 4200;
   const SCROLL_LOCK_CODE_INTENT_DATASET_KEY = 'quicknavCodeIntentUntil';
+  const SCROLL_LOCK_NAV_EXPECTED_TOP_DATASET_KEY = 'quicknavNavExpectedTop';
+  const SCROLL_LOCK_NAV_EXPECTED_UNTIL_DATASET_KEY = 'quicknavNavExpectedUntil';
+  const SCROLL_LOCK_NAV_TARGET_TOLERANCE = 96;
   let scrollLockEnabled = false;
   let scrollLockScrollEl = null;
   let __cgptChatScrollContainer = null;
@@ -90,9 +93,15 @@
   let scrollLockLastPos = 0;
   let scrollLockStablePos = 0; // 用户视角的基准位置
   let scrollLockRestoreTimer = 0;
+  let scrollLockRestoreSeq = 0;
   let scrollLockGuardUntil = 0;
   let scrollLockPointerActive = false;
   let scrollLockUserTouched = false;
+  let scrollLockLastExplicitUserScrollTs = 0;
+  let scrollLockNavIntentUntil = 0;
+  let scrollLockNavProgrammaticUntil = 0;
+  let scrollLockNavExpectedTop = null;
+  let scrollLockNavExpectedUntil = 0;
   let navAllowScrollDepth = 0;
   let navJumpSeq = 0;
   let navJumpStabilizerCtrl = null;
@@ -2018,10 +2027,7 @@
     } catch {}
     treeSummaryReqTimer = 0;
     stopTreeAutoRestorePoll();
-    try {
-      if (scrollLockRestoreTimer) cancelScopedTimeout(scrollLockRestoreTimer);
-    } catch {}
-    scrollLockRestoreTimer = 0;
+    cancelScrollLockRestoreSchedule();
     try {
       if (__quicknavMainGuardRetryTimer) cancelScopedTimeout(__quicknavMainGuardRetryTimer);
     } catch {}
@@ -6590,15 +6596,20 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 
     try {
       const r = el.getBoundingClientRect();
+      let targetTop = 0;
       if (isWin) {
         const base = window.scrollY || getScrollPos(scroller);
-        setTop(base + r.top - margin);
+        targetTop = base + r.top - margin;
       } else {
         const sr = scroller.getBoundingClientRect();
         const base = getScrollPos(scroller);
-        setTop(base + (r.top - sr.top) - margin);
+        targetTop = base + (r.top - sr.top) - margin;
       }
+      const expectedTop = normalizeScrollTopForTarget(scroller, targetTop);
+      markNavProgrammaticScroll(scrollLockEnabled ? 320 : 180, expectedTop, scroller);
+      setTop(targetTop);
     } catch {
+      markNavProgrammaticScroll(scrollLockEnabled ? 320 : 180);
       try { el.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch {}
       return true;
     }
@@ -6735,6 +6746,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         stable = 0;
         // Keep the allow window small: enough for this correction + the ensuing scroll event.
         allowNavScrollFor(260);
+        markNavProgrammaticScroll(220, getScrollPos(scroller) + delta, scroller);
         if (win) {
           try { window.scrollBy({ top: delta, behavior: 'auto' }); }
           catch { try { window.scrollBy(0, delta); } catch {} }
@@ -7215,6 +7227,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const top = which === 'top' ? 0 : Math.max(0, (isWindow ? document.body.scrollHeight : sc.scrollHeight) - (isWindow ? window.innerHeight : sc.clientHeight));
     const behavior = scrollLockEnabled ? 'auto' : 'smooth';
     markNavScrollIntent(scrollLockEnabled ? 1600 : 800);
+    markNavProgrammaticScroll(scrollLockEnabled ? 320 : 180, top, sc);
     if (isWindow) window.scrollTo({ top, behavior });
     else sc.scrollTo({ top, behavior });
     scheduleActiveUpdateNow();
@@ -7737,6 +7750,29 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return el.scrollTop || 0;
   }
 
+  function getScrollMax(el) {
+    try {
+      if (isWindowScroller(el)) {
+        const se = document.scrollingElement || document.documentElement;
+        const body = document.body;
+        const scrollHeight = Math.max(Number(se?.scrollHeight) || 0, Number(body?.scrollHeight) || 0);
+        const clientHeight = Math.max(Number(window.innerHeight) || 0, Number(se?.clientHeight) || 0);
+        return Math.max(0, Math.round(scrollHeight - clientHeight));
+      }
+      return Math.max(0, Math.round((Number(el?.scrollHeight) || 0) - (Number(el?.clientHeight) || 0)));
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
+  }
+
+  function normalizeScrollTopForTarget(el, top) {
+    const raw = Number(top);
+    if (!Number.isFinite(raw)) return null;
+    const max = getScrollMax(el);
+    const clamped = Math.max(0, Math.round(raw));
+    return Number.isFinite(max) ? Math.min(max, clamped) : clamped;
+  }
+
   function setScrollPos(el, top) {
     if (!el) return;
     navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
@@ -7750,6 +7786,64 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       }
     } finally {
       navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
+    }
+  }
+
+  function hasActiveNavExpectedTop(now = Date.now()) {
+    return Number.isFinite(Number(scrollLockNavExpectedTop)) && now < (Number(scrollLockNavExpectedUntil) || 0);
+  }
+
+  function isExpectedNavProgrammaticPosition(pos, now = Date.now()) {
+    if (!hasActiveNavExpectedTop(now)) return true;
+    const current = Number(pos);
+    const expected = Number(scrollLockNavExpectedTop);
+    if (!Number.isFinite(current) || !Number.isFinite(expected)) return false;
+    return Math.abs(current - expected) <= SCROLL_LOCK_NAV_TARGET_TOLERANCE;
+  }
+
+  function markNavProgrammaticScroll(ms = 260, expectedTop = null, scroller = null) {
+    const dur = Math.max(60, Math.min(600, Math.round(Number(ms) || 260)));
+    const now = Date.now();
+    scrollLockNavProgrammaticUntil = Math.max(Number(scrollLockNavProgrammaticUntil) || 0, now + dur);
+    const expected = normalizeScrollTopForTarget(scroller || scrollLockScrollEl || getChatScrollContainer(), expectedTop);
+    if (expected !== null) {
+      scrollLockNavExpectedTop = expected;
+      scrollLockNavExpectedUntil = Math.max(
+        Number(scrollLockNavExpectedUntil) || 0,
+        now + Math.max(dur + 2100, 2400)
+      );
+      try {
+        const docEl = document.documentElement;
+        if (docEl?.dataset) {
+          docEl.dataset[SCROLL_LOCK_NAV_EXPECTED_TOP_DATASET_KEY] = String(scrollLockNavExpectedTop);
+          docEl.dataset[SCROLL_LOCK_NAV_EXPECTED_UNTIL_DATASET_KEY] = String(scrollLockNavExpectedUntil);
+        }
+      } catch {}
+    }
+    if (!scrollLockEnabled) return;
+    scopeTimeout(conversationScope, () => {
+      try {
+        if (!scrollLockEnabled) return;
+        if (Date.now() > (Number(scrollLockNavProgrammaticUntil) || 0) + 80) return;
+        const sc = ensureScrollLockBindings();
+        if (!sc) return;
+        const pos = getScrollPos(sc);
+        if (!isExpectedNavProgrammaticPosition(pos)) {
+          scheduleScrollLockRestore('nav-unexpected-programmatic', [0, 80, 180]);
+          return;
+        }
+        scrollLockStablePos = pos;
+        scrollLockLastPos = pos;
+        postScrollLockBaselineToMainWorld(pos, true);
+      } catch {}
+    }, Math.min(120, dur));
+  }
+
+  function cancelScrollLockRestoreSchedule() {
+    scrollLockRestoreSeq += 1;
+    if (scrollLockRestoreTimer) {
+      try { cancelScopedTimeout(scrollLockRestoreTimer); } catch {}
+      scrollLockRestoreTimer = 0;
     }
   }
 
@@ -7788,6 +7882,62 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
   }
 
+  function shouldRestoreScrollLockPosition(scroller, pos = null) {
+    if (!scrollLockEnabled) return false;
+    const sc = scroller || scrollLockScrollEl || getChatScrollContainer();
+    if (!sc) return false;
+    const now = Date.now();
+    if (hasRecentCodeBlockIntent(now)) return false;
+
+    const baseline = Number(scrollLockStablePos);
+    if (!Number.isFinite(baseline) || baseline < 0) return false;
+    const current = Number.isFinite(Number(pos)) ? Number(pos) : getScrollPos(sc);
+    if (!Number.isFinite(current)) return false;
+    if ((now - (scrollLockLastExplicitUserScrollTs || 0)) <= SCROLL_LOCK_INTENT_MS) return false;
+    const navExpectedMismatch = hasActiveNavExpectedTop(now) && !isExpectedNavProgrammaticPosition(current, now);
+    if (((now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS && !navExpectedMismatch) || !!scrollLockPointerActive) return false;
+    if (isNavAllowScroll() && (!hasActiveNavExpectedTop(now) || isExpectedNavProgrammaticPosition(current, now))) return false;
+    return current > baseline + SCROLL_LOCK_DRIFT;
+  }
+
+  function restoreScrollLockPosition(reason = '') {
+    void reason;
+    if (!scrollLockEnabled) return false;
+    const sc = ensureScrollLockBindings();
+    if (!shouldRestoreScrollLockPosition(sc)) return false;
+
+    const baseline = Math.max(0, Math.round(Number(scrollLockStablePos) || 0));
+    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, Date.now() + 900);
+    postScrollLockStateToMainWorld();
+    postScrollLockBaselineToMainWorld(baseline, true);
+    setScrollPos(sc, baseline);
+    scrollLockLastPos = baseline;
+    return true;
+  }
+
+  function scheduleScrollLockRestore(reason = 'mutation', delays = [0, 50, 140, 320, 700]) {
+    if (!scrollLockEnabled) return;
+    const rawDelays = Array.isArray(delays) && delays.length ? delays : [0];
+    const queue = rawDelays
+      .map((n) => Math.max(0, Math.round(Number(n) || 0)))
+      .filter((n, i, arr) => i === 0 || n > arr[i - 1]);
+    if (!queue.length) queue.push(0);
+
+    cancelScrollLockRestoreSchedule();
+    const seq = scrollLockRestoreSeq;
+    let index = 0;
+    const run = () => {
+      if (seq !== scrollLockRestoreSeq) return;
+      scrollLockRestoreTimer = 0;
+      if (!scrollLockEnabled) return;
+      restoreScrollLockPosition(reason);
+      index += 1;
+      if (index >= queue.length) return;
+      scrollLockRestoreTimer = scopeTimeout(conversationScope, run, queue[index]);
+    };
+    scrollLockRestoreTimer = scopeTimeout(conversationScope, run, queue[0]);
+  }
+
   function handleScrollLockUserScroll(evt) {
     const sc = scrollLockScrollEl || getChatScrollContainer();
     if (!sc) return;
@@ -7798,11 +7948,15 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // so we cannot use `evt.isTrusted` to infer user scroll. Instead, rely on explicit intent signals.
     void evt;
     const recentUserIntent = (now - (scrollLockLastUserIntentTs || 0)) <= SCROLL_LOCK_INTENT_MS || !!scrollLockPointerActive;
+    const recentExplicitUserScroll = (now - (scrollLockLastExplicitUserScrollTs || 0)) <= SCROLL_LOCK_INTENT_MS;
     const recentCodeBlockIntent = hasRecentCodeBlockIntent(now);
     const allowNav = isNavAllowScroll();
+    const navIntentActive = !!scrollLockNavIntentUntil && now < scrollLockNavIntentUntil;
+    const navProgrammatic = (navAllowScrollDepth || 0) > 0 || (!!scrollLockNavProgrammaticUntil && now < scrollLockNavProgrammaticUntil);
+    const navProgrammaticExpected = navProgrammatic && isExpectedNavProgrammaticPosition(pos, now);
 
     // 用户主动滚动：先更新基准，避免被“回弹”误伤
-    const userLikely = allowNav || recentUserIntent || recentCodeBlockIntent;
+    const userLikely = navProgrammaticExpected || recentExplicitUserScroll || recentCodeBlockIntent || !!scrollLockPointerActive || (recentUserIntent && !navIntentActive && !allowNav);
     if (userLikely) {
       scrollLockLastUserTs = now;
       scrollLockStablePos = pos;
@@ -7811,8 +7965,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       return;
     }
 
-    // ChatGPT 的真正滚动拦截已经收口到 main-world guard。
-    // 这里不再执行“事后回弹”，只保留用户基准更新，避免两套执行器互相打架。
+    // MAIN-world guard blocks most page-side autoscroll. This fallback catches the
+    // remaining race window: native scroll anchoring, guard reinjection, and
+    // ChatGPT hydration that writes scrollTop before the guard sees the new baseline.
+    if (shouldRestoreScrollLockPosition(sc, pos)) {
+      scheduleScrollLockRestore('scroll-event', [0, 48, 120, 280]);
+      return;
+    }
+
     void guardActive;
     scrollLockLastPos = pos;
   }
@@ -7863,15 +8023,29 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const now = Date.now();
     scrollLockLastUserIntentTs = now;
     scrollLockLastUserTs = now;
+    scrollLockNavIntentUntil = Math.max(Number(scrollLockNavIntentUntil) || 0, now + Math.max(0, Math.round(Number(ms) || 0)));
     allowNavScrollFor(ms);
     scopeTimeout(conversationScope, () => {
       if (!scrollLockEnabled) return;
       const sc = ensureScrollLockBindings();
       if (!sc) return;
       const pos = getScrollPos(sc);
+      const baseline = Number(scrollLockStablePos);
+      const programmaticActive = !!scrollLockNavProgrammaticUntil && Date.now() < (Number(scrollLockNavProgrammaticUntil) || 0) + 120;
+      const expectedMismatch = hasActiveNavExpectedTop() && !isExpectedNavProgrammaticPosition(pos);
+      if ((expectedMismatch || !programmaticActive) && Number.isFinite(baseline) && pos > baseline + SCROLL_LOCK_DRIFT) {
+        scheduleScrollLockRestore('nav-suspicious', [0, 120, 320]);
+        return;
+      }
       scrollLockStablePos = pos;
       scrollLockLastPos = pos;
+      postScrollLockBaselineToMainWorld(pos, true);
     }, Math.min(ms, 900));
+    scopeTimeout(conversationScope, () => {
+      if (!scrollLockEnabled) return;
+      if (Date.now() >= (Number(scrollLockNavIntentUntil) || 0)) scrollLockNavIntentUntil = 0;
+      scheduleScrollLockRestore('nav-allow-expired', [0, 120, 320]);
+    }, Math.max(0, Math.round(Number(ms) || 0)) + 80);
   }
 
   function syncScrollLockBaselineToCurrentPos(force = false) {
@@ -7899,6 +8073,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     postScrollLockBaselineToMainWorld(pos, true);
     ensureMainWorldScrollGuard();
     scheduleMainWorldScrollGuardRetry();
+    scheduleScrollLockRestore('arm', [0, 80, 180, 360, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]);
   }
 
   function isConversationElement(el) {
@@ -8034,8 +8209,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const mark = (e) => {
       if (!scrollLockEnabled) return;
       if (ignoreIfInNav(e?.target)) return;
+      scrollLockLastExplicitUserScrollTs = Date.now();
       if (isCodeBlockInteraction(e?.target)) {
         const now = Date.now();
+        scrollLockLastExplicitUserScrollTs = now;
         scrollLockLastCodeBlockIntentTs = now;
         scrollLockLastUserIntentTs = now;
         scrollLockLastUserTs = now;
@@ -8096,7 +8273,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
         const k = e.key;
         if (k === 'PageDown' || k === 'PageUp' || k === 'End' || k === 'Home' || k === 'ArrowDown' || k === 'ArrowUp' || k === ' ') {
-          scrollLockLastUserIntentTs = Date.now();
+          const now = Date.now();
+          scrollLockLastExplicitUserScrollTs = now;
+          scrollLockLastUserIntentTs = now;
         }
       } catch {}
     }, true);
@@ -8108,8 +8287,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         if (e.button !== 0) return;
         const sc = scrollLockScrollEl || getChatScrollContainer();
         if (isProbablyScrollbarGrab(e, sc)) {
+          scrollLockLastExplicitUserScrollTs = Date.now();
           scrollLockPointerActive = true;
-          scrollLockLastUserIntentTs = Date.now();
+          scrollLockLastUserIntentTs = scrollLockLastExplicitUserScrollTs;
         }
       } catch {}
     }, true);
@@ -8185,10 +8365,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     if (scrollLockEnabled === next) return scrollLockEnabled;
     scrollLockEnabled = next;
     saveScrollLockState(scrollLockEnabled);
-    if (!scrollLockEnabled && scrollLockRestoreTimer) {
-      cancelScopedTimeout(scrollLockRestoreTimer);
-      scrollLockRestoreTimer = 0;
-    }
+    if (!scrollLockEnabled) cancelScrollLockRestoreSchedule();
     const sc = ensureScrollLockBindings();
     scrollLockLastUserTs = Date.now();
     scrollLockLastPos = getScrollPos(sc || scrollLockScrollEl || getChatScrollContainer());
@@ -8298,9 +8475,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     scrollLockGuardUntil = scrollLockLastMutationTs + 2000;
     const scroller = ensureScrollLockBindings();
     if (!scroller) return;
-    if (scrollLockRestoreTimer) cancelScopedTimeout(scrollLockRestoreTimer);
     postScrollLockStateToMainWorld();
-    postScrollLockBaselineToMainWorld(getScrollPos(scroller), true);
+    postScrollLockBaselineToMainWorld(scrollLockStablePos, true);
+    scheduleScrollLockRestore('mutation', isStreaming ? [0, 40, 120, 260, 520, 900] : [0, 50, 140, 320]);
   }
 
   function bindActiveTracking() {

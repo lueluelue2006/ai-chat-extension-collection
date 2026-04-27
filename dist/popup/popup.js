@@ -39,6 +39,7 @@
   const btnCheck = document.getElementById('checkUpdate');
   const btnOpen = document.getElementById('openRepo');
   const btnOptions = document.getElementById('openOptions');
+  const btnExportDiagnostics = document.getElementById('exportDiagnostics');
   const elGpt53AlertCard = document.getElementById('gpt53AlertCard');
   const elGpt53AlertText = document.getElementById('gpt53AlertText');
   const btnGpt53AlertOpenOptions = document.getElementById('gpt53AlertOpenOptions');
@@ -149,6 +150,348 @@
     } catch {
       return '';
     }
+  }
+
+  function formatDateForFileName(date = new Date()) {
+    const pad = (n) => String(Math.max(0, Number(n) || 0)).padStart(2, '0');
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+      '-',
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+      pad(date.getSeconds())
+    ].join('');
+  }
+
+  function redactUrlForDiagnostics(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw);
+      const path = String(parsed.pathname || '/')
+        .split('/')
+        .map((segment) => {
+          if (!segment) return '';
+          const decoded = (() => {
+            try {
+              return decodeURIComponent(segment);
+            } catch {
+              return segment;
+            }
+          })();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded)) return ':id';
+          if (/^[A-Za-z0-9_-]{24,}$/.test(decoded)) return ':id';
+          return segment.slice(0, 80);
+        })
+        .join('/')
+        .slice(0, 240);
+      return `${parsed.origin}${path}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function sanitizeDiagnosticDump(dump) {
+    if (!dump || typeof dump !== 'object') return dump || null;
+    const copy = cloneJsonSafe(dump) || {};
+    if (Array.isArray(copy.events)) {
+      copy.events = copy.events.map((event) => {
+        if (!event || typeof event !== 'object') return event;
+        const next = Object.assign({}, event);
+        if (next.url) next.url = redactUrlForDiagnostics(next.url);
+        return next;
+      });
+    }
+    return copy;
+  }
+
+  function summarizeSettingsForDiagnostics(settings) {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    const sites = source.sites && typeof source.sites === 'object' ? source.sites : {};
+    const siteModules = source.siteModules && typeof source.siteModules === 'object' ? source.siteModules : {};
+    const moduleSummary = {};
+    for (const [siteId, mods] of Object.entries(siteModules)) {
+      if (!mods || typeof mods !== 'object') continue;
+      const values = Object.values(mods);
+      moduleSummary[siteId] = {
+        total: values.length,
+        enabled: values.filter((v) => v !== false).length,
+        disabled: values.filter((v) => v === false).length
+      };
+    }
+    return {
+      enabled: source.enabled !== false,
+      metaKeyMode: String(source.metaKeyMode || 'auto'),
+      localeMode: String(source.localeMode || 'auto'),
+      sites,
+      moduleSummary
+    };
+  }
+
+  function safeDiagnosticError(error) {
+    return error instanceof Error ? error.message : String(error || '');
+  }
+
+  async function executePageDiagnosticScript(tabId, world) {
+    if (!Number.isFinite(tabId)) return { ok: false, error: 'no tabId' };
+    if (!chrome?.scripting?.executeScript) return { ok: false, error: 'chrome.scripting unavailable' };
+    try {
+      const result = await new Promise((resolve, reject) => {
+        try {
+          const details = {
+            target: { tabId, frameIds: [0] },
+            func: () => {
+              function readHref() {
+                try {
+                  return String(location.href || '');
+                } catch {
+                  return '';
+                }
+              }
+              function redactUrl(input) {
+                try {
+                  const parsed = new URL(String(input || ''));
+                  const path = String(parsed.pathname || '/')
+                    .split('/')
+                    .map((segment) => {
+                      if (!segment) return '';
+                      let decoded = segment;
+                      try {
+                        decoded = decodeURIComponent(segment);
+                      } catch {}
+                      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded)) return ':id';
+                      if (/^[A-Za-z0-9_-]{24,}$/.test(decoded)) return ':id';
+                      return segment.slice(0, 80);
+                    })
+                    .join('/')
+                    .slice(0, 240);
+                  return `${parsed.origin}${path}`;
+                } catch {
+                  return '';
+                }
+              }
+              function safeBoolGlobal(key) {
+                try {
+                  return !!globalThis[key];
+                } catch {
+                  return false;
+                }
+              }
+              function readDataset(keys) {
+                const out = {};
+                try {
+                  const ds = document.documentElement?.dataset || {};
+                  for (const key of keys) {
+                    const value = ds[key];
+                    if (typeof value === 'string') out[key] = value.slice(0, 160);
+                  }
+                } catch {}
+                return out;
+              }
+              function textLength(value) {
+                return String(value || '').length;
+              }
+              function sanitizeTabQueueDebug() {
+                try {
+                  const api = globalThis.__aichat_chatgpt_tab_queue_debug_v1__;
+                  if (!api || typeof api.getState !== 'function') return null;
+                  const state = api.getState() || {};
+                  const queue = Array.isArray(state.queue) ? state.queue : [];
+                  return {
+                    present: true,
+                    queueLength: queue.length,
+                    queue: queue.slice(0, 20).map((item) => ({
+                      id: String(item?.id || '').slice(0, 80),
+                      textLength: textLength(item?.text),
+                      conversationIdPresent: !!item?.conversationId,
+                      createdAt: Number(item?.createdAt) || 0,
+                      hasQueuePoolHold: !!item?.queuePoolHold,
+                      queuePoolHoldActive: !!item?.queuePoolHold?.active
+                    })),
+                    activeRequestCount: Array.isArray(state.activeRequestIds) ? state.activeRequestIds.length : 0,
+                    pendingHighlightCount: Array.isArray(state.pendingHighlightCandidates) ? state.pendingHighlightCandidates.length : 0,
+                    highlightedMsgIdCount: Array.isArray(state.highlightedMsgIds) ? state.highlightedMsgIds.length : 0,
+                    highlightedKeyCount: Array.isArray(state.highlightedKeys) ? state.highlightedKeys.length : 0,
+                    isGenerating: !!state.isGenerating,
+                    processQueueBusy: !!state.processQueueBusy,
+                    awaitingConversationStart: !!state.awaitingConversationStart,
+                    hasPendingSendGate: !!state.pendingSendGate,
+                    hasManualSendInterlock: !!state.manualSendInterlock,
+                    hasComposerInterlock: !!state.composerInterlock,
+                    restoredQueuedDraft: state.restoredQueuedDraft
+                      ? {
+                          id: String(state.restoredQueuedDraft.id || '').slice(0, 80),
+                          textLength: textLength(state.restoredQueuedDraft.text),
+                          activeResponseAtRestore: !!state.restoredQueuedDraft.activeResponseAtRestore
+                        }
+                      : null,
+                    composerTextCache: state.composerTextCache
+                      ? {
+                          textLength: textLength(state.composerTextCache.text),
+                          ageMs: Number(state.composerTextCache.ageMs) || 0,
+                          hasEditor: !!state.composerTextCache.hasEditor,
+                          editorConnected: !!state.composerTextCache.editorConnected
+                        }
+                      : null
+                  };
+                } catch (error) {
+                  return { present: false, error: error instanceof Error ? error.message : String(error) };
+                }
+              }
+              function collectKnownGlobals() {
+                const keys = [
+                  '__aichat_quicknav_bridge_v1__',
+                  '__aichat_quicknav_bridge_main_v1__',
+                  '__aichat_chatgpt_core_v1__',
+                  '__aichat_chatgpt_core_main_v1__',
+                  '__aichat_chatgpt_tab_queue_v1__',
+                  '__aichat_chatgpt_tab_queue_debug_v1__',
+                  '__cgpt_perf_get_state_v1__',
+                  '__aichat_chatgpt_message_tree_v1__',
+                  '__aichat_chatgpt_message_tree_state__',
+                  '__aichat_chatgpt_better_tex_quote_v2__'
+                ];
+                const out = {};
+                for (const key of keys) out[key] = safeBoolGlobal(key);
+                return out;
+              }
+              function collectPerfState() {
+                try {
+                  const fn = globalThis.__cgpt_perf_get_state_v1__;
+                  if (typeof fn !== 'function') return null;
+                  const state = fn() || {};
+                  return {
+                    enabled: state.enabled,
+                    hot: state.hot,
+                    heavy: state.heavy,
+                    extreme: state.extreme,
+                    mode: state.mode,
+                    budget: state.budget,
+                    turnCount: state.turnCount,
+                    nodeCount: state.nodeCount,
+                    mathCount: state.mathCount,
+                    displayMathCount: state.displayMathCount,
+                    codeBlockCount: state.codeBlockCount,
+                    longCodeCount: state.longCodeCount,
+                    generating: state.generating
+                  };
+                } catch (error) {
+                  return { error: error instanceof Error ? error.message : String(error) };
+                }
+              }
+              return {
+                href: redactUrl(readHref()),
+                readyState: String(document.readyState || ''),
+                visibilityState: String(document.visibilityState || ''),
+                focused: (() => {
+                  try {
+                    return document.hasFocus();
+                  } catch {
+                    return false;
+                  }
+                })(),
+                dataset: readDataset([
+                  'quicknavCoreErrorCount',
+                  'quicknavMemHeapMb',
+                  'quicknavMemDomNodes',
+                  'quicknavMemTurns',
+                  'quicknavMemAt',
+                  'cgptperfEnabled',
+                  'cgptperfHot',
+                  'cgptperfHeavy',
+                  'cgptperfExtreme',
+                  'cgptperfBudget',
+                  'cgptperfTurnCount',
+                  'cgptperfMathCount',
+                  'cgptperfDisplayMathCount',
+                  'cgptperfCodeBlockCount',
+                  'cgptperfLongCodeCount',
+                  'cgptperfGenerating',
+                  'aichatTabQueueEnabled',
+                  'aichatTabQueueCtrlCClearEnabled',
+                  'aichatTabQueueQuicknavMarkEnabled'
+                ]),
+                globals: collectKnownGlobals(),
+                tabQueue: sanitizeTabQueueDebug(),
+                perf: collectPerfState()
+              };
+            }
+          };
+          if (world) details.world = world;
+          chrome.scripting.executeScript(details, (items) => {
+            const err = chrome.runtime.lastError;
+            if (err) return reject(new Error(err.message || String(err)));
+            resolve(items?.[0]?.result || null);
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+      return { ok: true, world: world || 'ISOLATED', result };
+    } catch (error) {
+      return { ok: false, world: world || 'ISOLATED', error: safeDiagnosticError(error) };
+    }
+  }
+
+  async function collectActivePageDiagnostics(ctx) {
+    const tabId = ctx?.tabId;
+    const out = {
+      activeSiteId: ctx?.activeSiteId || '',
+      href: redactUrlForDiagnostics(ctx?.href || getTabHrefCandidate(ctx?.tab)),
+      tab: {
+        id: Number.isFinite(tabId) ? tabId : null,
+        status: String(ctx?.tab?.status || ''),
+        audible: !!ctx?.tab?.audible,
+        discarded: !!ctx?.tab?.discarded,
+        incognito: !!ctx?.tab?.incognito
+      },
+      menu: ctx?.menuResp && ctx.menuResp.ok === true
+        ? {
+            ok: true,
+            href: redactUrlForDiagnostics(ctx.menuResp.href),
+            commandCount: Array.isArray(ctx.menuResp.commands) ? ctx.menuResp.commands.length : 0,
+            commands: (Array.isArray(ctx.menuResp.commands) ? ctx.menuResp.commands : []).slice(0, 80).map((cmd) => ({
+              name: String(cmd?.name || '').slice(0, 120),
+              group: String(cmd?.group || '').slice(0, 120),
+              moduleId: String(cmd?.moduleId || '').slice(0, 120)
+            }))
+          }
+        : { ok: false, error: ctx?.menuResp?.error || '' },
+      worlds: []
+    };
+    if (Number.isFinite(tabId)) {
+      out.worlds.push(await executePageDiagnosticScript(tabId, 'ISOLATED'));
+      out.worlds.push(await executePageDiagnosticScript(tabId, 'MAIN'));
+    }
+    return out;
+  }
+
+  function downloadJsonFile(payload, filename) {
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try {
+        a.remove();
+      } catch {}
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }, 1000);
+  }
+
+  function setDiagnosticsButtonBusy(busy) {
+    if (!btnExportDiagnostics) return;
+    btnExportDiagnostics.disabled = !!busy;
+    btnExportDiagnostics.textContent = translateText(busy ? '导出中…' : '导出诊断包');
   }
 
   function setCheckButtonBusy(busy) {
@@ -924,6 +1267,90 @@
     }
   }
 
+  async function exportDiagnostics() {
+    const zh = /^zh/i.test(resolveUiLocale());
+    setDiagnosticsButtonBusy(true);
+    setStatus(zh ? '正在生成诊断包…' : 'Building diagnostics…');
+    try {
+      const [settingsResult, diagResult, gpt53Result] = await Promise.allSettled([
+        getSettings(),
+        sendRuntimeMessage({ type: 'AISHORTCUTS_DIAG_GET_DUMP', tail: 120 }),
+        sendRuntimeMessage({ type: 'AISHORTCUTS_GPT53_GET_STATUS' })
+      ]);
+
+      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+      let page = null;
+      let pageError = '';
+      try {
+        const ctx = await resolveActivePageContext({ attempts: 3, delayMs: 120, debugTabId: readDebugTabId() });
+        page = await collectActivePageDiagnostics(ctx);
+      } catch (error) {
+        pageError = safeDiagnosticError(error);
+      }
+
+      const gpt53 =
+        gpt53Result.status === 'fulfilled' && gpt53Result.value && gpt53Result.value.ok === true
+          ? {
+              enabled: !!gpt53Result.value.enabled,
+              monitorEnabled: !!gpt53Result.value.monitorEnabled,
+              monitorReason: String(gpt53Result.value.monitorReason || ''),
+              urlCount: Array.isArray(gpt53Result.value.urls) ? gpt53Result.value.urls.length : 0,
+              alertUnread: Number(gpt53Result.value.alerts?.unread) || 0
+            }
+          : { ok: false, error: gpt53Result.status === 'rejected' ? safeDiagnosticError(gpt53Result.reason) : String(gpt53Result.value?.error || '') };
+
+      const payload = {
+        schema: 'ai-shortcuts-diagnostics-v1',
+        generatedAt: new Date().toISOString(),
+        extension: {
+          name: (() => {
+            try {
+              return chrome.runtime.getManifest().name || 'AI Shortcuts';
+            } catch {
+              return 'AI Shortcuts';
+            }
+          })(),
+          version: getRuntimeVersion(),
+          id: getRuntimeId()
+        },
+        registry: {
+          ok: REGISTRY_OK,
+          siteCount: SITE_DEFS.length,
+          moduleCount: Object.keys(MODULE_DEFS || {}).length
+        },
+        settings:
+          settingsResult.status === 'fulfilled'
+            ? summarizeSettingsForDiagnostics(settings)
+            : { ok: false, error: safeDiagnosticError(settingsResult.reason) },
+        page: page || { ok: false, error: pageError || 'active page unavailable' },
+        backgroundDiag:
+          diagResult.status === 'fulfilled' && diagResult.value && diagResult.value.ok === true
+            ? sanitizeDiagnosticDump(diagResult.value.dump)
+            : { ok: false, error: diagResult.status === 'rejected' ? safeDiagnosticError(diagResult.reason) : String(diagResult.value?.error || '') },
+        openAiModelWatch: gpt53,
+        privacy: {
+          rawConversationText: false,
+          rawComposerText: false,
+          rawCookies: false,
+          rawStorageDump: false,
+          note: 'Text-like runtime fields are reduced to counts/lengths; URLs are redacted to origin + path.'
+        }
+      };
+
+      downloadJsonFile(payload, `ai-shortcuts-diagnostics-${formatDateForFileName()}.json`);
+      setStatus(zh ? '诊断包已导出。' : 'Diagnostics exported.', 'ok');
+    } catch (error) {
+      setStatus(
+        zh
+          ? `导出诊断包失败：${safeDiagnosticError(error)}`
+          : `Failed to export diagnostics: ${safeDiagnosticError(error)}`,
+        'err'
+      );
+    } finally {
+      setDiagnosticsButtonBusy(false);
+    }
+  }
+
   // init
   try {
     ensureLocaleObserver();
@@ -949,6 +1376,9 @@
   btnOpen?.addEventListener('click', () => openUrl(RELEASES_URL));
   btnCheck?.addEventListener('click', checkUpdate);
   btnOptions?.addEventListener('click', () => openOptionsTo('', ''));
+  btnExportDiagnostics?.addEventListener('click', () => {
+    void exportDiagnostics();
+  });
   btnGpt53AlertOpenOptions?.addEventListener('click', () => openOptionsTo('', ''));
   btnGpt53AlertMarkRead?.addEventListener('click', async () => {
     if (btnGpt53AlertMarkRead) btnGpt53AlertMarkRead.disabled = true;

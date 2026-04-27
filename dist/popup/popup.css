@@ -304,6 +304,10 @@ body {
   gap: 8px;
 }
 
+.btnDiagnostics {
+  width: 100%;
+}
+
 .btnIcon {
   flex: 0 0 auto;
   font-size: 13px;

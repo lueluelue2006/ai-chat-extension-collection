@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.0-74c0fc" alt="Current version 4.0.0">
+  <img src="https://img.shields.io/badge/current-4.0.1-74c0fc" alt="Current version 4.0.1">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,17 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.1 补丁
+
+这个补丁把 4.0.0 发布后继续验证出的最终状态同步到 GitHub。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 滚动锁 | 加固锁定时的基线恢复，覆盖 `scrollTop`、`scrollTo`、`scrollIntoView` 和真实流式回复期间的自动跳底部 |
+| Tab Queue | 清空队列后同步清理隐藏预览 DOM，避免旧队列文本继续留在页面内存里；同时补强可视队列 overflow 行标记 |
+| 诊断包 | 复核诊断包脱敏行为：ChatGPT 对话 URL 折叠为 `/c/:id`，不导出原始队列文本、输入框文本或对话正文 |
+| 设置页 | 复核全局搜索、快捷键过滤、Tab Queue 跳转、无结果状态和 `Cmd+K` 聚焦路径 |
 
 ### 4.0.0 重点
 
@@ -190,6 +201,17 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.1
+
+This patch publishes the final verified state after the 4.0.0 release.
+
+| Area | Update |
+| --- | --- |
+| QuickNav scroll lock | Hardened locked-position recovery across `scrollTop`, `scrollTo`, `scrollIntoView`, and real streaming replies |
+| Tab Queue | Clears hidden preview DOM after queue clear so old queued text is not retained in page memory; also marks overflow rows explicitly |
+| Diagnostics | Re-verified redaction: ChatGPT conversation URLs collapse to `/c/:id`, and raw queue text, composer text, and conversation text are not exported |
+| Options | Re-verified global search, hotkey filtering, Tab Queue jump, no-results state, and `Cmd+K` search focus |
 
 ### Release 4.0.0
 

@@ -8,11 +8,15 @@
   </head>
   <body>
     <header class="header">
-      <div class="titleRow">
-        <img class="titleLogo" src="../icons/icon48.png" alt="AI Shortcuts logo" />
-        <div class="title">AI捷径 设置</div>
+      <div class="headerMain">
+        <div class="titleRow">
+          <img class="titleLogo" src="../icons/icon48.png" alt="AI Shortcuts logo" />
+          <div>
+            <div class="title">AI捷径 设置</div>
+            <div class="subtitle">搜索、启停和配置所有 AI 网站脚本。</div>
+          </div>
+        </div>
       </div>
-      <div class="subtitle">按网站管理脚本、查看模块状态，并编辑每个模块的细项设置。</div>
       <div class="headerControls">
         <div class="themeToggle" id="themeToggle" role="group" aria-label="主题切换">
           <button class="themeToggleBtn" id="themeLight" type="button" aria-label="亮色">浅色</button>
@@ -28,14 +32,49 @@
     </header>
 
     <main class="main">
-      <section class="card">
-        <div class="cardTitle">总开关</div>
-        <label class="toggle">
-          <input type="checkbox" id="enabled" />
-          <span>启用扩展（所有模块）</span>
-        </label>
-        <div class="hint">保存后会自动生效到已打开页面；若要彻底移除已注入内容，仍需手动刷新对应页面。</div>
-        <div class="hint">安装路径必须是 <code>dist/</code> 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。</div>
+      <section class="overviewGrid" aria-label="设置概览">
+        <section class="card masterCard">
+          <div>
+            <div class="cardEyebrow">Extension</div>
+            <div class="cardTitle">总开关</div>
+            <div class="hint">保存后会自动生效到已打开页面；关闭功能后，已打开页面通常需要刷新才会完全停用。</div>
+          </div>
+          <label class="toggle masterToggle">
+            <input type="checkbox" id="enabled" />
+            <span>启用扩展（所有模块）</span>
+          </label>
+          <div class="installNote">安装路径应为 <code>dist/</code> 目录。</div>
+        </section>
+
+        <section class="card searchCard" aria-label="查找设置">
+          <div class="searchCardHead">
+            <div>
+              <div class="cardEyebrow">Find</div>
+              <div class="cardTitle">查找设置</div>
+            </div>
+            <div class="searchShortcut" aria-hidden="true">⌘K</div>
+          </div>
+          <div class="globalSearchWrap">
+            <input class="globalSearch" id="globalSettingsSearch" type="search" autocomplete="off" spellcheck="false" placeholder="搜索全部设置、脚本、快捷键…" />
+            <button class="globalSearchClear" id="globalSettingsSearchClear" type="button" aria-label="清空搜索" hidden>清空</button>
+          </div>
+          <div class="searchSummary" id="globalSearchSummary">搜索站点、脚本名称、快捷键或功能关键词。</div>
+          <div class="filterPills" role="group" aria-label="设置筛选">
+            <button class="filterPill active" id="filterAll" type="button" data-filter="all" aria-pressed="true">全部</button>
+            <button class="filterPill" id="filterEnabled" type="button" data-filter="enabled" aria-pressed="false">已启用</button>
+            <button class="filterPill" id="filterDisabled" type="button" data-filter="disabled" aria-pressed="false">已停用</button>
+            <button class="filterPill" id="filterHotkeys" type="button" data-filter="hotkeys" aria-pressed="false">快捷键</button>
+            <button class="filterPill" id="filterCustom" type="button" data-filter="custom" aria-pressed="false">有细项</button>
+          </div>
+          <div class="quickJump" aria-label="常用入口">
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="quicknav">QuickNav</button>
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="chatgpt_tab_queue">Tab Queue</button>
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="chatgpt_tex_copy_quote">Quote / TeX</button>
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="chatgpt_thinking_toggle">⌘J / ⌘O</button>
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="chatgpt_usage_monitor">用量统计</button>
+            <button class="quickJumpBtn" type="button" data-site="chatgpt" data-module="chatgpt_perf">性能</button>
+          </div>
+        </section>
       </section>
 
       <section class="card configCard">
@@ -43,7 +82,7 @@
           <div class="sectionCopy">
             <div class="sectionEyebrow">Script Control</div>
             <div class="cardTitle">按网站管理脚本</div>
-            <div class="sectionText">先选网站，再选脚本并编辑细项设置。页面内所有变更都会直接写回当前配置。</div>
+            <div class="sectionText">搜索结果会自动缩小左侧网站和中间脚本列表；选择脚本后在右侧编辑细项。</div>
           </div>
         </div>
         <section class="shortcutProfileCard" aria-label="键盘能力与快捷键策略">

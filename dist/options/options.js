@@ -24,6 +24,9 @@
   const elSiteList = document.getElementById('siteList');
   const elModuleList = document.getElementById('moduleList');
   const elModuleSettings = document.getElementById('moduleSettings');
+  const elGlobalSettingsSearch = document.getElementById('globalSettingsSearch');
+  const btnGlobalSettingsSearchClear = document.getElementById('globalSettingsSearchClear');
+  const elGlobalSearchSummary = document.getElementById('globalSearchSummary');
   const elSiteSearch = document.getElementById('siteSearch');
   const elModuleSearch = document.getElementById('moduleSearch');
   const elSiteListCount = document.getElementById('siteListCount');
@@ -116,6 +119,47 @@
     './module-settings/chatgpt.js',
     './module-settings/sites.js'
   ]);
+  const SEARCH_FILTERS = Object.freeze(['all', 'enabled', 'disabled', 'hotkeys', 'custom']);
+  const MODULES_WITH_DETAIL_PANELS = new Set([
+    'quicknav',
+    'cmdenter_send',
+    'qwen_thinking_toggle',
+    'chatgpt_tab_queue',
+    'chatgpt_perf',
+    'chatgpt_thinking_toggle',
+    'chatgpt_readaloud_speed_controller',
+    'chatgpt_usage_monitor',
+    'chatgpt_reply_timer',
+    'chatgpt_download_file_fix',
+    'chatgpt_strong_highlight_lite',
+    'chatgpt_quick_deep_search',
+    'chatgpt_hide_feedback_buttons',
+    'chatgpt_tex_copy_quote',
+    'chatgpt_export_conversation',
+    'chatgpt_image_message_edit',
+    'chatgpt_message_tree',
+    'genspark_moa_image_autosettings',
+    'genspark_credit_balance',
+    'genspark_inline_upload_fix',
+    'grok_rate_limit_display'
+  ]);
+  const MODULE_SEARCH_KEYWORDS = Object.freeze({
+    quicknav: 'pin pins favorite favourites bookmark bookmarks lock scroll anti auto scroll 防跳转 防滚动 图钉 收藏',
+    chatgpt_tab_queue: 'tab queue queued visual queue pool 排队 队列 可视化 堆叠 force send now 强发 取回 清空',
+    chatgpt_tex_copy_quote: 'quote tex latex math formula copy double click 引用 公式 复制 双击 多引用',
+    chatgpt_perf: 'performance perf memory lag formula code virtualization 性能 内存 卡顿 公式 代码 长代码',
+    chatgpt_thinking_toggle: 'thinking pro model switch cmd j cmd o cmd p effort 推理 模型 切换 禁用打印',
+    chatgpt_usage_monitor: 'usage quota limit stats export import 用量 额度 统计 导出 导入',
+    chatgpt_message_tree: 'tree fork branch conversation 对话树 分支 fork',
+    chatgpt_reply_timer: 'timer latency duration reply 耗时 计时 回复',
+    chatgpt_quick_deep_search: 'deep research search light pro heavy 联网 搜索 深度研究',
+    cmdenter_send: 'cmd enter command enter ctrl enter send newline 发送 换行',
+    openai_new_model_banner: 'model probe banner alert gpt 5.5 新模型 监控 横幅 提醒',
+    qwen_thinking_toggle: 'thinking fast model qwen cmd o cmd j 推理 模型',
+    google_ask_gpt: 'google ask gpt search handoff 问 gpt 搜索',
+    genspark_force_sonnet45_thinking: 'sonnet thinking genspark 思考',
+    grok_rate_limit_display: 'rate limit quota grok 额度 积分'
+  });
   const META_KEY_MODE_AUTO = 'auto';
   const META_KEY_MODE_HAS_META = 'has_meta';
   const META_KEY_MODE_NO_META = 'no_meta';
@@ -805,8 +849,10 @@
   let currentSettings = null;
   let selectedSiteId = SITES[0]?.id || 'chatgpt';
   let selectedModuleId = 'quicknav';
+  let globalSearchText = '';
   let siteSearchText = '';
   let moduleSearchText = '';
+  let activeSearchFilter = 'all';
   let moduleSettingsRegistryPromise = null;
   let moduleSettingsRegistryMap = null;
   const moduleSettingsScriptLoaders = new Map();
@@ -1089,7 +1135,27 @@
   }
 
   function normalizeSearchText(s) {
-    return String(s || '').trim().toLowerCase();
+    return String(s || '')
+      .normalize('NFKC')
+      .trim()
+      .toLowerCase();
+  }
+
+  function compactSearchText(s) {
+    return normalizeSearchText(s).replace(/[\s_\-+:/\\|.,，。()（）[\]【】"'“”‘’]+/g, '');
+  }
+
+  function searchMatchesHaystack(haystack, term) {
+    const raw = normalizeSearchText(term);
+    if (!raw) return true;
+    const hay = normalizeSearchText(haystack);
+    const compactHay = compactSearchText(haystack);
+    const tokens = raw.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+    if (!tokens.length) return true;
+    return tokens.every((token) => {
+      const compactToken = compactSearchText(token);
+      return hay.includes(token) || (compactToken && compactHay.includes(compactToken));
+    });
   }
 
   function toCanonicalModuleId(input) {
@@ -1106,10 +1172,17 @@
   }
 
   function siteMatchesSearch(site, term) {
-    const t = normalizeSearchText(term);
-    if (!t) return true;
-    const hay = `${site?.name || ''} ${site?.sub || ''} ${site?.id || ''}`.toLowerCase();
-    return hay.includes(t);
+    return searchMatchesHaystack(getSiteSearchHaystack(site), term);
+  }
+
+  function getSiteSearchHaystack(site) {
+    const patterns = normalizePatterns(site?.matchPatterns).concat(normalizePatterns(site?.quicknavPatterns));
+    return [
+      site?.id,
+      site?.name,
+      site?.sub,
+      patterns.join(' ')
+    ].filter(Boolean).join(' ');
   }
 
   function shortenChatGPTModuleName(name) {
@@ -1177,11 +1250,15 @@
     const hotkeysText = formatHotkeys(moduleDef?.hotkeys);
     setNodeText(elSiteListCount, formatCountLabel(visibleSites.length, totalSites));
     setNodeText(elModuleListCount, formatCountLabel(visibleModules.length, siteModules.length));
-    setNodeText(elSiteListNote, siteSearchText ? `筛出 ${visibleSites.length} 个网站。` : '按站点切换。');
+    setNodeText(elSiteListNote, hasAnySearchOrFilter() ? `筛出 ${visibleSites.length} 个网站。` : '按站点切换。');
     const siteDisplay = getSiteDisplayMeta(site);
     setNodeText(
       elModuleListNote,
-      site ? `${siteDisplay.name} · ${siteDisplay.sub || '当前站点脚本清单'}` : '选择网站后查看该站点脚本。'
+      site
+        ? hasAnySearchOrFilter()
+          ? `${siteDisplay.name} · ${visibleModules.length}/${siteModules.length} 个脚本匹配`
+          : `${siteDisplay.name} · ${siteDisplay.sub || '当前站点脚本清单'}`
+        : '选择网站后查看该站点脚本。'
     );
     setPanelHeaderContent({
       title: display.name || '未选择脚本',
@@ -1192,12 +1269,53 @@
   }
 
   function moduleMatchesSearch(siteId, moduleId, term) {
-    const t = normalizeSearchText(term);
-    if (!t) return true;
+    return searchMatchesHaystack(getModuleSearchHaystack(siteId, moduleId), term);
+  }
+
+  function getModuleSearchHaystack(siteId, moduleId) {
     const display = getModuleDisplayMeta(siteId, moduleId);
-    const def = MODULES?.[moduleId];
-    const hay = `${display.name || ''} ${display.sub || ''} ${def?.name || ''} ${def?.sub || ''} ${moduleId || ''}`.toLowerCase();
-    return hay.includes(t);
+    const def = MODULES?.[moduleId] || {};
+    const aliases = MODULE_ALIAS_TARGETS?.[moduleId] || [];
+    const hotkeys = Array.isArray(def.hotkeys) ? def.hotkeys : [];
+    const hotkeyControls = Array.isArray(def.hotkeyControls) ? def.hotkeyControls : [];
+    const menuPreview = Array.isArray(def.menuPreview) ? def.menuPreview : [];
+    const authors = Array.isArray(def.authors) ? def.authors : [];
+    const site = getSite(siteId);
+    return [
+      moduleId,
+      aliases.join(' '),
+      display.name,
+      display.sub,
+      def.name,
+      def.sub,
+      site?.name,
+      site?.sub,
+      hotkeys.join(' '),
+      hotkeyControls.map((control) => `${control?.key || ''} ${control?.label || ''}`).join(' '),
+      menuPreview.join(' '),
+      authors.join(' '),
+      def.license,
+      def.upstream,
+      MODULE_SEARCH_KEYWORDS[moduleId]
+    ].filter(Boolean).join(' ');
+  }
+
+  function moduleHasCustomSettings(moduleId) {
+    const def = MODULES?.[moduleId] || {};
+    if (MODULES_WITH_DETAIL_PANELS.has(moduleId)) return true;
+    if (Array.isArray(def.hotkeyControls) && def.hotkeyControls.length) return true;
+    if (Array.isArray(def.menuPreview) && def.menuPreview.length) return true;
+    return false;
+  }
+
+  function modulePassesActiveFilter(siteId, moduleId) {
+    const mode = SEARCH_FILTERS.includes(activeSearchFilter) ? activeSearchFilter : 'all';
+    if (mode === 'all') return true;
+    if (mode === 'enabled') return isSiteEnabled(siteId) && isModuleEnabled(siteId, moduleId);
+    if (mode === 'disabled') return !isSiteEnabled(siteId) || !isModuleEnabled(siteId, moduleId);
+    if (mode === 'hotkeys') return Array.isArray(MODULES?.[moduleId]?.hotkeys) && MODULES[moduleId].hotkeys.length > 0;
+    if (mode === 'custom') return moduleHasCustomSettings(moduleId);
+    return true;
   }
 
   function getModuleSortWeight(siteId, item) {
@@ -1238,8 +1356,11 @@
     }
 
     // Clear searches so the deep-linked target is always visible/selected.
+    globalSearchText = '';
     siteSearchText = '';
     moduleSearchText = '';
+    activeSearchFilter = 'all';
+    if (elGlobalSettingsSearch) elGlobalSettingsSearch.value = '';
     if (elSiteSearch) elSiteSearch.value = '';
     if (elModuleSearch) elModuleSearch.value = '';
 
@@ -1333,17 +1454,28 @@
   }
 
   function getFilteredSites() {
-    return SITES.filter((s) => siteMatchesSearch(s, siteSearchText));
+    return SITES.filter((s) => {
+      if (!siteMatchesSearch(s, siteSearchText)) return false;
+      if (activeSearchFilter !== 'all') {
+        const modules = Array.isArray(s.modules) ? s.modules : [];
+        if (!modules.some((moduleId) => modulePassesActiveFilter(s.id, moduleId))) return false;
+      }
+      if (!globalSearchText) return true;
+      if (siteMatchesSearch(s, globalSearchText)) return true;
+      return (Array.isArray(s.modules) ? s.modules : []).some((moduleId) => moduleMatchesSearch(s.id, moduleId, globalSearchText));
+    });
   }
 
   function effectiveSelectedSiteId() {
     const picked = getSite(selectedSiteId);
     const filtered = getFilteredSites();
-    if (picked && (siteMatchesSearch(picked, siteSearchText) || filtered.length === 0)) return picked.id;
+    if (filtered.length && picked && filtered.some((site) => site.id === picked.id)) return picked.id;
     return filtered[0]?.id || SITES[0]?.id || 'chatgpt';
   }
 
   function getFilteredModuleIds(siteId) {
+    const site = getSite(siteId);
+    const siteOwnGlobalMatch = !globalSearchText || siteMatchesSearch(site, globalSearchText);
     const rawMods = getSite(siteId)?.modules || [];
     const mods = rawMods
       .map((id, idx) => ({
@@ -1358,7 +1490,9 @@
         return a.idx - b.idx;
       })
       .map((x) => x.id)
-      .filter((id) => moduleMatchesSearch(siteId, id, moduleSearchText));
+      .filter((id) => moduleMatchesSearch(siteId, id, moduleSearchText))
+      .filter((id) => siteOwnGlobalMatch || moduleMatchesSearch(siteId, id, globalSearchText))
+      .filter((id) => modulePassesActiveFilter(siteId, id));
     return mods;
   }
 
@@ -1372,6 +1506,54 @@
     }
     if (allMods.includes(selected)) return selected;
     return allMods[0] || 'quicknav';
+  }
+
+  function hasAnySearchOrFilter() {
+    return !!(globalSearchText || siteSearchText || moduleSearchText || activeSearchFilter !== 'all');
+  }
+
+  function getSearchFilterLabel(mode = activeSearchFilter) {
+    if (mode === 'enabled') return '已启用';
+    if (mode === 'disabled') return '已停用';
+    if (mode === 'hotkeys') return '快捷键';
+    if (mode === 'custom') return '有细项';
+    return '全部';
+  }
+
+  function getTotalModuleCount() {
+    return SITES.reduce((sum, site) => sum + (Array.isArray(site.modules) ? site.modules.length : 0), 0);
+  }
+
+  function getVisibleModuleCountForSites(sites = getFilteredSites()) {
+    return sites.reduce((sum, site) => sum + getFilteredModuleIds(site.id).length, 0);
+  }
+
+  function renderSearchControls() {
+    if (elGlobalSettingsSearch && elGlobalSettingsSearch.value !== globalSearchText) {
+      elGlobalSettingsSearch.value = globalSearchText;
+    }
+    if (btnGlobalSettingsSearchClear) btnGlobalSettingsSearchClear.hidden = !globalSearchText;
+
+    const filter = SEARCH_FILTERS.includes(activeSearchFilter) ? activeSearchFilter : 'all';
+    for (const btn of document.querySelectorAll('.filterPill[data-filter]')) {
+      const active = String(btn.getAttribute('data-filter') || '') === filter;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+
+    if (!elGlobalSearchSummary) return;
+    const visibleSites = getFilteredSites();
+    const visibleModules = getVisibleModuleCountForSites(visibleSites);
+    const totalModules = getTotalModuleCount();
+    if (!hasAnySearchOrFilter()) {
+      setNodeText(elGlobalSearchSummary, '搜索站点、脚本名称、快捷键或功能关键词。');
+      return;
+    }
+    const parts = [];
+    if (globalSearchText) parts.push(`“${globalSearchText}”`);
+    if (activeSearchFilter !== 'all') parts.push(getSearchFilterLabel(activeSearchFilter));
+    const scope = parts.length ? parts.join(' · ') : getSearchFilterLabel(activeSearchFilter);
+    setNodeText(elGlobalSearchSummary, `${scope}：${visibleSites.length}/${SITES.length} 个网站，${visibleModules}/${totalModules} 个脚本。`);
   }
 
   function buildPatchFromSettingsDiff(prev, next) {
@@ -3980,7 +4162,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：当前只支持纯文本队列；Tab 会拦截原生焦点切换并把当前草稿排进队列，Shift+Tab 仅负责阻止浏览器切焦点，不附带额外语义，⌥↑ / Alt+↑ 取回最近一条已排队草稿。排队预览里每条末尾都可以直接删除。自动发送下一条时，主判定来自 conversation stream 的 [DONE]，不会只看发送按钮是否高亮；Ctrl+C 清空走浏览器编辑命令，尽量保留 Cmd+Z 撤销链；QuickNav 橙色标记会在点击对应消息后清掉。';
+      '说明：当前只支持纯文本队列；Tab 会拦截原生焦点切换并把当前草稿排进队列，Shift+Tab 仅负责阻止浏览器切焦点，不附带额外语义，⌥↑ / Alt+↑ 取回最近一条已排队草稿。排队预览会显示最多 10 条草稿，并提供取回最新、清空队列、单条强发和单条删除。自动发送下一条时，主判定来自 conversation stream 的 [DONE]，不会只看发送按钮是否高亮；Ctrl+C 清空走浏览器编辑命令，尽量保留 Cmd+Z 撤销链；QuickNav 橙色标记会在点击对应消息后清掉。';
     elModuleSettings.appendChild(hint);
   }
 
@@ -4505,20 +4687,52 @@
     void run();
   }
 
+  function renderModuleSettingsEmpty(title, detail) {
+    if (!elModuleSettings) return;
+    try {
+      teardownModuleSettingsSideEffects?.();
+    } catch {}
+    teardownModuleSettingsSideEffects = () => {};
+    elModuleSettings.textContent = '';
+    elModuleSettings.appendChild(createTriEmpty(title, detail));
+  }
+
   function renderAll() {
     const token = ++renderSeq;
-    const siteId = effectiveSelectedSiteId();
-    const moduleId = effectiveSelectedModuleId(siteId);
+    const visibleSites = getFilteredSites();
+    const hasVisibleSites = visibleSites.length > 0;
+    const siteId = hasVisibleSites ? effectiveSelectedSiteId() : (selectedSiteId || SITES[0]?.id || 'chatgpt');
+    const visibleModules = hasVisibleSites ? getFilteredModuleIds(siteId) : [];
+    const hasVisibleModules = visibleModules.length > 0;
+    const moduleId = hasVisibleModules ? effectiveSelectedModuleId(siteId) : (selectedModuleId || '');
     selectedSiteId = siteId;
-    selectedModuleId = moduleId;
+    if (moduleId) selectedModuleId = moduleId;
 
     if (elEnabled) elEnabled.checked = !!currentSettings?.enabled;
     renderMetaKeyProfileCard();
     renderLocaleModeToggle();
+    renderSearchControls();
     renderConfigContext(siteId, moduleId);
     renderSites(siteId);
     renderModules(siteId, moduleId);
-    renderModuleSettings(siteId, moduleId, token);
+    if (!hasVisibleSites) {
+      setPanelHeaderContent({
+        title: '没有匹配结果',
+        subtitle: '清空搜索或切换筛选后继续配置脚本。',
+        chips: [getSearchFilterLabel(activeSearchFilter)]
+      });
+      renderModuleSettingsEmpty('没有匹配结果', '清空搜索或切换筛选后继续配置脚本。');
+    } else if (!hasVisibleModules) {
+      const siteDisplay = getSiteDisplayMeta(siteId);
+      setPanelHeaderContent({
+        title: '没有匹配的脚本',
+        subtitle: `${siteDisplay.name || '当前网站'} 没有符合当前搜索和筛选条件的脚本。`,
+        chips: [siteDisplay.name || '', getSearchFilterLabel(activeSearchFilter)]
+      });
+      renderModuleSettingsEmpty('没有匹配的脚本', '调整搜索词，切换筛选，或选择其他网站。');
+    } else {
+      renderModuleSettings(siteId, moduleId, token);
+    }
     flushDeepLinkScroll();
     localizeBody(resolveUiLocale());
   }
@@ -4565,6 +4779,55 @@
       next.localeMode = LOCALE_MODE_EN;
     });
   });
+
+  function clearAllSearchInputs({ keepFilter = false } = {}) {
+    globalSearchText = '';
+    siteSearchText = '';
+    moduleSearchText = '';
+    if (!keepFilter) activeSearchFilter = 'all';
+    if (elGlobalSettingsSearch) elGlobalSettingsSearch.value = '';
+    if (elSiteSearch) elSiteSearch.value = '';
+    if (elModuleSearch) elModuleSearch.value = '';
+  }
+
+  function jumpToModule(siteId, moduleId) {
+    const site = getSite(siteId);
+    const canonical = toCanonicalModuleId(moduleId) || String(moduleId || '').trim();
+    if (!site || !canonical || !Array.isArray(site.modules) || !site.modules.includes(canonical)) return false;
+    clearAllSearchInputs();
+    selectedSiteId = site.id;
+    selectedModuleId = canonical;
+    pendingDeepLinkScroll = { siteId: site.id, moduleId: canonical };
+    renderAll();
+    return true;
+  }
+
+  elGlobalSettingsSearch?.addEventListener('input', () => {
+    globalSearchText = normalizeSearchText(elGlobalSettingsSearch.value);
+    renderAll();
+  });
+  btnGlobalSettingsSearchClear?.addEventListener('click', () => {
+    globalSearchText = '';
+    if (elGlobalSettingsSearch) {
+      elGlobalSettingsSearch.value = '';
+      elGlobalSettingsSearch.focus();
+    }
+    renderAll();
+  });
+  for (const btn of document.querySelectorAll('.filterPill[data-filter]')) {
+    btn.addEventListener('click', () => {
+      const next = String(btn.getAttribute('data-filter') || 'all');
+      activeSearchFilter = SEARCH_FILTERS.includes(next) ? next : 'all';
+      renderAll();
+    });
+  }
+  for (const btn of document.querySelectorAll('.quickJumpBtn[data-site][data-module]')) {
+    btn.addEventListener('click', () => {
+      const siteId = String(btn.getAttribute('data-site') || '').trim();
+      const moduleId = String(btn.getAttribute('data-module') || '').trim();
+      jumpToModule(siteId, moduleId);
+    });
+  }
 
   elSiteSearch?.addEventListener('input', () => {
     siteSearchText = normalizeSearchText(elSiteSearch.value);
@@ -4743,7 +5006,32 @@
     } catch {}
   });
   document.addEventListener('keydown', (event) => {
+    const key = String(event.key || '').toLowerCase();
+    const target = event.target;
+    const isTypingTarget =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable);
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && key === 'k') {
+      event.preventDefault();
+      elGlobalSettingsSearch?.focus();
+      elGlobalSettingsSearch?.select?.();
+      return;
+    }
+    if (!isTypingTarget && key === '/') {
+      event.preventDefault();
+      elGlobalSettingsSearch?.focus();
+      return;
+    }
     if (event.key === 'Escape') {
+      if (document.activeElement === elGlobalSettingsSearch && globalSearchText) {
+        event.preventDefault();
+        globalSearchText = '';
+        if (elGlobalSettingsSearch) elGlobalSettingsSearch.value = '';
+        renderAll();
+        return;
+      }
       setPanelInfoClickOpen(false);
       suppressPanelInfoHover(!!elPanelInfoWrap?.matches(':hover'));
     }

@@ -27,8 +27,8 @@
   const PREVIEW_ID = '__aichat_chatgpt_tab_queue_preview_v1__';
   const TOAST_WRAP_ID = '__aichat_chatgpt_tab_queue_toast_wrap_v1__';
   const CONFIG = Object.freeze({
-    queuePreviewMaxItems: 3,
-    queuePreviewTextMaxChars: 72,
+    queuePreviewMaxItems: 10,
+    queuePreviewTextMaxChars: 112,
     highlightResolveTimeoutMs: 6000,
     sendReadyTimeoutMs: 5000,
     sendConfirmTimeoutMs: 2600,
@@ -69,6 +69,12 @@
     responseSettlingPaused: { zh: '队列已暂停：上一条回复仍在收尾。', en: 'Queue paused: the previous reply is still settling.' },
     queuedCount: { zh: '已排队 {count} 条', en: '{count} queued' },
     queueHint: { zh: 'Tab 排队 · ⌥↑ / Alt+↑ 取回最近一条', en: 'Queue with Tab · restore the latest item with ⌥↑ / Alt+↑' },
+    queueStatusSending: { zh: '正在等待当前回复完成后继续发送', en: 'Waiting for the current reply before continuing' },
+    restoreLatest: { zh: '取回最新', en: 'Restore latest' },
+    restoreLatestAria: { zh: '取回最近一条排队消息到输入框', en: 'Restore the latest queued message to the composer' },
+    clearAll: { zh: '清空队列', en: 'Clear queue' },
+    clearAllAria: { zh: '删除所有排队消息', en: 'Remove all queued messages' },
+    clearedQueue: { zh: '已清空队列。', en: 'Cleared the queue.' },
     forceSend: { zh: '强发', en: 'Send now' },
     forceSendAria: { zh: '强制立即发送这条排队消息', en: 'Force-send this queued message immediately' },
     forceSendBlocked: {
@@ -2058,7 +2064,28 @@
         #${PREVIEW_ID} .aichatTabQueueHint {
           color: rgba(255, 255, 255, 0.74);
           text-align: right;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+        #${PREVIEW_ID} .aichatTabQueueToolbar {
+          margin-top: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        #${PREVIEW_ID} .aichatTabQueueStatus {
+          min-width: 0;
+          color: rgba(209, 213, 219, 0.88);
+          font-size: 12px;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+        #${PREVIEW_ID} .aichatTabQueueToolbarActions {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
         }
         #${PREVIEW_ID} .aichatTabQueuePaused {
           margin-top: 6px;
@@ -2101,7 +2128,9 @@
           margin-left: auto;
         }
         #${PREVIEW_ID} .aichatTabQueueItemForce,
-        #${PREVIEW_ID} .aichatTabQueueItemRemove {
+        #${PREVIEW_ID} .aichatTabQueueItemRemove,
+        #${PREVIEW_ID} .aichatTabQueueRestoreLatest,
+        #${PREVIEW_ID} .aichatTabQueueClearAll {
           flex: 0 0 auto;
           padding: 2px 8px;
           border: 1px solid rgba(251, 191, 36, 0.2);
@@ -2116,15 +2145,42 @@
           background: rgba(56, 189, 248, 0.12);
           color: rgba(224, 242, 254, 0.96);
         }
+        #${PREVIEW_ID} .aichatTabQueueRestoreLatest {
+          border-color: rgba(168, 85, 247, 0.34);
+          background: rgba(168, 85, 247, 0.14);
+          color: rgba(245, 243, 255, 0.96);
+        }
+        #${PREVIEW_ID} .aichatTabQueueClearAll {
+          border-color: rgba(248, 113, 113, 0.28);
+          background: rgba(248, 113, 113, 0.12);
+          color: rgba(254, 226, 226, 0.96);
+        }
         #${PREVIEW_ID} .aichatTabQueueItemForce:hover {
           background: rgba(56, 189, 248, 0.2);
           border-color: rgba(56, 189, 248, 0.42);
           color: rgba(240, 249, 255, 0.98);
         }
-        #${PREVIEW_ID} .aichatTabQueueItemRemove:hover {
+        #${PREVIEW_ID} .aichatTabQueueRestoreLatest:hover {
+          background: rgba(168, 85, 247, 0.22);
+          border-color: rgba(168, 85, 247, 0.46);
+          color: rgba(250, 245, 255, 0.98);
+        }
+        #${PREVIEW_ID} .aichatTabQueueItemRemove:hover,
+        #${PREVIEW_ID} .aichatTabQueueClearAll:hover {
           background: rgba(251, 191, 36, 0.16);
           border-color: rgba(251, 191, 36, 0.34);
           color: rgba(255, 251, 235, 0.98);
+        }
+        @media (max-width: 520px) {
+          #${PREVIEW_ID} .aichatTabQueueToolbar,
+          #${PREVIEW_ID} .aichatTabQueueHead {
+            align-items: stretch;
+            flex-direction: column;
+          }
+          #${PREVIEW_ID} .aichatTabQueueToolbarActions,
+          #${PREVIEW_ID} .aichatTabQueueItemActions {
+            flex-wrap: wrap;
+          }
         }
         #${TOAST_WRAP_ID} {
           position: fixed;
@@ -2256,6 +2312,13 @@
           <div class="aichatTabQueueCount">${t('queuedCount', { count: 0 })}</div>
           <div class="aichatTabQueueHint">${t('queueHint')}</div>
         </div>
+        <div class="aichatTabQueueToolbar">
+          <div class="aichatTabQueueStatus"></div>
+          <div class="aichatTabQueueToolbarActions">
+            <button class="aichatTabQueueRestoreLatest" type="button">${t('restoreLatest')}</button>
+            <button class="aichatTabQueueClearAll" type="button">${t('clearAll')}</button>
+          </div>
+        </div>
         <div class="aichatTabQueuePaused" hidden></div>
         <div class="aichatTabQueueList"></div>
       `;
@@ -2291,6 +2354,7 @@
 
     const queueEnabled = readSettings().queueEnabled;
     if (!queueEnabled || !state.queue.length) {
+      clearPreviewContents(preview);
       preview.hidden = true;
       state.ui.previewSignature = '';
       return;
@@ -2303,11 +2367,45 @@
     const countEl = preview.querySelector('.aichatTabQueueCount');
     const pausedEl = preview.querySelector('.aichatTabQueuePaused');
     const listEl = preview.querySelector('.aichatTabQueueList');
+    const statusEl = preview.querySelector('.aichatTabQueueStatus');
+    const restoreLatestBtn = preview.querySelector('.aichatTabQueueRestoreLatest');
+    const clearAllBtn = preview.querySelector('.aichatTabQueueClearAll');
     if (!countEl || !pausedEl || !listEl) return;
 
     countEl.textContent = t('queuedCount', { count: state.queue.length });
+    if (statusEl) {
+      statusEl.textContent = pausedReason || (state.processQueueBusy || state.pendingSendGate || state.activeRequests.size ? t('queueStatusSending') : t('queueHint'));
+    }
     pausedEl.textContent = pausedReason;
     pausedEl.hidden = !pausedReason;
+    if (restoreLatestBtn) {
+      restoreLatestBtn.textContent = t('restoreLatest');
+      restoreLatestBtn.setAttribute('aria-label', t('restoreLatestAria'));
+      if (restoreLatestBtn.dataset.bound !== '1') {
+        restoreLatestBtn.dataset.bound = '1';
+        restoreLatestBtn.addEventListener('click', (event) => {
+          try {
+            event.preventDefault();
+            event.stopPropagation();
+          } catch {}
+          restoreLatestQueuedDraftFromPreview();
+        });
+      }
+    }
+    if (clearAllBtn) {
+      clearAllBtn.textContent = t('clearAll');
+      clearAllBtn.setAttribute('aria-label', t('clearAllAria'));
+      if (clearAllBtn.dataset.bound !== '1') {
+        clearAllBtn.dataset.bound = '1';
+        clearAllBtn.addEventListener('click', (event) => {
+          try {
+            event.preventDefault();
+            event.stopPropagation();
+          } catch {}
+          clearQueuedDrafts();
+        });
+      }
+    }
 
     listEl.textContent = '';
     const visibleItems = state.queue.slice(0, CONFIG.queuePreviewMaxItems);
@@ -2363,13 +2461,30 @@
 
     if (state.queue.length > CONFIG.queuePreviewMaxItems) {
       const more = document.createElement('div');
-      more.className = 'aichatTabQueueItem';
+      more.className = 'aichatTabQueueItem aichatTabQueueMore';
       more.textContent = t('moreQueued', { count: state.queue.length - CONFIG.queuePreviewMaxItems });
       listEl.appendChild(more);
     }
 
     preview.hidden = false;
     state.ui.previewSignature = nextSignature;
+  }
+
+  function clearPreviewContents(preview = state.ui.previewEl) {
+    if (!preview) return;
+    try {
+      const countEl = preview.querySelector('.aichatTabQueueCount');
+      const pausedEl = preview.querySelector('.aichatTabQueuePaused');
+      const listEl = preview.querySelector('.aichatTabQueueList');
+      const statusEl = preview.querySelector('.aichatTabQueueStatus');
+      if (countEl) countEl.textContent = t('queuedCount', { count: 0 });
+      if (statusEl) statusEl.textContent = '';
+      if (pausedEl) {
+        pausedEl.textContent = '';
+        pausedEl.hidden = true;
+      }
+      if (listEl) listEl.textContent = '';
+    } catch {}
   }
 
   function shouldRepairPreviewAttachment() {
@@ -2473,6 +2588,23 @@
     refreshPreview();
     refreshReplyRenderSampling();
     return item;
+  }
+
+  function restoreLatestQueuedDraftFromPreview() {
+    const item = popLastQueuedDraft();
+    if (!item) return false;
+    return restoreQueuedDraftToComposer(item);
+  }
+
+  function clearQueuedDrafts() {
+    if (!state.queue.length) return false;
+    state.queue = [];
+    resetQueueSessionState({ preserveActiveResponseState: true });
+    markQueueActivity();
+    refreshPreview();
+    refreshReplyRenderSampling();
+    showToast(t('clearedQueue'));
+    return true;
   }
 
   function removeQueuedDraftFromList(queue, itemId) {

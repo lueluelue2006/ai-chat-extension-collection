@@ -1121,8 +1121,9 @@
   const TAB_QUEUE_TURN_KEY_ATTR = 'data-aichat-tab-queued-key';
   const TAB_QUEUE_BRIDGE_MARKS_CHANGED = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_MARKS_CHANGED';
   const TAB_QUEUE_BRIDGE_ACK_HIGHLIGHT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_ACK_HIGHLIGHT';
+  const TAB_QUEUE_BRIDGE_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT';
   const TREE_BRIDGE_RESPONSE_TYPES = new Set([TREE_BRIDGE_RES_SUMMARY, TREE_BRIDGE_RES_NAVIGATE_TO, TREE_BRIDGE_STATE]);
-  const TAB_QUEUE_BRIDGE_RESPONSE_TYPES = new Set([TAB_QUEUE_BRIDGE_MARKS_CHANGED]);
+  const TAB_QUEUE_BRIDGE_RESPONSE_TYPES = new Set([TAB_QUEUE_BRIDGE_MARKS_CHANGED, TAB_QUEUE_BRIDGE_SEND_PROTECT]);
   const SCROLL_GUARD_READY_TYPES = new Set(['QUICKNAV_SCROLL_GUARD_READY']);
   const TREE_TOOLTIP_ID = 'cgpt-quicknav-branch-tooltip';
 
@@ -2246,8 +2247,17 @@
       try {
         const data = readBridgeMessage(event, TAB_QUEUE_BRIDGE_RESPONSE_TYPES);
         if (!data) return;
+        if (data.type === TAB_QUEUE_BRIDGE_SEND_PROTECT) {
+          handleTabQueueSendScrollProtect(data);
+        }
         const ui = document.getElementById('cgpt-compact-nav')?._ui;
-        if (ui) scheduleRefresh(ui, { force: true, delay: 80 });
+        if (ui) {
+          if (data.type === TAB_QUEUE_BRIDGE_SEND_PROTECT && String(data.phase || '') === 'confirmed') {
+            startBurstRefresh(ui, 3600, 180);
+          } else {
+            scheduleRefresh(ui, { force: true, delay: 80 });
+          }
+        }
       } catch {}
     }, true);
   }
@@ -8074,6 +8084,41 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     ensureMainWorldScrollGuard();
     scheduleMainWorldScrollGuardRetry();
     scheduleScrollLockRestore('arm', [0, 80, 180, 360, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]);
+  }
+
+  function armProgrammaticSendScrollLockGuard(reason = 'programmatic-send', ms = 65000) {
+    if (!scrollLockEnabled) return;
+    const sc = ensureScrollLockBindings();
+    if (!sc) return;
+    const now = Date.now();
+    const current = getScrollPos(sc);
+    const previousStable = Number(scrollLockStablePos);
+    const hasStable = Number.isFinite(previousStable) && previousStable >= 0;
+    const baseline =
+      hasStable && current > previousStable + SCROLL_LOCK_DRIFT
+        ? Math.max(0, Math.round(previousStable))
+        : Math.max(0, Math.round(Number.isFinite(current) ? current : (hasStable ? previousStable : 0)));
+
+    scrollLockLastMutationTs = now;
+    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, now + Math.max(2400, Math.round(Number(ms) || 0)));
+    scrollLockStablePos = baseline;
+    scrollLockLastPos = baseline;
+    postScrollLockStateToMainWorld();
+    postScrollLockBaselineToMainWorld(baseline, true);
+    ensureMainWorldScrollGuard();
+    scheduleMainWorldScrollGuardRetry();
+    if (Number.isFinite(current) && current > baseline + SCROLL_LOCK_DRIFT) {
+      setScrollPos(sc, baseline);
+    }
+    scheduleScrollLockRestore(reason, [0, 40, 100, 220, 420, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]);
+  }
+
+  function handleTabQueueSendScrollProtect(data = {}) {
+    try {
+      const phase = String(data.phase || '');
+      if (phase === 'failed') return;
+      armProgrammaticSendScrollLockGuard(`tab-queue-${phase || 'send'}`, phase === 'confirmed' ? 65000 : 45000);
+    } catch {}
   }
 
   function isConversationElement(el) {

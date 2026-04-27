@@ -1812,8 +1812,13 @@ function verifyChatgptQuicknavScrollLockReliability() {
     "scheduleScrollLockRestore('nav-unexpected-programmatic'",
     "scheduleScrollLockRestore('scroll-event'",
     "scheduleScrollLockRestore('mutation'",
+    "scheduleScrollLockRestore(reason, [0, 40, 100, 220, 420, 800, 1500",
     "60000])",
-    'postScrollLockBaselineToMainWorld(scrollLockStablePos, true)'
+    'postScrollLockBaselineToMainWorld(scrollLockStablePos, true)',
+    'TAB_QUEUE_BRIDGE_SEND_PROTECT',
+    'function armProgrammaticSendScrollLockGuard',
+    'function handleTabQueueSendScrollProtect',
+    'current > previousStable + SCROLL_LOCK_DRIFT'
   ]) {
     if (!quicknavSource.includes(required)) {
       failures.push(`content/chatgpt-quicknav.js is missing scroll-lock reliability guard: ${required}`);
@@ -1989,7 +1994,12 @@ function verifyChatgptComposerWorkflowHardening() {
     'aichatTabQueueToolbar',
     'aichatTabQueueRestoreLatest',
     'aichatTabQueueClearAll',
-    'aichatTabQueueMore'
+    'aichatTabQueueMore',
+    'BRIDGE_TAB_QUEUE_SEND_PROTECT',
+    'function postQueuedSendProtectBridge',
+    "postQueuedSendProtectBridge(head, 'prepare'",
+    "postQueuedSendProtectBridge(head, 'before-click'",
+    "postQueuedSendProtectBridge(head, 'confirmed'"
   ]) {
     if (!tabQueueSource.includes(required)) {
       failures.push(`content/chatgpt-tab-queue/main.js is missing ${required}`);

@@ -21,6 +21,7 @@
 
   const BRIDGE_TAB_QUEUE_MARKS_CHANGED = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_MARKS_CHANGED';
   const BRIDGE_TAB_QUEUE_ACK_HIGHLIGHT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_ACK_HIGHLIGHT';
+  const BRIDGE_TAB_QUEUE_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT';
 
   const CONSUMER_KEY = 'chatgpt-tab-queue';
   const STYLE_ID = '__aichat_chatgpt_tab_queue_style_v1__';
@@ -140,6 +141,22 @@
       msg.type = String(type || '');
       if (!msg.type) return;
       window.postMessage(msg, '*');
+    } catch {}
+  }
+
+  function postQueuedSendProtectBridge(item, phase, extra = null) {
+    try {
+      postBridgeMessage(
+        BRIDGE_TAB_QUEUE_SEND_PROTECT,
+        Object.assign(
+          {
+            phase: String(phase || ''),
+            itemId: item?.id || '',
+            conversationId: item?.conversationId || ''
+          },
+          extra && typeof extra === 'object' ? extra : {}
+        )
+      );
     } catch {}
   }
 
@@ -3015,6 +3032,12 @@
       refreshPreview();
       return false;
     }
+
+    postQueuedSendProtectBridge(head, 'prepare', {
+      composerReady,
+      immediateHomeSubmit
+    });
+
     if (!composerReady && !setComposerText(head.text, getActiveEditor())) {
       showToast(t('writeBackFailed'));
       return false;
@@ -3063,6 +3086,11 @@
     }
 
     armComposerInterlock(head);
+    postQueuedSendProtectBridge(head, 'before-click', {
+      composerReady,
+      immediateHomeSubmit
+    });
+
     let sendConfirmed = await trySendButtonStrategies(
       getActiveEditor,
       getSendButton,
@@ -3085,6 +3113,7 @@
     }
 
     if (!sendConfirmed) {
+      postQueuedSendProtectBridge(head, 'failed');
       clearComposerInterlock();
       const activeEditor = getActiveEditor();
       if (readComposerText(activeEditor) === head.text) {
@@ -3096,6 +3125,7 @@
     }
 
     const steerTurnConfirmed = state.steerTurnStartSeq - beforeSteerTurnStartSeq > 0;
+    postQueuedSendProtectBridge(head, 'confirmed', { steerTurnConfirmed });
     clearComposerInterlock();
     updateComposerTextCache(getActiveEditor(), '');
     state.queue.shift();

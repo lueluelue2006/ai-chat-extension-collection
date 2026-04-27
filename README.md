@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.1-74c0fc" alt="Current version 4.0.1">
+  <img src="https://img.shields.io/badge/current-4.0.2-74c0fc" alt="Current version 4.0.2">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.2 补丁
+
+这个补丁修复 QuickNav 滚动锁与 Tab Queue 自动发送池之间的协作缺口。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 滚动锁 | Tab Queue 自动发送前会通知 QuickNav 保护当前锁定基线，避免 queued message 发送时把视口拉到底部 |
+| Tab Queue | 自动发送生命周期新增 `prepare` / `before-click` / `confirmed` 保护信号，覆盖写回 composer 和程序化点击发送两段风险窗口 |
+| 验证 | 在真实 ChatGPT 对话中用 `Tab` 入队并等待自动发送完成：队列清空、回复出现、锁定开启、`scrollTop=0`、baseline=0 |
 
 ### 4.0.1 补丁
 
@@ -201,6 +211,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.2
+
+This patch fixes the coordination gap between QuickNav scroll lock and the Tab Queue automatic send pool.
+
+| Area | Update |
+| --- | --- |
+| QuickNav scroll lock | Tab Queue now notifies QuickNav before automatic sends so the locked baseline is preserved instead of jumping to the bottom |
+| Tab Queue | Automatic send lifecycle now emits `prepare`, `before-click`, and `confirmed` protection signals for composer write-back and programmatic send clicks |
+| Verification | Tested in a real ChatGPT conversation with real `Tab` queueing and automatic send completion: queue emptied, reply appeared, lock stayed enabled, `scrollTop=0`, baseline=0 |
 
 ### Release 4.0.1
 

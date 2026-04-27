@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.5-74c0fc" alt="Current version 4.0.5">
+  <img src="https://img.shields.io/badge/current-4.0.6-74c0fc" alt="Current version 4.0.6">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.6 补丁
+
+这个补丁修复 ChatGPT 快捷深度搜索热键在 GPT 5.5 Thinking / Heavy 场景下可能“已发送但不响应”的问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| 快捷深度搜索 | 不再把发送请求强制改写为旧 `gpt-5`，保留用户当前选择的 GPT 5.5 Thinking / Pro 模型与 effort |
+| 快捷深度搜索 | 改用 ChatGPT core 的发送按钮点击路径，移除发送前禁用原生按钮的脆弱逻辑 |
+| 验证 | 新对话中复现旧版请求挂起；对照普通发送确认 `gpt-5-5-thinking + max` 正常返回 |
 
 ### 4.0.5 补丁
 
@@ -241,6 +251,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.6
+
+This patch fixes the ChatGPT quick deep search hotkeys sometimes leaving a sent message stuck without an assistant response on GPT 5.5 Thinking / Heavy.
+
+| Area | Update |
+| --- | --- |
+| Quick deep search | Stops force-overriding conversation payloads to the stale `gpt-5` model, preserving the user's selected GPT 5.5 Thinking / Pro model and effort |
+| Quick deep search | Uses the shared ChatGPT core send-button click path and removes the fragile pre-send native button disabling |
+| Verification | Reproduced the old pending request in a fresh chat; normal GPT 5.5 Thinking Heavy payloads returned successfully as the control |
 
 ### Release 4.0.5
 

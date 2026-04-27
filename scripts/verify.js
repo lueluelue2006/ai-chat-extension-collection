@@ -2384,8 +2384,6 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
     js: [
       'content/chatgpt-dom-adapter.js',
       'content/chatgpt-core-main.js',
-      'content/chatgpt-fetch-hub/main.js',
-      'content/chatgpt-fetch-hub/consumer-base.js',
       'content/chatgpt-quick-deep-search/main.js'
     ]
   });
@@ -2462,14 +2460,12 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
     'DS_HOTKEYS_KEY',
     'areHotkeysEnabled',
     '__aichat_chatgpt_core_main_v1__',
-    '__aichat_chatgpt_fetch_consumer_base_v1__',
-    '__aichat_chatgpt_fetch_hub_v1__',
     'removeLegacyQdsButtons',
     'findSendButton',
     'isStopButton',
     'editorEl',
     'disposeRuntime',
-    'lockButton(btn, true)'
+    'clickSendButton'
   ]) {
     if (!quickDeepSearchSource.includes(required)) {
       failures.push(`content/chatgpt-quick-deep-search/main.js is missing ${required}`);

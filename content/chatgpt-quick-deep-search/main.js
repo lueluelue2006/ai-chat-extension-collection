@@ -89,7 +89,6 @@
 
   function disposeRuntime() {
     disposed = true;
-    pendingModelSwitch = false;
     isSending = false;
     cycle += 1;
 
@@ -177,7 +176,6 @@
     afterInsert: 160,
     beforeClick: 80,
     afterClickClear: 140,
-    unlockBtn: 2000,
     nextClickWindow: 5000
   };
   const POLL_INTERVAL = 70;
@@ -207,46 +205,8 @@
   ];
 
   // ===== State =====
-  let pendingModelSwitch = false;
   let isSending = false;
   let cycle = 0;
-
-  // ===== ChatGPT: model switch via shared fetch hub (only once) =====
-  (function installModelSwitchHook() {
-    try {
-      const consumerBase = window.__aichat_chatgpt_fetch_consumer_base_v1__;
-      const hub = window.__aichat_chatgpt_fetch_hub_v1__;
-      const registerConsumer =
-        consumerBase && typeof consumerBase.registerConsumer === 'function'
-          ? (key, handlers) => consumerBase.registerConsumer(key, handlers)
-          : hub && typeof hub.register === 'function'
-            ? (_key, handlers) => hub.register(handlers)
-            : null;
-      if (!registerConsumer) return;
-
-      const consumerHandle = registerConsumer('chatgpt-quick-deep-search', {
-        priority: 120,
-        onConversationPayload: (payload) => {
-          try {
-            if (!pendingModelSwitch) return;
-            if (!payload || typeof payload !== 'object') return;
-            pendingModelSwitch = false;
-            payload.model = 'gpt-5';
-            return payload;
-          } catch {}
-        }
-      });
-      if (typeof consumerHandle === 'function') {
-        addRuntimeDisposer(consumerHandle);
-      } else if (consumerHandle && typeof consumerHandle.dispose === 'function') {
-        addRuntimeDisposer(() => {
-          try {
-            consumerHandle.dispose();
-          } catch {}
-        });
-      }
-    } catch {}
-  })();
 
   // ===== Helpers =====
   const sleep = (ms) =>
@@ -395,15 +355,6 @@
     return !!(fb && typeof fb.value === 'string' && String(fb.value || '').trim().startsWith(prefix));
   }
 
-  function lockButton(btn, lock) {
-    try {
-      if (!btn) return;
-      btn.setAttribute('aria-disabled', lock ? 'true' : 'false');
-      // @ts-ignore
-      btn.disabled = !!lock;
-    } catch {}
-  }
-
   function clearEditorSafely() {
     const pm = editorEl();
     if (pm) {
@@ -473,11 +424,11 @@
     try {
       if (!(btn instanceof HTMLElement)) return false;
 
-      const form = btn.closest('form');
-      if (form) {
-        if (typeof form.requestSubmit === 'function') form.requestSubmit(btn);
-        else form.submit();
-        return true;
+      const c = core();
+      if (c && typeof c.clickSendButton === 'function') {
+        try {
+          if (c.clickSendButton(editorEl())) return true;
+        } catch {}
       }
 
       const rect = btn.getBoundingClientRect();
@@ -598,18 +549,12 @@
         return b;
       }, Math.max(TIMEOUTS.findSendBtn, TIMEOUTS.btnEnable), POLL_INTERVAL);
 
-      lockButton(btn, true);
-      pendingModelSwitch = true;
       await sleep(DELAYS.beforeClick);
-      if (!realClick(btn)) {
-        pendingModelSwitch = false;
-      }
+      realClick(btn);
 
       await sleep(DELAYS.afterClickClear);
       clearEditorSafely();
-      setRuntimeTimeout(() => lockButton(btn, false), DELAYS.unlockBtn);
     } catch (e) {
-      pendingModelSwitch = false;
       // eslint-disable-next-line no-console
       console.warn('[AIChat][QuickDeepSearch] pipeline error:', e);
     } finally {

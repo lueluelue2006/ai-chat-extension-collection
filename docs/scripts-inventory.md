@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.0.5
-- Generated: 2026-04-27 22:09
+- Version: 4.0.6
+- Generated: 2026-04-27 23:38
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -81,7 +81,7 @@
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-quick-deep-search/config-bridge.js`
-  - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-quick-deep-search/main.js`
+  - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core-main.js`, `content/chatgpt-quick-deep-search/main.js`
 - `chatgpt_hide_feedback_buttons`: ChatGPT 隐藏点赞/点踩 — 隐藏回复下方反馈按钮（👍/👎）
   - 作者: zhong_little(linux.do)
   - 许可证: 许可证未声明

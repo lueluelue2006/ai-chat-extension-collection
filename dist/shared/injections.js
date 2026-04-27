@@ -468,7 +468,7 @@
       siteId: "chatgpt",
       moduleId: "chatgpt_quick_deep_search",
       matches: chatgpt,
-      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, ...CHATGPT_FETCH_HUB_CONSUMER_FILES, "content/chatgpt-quick-deep-search/main.js"],
+      js: [...MAIN_BRIDGE_FILES, ...CHATGPT_CORE_MAIN_FILES, "content/chatgpt-quick-deep-search/main.js"],
       runAt: "document_start",
       world: "MAIN"
     });

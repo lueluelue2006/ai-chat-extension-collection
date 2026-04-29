@@ -1067,6 +1067,91 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
   };
 }
 
+function verifyChatgptTabQueueNoActiveStreamStatusPolling() {
+  const relPath = 'content/chatgpt-tab-queue/main.js';
+  const source = readText(relPath);
+  const failures = [];
+
+  for (const forbidden of [
+    '/stream_status',
+    'readConversationStreamStatus',
+    'isCurrentConversationStreamActive',
+    'streamStatusPollMs',
+    'streamStatusCacheMs',
+    'streamStatusTimeoutMs'
+  ]) {
+    if (source.includes(forbidden)) {
+      failures.push(`${relPath} must not actively poll conversation stream status: ${forbidden}`);
+    }
+  }
+
+  if (/fetch\s*\([^)]*stream_status/s.test(source)) {
+    failures.push(`${relPath} still contains a fetch() call to stream_status`);
+  }
+  if (!source.includes("markCurrentConversationStreamStatus('IS_STREAMING'")) {
+    failures.push(`${relPath} must keep passive stream state from observed ChatGPT requests`);
+  }
+  if (!source.includes("markCurrentConversationStreamStatus('DONE'")) {
+    failures.push(`${relPath} must clear passive stream state when observed ChatGPT requests complete`);
+  }
+  if (!source.includes('localResponseRetryMs')) {
+    failures.push(`${relPath} must use local retry timing rather than stream-status polling timing`);
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
+function verifyDynamicContentScriptRegistrationRefresh() {
+  const relPath = 'background/sw/registration.ts';
+  const source = readText(relPath);
+  const bootstrapSource = readText('background/sw/router-handlers/bootstrap.ts');
+  const adminSource = readText('background/sw/router-handlers/admin.ts');
+  const failures = [];
+
+  for (const required of [
+    'forceNextContentScriptRegistration',
+    'const forceRefresh = forceNextContentScriptRegistration === true',
+    'getRuntimeContentScriptRevision',
+    'buildRuntimeContentScriptId',
+    'sourceId',
+    'registeredSourceIds',
+    'if (forceRefresh)',
+    'unregisterIds.add(id)',
+    'registerItems.push(desiredItem)',
+    'forceNextContentScriptRegistration = false'
+  ]) {
+    if (!source.includes(required)) {
+      failures.push(`${relPath} is missing dynamic content-script refresh guard: ${required}`);
+    }
+  }
+  for (const required of [
+    'reg?.registeredSourceIds',
+    'sourceIds.length ? sourceIds : registeredIds',
+    'allowIds.has(d.id)'
+  ]) {
+    if (!bootstrapSource.includes(required)) {
+      failures.push(`background/sw/router-handlers/bootstrap.ts is missing runtime-id/source-id reinject bridge: ${required}`);
+    }
+  }
+  for (const required of [
+    'AISHORTCUTS_GET_CONTENT_SCRIPT_REGISTRATION',
+    'getRegisteredQuickNavContentScripts',
+    'enabledSourceIds'
+  ]) {
+    if (!adminSource.includes(required)) {
+      failures.push(`background/sw/router-handlers/admin.ts is missing content-script registration diagnostics: ${required}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    reason: failures.join('; ')
+  };
+}
+
 function verifyOpenaiNewModelBannerRuntimeGuard() {
   const relPath = 'content/openai-new-model-banner/main.js';
   const source = readText(relPath);
@@ -1804,6 +1889,7 @@ function verifyChatgptPerfStructureHardening() {
 function verifyChatgptQuicknavScrollLockReliability() {
   const quicknavSource = readText('content/chatgpt-quicknav.js');
   const scrollGuardSource = readText('content/scroll-guard-main.js');
+  const cmdenterSource = readText('content/chatgpt-cmdenter-send/main.js');
   const failures = [];
 
   for (const required of [
@@ -1828,10 +1914,25 @@ function verifyChatgptQuicknavScrollLockReliability() {
     'TAB_QUEUE_BRIDGE_SEND_PROTECT',
     'function armProgrammaticSendScrollLockGuard',
     'function handleTabQueueSendScrollProtect',
-    'current > previousStable + SCROLL_LOCK_DRIFT'
+    'current > previousStable + SCROLL_LOCK_DRIFT',
+    'aria-pressed',
+    "btn.textContent = scrollLockEnabled ? '🔒' : '🔓'"
   ]) {
     if (!quicknavSource.includes(required)) {
       failures.push(`content/chatgpt-quicknav.js is missing scroll-lock reliability guard: ${required}`);
+    }
+  }
+
+  for (const required of [
+    'function preArmQuickNavScrollLockForChatgptSend',
+    'QUICKNAV_SCROLL_LOCK_KEY',
+    'quicknavScrollLockBaseline',
+    'AISHORTCUTS_SCROLLLOCK_BASELINE',
+    'QUICKNAV_TAB_QUEUE_SEND_PROTECT',
+    "preArmQuickNavScrollLockForChatgptSend(promptEl, 'cmdenter-before-send')"
+  ]) {
+    if (!cmdenterSource.includes(required)) {
+      failures.push(`content/chatgpt-cmdenter-send/main.js is missing Cmd+Enter scroll-lock pre-arm: ${required}`);
     }
   }
 
@@ -2941,6 +3042,22 @@ function main() {
     return;
   }
   console.log('ChatGPT Tab Queue restore/requeue guard: OK');
+
+  const tabQueueNoActiveStreamStatusPolling = verifyChatgptTabQueueNoActiveStreamStatusPolling();
+  if (!tabQueueNoActiveStreamStatusPolling.ok) {
+    console.error(`ChatGPT Tab Queue active stream-status polling guard: FAIL (${tabQueueNoActiveStreamStatusPolling.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('ChatGPT Tab Queue active stream-status polling guard: OK');
+
+  const dynamicContentScriptRegistrationRefresh = verifyDynamicContentScriptRegistrationRefresh();
+  if (!dynamicContentScriptRegistrationRefresh.ok) {
+    console.error(`Dynamic content-script registration refresh: FAIL (${dynamicContentScriptRegistrationRefresh.reason})`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('Dynamic content-script registration refresh: OK');
 
   const openaiNewModelBannerRuntimeGuard = verifyOpenaiNewModelBannerRuntimeGuard();
   if (!openaiNewModelBannerRuntimeGuard.ok) {

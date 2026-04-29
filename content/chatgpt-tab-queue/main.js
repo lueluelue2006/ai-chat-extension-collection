@@ -45,8 +45,7 @@
     postStopNonGeneratingMs: 900,
     generatingBootstrapMaxAttempts: 40,
     generatingBootstrapStepMs: 600,
-    streamStatusCacheMs: 500,
-    streamStatusPollMs: 700,
+    localResponseRetryMs: 700,
     composerInterlockToastCooldownMs: 1200,
     replyRenderPollMs: 180,
     replyRenderSettleMs: 900,
@@ -1308,7 +1307,7 @@
       conversationId: '',
       value: '',
       checkedAt: 0,
-      promise: null
+      source: ''
     },
     turnsUnsub: null,
     routeUnsub: null,
@@ -1544,7 +1543,7 @@
     return { status: 'release', waitMs: 0 };
   }
 
-  function getPendingSendGateRetryDelay(decision, fallbackMs = CONFIG.streamStatusPollMs) {
+  function getPendingSendGateRetryDelay(decision, fallbackMs = CONFIG.localResponseRetryMs) {
     const status = String(decision?.status || '').trim();
     const waitMs = Math.max(0, Number(decision?.waitMs) || 0);
     if (!status || status === 'idle' || status === 'release') return 0;
@@ -1711,7 +1710,7 @@
       isGeneratingNow() ||
       isCachedCurrentConversationStreamActive()
     ) {
-      return CONFIG.streamStatusPollMs;
+      return CONFIG.localResponseRetryMs;
     }
     const replyRenderWaitMs = getLiveReplyRenderWaitMs();
     if (replyRenderWaitMs > 0) return replyRenderWaitMs;
@@ -1734,78 +1733,23 @@
     state.streamStatus.conversationId = '';
     state.streamStatus.value = '';
     state.streamStatus.checkedAt = 0;
-    state.streamStatus.promise = null;
+    state.streamStatus.source = '';
   }
 
-  function getManualSendInterlockReason() {
-    if (!isManualSendInterlockActive() && !isManualSendWarmupActive()) return '';
-    return t('manualSendPaused');
-  }
-
-  async function readConversationStreamStatus(conversationId, options = {}) {
+  function markConversationStreamStatus(conversationId, value, source = '') {
     const id = String(conversationId || '').trim();
-    if (!id) return '';
-
-    const force = options.force === true;
-    const cacheMaxAgeMs = Math.max(0, Number(options.cacheMaxAgeMs) || CONFIG.streamStatusCacheMs);
-    const cached = state.streamStatus;
-    if (!force && cached.conversationId === id && cached.value && now() - cached.checkedAt <= cacheMaxAgeMs) {
-      return normalizeConversationStreamStatus(cached.value);
-    }
-    if (cached.conversationId === id && cached.promise) {
-      try {
-        return normalizeConversationStreamStatus(await cached.promise);
-      } catch {
-        return normalizeConversationStreamStatus(cached.value);
-      }
-    }
-
-    let request = null;
-    request = (async () => {
-      let nextStatus = '';
-      try {
-        const response = await fetch(`/backend-api/conversation/${encodeURIComponent(id)}/stream_status`, {
-          credentials: 'include',
-          cache: 'no-store'
-        });
-        if (response?.ok) {
-          let payload = null;
-          try {
-            payload = await response.json();
-          } catch {
-            payload = null;
-          }
-          nextStatus = normalizeConversationStreamStatus(payload?.status);
-        }
-      } catch {}
-
-      if (state.streamStatus.promise === request || state.streamStatus.conversationId === id) {
-        state.streamStatus.conversationId = id;
-        state.streamStatus.value = nextStatus;
-        state.streamStatus.checkedAt = now();
-      }
-      return nextStatus;
-    })();
-
+    if (!id) return false;
     state.streamStatus.conversationId = id;
-    state.streamStatus.promise = request;
-    try {
-      return normalizeConversationStreamStatus(await request);
-    } finally {
-      if (state.streamStatus.promise === request) {
-        state.streamStatus.promise = null;
-      }
-    }
+    state.streamStatus.value = normalizeConversationStreamStatus(value);
+    state.streamStatus.checkedAt = now();
+    state.streamStatus.source = String(source || '').trim();
+    return true;
   }
 
-  async function isCurrentConversationStreamActive() {
+  function markCurrentConversationStreamStatus(value, source = '') {
     const conversationId = getConversationBindingId();
-    if (!conversationId) {
-      clearConversationStreamStatusCache();
-      return false;
-    }
-    const status = await readConversationStreamStatus(conversationId, { force: true });
-    return isConversationStreamActiveStatus(status);
+    if (!conversationId) return false;
+    return markConversationStreamStatus(conversationId, value, source);
   }
 
   function isCachedCurrentConversationStreamActive(conversationId = getConversationBindingId()) {
@@ -1813,6 +1757,11 @@
     if (!id) return false;
     if (state.streamStatus.conversationId !== id) return false;
     return isConversationStreamActiveStatus(state.streamStatus.value);
+  }
+
+  function getManualSendInterlockReason() {
+    if (!isManualSendInterlockActive() && !isManualSendWarmupActive()) return '';
+    return t('manualSendPaused');
   }
 
   function armPendingSendGate(itemId = '', options = {}) {
@@ -1937,10 +1886,10 @@
       return true;
     }
 
-    if (await isCurrentConversationStreamActive()) {
+    if (isCachedCurrentConversationStreamActive()) {
       gate.streamStatus = 'IS_STREAMING';
       gate.streamStatusCheckedAt = now();
-      schedulePendingSendGateCheck(CONFIG.streamStatusPollMs);
+      schedulePendingSendGateCheck(CONFIG.localResponseRetryMs);
       return false;
     }
 
@@ -2880,6 +2829,7 @@
     if (state.pendingSendGate) return false;
     if (state.composerInterlock) return false;
     if (!force && isGeneratingNow()) return false;
+    if (!force && isCachedCurrentConversationStreamActive()) return false;
     if (!force && getLiveReplyRenderWaitMs() > 0) return false;
     const head = state.queue[0];
     if (!head) return false;
@@ -2903,13 +2853,13 @@
       return Math.max(0, Number(state.manualSendWarmupUntil || 0) - now()) || CONFIG.sendCooldownMs;
     }
     if (isManualSendInterlockActive()) return CONFIG.sendCooldownMs;
-    if (state.activeRequests.size > 0) return CONFIG.streamStatusPollMs;
+    if (state.activeRequests.size > 0) return CONFIG.localResponseRetryMs;
     if (state.awaitingConversationStart) return CONFIG.sendCooldownMs;
-    if (state.pendingSendGate) return CONFIG.streamStatusPollMs;
+    if (state.pendingSendGate) return CONFIG.localResponseRetryMs;
     if (state.composerInterlock) return CONFIG.sendCooldownMs;
     const holdRetryDelayMs = getQueuePoolHoldRetryDelay(state.queue[0]);
     if (!force && holdRetryDelayMs > 0) return holdRetryDelayMs;
-    if (!force && isGeneratingNow()) return CONFIG.streamStatusPollMs;
+    if (!force && isGeneratingNow()) return CONFIG.localResponseRetryMs;
     if (!force) {
       const replyRenderWaitMs = getLiveReplyRenderWaitMs();
       if (replyRenderWaitMs > 0) return replyRenderWaitMs;
@@ -3168,12 +3118,7 @@
     }
 
     if (steerTurnConfirmed) {
-      const conversationId = getConversationBindingId();
-      if (conversationId) {
-        state.streamStatus.conversationId = conversationId;
-        state.streamStatus.value = 'IS_STREAMING';
-        state.streamStatus.checkedAt = now();
-      }
+      markCurrentConversationStreamStatus('IS_STREAMING', 'steer-turn-confirmed');
       clearAwaitingConversationStart();
     } else {
       armAwaitingConversationStart();
@@ -3196,12 +3141,6 @@
       return false;
     }
     try {
-      if (await isCurrentConversationStreamActive()) {
-        markQueueActivity();
-        refreshPreview();
-        scheduleMaybeProcessQueue(CONFIG.streamStatusPollMs);
-        return false;
-      }
       return await sendQueuedHead(options);
     } finally {
       state.processQueueBusy = false;
@@ -3647,12 +3586,7 @@
             });
           }
           if (isSteerTurn) state.steerTurnStartSeq += 1;
-          const conversationId = getConversationBindingId();
-          if (conversationId) {
-            state.streamStatus.conversationId = conversationId;
-            state.streamStatus.value = 'IS_STREAMING';
-            state.streamStatus.checkedAt = now();
-          }
+          markCurrentConversationStreamStatus('IS_STREAMING', isSteerTurn ? 'fetch-hub-steer-turn' : 'fetch-hub-conversation');
           refreshReplyRenderSampling();
           markQueueActivity();
         } catch {}
@@ -3680,6 +3614,9 @@
         try {
           const id = String(ctx?.id || '');
           if (id) state.activeRequests.delete(id);
+          if (state.activeRequests.size <= 0) {
+            markCurrentConversationStreamStatus('DONE', 'fetch-hub-conversation-done');
+          }
           if (isManualSendInterlockActive()) {
             promoteManualSendInterlockToPendingGate({
               sawGenerating: isGeneratingNow(),
@@ -3902,7 +3839,8 @@
           conversationId: state.streamStatus.conversationId,
           value: state.streamStatus.value,
           checkedAt: state.streamStatus.checkedAt,
-          pending: !!state.streamStatus.promise
+          source: state.streamStatus.source,
+          pending: false
         },
         composerTextCache: {
           text: state.composerTextCache.text,

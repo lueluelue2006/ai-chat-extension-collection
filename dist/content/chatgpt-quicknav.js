@@ -4136,7 +4136,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 .compact-toggle, .compact-refresh, .compact-lock, .compact-tree { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); }
 .compact-toggle { font-size:clamp(14px, calc(var(--cgpt-nav-width, 210px) / 14), 18px); }
 .compact-refresh { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 18), 14px); margin-left:4px; }
-.compact-lock { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
+.compact-lock { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; position:relative; opacity:.72; filter:saturate(.75); }
 .compact-tree { font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; position:relative; }
 .compact-toggle:hover, .compact-refresh:hover, .compact-lock:hover, .compact-tree:hover { border-color:var(--cgpt-nav-accent-subtle); color:var(--cgpt-nav-accent); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
 .compact-tree:hover { border-color:color-mix(in srgb, var(--cgpt-nav-positive) 55%, transparent); color:var(--cgpt-nav-positive); box-shadow:0 4px 14px color-mix(in srgb, var(--cgpt-nav-positive) 22%, transparent); }
@@ -4165,7 +4165,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   .compact-star { background:var(--cgpt-nav-item-bg); border:1px solid var(--cgpt-nav-border-muted); color:var(--cgpt-nav-text-strong); cursor:pointer; width:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); height:clamp(20px, calc(var(--cgpt-nav-width, 210px) / 10), 26px); display:flex; align-items:center; justify-content:center; border-radius:var(--cgpt-nav-radius); transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease, box-shadow .18s ease; font-weight:600; line-height:1; box-shadow:var(--cgpt-nav-item-shadow); -webkit-backdrop-filter:var(--cgpt-nav-backdrop); backdrop-filter:var(--cgpt-nav-backdrop); font-size:clamp(12px, calc(var(--cgpt-nav-width, 210px) / 14), 16px); margin-left:4px; }
   .compact-star:hover { border-color:var(--cgpt-nav-fav-border); color:var(--cgpt-nav-fav-color); box-shadow:0 4px 14px rgba(147,51,234,0.12); background:var(--cgpt-nav-item-hover-bg); }
   .compact-star.active { background:var(--cgpt-nav-fav-bg); color:var(--cgpt-nav-fav-color); border-color:var(--cgpt-nav-fav-border); }
-  .compact-lock.active { background:var(--cgpt-nav-arrow-bg); color:var(--cgpt-nav-arrow-color); border-color:var(--cgpt-nav-arrow-border); box-shadow:0 4px 14px color-mix(in srgb, var(--cgpt-nav-arrow-color) 26%, transparent); }
+  .compact-lock[aria-pressed="false"] { color:var(--cgpt-nav-text-muted); border-color:var(--cgpt-nav-border-muted); box-shadow:none; }
+  .compact-lock.active { opacity:1; filter:none; background:var(--cgpt-nav-accent); color:#fff; border-color:color-mix(in srgb, var(--cgpt-nav-accent) 72%, #fff); box-shadow:0 0 0 1px color-mix(in srgb, var(--cgpt-nav-accent) 42%, transparent) inset, 0 8px 20px color-mix(in srgb, var(--cgpt-nav-accent) 34%, transparent); }
+  .compact-lock.active::after { content:""; position:absolute; right:-2px; top:-2px; width:7px; height:7px; border-radius:999px; background:#22c55e; border:1px solid var(--cgpt-nav-panel-bg); box-shadow:0 0 0 1px rgba(34,197,94,.35); }
   .fav-toggle { position:absolute; right:calc(6px + var(--cgpt-nav-gutter)); top:2px; border:none; background:transparent; color:var(--cgpt-nav-text-muted); cursor:pointer; font-size:12px; line-height:1; padding:2px; opacity:.7; }
   .fav-toggle:hover { color:var(--cgpt-nav-fav-color); opacity:1; }
   .fav-toggle.active { color:var(--cgpt-nav-fav-color); opacity:1; }
@@ -4340,7 +4342,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         <div class="compact-actions">
           <button class="compact-toggle" type="button" title="${escapeAttr(qnT('收起/展开'))}"><span class="toggle-text">−</span></button>
           <button class="compact-refresh" type="button" title="${escapeAttr(qnT('刷新对话列表'))}">⟳</button>
-          <button class="compact-lock" type="button" title="${escapeAttr(qnT('阻止新回复自动滚动'))}">🔐</button>
+          <button class="compact-lock" type="button" aria-pressed="false" title="${escapeAttr(qnT('阻止新回复自动滚动'))}">🔓</button>
           <button class="compact-star" type="button" title="${escapeAttr(qnT('仅显示收藏'))}">☆</button>
           <button class="compact-tree" type="button" title="${escapeAttr(qnT('分支 / 对话树'))}">${escapeHtml(qnT('树'))}<span class="tree-count" aria-hidden="true"></span></button>
         </div>
@@ -8467,7 +8469,10 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const btn = nav?.querySelector('.compact-lock');
     if (!btn) return;
     btn.classList.toggle('active', scrollLockEnabled);
-    btn.title = qnT(scrollLockEnabled ? '已锁定自动滚动（点击关闭）' : '阻止新回复自动滚动');
+    btn.setAttribute('aria-pressed', scrollLockEnabled ? 'true' : 'false');
+    btn.setAttribute('aria-label', qnT(scrollLockEnabled ? '自动滚动锁定已开启' : '自动滚动锁定已关闭'));
+    btn.title = qnT(scrollLockEnabled ? '已锁定自动滚动（点击关闭）' : '自动滚动锁定关闭（点击开启）');
+    btn.textContent = scrollLockEnabled ? '🔒' : '🔓';
   }
 
   function setScrollLockEnabled(on, ui) {

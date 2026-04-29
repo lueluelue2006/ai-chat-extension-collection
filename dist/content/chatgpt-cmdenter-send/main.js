@@ -2,6 +2,11 @@
   'use strict';
 
   const RUNTIME_STATE_KEY = '__aichat_cmdenter_send_runtime_state_v1__';
+  const BRIDGE_CHANNEL = 'quicknav';
+  const BRIDGE_V = 1;
+  const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
+  const QUICKNAV_SCROLL_LOCK_KEY = 'cgpt-quicknav:scroll-lock';
+  const QUICKNAV_TAB_QUEUE_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT';
   const runtimeDisposers = [];
   const runtimeState = {
     disposed: false,
@@ -42,6 +47,167 @@
       return globalThis.__aichat_chatgpt_core_v1__ || null;
     } catch {
       return null;
+    }
+  }
+
+  function getOrCreateQuickNavBridgeNonce() {
+    const fallback = 'quicknav-bridge-fallback';
+    try {
+      const docEl = document.documentElement;
+      if (!docEl) return fallback;
+      const existing = String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim();
+      if (existing) return existing;
+      const next = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      docEl.dataset[BRIDGE_NONCE_DATASET_KEY] = next;
+      return String(docEl.dataset?.[BRIDGE_NONCE_DATASET_KEY] || '').trim() || next || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function buildQuickNavBridgeMessage(type, payload = null) {
+    try {
+      const msg = Object.assign(
+        {
+          __quicknav: 1,
+          channel: BRIDGE_CHANNEL,
+          v: BRIDGE_V,
+          nonce: getOrCreateQuickNavBridgeNonce()
+        },
+        payload && typeof payload === 'object' ? payload : {}
+      );
+      msg.type = String(type || '');
+      return msg.type ? msg : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function dispatchQuickNavBridgeMessage(type, payload = null) {
+    try {
+      const msg = buildQuickNavBridgeMessage(type, payload);
+      if (!msg) return false;
+      try {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: msg,
+            origin: location.origin,
+            source: window
+          })
+        );
+      } catch {}
+      try {
+        window.postMessage(msg, '*');
+      } catch {}
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function readQuickNavScrollLockPreference() {
+    try {
+      const rawDataset = String(document.documentElement?.dataset?.quicknavScrollLockEnabled || '').trim().toLowerCase();
+      if (rawDataset === '0' || rawDataset === 'false') return false;
+      if (rawDataset === '1' || rawDataset === 'true') return true;
+    } catch {}
+    try {
+      const rawLocal = window.localStorage.getItem(QUICKNAV_SCROLL_LOCK_KEY);
+      if (rawLocal === '0') return false;
+      if (rawLocal === '1') return true;
+    } catch {}
+    return true;
+  }
+
+  function isWindowScroller(el) {
+    try {
+      const doc = document.documentElement;
+      const se = document.scrollingElement || doc;
+      return !el || el === window || el === document || el === document.body || el === doc || el === se;
+    } catch {
+      return false;
+    }
+  }
+
+  function isScrollableY(el) {
+    try {
+      if (!el || el.nodeType !== 1) return false;
+      const style = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+      const oy = String(style?.overflowY || '').toLowerCase();
+      if (!(oy === 'auto' || oy === 'scroll' || oy === 'overlay')) return false;
+      return (Number(el.scrollHeight) || 0) > (Number(el.clientHeight) || 0) + 1;
+    } catch {
+      return false;
+    }
+  }
+
+  function findClosestScrollContainer(start) {
+    try {
+      let el = start || null;
+      while (el && el !== document.documentElement && el !== document.body) {
+        if (isScrollableY(el)) return el;
+        el = el.parentElement;
+      }
+    } catch {}
+    return null;
+  }
+
+  function getChatgptScrollContainerForLock(promptEl = null) {
+    try {
+      const core = getChatgptCore();
+      const sc = core?.getChatScrollContainer?.(true);
+      if (sc && sc.nodeType === 1 && sc.isConnected !== false) return sc;
+    } catch {}
+    try {
+      const main = document.getElementById('main') || document.querySelector('main');
+      const parent = main?.parentElement || null;
+      if (isScrollableY(parent)) return parent;
+    } catch {}
+    try {
+      const anchor =
+        document.querySelector('[data-message-author-role], [data-message-id], [data-testid^="conversation-turn-"]') ||
+        promptEl?.closest?.('main') ||
+        document.getElementById('main') ||
+        document.querySelector('main') ||
+        document.body;
+      return findClosestScrollContainer(anchor) || document.scrollingElement || document.documentElement;
+    } catch {
+      return document.scrollingElement || document.documentElement;
+    }
+  }
+
+  function getScrollPos(el) {
+    try {
+      if (isWindowScroller(el)) {
+        const se = document.scrollingElement || document.documentElement;
+        return Number(se?.scrollTop) || Number(window.scrollY) || 0;
+      }
+      return Number(el?.scrollTop) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function preArmQuickNavScrollLockForChatgptSend(promptEl = null, reason = 'cmdenter') {
+    try {
+      if (getCurrentSite() !== 'chatgpt') return false;
+      if (!readQuickNavScrollLockPreference()) return false;
+      const scroller = getChatgptScrollContainerForLock(promptEl);
+      const top = Math.max(0, Math.round(getScrollPos(scroller)));
+      const docEl = document.documentElement;
+      if (docEl?.dataset) {
+        docEl.dataset.quicknavScrollLockEnabled = '1';
+        docEl.dataset.quicknavScrollLockBaseline = String(top);
+      }
+      dispatchQuickNavBridgeMessage('AISHORTCUTS_SCROLLLOCK_STATE', { enabled: true });
+      dispatchQuickNavBridgeMessage('AISHORTCUTS_SCROLLLOCK_BASELINE', { top });
+      dispatchQuickNavBridgeMessage(QUICKNAV_TAB_QUEUE_SEND_PROTECT, {
+        phase: String(reason || 'cmdenter'),
+        source: 'cmdenter_send'
+      });
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -1468,6 +1634,7 @@
         if (isGenerating(form)) return;
       }
     }
+    preArmQuickNavScrollLockForChatgptSend(promptEl, 'cmdenter-before-send');
     if (clickSendButtonForSite(promptEl)) return;
     if (!hasText) return;
     dispatchEnter(promptEl, { shiftKey: false });

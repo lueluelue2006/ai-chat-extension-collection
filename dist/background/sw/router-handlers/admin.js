@@ -83,6 +83,28 @@
       }).then((settings) => sendResponse({ ok: true, settings })).catch((error) => respondError(sendResponse, error));
       return true;
     }
+    if (msg.type === "AISHORTCUTS_GET_CONTENT_SCRIPT_REGISTRATION") {
+      if (!requireAllowedSender(sendResponse, sender)) return true;
+      Promise.all([
+        ns.registration.getRegisteredQuickNavContentScripts(),
+        ns.storage.getSettings().catch(() => null)
+      ]).then(([registered, settings]) => {
+        const enabledDefs = settings && typeof settings === "object" ? ns.registration.getEnabledContentScriptDefs(settings) : [];
+        sendResponse({
+          ok: true,
+          version: String(chrome?.runtime?.getManifest?.()?.version || ""),
+          registered: (registered || []).map((item) => ({
+            id: typeof item?.id === "string" ? item.id : "",
+            js: Array.isArray(item?.js) ? item.js : [],
+            matches: Array.isArray(item?.matches) ? item.matches : [],
+            runAt: typeof item?.runAt === "string" ? item.runAt : "",
+            world: typeof item?.world === "string" ? item.world : ""
+          })),
+          enabledSourceIds: (enabledDefs || []).map((item) => String(item?.id || "")).filter(Boolean)
+        });
+      }).catch((error) => respondError(sendResponse, error));
+      return true;
+    }
     if (msg.type === "AISHORTCUTS_OPEN_OPTIONS_PAGE") {
       openOptionsPageForSender().then(() => sendResponse({ ok: true })).catch((error) => respondError(sendResponse, error));
       return true;

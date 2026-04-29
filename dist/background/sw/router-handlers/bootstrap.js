@@ -30,7 +30,9 @@
           if (Number.isFinite(tabId) && href) {
             const enabled = ns.registration.getEnabledContentScriptDefs(settings);
             const defsForUrl = enabled.filter((d) => ns.registration.urlMatchesAny(href, d.matches));
-            const allowIds = new Set(Array.isArray(reg?.registeredIds) ? reg.registeredIds : []);
+            const sourceIds = Array.isArray(reg?.registeredSourceIds) ? reg.registeredSourceIds : [];
+            const registeredIds = Array.isArray(reg?.registeredIds) ? reg.registeredIds : [];
+            const allowIds = new Set(sourceIds.length ? sourceIds : registeredIds);
             const defsToInject = allowIds.size ? defsForUrl.filter((d) => allowIds.has(d.id)) : [];
             ns.registration.injectContentScriptDefsIntoTab(tabId, defsToInject);
           }

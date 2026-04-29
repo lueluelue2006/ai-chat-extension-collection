@@ -8,6 +8,7 @@
   let reinjectScheduled = false;
   let lastReinjectAt = 0;
   let pendingReinjectSettings: any = null;
+  let forceNextContentScriptRegistration = true;
 
   let applyChain: Promise<any> = Promise.resolve();
 
@@ -287,9 +288,27 @@
     return arr;
   }
 
+  function getRuntimeContentScriptRevision() {
+    try {
+      const version = String(chrome?.runtime?.getManifest?.()?.version || '').trim();
+      const normalized = version.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+      return normalized || 'dev';
+    } catch {
+      return 'dev';
+    }
+  }
+
+  function buildRuntimeContentScriptId(id: any) {
+    const base = String(id || '').trim();
+    if (!base) return '';
+    return `${base}_v${getRuntimeContentScriptRevision()}`;
+  }
+
   function contentScriptDefToRegistration(def: any) {
+    const sourceId = String(def?.id || '').trim();
     return {
-      id: def.id,
+      id: buildRuntimeContentScriptId(sourceId),
+      sourceId,
       matches: normalizeMatchPatterns(def.matches),
       js: normalizeStringArray(def.js),
       css: normalizeStringArray(def.css),
@@ -339,8 +358,13 @@
   }
 
   async function applyContentScriptRegistration(settings: any) {
+    const forceRefresh = forceNextContentScriptRegistration === true;
     const enabledDefs = getEnabledContentScriptDefs(settings);
-    const desired = new Map(enabledDefs.map((d: any) => [d.id, contentScriptDefToRegistration(d)]));
+    const desired = new Map<string, any>();
+    for (const d of enabledDefs) {
+      const item = contentScriptDefToRegistration(d);
+      if (item.id) desired.set(item.id, item);
+    }
 
     const registeredScripts = await getRegisteredQuickNavContentScripts();
     const registered = new Map(registeredScripts.map((s: any) => [s.id, registeredContentScriptToComparable(s)]));
@@ -358,6 +382,11 @@
         registerItems.push(desiredItem);
         continue;
       }
+      if (forceRefresh) {
+        unregisterIds.add(id);
+        registerItems.push(desiredItem);
+        continue;
+      }
       if (!isSameContentScriptRegistration(regItem, desiredItem)) {
         unregisterIds.add(id);
         registerItems.push(desiredItem);
@@ -366,13 +395,20 @@
 
     const registeredIdSet = new Set<string>(Array.from(registered.keys()));
     const safeUnregisterIds = Array.from(unregisterIds).filter((id) => registeredIdSet.has(id));
-    const result = { registeredIds: registerItems.map((d: any) => d.id), unregisteredIds: safeUnregisterIds };
+    const result = {
+      registeredIds: registerItems.map((d: any) => d.id),
+      registeredSourceIds: registerItems.map((d: any) => d.sourceId || d.id),
+      unregisteredIds: safeUnregisterIds
+    };
 
     if (safeUnregisterIds.length) {
       await ns.chrome.scriptingUnregisterContentScripts({ ids: safeUnregisterIds });
     }
 
-    if (!registerItems.length) return result;
+    if (!registerItems.length) {
+      forceNextContentScriptRegistration = false;
+      return result;
+    }
 
     await ns.chrome.scriptingRegisterContentScripts(
       registerItems.map((d: any) => ({
@@ -386,6 +422,7 @@
       }))
     );
 
+    forceNextContentScriptRegistration = false;
     return result;
   }
 
@@ -413,7 +450,8 @@
           const ids = Array.isArray(reg?.registeredIds) ? reg.registeredIds : [];
           if (!ids.length) return reg;
 
-          const allow = new Set(ids);
+          const sourceIds = Array.isArray(reg?.registeredSourceIds) ? reg.registeredSourceIds : [];
+          const allow = new Set(sourceIds.length ? sourceIds : ids);
           const enabled = getEnabledContentScriptDefs(settings);
           const defs = enabled.filter((d: any) => allow.has(d.id));
           injectContentScriptDefsIntoMatchingTabs(defs);

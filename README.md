@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.8-74c0fc" alt="Current version 4.0.8">
+  <img src="https://img.shields.io/badge/current-4.0.12-74c0fc" alt="Current version 4.0.12">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,43 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.12 补丁
+
+这个补丁移除 ChatGPT Tab Queue 的主动 `stream_status` 请求，避免队列功能产生规律性后端状态探测；同时修复 MV3 动态 content script 在同一路径更新后仍可能执行旧脚本的问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 默认路径不再请求 `/backend-api/conversation/:id/stream_status`，改用 fetch-hub 已观察到的真实发送/完成事件和 DOM 状态推进队列 |
+| MV3 注册 | 动态 content script 注册 ID 带版本后缀，并在 bootstrap 即时注入时回映射原始脚本 ID，确保发布或本地重新加载后页面拿到新文件内容 |
+| 诊断 | 扩展页可读取当前动态 content script 注册清单，便于确认真实 Chrome 是否仍跑旧脚本 |
+
+### 4.0.11 补丁
+
+这个补丁修复 ChatGPT Tab Queue 默认路径对后端状态接口的依赖，准备移除主动 `stream_status` 请求，并加固动态 content script 刷新。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 队列推进开始改用本地 DOM/Fetch Hub 状态，降低对主动后端状态探测的依赖 |
+| MV3 注册 | service worker 启动后的首次动态 content script 注册会强制刷新 |
+
+### 4.0.10 补丁
+
+这个补丁继续加固 ChatGPT QuickNav 防自动滚动锁，重点处理页面尚未稳定时使用 Cmd+Enter 发送导致锁失效的问题，并让锁的开关状态更醒目。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav | Cmd+Enter 发送前会预先同步锁状态和当前滚动 baseline，让 main-world scroll guard 在发送第一帧前生效 |
+| QuickNav | 锁按钮改为开锁/闭锁图标、高对比 active 状态和 `aria-pressed`，减少“到底开没开”的误判 |
+
+### 4.0.9 补丁
+
+这个补丁修复 ChatGPT Tab Queue 在 GPT 5.5 Pro 图像/长 thinking 回复完成后，可能因为 `stream_status` 请求挂起而短暂或持续卡住的问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 为 ChatGPT `stream_status` 检查增加超时，避免视觉上已完成但队列仍卡在上一条回复收尾 |
+| Tab Queue | 保留 DOM 侧完成判断：无 stop 按钮、发送按钮就绪、回复渲染稳定时允许队列继续推进 |
 
 ### 4.0.8 补丁
 
@@ -271,6 +308,43 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.12
+
+This patch removes ChatGPT Tab Queue's active `stream_status` request path, avoiding regular backend status probes from the queue feature. It also fixes MV3 dynamic content-script refresh so unchanged script paths do not keep running stale file contents after an extension reload.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Stops requesting `/backend-api/conversation/:id/stream_status` in the default path; the queue now advances from fetch-hub's observed send/done events plus DOM state |
+| MV3 registration | Adds versioned dynamic content-script IDs and maps runtime IDs back to source IDs during bootstrap injection, so updated files are actually used |
+| Diagnostics | Lets extension pages read the current dynamic content-script registration list, making stale-script checks reproducible in real Chrome |
+
+### Release 4.0.11
+
+This patch prepared ChatGPT Tab Queue to drop active `stream_status` checks and hardened dynamic content-script refresh.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Moves queue progress toward local DOM / Fetch Hub state instead of active backend status probes |
+| MV3 registration | Forces the first dynamic content-script registration after service-worker startup to refresh registered scripts |
+
+### Release 4.0.10
+
+This patch further hardens ChatGPT QuickNav's anti-auto-scroll lock, especially when Cmd+Enter sends a message before the page has fully settled, and makes the lock state visually clearer.
+
+| Area | Update |
+| --- | --- |
+| QuickNav | Pre-arms the scroll lock and current baseline before Cmd+Enter sends, so the main-world scroll guard is active before the first send-time autoscroll |
+| QuickNav | Changes the lock control to clear locked/unlocked icons, high-contrast active styling, and `aria-pressed` state |
+
+### Release 4.0.9
+
+This patch fixes a ChatGPT Tab Queue stall after GPT 5.5 Pro image or long-thinking replies, where a hanging `stream_status` request could keep the queue waiting even after the UI had visibly finished.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Adds a timeout to ChatGPT `stream_status` checks so queued sends are not blocked by a stuck status request |
+| Tab Queue | Keeps the DOM-side completion gate: no stop button, ready send button, and stable reply rendering allow the queue to continue |
 
 ### Release 4.0.8
 

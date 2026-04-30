@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.18-74c0fc" alt="Current version 4.0.18">
+  <img src="https://img.shields.io/badge/current-4.0.19-74c0fc" alt="Current version 4.0.19">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.19 补丁
+
+这个补丁优化 ChatGPT Tab Queue 与 QuickNav 的联动：用户在空闲状态把 `Tab` 当普通发送键使用时，不再被 QuickNav 标成黄色队列消息；真正生成中入队的 Tab 消息仍会保留黄色标记。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 新增 direct Tab send 判别：空闲、无 pending gate、无 active request、无生成态时按 `Tab` 发送会被视为普通直接发送 |
+| QuickNav | 黄色队列标记只保留给真正排队后自动发送的消息，避免把用户主动发送误标为队列消息 |
+| 回归保护 | verify 增加 `highlightOnSend` 与 direct-send 分类检查，防止后续改动把两种路径重新混在一起 |
 
 ### 4.0.18 补丁
 
@@ -367,6 +377,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.19
+
+This patch improves the ChatGPT Tab Queue and QuickNav integration: when users press `Tab` as a normal send shortcut while ChatGPT is idle, QuickNav no longer marks that user turn as a yellow queued message. Real Tab Queue auto-sends during generation are still highlighted.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Adds direct Tab send classification for idle states with no pending gate, active request, or generation state |
+| QuickNav | Keeps the yellow queue marker only for messages that were genuinely queued and later auto-sent |
+| Regression guard | Adds verify checks for `highlightOnSend` and direct-send classification |
 
 ### Release 4.0.18
 

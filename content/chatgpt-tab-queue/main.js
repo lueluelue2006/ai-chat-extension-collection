@@ -2666,6 +2666,7 @@
       text: String(text || ''),
       createdAt: now(),
       conversationId: getConversationBindingId(),
+      highlightOnSend: options.highlightOnSend !== false,
       queuePoolHold: options.queuePoolHold || null
     };
     state.queue.push(item);
@@ -2804,6 +2805,10 @@
       resolvedMsgId: '',
       resolvedKey: ''
     };
+  }
+
+  function shouldHighlightQueuedSend(item = null) {
+    return item?.highlightOnSend !== false;
   }
 
   function trimSetToLimit(set, limit) {
@@ -3004,6 +3009,22 @@
     const currentConversationId = String(options.currentConversationId || '').trim();
     if (itemConversationId && currentConversationId && itemConversationId !== currentConversationId) return false;
     if (itemConversationId && !currentConversationId) return false;
+    return true;
+  }
+
+  function canTreatTabQueueAttemptAsDirectSend(options = {}) {
+    if ((Number(options.queueLengthBefore) || 0) !== 0) return false;
+    if (options.restoredQueuedDraftActive === true) return false;
+    if (options.queuePoolHoldActive === true) return false;
+    if (options.manualSendWarmupActive === true) return false;
+    if (options.manualSendInterlockActive === true) return false;
+    if ((Number(options.activeRequestCount) || 0) > 0) return false;
+    if (options.awaitingConversationStart === true) return false;
+    if (options.hasPendingSendGate === true) return false;
+    if (options.hasComposerInterlock === true) return false;
+    if (options.generatingNow === true) return false;
+    if (options.cachedStreamActive === true) return false;
+    if ((Number(options.replyRenderWaitMs) || 0) > 0) return false;
     return true;
   }
 
@@ -3209,7 +3230,7 @@
     updateComposerTextCache(getActiveEditor(), '');
     state.queue.shift();
     markQueueActivity();
-    if (readSettings().quicknavMarkEnabled) {
+    if (readSettings().quicknavMarkEnabled && shouldHighlightQueuedSend(head)) {
       state.pendingHighlightCandidates.push(buildPendingHighlightCandidate(head, beforeSnapshot));
       pruneHighlightTracking();
       resolvePendingHighlights();
@@ -3346,6 +3367,7 @@
           activeResponseAtRestore: state.restoredQueuedDraft.activeResponseAtRestore
         }
       : null;
+    const queueLengthBefore = state.queue.length;
     const queuePoolHold = buildRestoredDraftQueuePoolHold(restoredQueuedDraft);
     const item = enqueueDraft(text, { queuePoolHold });
     postQueuedSendProtectBridge(item, 'queued', {
@@ -3355,7 +3377,22 @@
       restoredQueuedDraftActive: !!restoredQueuedDraft,
       queueLength: state.queue.length
     });
+    const directTabSend = !suppressImmediateSend && canTreatTabQueueAttemptAsDirectSend({
+      queueLengthBefore,
+      restoredQueuedDraftActive: !!restoredQueuedDraft,
+      queuePoolHoldActive: isQueuePoolHoldActive(item),
+      manualSendWarmupActive: isManualSendWarmupActive(),
+      manualSendInterlockActive: isManualSendInterlockActive(),
+      activeRequestCount: state.activeRequests.size,
+      awaitingConversationStart: state.awaitingConversationStart,
+      hasPendingSendGate: !!state.pendingSendGate,
+      hasComposerInterlock: !!state.composerInterlock,
+      generatingNow: isGeneratingNow(),
+      cachedStreamActive: isCachedCurrentConversationStreamActive(),
+      replyRenderWaitMs: getLiveReplyRenderWaitMs()
+    });
     const immediateSend = !suppressImmediateSend && shouldUseImmediateComposerSend(item, editor);
+    item.highlightOnSend = !directTabSend;
     if (!immediateSend) {
       const clearEditor = liveEditor || sourceEditor || editor;
       const cleared =
@@ -3408,6 +3445,8 @@
       queuedId: item.id,
       queueLength: state.queue.length,
       immediateSend,
+      directTabSend,
+      highlightOnSend: shouldHighlightQueuedSend(item),
       suppressImmediateSend,
       queuePoolHold,
       queuePoolHoldActive: isQueuePoolHoldActive(item)
@@ -3884,6 +3923,7 @@
           text: item.text,
           conversationId: item.conversationId,
           createdAt: item.createdAt,
+          highlightOnSend: shouldHighlightQueuedSend(item),
           queuePoolHold: item.queuePoolHold
             ? {
                 reason: item.queuePoolHold.reason,
@@ -4045,6 +4085,7 @@
       normalizeConversationStreamStatus,
       normalizePreviewText,
       canPreserveQueuedDraftOnClearFailure,
+      canTreatTabQueueAttemptAsDirectSend,
       collectConnectedComposerTexts,
       getElementLabelText,
       hasGeneratingLiveAnnouncement,
@@ -4056,6 +4097,7 @@
       resolveComposerEditorFromTarget,
       resolveQueueDraftText,
       removeQueuedDraftFromList,
+      shouldHighlightQueuedSend,
       shouldSuppressImmediateSendForRestoredDraft,
       shouldHoldRestoredDraftInQueuePool,
       shouldArmManualSendInterlock,

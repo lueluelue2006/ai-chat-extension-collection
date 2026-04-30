@@ -1024,6 +1024,17 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
       failures.push(`content/chatgpt-tab-queue/main.js is missing restore/requeue guard: ${required}`);
     }
   }
+  for (const required of [
+    'highlightOnSend',
+    'item.highlightOnSend = !directTabSend',
+    'canTreatTabQueueAttemptAsDirectSend',
+    'shouldHighlightQueuedSend(head)',
+    'if (readSettings().quicknavMarkEnabled && shouldHighlightQueuedSend(head))'
+  ]) {
+    if (!tabQueueSource.includes(required)) {
+      failures.push(`content/chatgpt-tab-queue/main.js is missing direct-send highlight guard: ${required}`);
+    }
+  }
 
   let tabQueue = null;
   try {
@@ -1063,6 +1074,48 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
     }
     if (hold({ restoredQueuedDraftActive: false, activeResponseAtRestore: true, currentActiveResponse: true })) {
       failures.push('non-restored drafts should not create a restored-draft pool hold');
+    }
+  }
+
+  if (!tabQueue || typeof tabQueue.shouldHighlightQueuedSend !== 'function') {
+    failures.push('content/chatgpt-tab-queue/main.js must export shouldHighlightQueuedSend');
+  } else {
+    const mark = tabQueue.shouldHighlightQueuedSend;
+    if (!mark({})) {
+      failures.push('queued sends should be highlighted by default');
+    }
+    if (!mark({ highlightOnSend: true })) {
+      failures.push('explicit highlightOnSend=true should keep queued highlighting');
+    }
+    if (mark({ highlightOnSend: false })) {
+      failures.push('idle Tab direct sends with highlightOnSend=false should not be highlighted');
+    }
+  }
+
+  if (!tabQueue || typeof tabQueue.canTreatTabQueueAttemptAsDirectSend !== 'function') {
+    failures.push('content/chatgpt-tab-queue/main.js must export canTreatTabQueueAttemptAsDirectSend');
+  } else {
+    const direct = tabQueue.canTreatTabQueueAttemptAsDirectSend;
+    if (
+      !direct({
+        queueLengthBefore: 0,
+        activeRequestCount: 0,
+        replyRenderWaitMs: 0
+      })
+    ) {
+      failures.push('idle first Tab queue attempt should be classified as a direct send');
+    }
+    if (direct({ queueLengthBefore: 1, activeRequestCount: 0, replyRenderWaitMs: 0 })) {
+      failures.push('non-empty queue should not be classified as a direct send');
+    }
+    if (direct({ queueLengthBefore: 0, activeRequestCount: 1, replyRenderWaitMs: 0 })) {
+      failures.push('active request should not be classified as a direct send');
+    }
+    if (direct({ queueLengthBefore: 0, generatingNow: true, activeRequestCount: 0, replyRenderWaitMs: 0 })) {
+      failures.push('generating state should not be classified as a direct send');
+    }
+    if (direct({ queueLengthBefore: 0, activeRequestCount: 0, replyRenderWaitMs: 500 })) {
+      failures.push('reply render settle wait should not be classified as a direct send');
     }
   }
 

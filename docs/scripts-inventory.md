@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.0.18
-- Generated: 2026-04-30 16:09
+- Version: 4.0.19
+- Generated: 2026-04-30 20:46
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 

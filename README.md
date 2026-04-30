@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.12-74c0fc" alt="Current version 4.0.12">
+  <img src="https://img.shields.io/badge/current-4.0.17-74c0fc" alt="Current version 4.0.17">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,55 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.17 补丁
+
+这个补丁适配 ChatGPT 新版顶栏布局，避免右上角临时对话、群聊、分享等原生按钮被 QuickNav 面板遮住。
+
+| 方向 | 更新 |
+| --- | --- |
+| Header Fix | 新版 UI 下不再依赖旧 topbar 模型选择器搬移按钮，改为根据 QuickNav 实际占位给右上按钮组预留空间 |
+| QuickNav 兼容 | 保持 QuickNav 默认右上位置不变，只移动 ChatGPT 原生右上按钮组 |
+| 回退安全 | 旧 topbar 搬移逻辑保留为 legacy fallback，但当前新版 UI 走新的 reserve 路径 |
+
+### 4.0.16 补丁
+
+这个补丁拆分 ChatGPT `Cmd+Enter` 与 Tab Queue 的滚动锁保护通道，避免正常快捷发送被标记成 Tab Queue 路径。
+
+| 方向 | 更新 |
+| --- | --- |
+| Cmd+Enter | 改用通用 ChatGPT send-protect bridge，不再复用 Tab Queue bridge |
+| QuickNav | 根据 `source/phase` 区分 `cmdenter-*` 和 `tab-queue-*` 保护原因，并暴露滚动锁调试状态 |
+| 滚动锁 | 短 click/submit guard 不再覆盖已有长发送保护窗口，避免脚本间互相缩短保护时间 |
+
+### 4.0.15 补丁
+
+这个补丁修复 Tab Queue 发送路径下 QuickNav 自动滚动锁偶发失效的问题。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 按下 `Tab` 且输入框有文本时，会在进入异步排队前先发出本地滚动锁预保护事件 |
+| QuickNav | 会话路由重建时同步重置 Tab Queue bridge 哨兵，避免新对话后漏绑发送保护监听 |
+
+### 4.0.14 补丁
+
+这个补丁移除 ChatGPT Thinking Toggle 在新版 composer 上过于显眼的悬浮文字提示，避免 `Thinking` / `Pro` 小气泡像原生控件一样卡在输入框上方。
+
+| 方向 | 更新 |
+| --- | --- |
+| Thinking Toggle | 模型/强度切换后不再绘制悬浮文字 badge，只保留轻量按钮闪烁 |
+| 热重载清理 | 新脚本加载时会清理旧版 `Thinking` / `Pro` 提示残留的 class 和属性 |
+
+### 4.0.13 补丁
+
+这个补丁适配 ChatGPT 新版 composer 模型选择器，恢复 `⌘J` Thinking / Pro 切换和 `⌘O` 推理强度切换。
+
+| 方向 | 更新 |
+| --- | --- |
+| 模型选择器 | 共享 ChatGPT core / DOM adapter 现在能识别 composer 内的模型 pill，例如 `Heavy`、`Extended Pro`、`Pro • Extended` |
+| Thinking Toggle | `⌘J` 会从新版模型菜单读取当前选中项，再切换 Thinking / Pro；`⌘O` 会打开新版菜单里的隐藏 Effort 子菜单并在 Light/Heavy 或 Standard/Extended 之间切换 |
+| Reply Timer | Pro 判断兼容 `Extended Pro` 和 `Pro • Extended`，避免新版文案导致 Pro 回复计时误开启 |
+| 验证 | verify fixture 改为覆盖新版 composer pill，而不是继续把旧 topbar model selector 当成唯一正确结构 |
 
 ### 4.0.12 补丁
 
@@ -308,6 +357,55 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.17
+
+This patch adapts the ChatGPT header layout refresh so native top-right actions such as temporary chat, group chat, and sharing are not covered by the QuickNav panel.
+
+| Area | Update |
+| --- | --- |
+| Header Fix | Uses the live QuickNav footprint to reserve space for current ChatGPT header actions instead of depending on the old topbar model selector relocation |
+| QuickNav compatibility | Keeps QuickNav's default top-right position and moves only ChatGPT's native action group |
+| Safe fallback | Keeps the old topbar relocation as a legacy fallback while current ChatGPT UI uses the reserve path |
+
+### Release 4.0.16
+
+This patch separates ChatGPT `Cmd+Enter` scroll-lock protection from the Tab Queue bridge, so normal shortcut sends are no longer labeled as Tab Queue sends.
+
+| Area | Update |
+| --- | --- |
+| Cmd+Enter | Uses a generic ChatGPT send-protect bridge instead of reusing the Tab Queue bridge |
+| QuickNav | Classifies protection reasons from `source/phase` as `cmdenter-*` or `tab-queue-*`, and exposes scroll-lock debug state |
+| Scroll lock | Short click/submit guards no longer shorten an existing long send-protection window |
+
+### Release 4.0.15
+
+This patch fixes an intermittent QuickNav scroll-lock miss when sending through Tab Queue.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Pressing `Tab` with composer text now emits a local scroll-lock pre-protect event before async queue processing starts |
+| QuickNav | Conversation-route cleanup resets the Tab Queue bridge sentinel, so send-protect listeners are rebound after new-chat / route transitions |
+
+### Release 4.0.14
+
+This patch removes the overly visible floating text hint from ChatGPT Thinking Toggle on the new composer UI, so `Thinking` / `Pro` no longer appears as a native-looking badge above the composer.
+
+| Area | Update |
+| --- | --- |
+| Thinking Toggle | Model / effort switches no longer draw a floating text badge; only a light button pulse remains |
+| Hot-reload cleanup | New injections remove stale hint classes and attributes left by older builds |
+
+### Release 4.0.13
+
+This patch adapts to ChatGPT's new composer model selector and restores `Cmd+J` Thinking / Pro switching plus `Cmd+O` reasoning-effort switching.
+
+| Area | Update |
+| --- | --- |
+| Model selector | Shared ChatGPT core / DOM adapter can now recognize the composer model pill, including labels such as `Heavy`, `Extended Pro`, and `Pro • Extended` |
+| Thinking Toggle | `Cmd+J` reads the selected item from the new model menu before switching Thinking / Pro; `Cmd+O` opens the new hidden Effort submenu and toggles Light/Heavy or Standard/Extended |
+| Reply Timer | Pro detection now handles `Extended Pro` and `Pro • Extended`, preventing the timer from turning on for Pro replies under the new labels |
+| Verification | The verify fixture now covers the new composer pill instead of treating the old topbar model selector as the only valid structure |
 
 ### Release 4.0.12
 

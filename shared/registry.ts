@@ -132,7 +132,7 @@
 	      id: 'quicknav',
 	      name: 'QuickNav',
 	      sub: '对话导航 / 📌 标记 / 收藏 / 防自动滚动',
-	      defaultEnabled: false,
+	      defaultEnabled: true,
 	      hotkeys: ['⌘↑/⌘↓', '⌥↑/⌥↓', '⌥/'],
 	      menuPreview: ['重置问题栏位置', '清理过期检查点（30天）', '清理无效收藏'],
 	      authors: ['lueluelue2006（原始脚本 / MV3 扩展封装/改造）', 'loongphy（暗色模式+回弹补丁）'],
@@ -143,7 +143,7 @@
       id: 'chatgpt_perf',
       name: 'ChatGPT 性能协调器',
       sub: '公式/长代码压力探测 + 热路径降载',
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later'
@@ -339,7 +339,7 @@
       id: 'chatgpt_message_tree',
       name: 'ChatGPT 消息树',
       sub: '显示当前对话的完整消息树/分支结构（右侧面板），并支持导出完整树 JSON',
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: [],
       menuPreview: ['导出完整树为 JSON'],
       authors: ['lueluelue2006'],
@@ -397,8 +397,8 @@
     genspark_force_sonnet45_thinking: {
       id: 'genspark_force_sonnet45_thinking',
       name: 'Genspark Sonnet 4.5 Thinking 兼容',
-      sub: '仅在旧 Sonnet 4.5 请求上改写为 thinking，并显示可折叠思考块（默认关闭）',
-      defaultEnabled: false,
+      sub: '仅在旧 Sonnet 4.5 请求上改写为 thinking，并显示可折叠思考块',
+      defaultEnabled: true,
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later'

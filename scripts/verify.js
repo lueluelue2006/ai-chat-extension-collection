@@ -270,6 +270,9 @@ function verifyRegistryAgainstInjections(reg, injections, manifest) {
       if (!Object.prototype.hasOwnProperty.call(enabledMap, moduleId)) {
         errors.push(`DEFAULT_SETTINGS.siteModules[${siteId}] missing moduleId: ${moduleId}`);
       }
+      if (enabledMap[moduleId] !== true) {
+        errors.push(`DEFAULT_SETTINGS.siteModules[${siteId}][${moduleId}] must default to true under the all-scripts-on policy`);
+      }
       if (!injected.has(moduleId)) {
         errors.push(`CONTENT_SCRIPT_DEFS missing injection for site(${siteId}) moduleId: ${moduleId}`);
       }
@@ -514,7 +517,6 @@ function verifyChatgptNativeEditCmdEnterFallback() {
 function verifyChatgptTurnHostHardening() {
   const coreFiles = ['content/chatgpt-core.js', 'content/chatgpt-core-main.js'];
   const requiredTurnSelector = 'section[data-testid^="conversation-turn-"]';
-  const requiredModelSelector = 'button[data-testid="model-switcher-dropdown-button"]';
   const failures = [];
 
   for (const relPath of coreFiles) {
@@ -522,8 +524,10 @@ function verifyChatgptTurnHostHardening() {
     if (!source.includes(requiredTurnSelector)) {
       failures.push(`${relPath} is missing ${requiredTurnSelector}`);
     }
-    if (!source.includes(requiredModelSelector)) {
-      failures.push(`${relPath} is missing ${requiredModelSelector}`);
+    for (const requiredModelDetection of ['COMPOSER_MODEL_TRIGGER_SELECTOR', 'getComposerModelButton']) {
+      if (!source.includes(requiredModelDetection)) {
+        failures.push(`${relPath} is missing ${requiredModelDetection}`);
+      }
     }
   }
 
@@ -548,6 +552,7 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
     'findSendButton',
     'findStopButton',
     'getModelSwitcherButton',
+    'getComposerModelButton',
     'readComposerModeLabel',
     'getVisibleTurnWindow'
   ]) {
@@ -792,16 +797,15 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       className: 'ProseMirror',
       text: ''
     });
-    const mode = new FakeElement('button', { attrs: { 'aria-haspopup': 'menu' }, text: 'Heavy' });
-    const send = new FakeElement('button', { attrs: { id: 'composer-submit-button', 'data-testid': 'send-button' }, text: 'Send prompt' });
-    form.append(editor, mode, send);
-    document.body.append(form);
-
-    const model = new FakeElement('button', {
-      attrs: { 'data-testid': 'model-switcher-dropdown-button', 'aria-label': 'Model selector' },
-      text: 'ChatGPT'
+    const attach = new FakeElement('button', { attrs: { 'aria-haspopup': 'menu', 'aria-label': 'Add files and more' }, text: '' });
+    const mode = new FakeElement('button', {
+      attrs: { 'aria-haspopup': 'menu' },
+      className: '__composer-pill __composer-pill--neutral',
+      text: 'Extended Pro'
     });
-    document.body.append(model);
+    const send = new FakeElement('button', { attrs: { id: 'composer-submit-button', 'data-testid': 'send-button' }, text: 'Send prompt' });
+    form.append(editor, attach, mode, send);
+    document.body.append(form);
 
     const sandbox = {
       console,
@@ -841,9 +845,10 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       if (api.getEditorEl() !== editor) failures.push('adapter did not find the ProseMirror editor');
       if (api.getComposerForm(editor) !== form) failures.push('adapter did not find the composer form');
       if (api.findSendButton(editor) !== send) failures.push('adapter did not find the send button');
-      if (api.getModelSwitcherButton() !== model) failures.push('adapter did not find the model switcher');
-      if (api.readCurrentModelLabel() !== 'ChatGPT') failures.push('adapter did not read model label');
-      if (api.readComposerModeLabel(editor) !== 'Heavy') failures.push('adapter did not read standalone composer mode label');
+      if (api.getComposerModelButton(editor) !== mode) failures.push('adapter did not find the composer model pill');
+      if (api.getModelSwitcherButton() !== mode) failures.push('adapter did not fall back to the composer model pill');
+      if (api.readCurrentModelLabel() !== 'Extended Pro') failures.push('adapter did not read composer model label');
+      if (api.readComposerModeLabel(editor) !== 'Extended Pro') failures.push('adapter did not read composer mode label');
       if (api.getConversationIdFromUrl() !== 'test-conversation') failures.push('adapter did not parse conversation id');
     }
   } catch (error) {
@@ -860,7 +865,7 @@ function verifyChatgptModelDetectionHardening() {
   const checks = [
     {
       relPath: 'content/chatgpt-reply-timer/main.js',
-      patterns: ['model-switcher-dropdown-button', 'Model selector']
+      patterns: ['readComposerModeLabel', 'isProComposerModeLabel']
     }
   ];
   const failures = [];
@@ -1097,6 +1102,22 @@ function verifyChatgptTabQueueNoActiveStreamStatusPolling() {
   if (!source.includes('localResponseRetryMs')) {
     failures.push(`${relPath} must use local retry timing rather than stream-status polling timing`);
   }
+  if (!source.includes('eventGateWatchdogMs')) {
+    failures.push(`${relPath} must keep a local-only event gate watchdog for missed DOM/fetch events`);
+  }
+  if (source.includes('replyRenderPollMs') || source.includes('state.replyRender.timer = setInterval')) {
+    failures.push(`${relPath} must not use fixed reply-render polling; use event-triggered settle wakeups instead`);
+  }
+  for (const required of [
+    'scheduleReplyRenderWake',
+    'clearReplyRenderTimer',
+    'state.replyRender.wakeAt',
+    'if (changed) clearReplyRenderTimer()'
+  ]) {
+    if (!source.includes(required)) {
+      failures.push(`${relPath} is missing event-driven render settle gate marker: ${required}`);
+    }
+  }
 
   return {
     ok: failures.length === 0,
@@ -1330,8 +1351,8 @@ function verifyGensparkSonnetThinkingCompatibility() {
   const forceSource = readText('content/genspark-force-sonnet45-thinking/main.js');
   const failures = [];
 
-  if (!/genspark_force_sonnet45_thinking:\s*{[\s\S]*?defaultEnabled:\s*false[\s\S]*?}/.test(registrySource)) {
-    failures.push('genspark_force_sonnet45_thinking must be off by default because current Genspark AI Chat defaults to Opus 4.6');
+  if (!/genspark_force_sonnet45_thinking:\s*{[\s\S]*?defaultEnabled:\s*true[\s\S]*?}/.test(registrySource)) {
+    failures.push('genspark_force_sonnet45_thinking must be enabled by default under the all-scripts-on default policy');
   }
 
   for (const [relPath, source] of [
@@ -1340,8 +1361,8 @@ function verifyGensparkSonnetThinkingCompatibility() {
     ['options/module-settings/core.js', moduleSettingsSource],
     ['docs/scripts-inventory.md', inventorySource]
   ]) {
-    if (!source.includes('Sonnet 4.5') || !source.includes('默认关闭')) {
-      failures.push(`${relPath} must describe the Genspark Sonnet 4.5 thinking rewrite as legacy/off-by-default compatibility`);
+    if (!source.includes('Sonnet 4.5')) {
+      failures.push(`${relPath} must describe the Genspark Sonnet 4.5 thinking rewrite compatibility`);
     }
   }
 
@@ -1617,6 +1638,11 @@ function verifyChatgptTopbarModelBadge() {
     'resolveTopbarModelBadgeLabel',
     'topbarLastModelBadgeLabel',
     'topbarMenuSelectionBadgeUntil',
+    'HEADER_ACTIONS_RESERVE_CLASS',
+    'HEADER_ACTIONS_RESERVE_SELECTOR',
+    'buildHeaderActionsReservePlan',
+    'syncHeaderActionsReserve',
+    'headerActionsReserveNeedsRepair',
     'TOPBAR_MODEL_BADGE_SESSION_KEY',
     'readStoredTopbarBadgeLabel',
     'rememberTopbarModelSelectionFromEvent',
@@ -1690,6 +1716,12 @@ function verifyChatgptTopbarModelBadge() {
   if (!source.includes('function isTopbarModelFamilyLabel')) {
     failures.push('content/chatgpt-sidebar-header-fix/main.js is missing topbar model-family label filtering');
   }
+  if (!source.includes('thread-header-right-actions-container') || !source.includes('margin-inline-end: var(${HEADER_ACTIONS_RESERVE_CSS_VAR}')) {
+    failures.push('content/chatgpt-sidebar-header-fix/main.js is missing current ChatGPT header action reserve for QuickNav overlap');
+  }
+  if (!source.includes("document.getElementById('cgpt-compact-nav')") && !source.includes('document.getElementById("cgpt-compact-nav")')) {
+    failures.push('content/chatgpt-sidebar-header-fix/main.js must reserve space from the live QuickNav panel rect');
+  }
   if (/\\b\\(standard\\|extended\\)\\(\\?:\\\\s\\+pro\\)\\?/.test(source)) {
     failures.push('content/chatgpt-sidebar-header-fix/main.js still maps standalone standard/extended labels to Pro');
   }
@@ -1748,6 +1780,10 @@ function verifyChatgptReplyTimerExtendedProGate() {
         input: { payloadModel: '', modelLabel: 'ChatGPT', composerModeLabel: 'Standard Pro' }
       },
       {
+        reason: 'reply_timer_should_skip_bullet_extended_pro_composer_label',
+        input: { payloadModel: '', modelLabel: '', composerModeLabel: 'Pro • Extended' }
+      },
+      {
         reason: 'reply_timer_should_skip_gpt54_pro_payload_model',
         input: { payloadModel: 'gpt-5.4-pro', modelLabel: '', composerModeLabel: 'Standard' }
       },
@@ -1759,6 +1795,9 @@ function verifyChatgptReplyTimerExtendedProGate() {
     for (const testCase of cases) {
       const shouldTrack = api.shouldTrackReplyTimer(testCase.input);
       if (shouldTrack !== false) return { ok: false, reason: testCase.reason };
+    }
+    if (api.shouldTrackReplyTimer({ payloadModel: '', modelLabel: '', composerModeLabel: 'Thinking • Heavy' }) !== true) {
+      return { ok: false, reason: 'reply_timer_should_track_bullet_thinking_composer_label' };
     }
     return { ok: true };
   } catch (error) {
@@ -1782,8 +1821,8 @@ function verifyChatgptPerfStructureHardening() {
   const registrySource = readText('shared/registry.ts');
   const failures = [];
 
-  if (!/chatgpt_perf:\s*{[\s\S]*?defaultEnabled:\s*false[\s\S]*?}/.test(registrySource)) {
-    failures.push('shared/registry.ts must keep chatgpt_perf disabled by default until the live ChatGPT perf path is revalidated');
+  if (!/chatgpt_perf:\s*{[\s\S]*?defaultEnabled:\s*true[\s\S]*?}/.test(registrySource)) {
+    failures.push('shared/registry.ts must keep chatgpt_perf enabled by default under the all-scripts-on default policy');
   }
 
   for (const required of ['__aichat_chatgpt_core_v1__', 'getTurnsSnapshot', 'data-testid^="conversation-turn-"']) {
@@ -1912,8 +1951,18 @@ function verifyChatgptQuicknavScrollLockReliability() {
     "60000])",
     'postScrollLockBaselineToMainWorld(scrollLockStablePos, true)',
     'TAB_QUEUE_BRIDGE_SEND_PROTECT',
+    'CHATGPT_SEND_BRIDGE_SEND_PROTECT',
     'function armProgrammaticSendScrollLockGuard',
-    'function handleTabQueueSendScrollProtect',
+    'function handleChatgptSendScrollProtect',
+    'writeRuntimeGuardFlag(CHATGPT_TAB_QUEUE_BRIDGE_BOUND_KEY, CHATGPT_TAB_QUEUE_BRIDGE_BOUND_LEGACY_KEY, false)',
+    "armProgrammaticSendScrollLockGuard('tab-hotkey-keydown'",
+    "armProgrammaticSendScrollLockGuard('cmdenter-keydown'",
+    'function scheduleProgrammaticSendScrollLockRestore',
+    'cancelProgrammaticSendScrollLockRestoreSchedule',
+    'scheduleProgrammaticSendScrollLockRestore(reason, baseline)',
+    'quicknavScrollLockProtectReason',
+    'scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, scrollLockLastMutationTs + 2000)',
+    'const longGuardActive = (Number(scrollLockGuardUntil) || 0) - scrollLockLastMutationTs > 5000',
     'current > previousStable + SCROLL_LOCK_DRIFT',
     'aria-pressed',
     "btn.textContent = scrollLockEnabled ? '🔒' : '🔓'"
@@ -1928,12 +1977,16 @@ function verifyChatgptQuicknavScrollLockReliability() {
     'QUICKNAV_SCROLL_LOCK_KEY',
     'quicknavScrollLockBaseline',
     'AISHORTCUTS_SCROLLLOCK_BASELINE',
-    'QUICKNAV_TAB_QUEUE_SEND_PROTECT',
+    'QUICKNAV_SEND_PROTECT',
+    'AISHORTCUTS_CHATGPT_SEND_PROTECT',
     "preArmQuickNavScrollLockForChatgptSend(promptEl, 'cmdenter-before-send')"
   ]) {
     if (!cmdenterSource.includes(required)) {
       failures.push(`content/chatgpt-cmdenter-send/main.js is missing Cmd+Enter scroll-lock pre-arm: ${required}`);
     }
+  }
+  if (cmdenterSource.includes('AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT') || cmdenterSource.includes('QUICKNAV_TAB_QUEUE_SEND_PROTECT')) {
+    failures.push('content/chatgpt-cmdenter-send/main.js must use the generic ChatGPT send-protect bridge instead of the Tab Queue bridge');
   }
 
   if (quicknavSource.includes('postScrollLockBaselineToMainWorld(getScrollPos(scroller), true)')) {
@@ -2227,8 +2280,8 @@ function verifyChatgptTreeExportHardening() {
       failures.push(`shared/injections.ts is missing tree/export injection guard ${required}`);
     }
   }
-  if (!/chatgpt_message_tree:\s*{[\s\S]*?defaultEnabled:\s*false[\s\S]*?}/.test(registrySource)) {
-    failures.push('shared/registry.ts must keep chatgpt_message_tree explicitly default-disabled because it is an on-demand heavy mapping panel');
+  if (!/chatgpt_message_tree:\s*{[\s\S]*?defaultEnabled:\s*true[\s\S]*?}/.test(registrySource)) {
+    failures.push('shared/registry.ts must keep chatgpt_message_tree enabled by default under the all-scripts-on default policy');
   }
 
   for (const required of [

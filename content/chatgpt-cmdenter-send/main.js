@@ -6,7 +6,7 @@
   const BRIDGE_V = 1;
   const BRIDGE_NONCE_DATASET_KEY = 'quicknavBridgeNonceV1';
   const QUICKNAV_SCROLL_LOCK_KEY = 'cgpt-quicknav:scroll-lock';
-  const QUICKNAV_TAB_QUEUE_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT';
+  const QUICKNAV_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_SEND_PROTECT';
   const runtimeDisposers = [];
   const runtimeState = {
     disposed: false,
@@ -201,7 +201,7 @@
       }
       dispatchQuickNavBridgeMessage('AISHORTCUTS_SCROLLLOCK_STATE', { enabled: true });
       dispatchQuickNavBridgeMessage('AISHORTCUTS_SCROLLLOCK_BASELINE', { top });
-      dispatchQuickNavBridgeMessage(QUICKNAV_TAB_QUEUE_SEND_PROTECT, {
+      dispatchQuickNavBridgeMessage(QUICKNAV_SEND_PROTECT, {
         phase: String(reason || 'cmdenter'),
         source: 'cmdenter_send'
       });

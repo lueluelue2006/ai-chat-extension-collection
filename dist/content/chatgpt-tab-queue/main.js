@@ -46,9 +46,10 @@
     generatingBootstrapMaxAttempts: 40,
     generatingBootstrapStepMs: 600,
     localResponseRetryMs: 700,
+    eventGateWatchdogMs: 4200,
     composerInterlockToastCooldownMs: 1200,
-    replyRenderPollMs: 180,
     replyRenderSettleMs: 900,
+    replyRenderSettleWakePaddingMs: 24,
     composerMirrorSyncDelayMs: 24,
     queueDraftTextSettleMs: 140,
     queueDraftTextSettleStepMs: 24,
@@ -1300,7 +1301,8 @@
       key: '',
       signature: '',
       changedAt: now(),
-      timer: 0
+      timer: 0,
+      wakeAt: 0
     },
     conversationStartSeq: 0,
     streamStatus: {
@@ -1549,7 +1551,7 @@
     if (!status || status === 'idle' || status === 'release') return 0;
     if (waitMs > 0) return waitMs;
     if (status === 'wait_generating' || status === 'wait_transport_done' || status === 'wait_assistant_turn') {
-      return Math.max(0, Number(fallbackMs) || 0);
+      return Math.max(0, Number(CONFIG.eventGateWatchdogMs) || Number(fallbackMs) || 0);
     }
     return 0;
   }
@@ -1574,24 +1576,51 @@
   function clearReplyRenderTimer() {
     if (!state.replyRender.timer) return;
     try {
+      clearTimeout(state.replyRender.timer);
+    } catch {}
+    try {
       clearInterval(state.replyRender.timer);
     } catch {}
     state.replyRender.timer = 0;
+    state.replyRender.wakeAt = 0;
+  }
+
+  function scheduleReplyRenderWake(delayMs) {
+    clearReplyRenderTimer();
+    const waitMs = Math.max(0, Number(delayMs) || 0);
+    state.replyRender.wakeAt = now() + waitMs;
+    state.replyRender.timer = setTimeout(() => {
+      state.replyRender.timer = 0;
+      state.replyRender.wakeAt = 0;
+      if (state.disposed) return;
+      syncReplyRenderState();
+      if (state.pendingSendGate) {
+        void maybeReleasePendingSendGate();
+        return;
+      }
+      if (state.queue.length > 0 && !state.processQueueBusy) scheduleMaybeProcessQueue(0);
+      if (shouldSampleReplyRender()) refreshReplyRenderSampling();
+    }, waitMs);
   }
 
   function refreshReplyRenderSampling() {
-    syncReplyRenderState();
+    const changed = syncReplyRenderState();
+    if (changed) clearReplyRenderTimer();
     if (!shouldSampleReplyRender()) {
       clearReplyRenderTimer();
       return;
     }
+    const waitMs = getReplyRenderSettleWaitMs({
+      hasAssistantTurn: hasText(state.replyRender.signature),
+      replyChangeAgeMs: Math.max(0, now() - (Number(state.replyRender.changedAt) || 0)),
+      requiredSettleMs: CONFIG.replyRenderSettleMs
+    });
+    const wakeMs =
+      waitMs > 0
+        ? waitMs + Math.max(0, Number(CONFIG.replyRenderSettleWakePaddingMs) || 0)
+        : Math.max(0, Number(CONFIG.eventGateWatchdogMs) || 0);
     if (state.replyRender.timer) return;
-    state.replyRender.timer = setInterval(() => {
-      if (state.disposed) return;
-      syncReplyRenderState();
-      if (state.pendingSendGate && !state.sendGateTimer) void maybeReleasePendingSendGate();
-      if (!shouldSampleReplyRender()) clearReplyRenderTimer();
-    }, CONFIG.replyRenderPollMs);
+    scheduleReplyRenderWake(wakeMs);
   }
 
   function getLiveReplyRenderWaitMs(settleMs = CONFIG.replyRenderSettleMs) {
@@ -1710,7 +1739,7 @@
       isGeneratingNow() ||
       isCachedCurrentConversationStreamActive()
     ) {
-      return CONFIG.localResponseRetryMs;
+      return CONFIG.eventGateWatchdogMs;
     }
     const replyRenderWaitMs = getLiveReplyRenderWaitMs();
     if (replyRenderWaitMs > 0) return replyRenderWaitMs;
@@ -1889,7 +1918,7 @@
     if (isCachedCurrentConversationStreamActive()) {
       gate.streamStatus = 'IS_STREAMING';
       gate.streamStatusCheckedAt = now();
-      schedulePendingSendGateCheck(CONFIG.localResponseRetryMs);
+      schedulePendingSendGateCheck(CONFIG.eventGateWatchdogMs);
       return false;
     }
 
@@ -1947,6 +1976,7 @@
       resolvePendingHighlights();
       if (!state.pendingSendGate) scheduleMaybeProcessQueue();
     }
+    refreshReplyRenderSampling();
   }
 
   function handleComposerDomMutation() {
@@ -2853,13 +2883,13 @@
       return Math.max(0, Number(state.manualSendWarmupUntil || 0) - now()) || CONFIG.sendCooldownMs;
     }
     if (isManualSendInterlockActive()) return CONFIG.sendCooldownMs;
-    if (state.activeRequests.size > 0) return CONFIG.localResponseRetryMs;
+    if (state.activeRequests.size > 0) return CONFIG.eventGateWatchdogMs;
     if (state.awaitingConversationStart) return CONFIG.sendCooldownMs;
-    if (state.pendingSendGate) return CONFIG.localResponseRetryMs;
+    if (state.pendingSendGate) return CONFIG.eventGateWatchdogMs;
     if (state.composerInterlock) return CONFIG.sendCooldownMs;
     const holdRetryDelayMs = getQueuePoolHoldRetryDelay(state.queue[0]);
     if (!force && holdRetryDelayMs > 0) return holdRetryDelayMs;
-    if (!force && isGeneratingNow()) return CONFIG.localResponseRetryMs;
+    if (!force && isGeneratingNow()) return CONFIG.eventGateWatchdogMs;
     if (!force) {
       const replyRenderWaitMs = getLiveReplyRenderWaitMs();
       if (replyRenderWaitMs > 0) return replyRenderWaitMs;
@@ -3530,6 +3560,11 @@
     swallowEvent(event);
 
     if (action === 'queue_tab') {
+      if (hasText(sourceText)) {
+        postQueuedSendProtectBridge(null, 'hotkey', {
+          source: 'keydown-tab'
+        });
+      }
       void queueCurrentComposerDraft({
         sourceEditor,
         sourceText
@@ -3833,6 +3868,8 @@
         replyRender: {
           key: state.replyRender.key,
           changedAt: state.replyRender.changedAt,
+          wakeAt: state.replyRender.wakeAt || 0,
+          timerActive: !!state.replyRender.timer,
           waitMs: getLiveReplyRenderWaitMs()
         },
         streamStatus: {

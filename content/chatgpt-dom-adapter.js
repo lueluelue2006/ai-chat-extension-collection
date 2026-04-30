@@ -9,8 +9,11 @@
   const TURN_SELECTOR = `${TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
   const MODEL_SWITCHER_SELECTOR =
     'button[data-testid="model-switcher-dropdown-button"], button[aria-label*="Model selector" i], button[aria-label*="current model is" i]';
+  const COMPOSER_MODEL_TRIGGER_SELECTOR =
+    'button.__composer-pill[aria-haspopup="menu"], button.__composer-pill, button[aria-haspopup="menu"]';
   const COMPOSER_MODE_TOKEN_RE =
-    /\b(?:instant|thinking|pro|light|heavy|standard|extended|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
+    /\b(?:latest|instant|thinking|pro|light|heavy|standard|extended|extended pro|standard pro|light thinking|heavy thinking)\b|思考|推理|专业|标准|扩展|即时/i;
+  const COMPOSER_MODEL_EXCLUDE_RE = /\b(?:add files?|attach|dictation|voice|microphone|send|submit)\b|添加|附件|语音|听写|发送|提交/i;
 
   const editorCache = {
     at: 0,
@@ -217,7 +220,39 @@
       if (visible) return visible;
     } catch {}
     try {
+      const composer = getComposerModelButton();
+      if (composer) return composer;
+    } catch {}
+    try {
       return document.querySelector(MODEL_SWITCHER_SELECTOR);
+    } catch {
+      return null;
+    }
+  }
+
+  function isComposerModelTrigger(button, editorEl) {
+    try {
+      if (!isButtonElementLike(button) || !isVisibleElement(button)) return false;
+      const form = getComposerForm(editorEl);
+      if (!(form && typeof form.contains === 'function' && form.contains(button))) return false;
+      const text = String(button.innerText || button.textContent || '').trim();
+      const aria = String(button.getAttribute?.('aria-label') || '').trim();
+      const testId = String(button.getAttribute?.('data-testid') || '').trim();
+      const combined = `${text} ${aria} ${testId}`.trim();
+      if (!combined || COMPOSER_MODEL_EXCLUDE_RE.test(combined)) return false;
+      return COMPOSER_MODE_TOKEN_RE.test(combined);
+    } catch {
+      return false;
+    }
+  }
+
+  function getComposerModelButton(editorEl) {
+    try {
+      const form = getComposerForm(editorEl);
+      const candidates = Array.from(form?.querySelectorAll?.(COMPOSER_MODEL_TRIGGER_SELECTOR) || []);
+      const modelButtons = candidates.filter((button) => isComposerModelTrigger(button, editorEl));
+      const pill = pickBottomMostVisible(modelButtons.filter((button) => /\b__composer-pill\b/.test(String(button.className || ''))));
+      return pill || pickBottomMostVisible(modelButtons) || null;
     } catch {
       return null;
     }
@@ -657,6 +692,7 @@
     getEditorEl,
     getComposerForm,
     getModelSwitcherButton,
+    getComposerModelButton,
     readCurrentModelLabel,
     readCurrentModelMetaLabel,
     readComposerModeLabel,

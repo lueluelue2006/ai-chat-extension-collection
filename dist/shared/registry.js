@@ -127,7 +127,7 @@
       id: "quicknav",
       name: "QuickNav",
       sub: "\u5BF9\u8BDD\u5BFC\u822A / \u{1F4CC} \u6807\u8BB0 / \u6536\u85CF / \u9632\u81EA\u52A8\u6EDA\u52A8",
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: ["\u2318\u2191/\u2318\u2193", "\u2325\u2191/\u2325\u2193", "\u2325/"],
       menuPreview: ["\u91CD\u7F6E\u95EE\u9898\u680F\u4F4D\u7F6E", "\u6E05\u7406\u8FC7\u671F\u68C0\u67E5\u70B9\uFF0830\u5929\uFF09", "\u6E05\u7406\u65E0\u6548\u6536\u85CF"],
       authors: ["lueluelue2006\uFF08\u539F\u59CB\u811A\u672C / MV3 \u6269\u5C55\u5C01\u88C5/\u6539\u9020\uFF09", "loongphy\uFF08\u6697\u8272\u6A21\u5F0F+\u56DE\u5F39\u8865\u4E01\uFF09"],
@@ -138,7 +138,7 @@
       id: "chatgpt_perf",
       name: "ChatGPT \u6027\u80FD\u534F\u8C03\u5668",
       sub: "\u516C\u5F0F/\u957F\u4EE3\u7801\u538B\u529B\u63A2\u6D4B + \u70ED\u8DEF\u5F84\u964D\u8F7D",
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later"
@@ -334,7 +334,7 @@
       id: "chatgpt_message_tree",
       name: "ChatGPT \u6D88\u606F\u6811",
       sub: "\u663E\u793A\u5F53\u524D\u5BF9\u8BDD\u7684\u5B8C\u6574\u6D88\u606F\u6811/\u5206\u652F\u7ED3\u6784\uFF08\u53F3\u4FA7\u9762\u677F\uFF09\uFF0C\u5E76\u652F\u6301\u5BFC\u51FA\u5B8C\u6574\u6811 JSON",
-      defaultEnabled: false,
+      defaultEnabled: true,
       hotkeys: [],
       menuPreview: ["\u5BFC\u51FA\u5B8C\u6574\u6811\u4E3A JSON"],
       authors: ["lueluelue2006"],
@@ -392,8 +392,8 @@
     genspark_force_sonnet45_thinking: {
       id: "genspark_force_sonnet45_thinking",
       name: "Genspark Sonnet 4.5 Thinking \u517C\u5BB9",
-      sub: "\u4EC5\u5728\u65E7 Sonnet 4.5 \u8BF7\u6C42\u4E0A\u6539\u5199\u4E3A thinking\uFF0C\u5E76\u663E\u793A\u53EF\u6298\u53E0\u601D\u8003\u5757\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF09",
-      defaultEnabled: false,
+      sub: "\u4EC5\u5728\u65E7 Sonnet 4.5 \u8BF7\u6C42\u4E0A\u6539\u5199\u4E3A thinking\uFF0C\u5E76\u663E\u793A\u53EF\u6298\u53E0\u601D\u8003\u5757",
+      defaultEnabled: true,
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later"

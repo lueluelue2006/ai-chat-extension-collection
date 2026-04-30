@@ -99,9 +99,18 @@
   function isGptProModelIdentifier(input) {
     const normalized = normalizeModelToken(input);
     if (!normalized || !normalized.includes('pro')) return false;
+    if (isProComposerModeLabel(input)) return true;
     if (/^gpt-[a-z0-9.-]*-pro(?:\b|$)/.test(normalized)) return true;
     if (/^(?:gpt-?)?\d+(?:\.\d+)?(?:-[a-z0-9.]+)*-pro(?:\b|$)/.test(normalized)) return true;
     return false;
+  }
+
+  function isProComposerModeLabel(input) {
+    const text = String(input || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return false;
+    return /\bpro\b/i.test(text) && /\b(?:standard|extended)\b/i.test(text);
   }
 
   function isLikelyGptFamilyIdentifier(input) {
@@ -182,7 +191,7 @@
     const composerModeLabel = String(options.composerModeLabel || readComposerModeLabel() || '');
     if (isGptProModelIdentifier(payloadModel)) return false;
     if (isGptProModelIdentifier(modelLabel)) return false;
-    if (/\b(?:extended\s+)?pro\b/i.test(composerModeLabel) && isLikelyGptFamilyIdentifier(modelLabel || payloadModel)) return false;
+    if (isProComposerModeLabel(composerModeLabel)) return false;
     return true;
   }
 
@@ -775,6 +784,7 @@
   if (IS_TEST_ENV) {
     module.exports = {
       isGptProModelIdentifier,
+      isProComposerModeLabel,
       isLikelyGptFamilyIdentifier,
       normalizeModelToken,
       readComposerModeLabel,

@@ -48,10 +48,16 @@
   const TOPBAR_PLACEHOLDER_ATTR = 'data-qn-chatgpt-topbar-actions-placeholder';
   const TOPBAR_RELOCATED_ATTR = 'data-qn-chatgpt-topbar-actions-relocated';
   const TOPBAR_SYNTHETIC_HOST_ATTR = 'data-qn-chatgpt-topbar-actions-synthetic';
+  const HEADER_ACTIONS_RESERVE_CLASS = 'qn-chatgpt-header-actions-reserved';
+  const HEADER_ACTIONS_RESERVE_ATTR = 'data-qn-chatgpt-header-actions-reserved';
+  const HEADER_ACTIONS_RESERVE_SELECTOR = '[data-testid="thread-header-right-actions-container"]';
+  const HEADER_ACTIONS_RESERVE_CSS_VAR = '--qn-chatgpt-header-actions-reserve';
+  const HEADER_ACTIONS_RESERVE_GAP_PX = 12;
+  const HEADER_ACTIONS_MAX_RESERVE_PX = 540;
   const TOPBAR_MIN_WIDTH_PX = 720;
   const TOPBAR_MIN_GAP_PX = 6;
   const TOPBAR_ROUTE_RECOVERY_MS = 1800;
-  const TOPBAR_STARTUP_DELAYS_MS = Object.freeze([0, 120, 360, 900]);
+  const TOPBAR_STARTUP_DELAYS_MS = Object.freeze([0, 120, 360, 900, 1800, 3200, 6000]);
   const root = document.documentElement;
   let lockUntil = 0;
   let unlockTimer = 0;
@@ -69,6 +75,7 @@
   let topbarInlineRow = null;
   let topbarActionsHost = null;
   let topbarActionsPlaceholder = null;
+  let headerActionsReservedEl = null;
   let topbarModelToggleBusy = false;
   let topbarLastModelBadgeLabel = readStoredTopbarBadgeLabel();
   let topbarMenuSelectionBadgeUntil = 0;
@@ -335,6 +342,154 @@
     } catch {
       return false;
     }
+  }
+
+  function matchesHeaderUtilityActionLabel(label) {
+    const raw = String(label || '').trim();
+    if (!raw) return false;
+    const lower = raw.toLowerCase();
+    if (matchesTopbarActionLabel(raw)) return true;
+    if (lower === 'share' || lower.includes('share chat')) return true;
+    if (lower.includes('conversation options')) return true;
+    if (/分享/.test(raw)) return true;
+    if (/对话.*(选项|菜单)|会话.*(选项|菜单)/.test(raw)) return true;
+    return false;
+  }
+
+  function isHeaderUtilityActionButton(node) {
+    try {
+      if (!(node instanceof HTMLButtonElement)) return false;
+      const aria = String(node.getAttribute('aria-label') || '').trim();
+      if (matchesHeaderUtilityActionLabel(aria)) return true;
+      return matchesHeaderUtilityActionLabel(node.innerText || node.textContent || '');
+    } catch {
+      return false;
+    }
+  }
+
+  function getPageHeader() {
+    try {
+      return document.querySelector('header#page-header, header[data-fixed-header], header');
+    } catch {
+      return null;
+    }
+  }
+
+  function getHeaderDirectChildFor(node, header) {
+    try {
+      let cur = node instanceof Element ? node : null;
+      while (cur && cur.parentElement && cur.parentElement !== header) cur = cur.parentElement;
+      return cur instanceof HTMLElement && cur.parentElement === header ? cur : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function findHeaderActionsReserveTarget() {
+    try {
+      const explicit = document.querySelector(HEADER_ACTIONS_RESERVE_SELECTOR);
+      if (explicit instanceof HTMLElement) return explicit;
+
+      const header = getPageHeader();
+      if (!(header instanceof HTMLElement)) return null;
+      const buttons = Array.from(header.querySelectorAll('button')).filter((button) => isHeaderUtilityActionButton(button));
+      if (!buttons.length) return null;
+
+      for (const button of buttons) {
+        const direct = getHeaderDirectChildFor(button, header);
+        if (direct) return direct;
+      }
+      return buttons[0]?.parentElement instanceof HTMLElement ? buttons[0].parentElement : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getQuickNavRectForHeaderReserve() {
+    try {
+      const nav = document.getElementById('cgpt-compact-nav');
+      if (!(nav instanceof HTMLElement)) return null;
+      const rect = nav.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+      const style = window.getComputedStyle(nav);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return null;
+      return rect;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearHeaderActionsReserve(target = headerActionsReservedEl) {
+    if (!(target instanceof HTMLElement)) return;
+    try {
+      target.classList.remove(HEADER_ACTIONS_RESERVE_CLASS);
+      target.removeAttribute(HEADER_ACTIONS_RESERVE_ATTR);
+      target.style.removeProperty(HEADER_ACTIONS_RESERVE_CSS_VAR);
+    } catch {}
+    if (headerActionsReservedEl === target) headerActionsReservedEl = null;
+  }
+
+  function buildHeaderActionsReservePlan() {
+    const target = findHeaderActionsReserveTarget();
+    const navRect = getQuickNavRectForHeaderReserve();
+    const header = target?.closest?.('header') || getPageHeader();
+    if (!(target instanceof HTMLElement) || !navRect || !(header instanceof HTMLElement)) {
+      return { shouldReserve: false, target: target instanceof HTMLElement ? target : null, reservePx: 0 };
+    }
+
+    let headerRect = null;
+    try {
+      headerRect = header.getBoundingClientRect();
+    } catch {}
+    if (!headerRect || headerRect.width <= 0 || headerRect.height <= 0) {
+      return { shouldReserve: false, target, reservePx: 0 };
+    }
+
+    const verticalOverlap = navRect.bottom > headerRect.top + 4 && navRect.top < headerRect.bottom - 4;
+    const headerRight = Math.min(
+      Math.max(window.visualViewport?.width || 0, window.innerWidth || 0, document.documentElement?.clientWidth || 0),
+      headerRect.right
+    );
+    const navPinnedToHeaderRight = navRect.right >= headerRight - 8;
+    const reservePx = Math.ceil(
+      Math.min(
+        HEADER_ACTIONS_MAX_RESERVE_PX,
+        Math.max(0, headerRight - navRect.left + HEADER_ACTIONS_RESERVE_GAP_PX)
+      )
+    );
+    const shouldReserve = verticalOverlap && navPinnedToHeaderRight && reservePx >= 32;
+    return { shouldReserve, target, reservePx };
+  }
+
+  function syncHeaderActionsReserve() {
+    const plan = buildHeaderActionsReservePlan();
+    if (headerActionsReservedEl && headerActionsReservedEl !== plan.target) clearHeaderActionsReserve(headerActionsReservedEl);
+    if (!plan.shouldReserve || !(plan.target instanceof HTMLElement)) {
+      clearHeaderActionsReserve(plan.target || headerActionsReservedEl);
+      return false;
+    }
+    headerActionsReservedEl = plan.target;
+    try {
+      plan.target.classList.add(HEADER_ACTIONS_RESERVE_CLASS);
+      plan.target.setAttribute(HEADER_ACTIONS_RESERVE_ATTR, '1');
+      plan.target.style.setProperty(HEADER_ACTIONS_RESERVE_CSS_VAR, `${plan.reservePx}px`);
+    } catch {}
+    return true;
+  }
+
+  function headerActionsReserveNeedsRepair() {
+    const plan = buildHeaderActionsReservePlan();
+    if (!plan.shouldReserve) return !!headerActionsReservedEl;
+    const target = plan.target;
+    if (!(target instanceof HTMLElement)) return false;
+    const current = Number.parseFloat(String(target.style.getPropertyValue(HEADER_ACTIONS_RESERVE_CSS_VAR) || '').trim());
+    return (
+      headerActionsReservedEl !== target ||
+      !target.classList.contains(HEADER_ACTIONS_RESERVE_CLASS) ||
+      target.getAttribute(HEADER_ACTIONS_RESERVE_ATTR) !== '1' ||
+      !Number.isFinite(current) ||
+      Math.abs(current - plan.reservePx) > 1
+    );
   }
 
   function getTopbarModelButton() {
@@ -912,6 +1067,7 @@
   }
 
   function topbarNeedsRepair() {
+    if (headerActionsReserveNeedsRepair()) return true;
     cleanupTopbarOrphans();
     const modelButton = getTopbarModelButton();
     const modelRow = getTopbarModelRow(modelButton);
@@ -933,6 +1089,7 @@
     if (topbarEnsureTimer) return;
     topbarEnsureTimer = setTrackedTimeout(() => {
       topbarEnsureTimer = 0;
+      syncHeaderActionsReserve(reason);
       ensureTopbarActionsInline(reason);
     }, 40);
   }
@@ -1122,6 +1279,14 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 .${TOPBAR_INLINE_ACTIONS_CLASS} .me-1{
 	  margin-inline-end: 4px !important;
 }
+.${HEADER_ACTIONS_RESERVE_CLASS}{
+	  margin-inline-end: var(${HEADER_ACTIONS_RESERVE_CSS_VAR}, 0px) !important;
+	  overflow: visible !important;
+}
+.${HEADER_ACTIONS_RESERVE_CLASS} [data-testid="thread-header-right-actions"],
+.${HEADER_ACTIONS_RESERVE_CLASS} #conversation-header-actions{
+	  overflow: visible !important;
+}
 		`;
 	    (document.head || document.documentElement).appendChild(style);
 	  }
@@ -1185,6 +1350,7 @@ html.${MODE_EXPANDED_CLASS} #stage-slideover-sidebar button[aria-controls="stage
 
 	  function disposeRuntime() {
 	    restoreTopbarActionsHost();
+	    clearHeaderActionsReserve(headerActionsReservedEl);
 	    resetTopbarObserver();
 	    clearTrackedTimeout(unlockTimer);
 	    unlockTimer = 0;

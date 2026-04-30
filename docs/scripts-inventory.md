@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.0.12
-- Generated: 2026-04-29 23:24
+- Version: 4.0.17
+- Generated: 2026-04-30 14:27
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -150,7 +150,7 @@
   - 作者: lueluelue2006（原始脚本 / MV3 集成）
   - 许可证: GPL-3.0-or-later
   - 注入: document_idle / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/genspark-inline-upload-fix/main.js`
-- `genspark_force_sonnet45_thinking`: Genspark Sonnet 4.5 Thinking 兼容 — 仅在旧 Sonnet 4.5 请求上改写为 thinking，并显示可折叠思考块（默认关闭）
+- `genspark_force_sonnet45_thinking`: Genspark Sonnet 4.5 Thinking 兼容 — 仅在旧 Sonnet 4.5 请求上改写为 thinking，并显示可折叠思考块
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/genspark-force-sonnet45-thinking/main.js`

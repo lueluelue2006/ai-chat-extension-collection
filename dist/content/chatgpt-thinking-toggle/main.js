@@ -39,6 +39,8 @@
   const TOAST_CONTAINER_ID = '__tm_thinking_toggle_toast_container';
   const PULSE_STYLE_ID = '__tm_thinking_toggle_pulse_style';
   const PULSE_CLASS = '__tm_thinking_toggle_pulse';
+  // Legacy visual hint from older builds. Keep the names only to clean up pages
+  // that were hot-reloaded while a pseudo-element hint was visible.
   const HINT_CLASS = '__tm_thinking_toggle_hint';
   const HINT_ATTR = 'data-tm-thinking-toggle-hint';
   const PULSE_RGB_VAR = '--__tmThinkingTogglePulseRGB';
@@ -100,6 +102,7 @@
     try {
       if (globalThis[STATE_KEY]?.runtimeId === RUNTIME_ID) delete globalThis[STATE_KEY];
     } catch {}
+    cleanupLegacyHintArtifacts();
   }
 
   try {
@@ -190,9 +193,12 @@
   }
 
   function ensurePulseStyle() {
-    if (document.getElementById(PULSE_STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = PULSE_STYLE_ID;
+    let style = document.getElementById(PULSE_STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = PULSE_STYLE_ID;
+      (document.head || document.documentElement).appendChild(style);
+    }
     style.textContent = `
 @keyframes __tmThinkingTogglePulse {
   0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(var(${PULSE_RGB_VAR}, ${PULSE_RGB_LOW}), 0);    filter: brightness(1); }
@@ -203,34 +209,7 @@ button.${PULSE_CLASS} {
   animation: __tmThinkingTogglePulse 650ms ease-in-out 0s 1;
   will-change: transform, box-shadow, filter;
 }
-
-@keyframes __tmThinkingToggleHintFade {
-  0%   { opacity: 0; transform: translate(-50%, -120%) scale(.98); }
-  12%  { opacity: 1; transform: translate(-50%, -130%) scale(1); }
-  78%  { opacity: 1; transform: translate(-50%, -130%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -140%) scale(.99); }
-}
-button.${HINT_CLASS} { position: relative; }
-button.${HINT_CLASS}::after {
-  content: attr(${HINT_ATTR});
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, -130%);
-  pointer-events: none;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1.2;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, .94);
-  background: rgba(0, 0, 0, .72);
-  border: 1px solid rgba(var(${PULSE_RGB_VAR}, ${PULSE_RGB_LOW}), .55);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .22);
-  animation: __tmThinkingToggleHintFade 900ms ease-in-out 0s 1;
-}
 `;
-    (document.head || document.documentElement).appendChild(style);
   }
 
   function ensureToastStyle() {
@@ -340,21 +319,18 @@ button.${HINT_CLASS}::after {
     }
   }
 
-  function hintOnce(el, text, rgb) {
-    if (!(el instanceof HTMLElement)) return;
-    ensurePulseStyle();
+  function cleanupLegacyHintArtifacts() {
     try {
-      el.style.setProperty(PULSE_RGB_VAR, rgb);
-      el.setAttribute(HINT_ATTR, text);
-      el.classList.remove(HINT_CLASS);
-      void el.offsetWidth;
-      el.classList.add(HINT_CLASS);
+      for (const el of Array.from(document.querySelectorAll(`.${HINT_CLASS}, [${HINT_ATTR}]`))) {
+        el.classList?.remove?.(HINT_CLASS);
+        el.removeAttribute?.(HINT_ATTR);
+      }
     } catch (_) {
       // ignore
     }
   }
 
-  function schedulePulse(pill, isHigh, hintText) {
+  function schedulePulse(pill, isHigh) {
     const rgb = isHigh ? PULSE_RGB_HIGH : PULSE_RGB_LOW;
     window.setTimeout(() => {
       let target = pill;
@@ -364,8 +340,8 @@ button.${HINT_CLASS}::after {
         target = pills.find((p) => /thinking|pro/i.test((p.textContent || '').trim())) || pills[0] || null;
       }
       if (!target) return;
+      cleanupLegacyHintArtifacts();
       pulseOnce(target, rgb);
-      if (hintText) hintOnce(target, hintText, rgb);
     }, 80);
   }
 
@@ -1343,6 +1319,10 @@ button.${HINT_CLASS}::after {
   function findGptModelSelectorTrigger() {
     try {
       const core = window.__aichat_chatgpt_core_main_v1__;
+      if (core && typeof core.getComposerModelButton === 'function') {
+        const button = core.getComposerModelButton();
+        if (button instanceof HTMLElement && isVisibleElement(button)) return button;
+      }
       if (core && typeof core.getModelSwitcherButton === 'function') {
         const button = core.getModelSwitcherButton();
         if (button instanceof HTMLElement && isVisibleElement(button)) return button;
@@ -1358,7 +1338,13 @@ button.${HINT_CLASS}::after {
     const byAria = Array.from(document.querySelectorAll('button[aria-label],[role="button"][aria-label]')).find(
       (el) => normalizeText(el.getAttribute('aria-label') || '').startsWith('model selector') && isVisibleElement(el)
     );
-    return byAria instanceof HTMLElement ? byAria : null;
+    if (byAria instanceof HTMLElement) return byAria;
+
+    const composerPill = listComposerPills().find((pill) => {
+      const text = normalizeText(`${pill.textContent || ''} ${pill.getAttribute('aria-label') || ''}`);
+      return /\b(?:instant|thinking|pro|light|heavy|standard|extended|latest)\b/.test(text);
+    });
+    return composerPill instanceof HTMLElement ? composerPill : null;
   }
 
   function isModelSwitcherMenuOpen(trigger, getMenu) {
@@ -1417,7 +1403,9 @@ button.${HINT_CLASS}::after {
           !haystack.includes('model selector') &&
           !haystack.includes('model-switcher') &&
           !haystack.includes('chatgpt') &&
-          !haystack.includes('gpt')
+          !haystack.includes('gpt') &&
+          !haystack.includes('composer-pill') &&
+          !/\b(?:instant|thinking|pro|light|heavy|standard|extended|latest)\b/.test(haystack)
         ) {
           continue;
         }
@@ -1435,6 +1423,48 @@ button.${HINT_CLASS}::after {
       candidates = filterCandidates(fallbackNodes);
     }
     return candidates.slice(0, 40);
+  }
+
+  function findEffortActionInModelMenu(menu, mode = '') {
+    if (!(menu instanceof Element)) return null;
+    const normalizedMode = mode === 'thinking' || mode === 'pro' ? mode : menuSelectedMode(menu);
+    const suffixes =
+      normalizedMode === 'pro'
+        ? ['-pro-thinking-effort']
+        : normalizedMode === 'thinking'
+          ? ['-thinking-thinking-effort']
+          : ['-thinking-thinking-effort', '-pro-thinking-effort'];
+
+    for (const suffix of suffixes) {
+      const action = Array.from(
+        menu.querySelectorAll(`[data-model-picker-thinking-effort-action], [data-testid$="${suffix}"]`)
+      ).find((el) => {
+        if (!(el instanceof HTMLElement) || !document.contains(el)) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 4 || rect.height < 4) return false;
+        const testId = normalizeText(el.getAttribute('data-testid') || '');
+        if (testId) return testId.endsWith(suffix);
+        return el.getAttribute('data-model-picker-thinking-effort-action') === 'true';
+      });
+      if (action instanceof HTMLElement) return action;
+    }
+
+    const selected = Array.from(menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")).find(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
+    const row = selected?.closest?.('[data-model-picker-thinking-effort-row="true"]');
+    const rowAction = row?.querySelector?.('[data-model-picker-thinking-effort-action="true"], [data-trailing-button]');
+    return rowAction instanceof HTMLElement && document.contains(rowAction) ? rowAction : null;
+  }
+
+  async function openEffortMenuFromModelMenu(modelMenu, mode = '') {
+    const action = findEffortActionInModelMenu(modelMenu, mode);
+    if (!(action instanceof HTMLElement)) return null;
+    clickLikeUser(action);
+    return waitForValue(() => {
+      const menus = listVisibleMenus().filter((menu) => menu !== modelMenu && menuHasEffortOptions(menu));
+      return menus[menus.length - 1] || null;
+    }, 620, 20);
   }
 
   async function findThinkingProTrigger() {
@@ -1633,6 +1663,12 @@ button.${HINT_CLASS}::after {
     if (busy) return;
     busy = true;
     let didToggle = false;
+    /** @type {Element|null} */
+    let openedMenu = null;
+    /** @type {Element|null} */
+    let effortMenu = null;
+    /** @type {('thinking'|'pro'|null)} */
+    let activeMode = null;
 
     try {
       const pill =
@@ -1653,17 +1689,33 @@ button.${HINT_CLASS}::after {
 
       try {
         /** @type {Element|null} */
-        const menu = await waitForValue(() => {
+        openedMenu = await waitForValue(() => {
           const candidate = findMenuForPill(pill);
-          if (candidate && menuHasEffortOptions(candidate)) return candidate;
+          if (candidate && (menuHasEffortOptions(candidate) || menuHasThinkingProMode(candidate))) return candidate;
           return null;
         }, 520, 20);
-        if (!menu) {
+        if (!openedMenu) {
           warn('The reasoning effort menu was not found.');
           return;
         }
 
-        const effort = getEffortItems(menu);
+        if (menuHasEffortOptions(openedMenu)) {
+          effortMenu = openedMenu;
+        } else if (menuHasThinkingProMode(openedMenu)) {
+          activeMode = menuSelectedMode(openedMenu);
+          if (activeMode !== 'thinking' && activeMode !== 'pro') {
+            const detected = detectCurrentModelMode();
+            activeMode = detected === 'thinking' || detected === 'pro' ? detected : null;
+          }
+          effortMenu = await openEffortMenuFromModelMenu(openedMenu, activeMode || '');
+        }
+
+        if (!effortMenu) {
+          warn('The reasoning effort menu was not found.');
+          return;
+        }
+
+        const effort = getEffortItems(effortMenu);
         const items = effort.items;
         if (!items.length) {
           warn('The reasoning effort menu does not contain a switchable target.');
@@ -1679,7 +1731,13 @@ button.${HINT_CLASS}::after {
         let targetIdx = -1;
         let route = 'generic';
 
-        if (lowIdx >= 0 && highIdx >= 0) {
+        if (activeMode === 'pro' && proLowIdx >= 0 && proHighIdx >= 0) {
+          targetIdx = checkedIndex === proHighIdx ? proLowIdx : proHighIdx;
+          route = 'pro-pair';
+        } else if (activeMode === 'thinking' && lowIdx >= 0 && highIdx >= 0) {
+          targetIdx = checkedIndex === highIdx ? lowIdx : highIdx;
+          route = 'thinking-pair';
+        } else if (lowIdx >= 0 && highIdx >= 0 && (checkedIndex === lowIdx || checkedIndex === highIdx)) {
           targetIdx = checkedIndex === highIdx ? lowIdx : highIdx;
           route = items.length >= 4 ? 'extreme-pair-4lvl' : 'extreme-pair';
         } else if (proLowIdx >= 0 && proHighIdx >= 0 && (checkedIndex === proLowIdx || checkedIndex === proHighIdx)) {
@@ -1741,16 +1799,25 @@ button.${HINT_CLASS}::after {
           continue;
         }
 
-        const currentMode = detectCurrentModelMode();
-        const resolvedTargetMode =
+        let resolvedTargetMode =
           targetMode === 'thinking' || targetMode === 'pro'
             ? targetMode
-            : currentMode === 'pro'
+            : detectCurrentModelMode() === 'pro'
               ? 'thinking'
               : 'pro';
         const findTargetItem = () =>
-          findVisibleModelSwitcherItemBySuffix(resolvedTargetMode === 'pro' ? '-pro' : 'thinking') ||
-          findVisibleThinkingProItem(resolvedTargetMode);
+          (() => {
+            if (targetMode !== 'thinking' && targetMode !== 'pro') {
+              const selectedMode = menuSelectedMode(findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent());
+              if (selectedMode === 'thinking' || selectedMode === 'pro') {
+                resolvedTargetMode = selectedMode === 'pro' ? 'thinking' : 'pro';
+              }
+            }
+            return (
+              findVisibleModelSwitcherItemBySuffix(resolvedTargetMode === 'pro' ? '-pro' : 'thinking') ||
+              findVisibleThinkingProItem(resolvedTargetMode)
+            );
+          })();
         const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
         const targetItem = await waitForModelSwitcherTarget({
@@ -1875,6 +1942,7 @@ button.${HINT_CLASS}::after {
     );
   }
 
+  cleanupLegacyHintArtifacts();
   installHotkeyListener();
   installFetchSniffer();
   installPublicApi();

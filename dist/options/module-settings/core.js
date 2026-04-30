@@ -28,7 +28,7 @@
       moduleId: 'genspark_force_sonnet45_thinking',
       renderer: 'basicToggle',
       hintText:
-        '说明：兼容旧版 Genspark AI Chat 的 Sonnet 4.5 thinking 请求改写。当前 Genspark 默认模型已切到 Opus 4.6，因此该模块默认关闭；手动开启后只会改写已知 Sonnet 4.5 模型，并在回复区内联显示“可展开思考块（默认仅最后 5 行）”。'
+        '说明：兼容旧版 Genspark AI Chat 的 Sonnet 4.5 thinking 请求改写。该模块默认开启，但只会改写已知 Sonnet 4.5 模型，并在回复区内联显示“可展开思考块（默认仅最后 5 行）”。'
     }
   ]);
 })();

@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 11;
+    const GUARD_VERSION = 12;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -109,7 +109,9 @@
   const STATE = {
     enabled: false,
     allowUntil: 0,
-    baselineTop: null
+    baselineTop: null,
+    sourceGateUntil: 0,
+    sourceGateReason: ''
   };
 
   // === Route-change broadcast (MAIN world) ===
@@ -177,10 +179,17 @@
   const MAX_ALLOW_MS = 8000;
   const SCROLLER_ATTR = 'data-quicknav-scrolllock-scroller';
   const ANCHOR_STYLE_ID = '__quicknav_scrolllock_anchor_style__';
+  const CHATGPT_SCROLL_LOCK_KEY = 'cgpt-quicknav:scroll-lock';
+  const CHATGPT_SEND_SOURCE_GATE_MS = 65000;
+  const CHATGPT_SOURCE_GATE_RUNTIME_KEY = '__quicknavMainScrollGuardSourceGateRuntimeV1__';
+  const CHATGPT_TAB_QUEUE_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_TAB_QUEUE_SEND_PROTECT';
+  const CHATGPT_GENERIC_SEND_PROTECT = 'AISHORTCUTS_CHATGPT_SEND_PROTECT';
   const ALLOWED_SCROLLLOCK_TYPES = new Set([
     'AISHORTCUTS_SCROLLLOCK_STATE',
     'AISHORTCUTS_SCROLLLOCK_BASELINE',
-    'AISHORTCUTS_SCROLLLOCK_ALLOW'
+    'AISHORTCUTS_SCROLLLOCK_ALLOW',
+    CHATGPT_TAB_QUEUE_SEND_PROTECT,
+    CHATGPT_GENERIC_SEND_PROTECT
   ]);
   let __lastMarkedScroller = null;
 
@@ -218,6 +227,24 @@
     return null;
   }
 
+  function readChatgptScrollLockPreference() {
+    try {
+      const v = readEnabledFromDataset();
+      if (typeof v === 'boolean') return v;
+    } catch {}
+    try {
+      if (HOST === 'chatgpt.com') {
+        const raw = window.localStorage?.getItem?.(CHATGPT_SCROLL_LOCK_KEY);
+        if (raw === '0') return false;
+        if (raw === '1') return true;
+      }
+    } catch {}
+    try {
+      if (typeof STATE.enabled === 'boolean' && STATE.enabled) return true;
+    } catch {}
+    return HOST === 'chatgpt.com';
+  }
+
   function syncEnabledFromDataset(ts = now(), force = false) {
     if (!force) {
       const last = Number(__enabledDatasetSyncAt || 0);
@@ -252,6 +279,19 @@
     const n = readNumberDataset('quicknavScrollLockBaseline');
     __baselineDatasetCached = n != null && n >= 0 ? Math.max(0, Math.round(n)) : null;
     return __baselineDatasetCached;
+  }
+
+  function clearScrollAllowWindowForSend() {
+    STATE.allowUntil = 0;
+    __allowUntilDatasetCached = 0;
+    __allowUntilDatasetCachedAt = now();
+    try {
+      const docEl = document.documentElement;
+      if (docEl?.dataset) {
+        docEl.dataset.quicknavAllowScrollUntil = '0';
+        docEl.dataset.quicknavAllowScrollReason = 'send-source-gate';
+      }
+    } catch {}
   }
 
   function readNavExpectedFromDataset(ts = now()) {
@@ -301,6 +341,7 @@
     // Cross-world allow window: use DOM dataset (survives hot reinject; auto-expires).
     const until = readAllowUntilFromDataset(ts);
     if (until && ts < until) return isExpectedAllowedTarget(targetTop, ts);
+    if (STATE.sourceGateUntil && ts < STATE.sourceGateUntil) return false;
     return false;
   }
 
@@ -359,6 +400,14 @@
           const ms = clampAllow(msg.ms);
           if (!ms) return;
           STATE.allowUntil = Math.max(STATE.allowUntil || 0, now() + ms);
+          return;
+        }
+
+        if (type === CHATGPT_TAB_QUEUE_SEND_PROTECT || type === CHATGPT_GENERIC_SEND_PROTECT) {
+          const phase = String(msg.phase || '');
+          if (phase === 'failed') return;
+          const prefix = type === CHATGPT_TAB_QUEUE_SEND_PROTECT ? 'tab-queue' : 'send';
+          armChatgptSendSourceGate(`${prefix}-${phase || 'protect'}`);
         }
       } catch {
         // ignore
@@ -637,6 +686,16 @@
     return __cachedScroller;
   }
 
+  function describeSourceGate() {
+    return {
+      enabled: !!STATE.enabled,
+      baselineTop: Number.isFinite(Number(STATE.baselineTop)) ? Number(STATE.baselineTop) : null,
+      sourceGateUntil: Number(STATE.sourceGateUntil) || 0,
+      sourceGateReason: String(STATE.sourceGateReason || ''),
+      allowUntil: Number(STATE.allowUntil) || 0
+    };
+  }
+
   function isChatgptHeavyStreaming() {
     try {
       if (HOST !== 'chatgpt.com') return false;
@@ -702,6 +761,125 @@
     if (!codeRoot) return false;
     const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
     return !(cached && cached === codeRoot);
+  }
+
+  function asElement(node) {
+    try {
+      if (!node) return null;
+      if (node.nodeType === 1) return node;
+      if (node.nodeType === 3) return node.parentElement || null;
+    } catch {}
+    return null;
+  }
+
+  function isProbablyChatgptComposerTextTarget(target) {
+    try {
+      const el = asElement(target);
+      if (!el || !el.closest) return false;
+      if (el.closest('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]')) {
+        return true;
+      }
+      const form = el.closest('form');
+      return !!(form && form.querySelector?.('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]'));
+    } catch {
+      return false;
+    }
+  }
+
+  function getChatgptComposerFormFromTarget(target) {
+    try {
+      const el = asElement(target);
+      if (!el || !el.closest) return null;
+      const form = el.closest('form');
+      if (!form || !form.querySelector) return null;
+      if (form.querySelector('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]')) {
+        return form;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getChatgptComposerTextFromTarget(target) {
+    try {
+      const form = getChatgptComposerFormFromTarget(target);
+      const editor =
+        form?.querySelector?.('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]') ||
+        document.querySelector?.('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]');
+      if (!editor) return '';
+      if ('value' in editor) return String(editor.value || '').trim();
+      return String(editor.innerText || editor.textContent || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function isChatgptStopLikeControl(button) {
+    try {
+      if (!button) return false;
+      const text = [
+        button.getAttribute?.('aria-label') || '',
+        button.getAttribute?.('title') || '',
+        button.getAttribute?.('data-testid') || '',
+        button.textContent || ''
+      ].join(' ').toLowerCase();
+      return /stop|cancel|interrupt|停止|取消|中断/.test(text) && !/send|submit|发送|提交/.test(text);
+    } catch {
+      return false;
+    }
+  }
+
+  function isChatgptSendActionTarget(target) {
+    try {
+      const el = asElement(target);
+      if (!el || !el.closest) return false;
+      const button = el.closest(
+        'button#composer-submit-button, button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="send"], button[aria-label*="发送"], form button[type="submit"]'
+      );
+      if (!button || isChatgptStopLikeControl(button)) return false;
+      const form = getChatgptComposerFormFromTarget(button);
+      if (!form) return false;
+      if (button.disabled || button.getAttribute?.('aria-disabled') === 'true') return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function armChatgptSendSourceGate(reason = 'send') {
+    try {
+      if (HOST !== 'chatgpt.com') return false;
+      if (!readChatgptScrollLockPreference()) return false;
+      const sc = getChatScroller();
+      if (!sc) return false;
+      const baseline = Math.max(0, Math.round(getScrollPos(sc)));
+      const ts = now();
+      STATE.enabled = true;
+      STATE.baselineTop = baseline;
+      STATE.sourceGateUntil = Math.max(Number(STATE.sourceGateUntil) || 0, ts + CHATGPT_SEND_SOURCE_GATE_MS);
+      STATE.sourceGateReason = String(reason || 'send');
+      clearScrollAllowWindowForSend();
+      __enabledDatasetCached = true;
+      __enabledDatasetSyncAt = ts;
+      __baselineDatasetCached = baseline;
+      __baselineDatasetCachedAt = ts;
+      try {
+        const docEl = document.documentElement;
+        if (docEl?.dataset) {
+          docEl.dataset.quicknavScrollLockEnabled = '1';
+          docEl.dataset.quicknavScrollLockBaseline = String(baseline);
+          docEl.dataset.quicknavScrollLockProtectReason = `source-${STATE.sourceGateReason}`;
+          docEl.dataset.quicknavScrollLockSourceGateUntil = String(STATE.sourceGateUntil);
+        }
+      } catch {}
+      try {
+        refreshScrollerMarker(sc);
+      } catch {}
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function getScrollPos(el) {
@@ -972,6 +1150,84 @@
       return ORIGINAL_ELEM_SCROLL_BY.apply(this, arguments);
     };
   }
+
+  function installChatgptSendSourceGate() {
+    try {
+      if (HOST !== 'chatgpt.com') return;
+      try {
+        window[CHATGPT_SOURCE_GATE_RUNTIME_KEY]?.dispose?.();
+      } catch {}
+
+      const disposers = [];
+      const on = (target, type, listener, options) => {
+        try {
+          target.addEventListener(type, listener, options);
+          disposers.push(() => {
+            try { target.removeEventListener(type, listener, options); } catch {}
+          });
+        } catch {}
+      };
+
+      const maybeArmFromKeydown = (event) => {
+        try {
+          if (!event || event.defaultPrevented) return;
+          const key = String(event.key || event.code || '');
+          const isComposer = isProbablyChatgptComposerTextTarget(event.target);
+          if (!isComposer) return;
+
+          const isCmdEnter =
+            key === 'Enter' &&
+            (event.metaKey || event.ctrlKey) &&
+            !event.altKey &&
+            !event.shiftKey;
+          const isPlainTab =
+            (key === 'Tab' || event.code === 'Tab') &&
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.ctrlKey &&
+            !event.metaKey;
+          if (!isCmdEnter && !isPlainTab) return;
+          if (!getChatgptComposerTextFromTarget(event.target)) return;
+          armChatgptSendSourceGate(isCmdEnter ? 'cmdenter-keydown' : 'tab-keydown');
+        } catch {}
+      };
+
+      const maybeArmFromSendButton = (event) => {
+        try {
+          if (!event) return;
+          if (event.type === 'pointerdown' && event.button !== 0) return;
+          if (!isChatgptSendActionTarget(event.target)) return;
+          armChatgptSendSourceGate(`${event.type || 'click'}-send-button`);
+        } catch {}
+      };
+
+      const maybeArmFromSubmit = (event) => {
+        try {
+          const form = event?.target;
+          if (!form || typeof form.querySelector !== 'function') return;
+          if (!form.querySelector('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]')) return;
+          armChatgptSendSourceGate('form-submit');
+        } catch {}
+      };
+
+      on(window, 'keydown', maybeArmFromKeydown, true);
+      on(document, 'keydown', maybeArmFromKeydown, true);
+      on(document, 'pointerdown', maybeArmFromSendButton, true);
+      on(document, 'click', maybeArmFromSendButton, true);
+      on(document, 'submit', maybeArmFromSubmit, true);
+
+      window[CHATGPT_SOURCE_GATE_RUNTIME_KEY] = {
+        dispose() {
+          for (const dispose of disposers.splice(0)) {
+            try { dispose(); } catch {}
+          }
+        },
+        snapshot: describeSourceGate
+      };
+    } catch {}
+  }
+
+  installChatgptSendSourceGate();
 
   // Notify isolated-world content scripts that the main-world guard is ready.
   try {

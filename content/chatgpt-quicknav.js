@@ -9159,7 +9159,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const currentUi = getUi();
         if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到发送按钮点击，启动突发刷新');
-        armProgrammaticSendScrollLockGuard('cmdenter-keydown', 65000);
+        armProgrammaticSendScrollLockGuard('send-button-click', 65000);
         startBurstRefresh(currentUi, 3200, 160);
       }
     }, true);
@@ -9184,7 +9184,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         const currentUi = getUi();
         if (!currentUi) return;
         if (DEBUG || window.DEBUG_TEMP) console.log('ChatGPT Navigation: 检测到快捷键发送，启动突发刷新');
-        armScrollLockGuard(2200);
+        armProgrammaticSendScrollLockGuard('cmdenter-keydown', 65000);
         startBurstRefresh(currentUi, 3200, 160);
       }
     }, true);

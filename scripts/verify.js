@@ -1108,7 +1108,12 @@ function verifyChatgptTabQueueNoActiveStreamStatusPolling() {
   if (source.includes('replyRenderPollMs') || source.includes('state.replyRender.timer = setInterval')) {
     failures.push(`${relPath} must not use fixed reply-render polling; use event-triggered settle wakeups instead`);
   }
+  if (/function\s+buildAssistantRenderSignature[\s\S]*?turnEl\.textContent/.test(source)) {
+    failures.push(`${relPath} must not allocate full assistant textContent inside buildAssistantRenderSignature`);
+  }
   for (const required of [
+    'buildBoundedTextSignature',
+    'normalizeSignatureTail',
     'scheduleReplyRenderWake',
     'clearReplyRenderTimer',
     'state.replyRender.wakeAt',
@@ -1999,12 +2004,23 @@ function verifyChatgptQuicknavScrollLockReliability() {
     failures.push('content/chatgpt-quicknav.js scroll-lock restore must keep nav and code-block scroll intents allowed');
   }
   for (const required of [
-    'const GUARD_VERSION = 11',
+    'const GUARD_VERSION = 12',
     'function getCoreChatScroller',
     'function readNavExpectedFromDataset',
     'function isExpectedAllowedTarget',
     'isAllowed(ts, targetTop)',
-    'quicknavNavExpectedUntil'
+    'quicknavNavExpectedUntil',
+    'function installChatgptSendSourceGate',
+    'function armChatgptSendSourceGate',
+    'CHATGPT_SEND_SOURCE_GATE_MS = 65000',
+    'CHATGPT_TAB_QUEUE_SEND_PROTECT',
+    'CHATGPT_GENERIC_SEND_PROTECT',
+    'quicknavScrollLockSourceGateUntil',
+    "clearScrollAllowWindowForSend()",
+    "on(window, 'keydown', maybeArmFromKeydown, true)",
+    "on(document, 'keydown', maybeArmFromKeydown, true)",
+    "on(document, 'pointerdown', maybeArmFromSendButton, true)",
+    "on(document, 'submit', maybeArmFromSubmit, true)"
   ]) {
     if (!scrollGuardSource.includes(required)) {
       failures.push(`content/scroll-guard-main.js is missing target-aware nav allow guard: ${required}`);

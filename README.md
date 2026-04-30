@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.17-74c0fc" alt="Current version 4.0.17">
+  <img src="https://img.shields.io/badge/current-4.0.18-74c0fc" alt="Current version 4.0.18">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.18 补丁
+
+这个补丁加固 ChatGPT Pro 下 Tab Queue 的完成门控，避免偶发漏掉流完成事件后队列一直等待。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 新增本地视觉完成门控：当 Pro 回复已经停止生成、输入框恢复、assistant 回复出现并稳定时，可补齐漏掉的 transport done 状态 |
+| 风控安全 | 不新增任何后端状态请求，不恢复 `/stream_status` 轮询 |
+| 性能安全 | 保持 bounded render signature，不读取完整长回复文本 |
 
 ### 4.0.17 补丁
 
@@ -357,6 +367,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.18
+
+This patch hardens the ChatGPT Pro Tab Queue completion gate so queued messages do not wait forever if a stream completion event is missed.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Adds a local visual completion gate: when Pro has stopped generating, the composer is ready, and the assistant reply has appeared and settled, the queue can complete a missed transport-done state |
+| Risk control | Adds no backend status request and does not restore `/stream_status` polling |
+| Performance | Keeps the bounded render signature path and avoids full long-reply text reads |
 
 ### Release 4.0.17
 

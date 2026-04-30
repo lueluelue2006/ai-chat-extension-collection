@@ -43,6 +43,7 @@
     generationStartGraceMs: 900,
     postStopVisualSettleMs: 1200,
     postStopNonGeneratingMs: 900,
+    visualTransportMissSettleMs: 2400,
     generatingBootstrapMaxAttempts: 40,
     generatingBootstrapStepMs: 600,
     localResponseRetryMs: 700,
@@ -387,15 +388,53 @@
     return turns.length ? turns[turns.length - 1] : null;
   }
 
+  function normalizeSignatureTail(value, maxChars = 180) {
+    const raw = String(value || '');
+    if (!raw) return '';
+    return raw
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(-Math.max(24, Number(maxChars) || 180));
+  }
+
+  function buildBoundedTextSignature(rootEl) {
+    if (!rootEl) return { length: 0, nodes: 0, tail: '' };
+    const maxTailChars = 180;
+    const tailSliceChars = maxTailChars * 3;
+    let totalLength = 0;
+    let nodeCount = 0;
+    let tail = '';
+
+    try {
+      const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const value = walker.currentNode?.nodeValue || '';
+        if (!value) continue;
+        nodeCount += 1;
+        totalLength += value.length;
+        const piece = value.length > tailSliceChars ? value.slice(-tailSliceChars) : value;
+        tail = normalizeSignatureTail(`${tail} ${piece}`, maxTailChars);
+      }
+    } catch {
+      try {
+        totalLength = Number(rootEl.childNodes?.length || 0);
+      } catch {
+        totalLength = 0;
+      }
+    }
+
+    return {
+      length: totalLength,
+      nodes: nodeCount,
+      tail
+    };
+  }
+
   function buildAssistantRenderSignature(turnEl) {
     if (!turnEl) return '';
     const key = getTurnMessageId(turnEl) || getTurnKey(turnEl);
-    let text = '';
-    try {
-      text = String(turnEl.textContent || '').replace(/\s+/g, ' ').trim();
-    } catch {}
-    const tail = text.length > 160 ? text.slice(-160) : text;
-    return `${key}|${text.length}|${tail}`;
+    const text = buildBoundedTextSignature(turnEl);
+    return `${key}|${text.length}|${text.nodes}|${text.tail}`;
   }
 
   function getUserTurnSnapshot() {
@@ -1878,6 +1917,34 @@
     });
   }
 
+  function promotePendingGateFromVisualCompletion(gate, options = {}) {
+    if (!gate || typeof gate !== 'object') return false;
+    if (gate.transportDone === true) return false;
+    if (gate.sawGenerating !== true) return false;
+    if (options.generatingNow === true) return false;
+    if ((Number(options.assistantTurnCount) || 0) <= (Number(gate.beforeAssistantCount) || 0)) return false;
+    if ((Number(options.nonGeneratingForMs) || 0) < Math.max(0, Number(CONFIG.postStopNonGeneratingMs) || 0)) {
+      return false;
+    }
+    if ((Number(options.replyRenderWaitMs) || 0) > 0) return false;
+    if (
+      !isPendingGateVisuallySettled({
+        settleMs: Math.max(0, Number(CONFIG.visualTransportMissSettleMs) || CONFIG.postStopVisualSettleMs)
+      })
+    ) {
+      return false;
+    }
+
+    gate.transportDone = true;
+    gate.streamStatus = 'VISUAL_COMPLETION';
+    gate.streamStatusCheckedAt = now();
+    if (state.activeRequests.size > 0) state.activeRequests.clear();
+    markCurrentConversationStreamStatus('DONE', 'visual-completion-gate');
+    clearAwaitingConversationStart();
+    markQueueActivity();
+    return true;
+  }
+
   async function maybeReleasePendingSendGate() {
     clearSendGateTimer();
     const gate = state.pendingSendGate;
@@ -1889,6 +1956,14 @@
     }
     const nonGeneratingForMs = generatingNow ? 0 : Math.max(0, now() - (Number(state.lastGeneratingChangeAt) || 0));
     const replyRenderWaitMs = getLiveReplyRenderWaitMs();
+    const assistantTurnCount = collectAssistantTurns().length;
+
+    promotePendingGateFromVisualCompletion(gate, {
+      generatingNow,
+      nonGeneratingForMs,
+      replyRenderWaitMs,
+      assistantTurnCount
+    });
 
     const decision = getPendingSendGateState(gate, {
       generatingNow,
@@ -1896,7 +1971,7 @@
       generationStartGraceMs: CONFIG.generationStartGraceMs,
       nonGeneratingForMs,
       requiredNonGeneratingMs: CONFIG.postStopNonGeneratingMs,
-      assistantTurnCount: collectAssistantTurns().length,
+      assistantTurnCount,
       replyRenderWaitMs
     });
 

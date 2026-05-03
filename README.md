@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.19-74c0fc" alt="Current version 4.0.19">
+  <img src="https://img.shields.io/badge/current-4.0.24-74c0fc" alt="Current version 4.0.24">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,61 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.24 补丁
+
+这个补丁继续修 ChatGPT QuickNav 自动滚动锁：真实页面打点确认，ChatGPT 在发送后会对新回复 turn 调用 `scrollIntoView({ behavior: "smooth", block: "end" })`，这就是发送后被拉到底部的源头之一。QuickNav 现在会把 Cmd+Enter 桥接明确标记为用户发起发送，避免被当成普通程序化保护并复用旧基线。
+
+| 方向 | 更新 |
+| --- | --- |
+| 原生滚动源头 | 主世界 guard 继续在 `scrollTop` / `scrollTo` / `scrollIntoView` 源头拦截 ChatGPT 的发送后跳底 |
+| Cmd+Enter | Cmd+Enter 发送桥接新增用户触发标记，保护基线绑定当前视口 |
+| 路由清理 | 离开聊天路由时清掉旧 anchor、route scroll 期望和 MAIN-world 锁状态，避免非聊天页面/新聊天页继承过期锁 |
+| 回归验证 | verify 覆盖 Cmd+Enter 用户触发标记与 route cleanup guard |
+
+### 4.0.23 补丁
+
+这个补丁修复 ChatGPT QuickNav 自动滚动锁在发送保护窗口内偶发“往上跑”的问题：用户用 `Tab`、`Cmd+Enter` 或发送按钮触发发送时，锁定基线会优先绑定当前视口，而不是沿用可能过期的旧基线；锚点恢复也不会再把页面拉到锁定基线以上。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 空闲 `Tab` 直发必须等到请求、生成态或输入框清空等本地证据确认；未确认时会回退入队，避免偶发吞掉发送 |
+| QuickNav 锁 | 用户发起发送时以当前视口作为保护基线，避免旧 `stablePos` 把页面拉回上方 |
+| Anchor fallback | 锚点恢复增加基线下限，保留“防跳底”的同时避免过度向上修正 |
+| Tab Queue | 回归测试覆盖空闲 `Tab` 直发与回复中 `Tab` 入队自动续发，未恢复任何主动轮询 |
+
+### 4.0.22 补丁
+
+这个补丁继续压低 ChatGPT 重度使用时的性能和风控风险：Tab Queue 不再依赖任何主动轮询；空闲时按 `Tab` 会直接走官网发送按钮，不再先闪一下“已排队”；真正回复中入队时仍由事件门控等待当前流结束。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tab Queue | 空闲 `Tab` 改为直发路径，避免临时队列闪烁、重复状态和误判黄色队列标记 |
+| 强发门控 | “强发”按钮也必须尊重 active request / stream / render settle，不会在上一条仍在生成时抢发 |
+| 性能 | Fetch Hub 在只有完成事件消费者时使用 pass-through stream tap，避免不必要的 `Response.clone()`；热路径去掉大块 `innerText` 读取 |
+| QuickNav 锁 | 新增标量锚点 fallback，Tab 发送后优先按当前可见 turn 恢复视口，减少长对话里绝对 scrollTop 漂移 |
+| 回归验证 | 已在真实 ChatGPT 正常对话里验证空闲 Tab 直发、回复中入队、强发不抢发、QuickNav 锁定不跳底 |
+
+### 4.0.21 补丁
+
+这个补丁把 ChatGPT QuickNav 自动滚动锁进一步往源头拦截推进：当新版 ChatGPT 在发送后新建真实滚动容器并直接写入 `scrollTop` 时，主世界 guard 会立即认领这个真实 scroller，而不是继续相信早期缓存的 `HTML` scroller。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 锁 | 修复发送后真实滚动容器晚出现时的 stale scroller 缓存，减少先跳到底部再被拉回的抽搐 |
+| Source gate | 在 send/source-gate 保护窗口内，直接识别 ChatGPT `group/scroll-root` / `main` 容器并拦截明显向底部的程序化 `scrollTop` 写入 |
+| 回归保护 | verify 要求新版 source guard 具备真实 scroller 候选认领逻辑 |
+
+### 4.0.20 补丁
+
+这个补丁修复 ChatGPT 输入框多段 DOM 导致的换行膨胀，并加固 Tab Queue 在 Follow up 输入框已开放但上一条仍未完成时的等待判定。
+
+| 方向 | 更新 |
+| --- | --- |
+| Composer 文本读取 | 新增语义化 composer 读取：按 ProseMirror 段落恢复用户实际换行，避免 `innerText` 把一个空行读成多个空行 |
+| Tab Queue / 快捷深度搜索 | 改用共享 composer 读取路径，发送多行 prompt 时不再复制 ChatGPT live DOM 的额外空行 |
+| Tab Queue 门控 | 最新 assistant turn 尚未出现完成动作区时，即使 Follow up 输入框和发送按钮可用，也继续视为上一条仍在进行，避免 Tab 抢发补充消息 |
+| 回归保护 | verify 覆盖多段 `<p>` 与原生恢复单段 newline 两种 composer 形态 |
 
 ### 4.0.19 补丁
 
@@ -377,6 +432,61 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.24
+
+This patch continues hardening ChatGPT QuickNav scroll lock. Real-page instrumentation confirmed that ChatGPT calls `scrollIntoView({ behavior: "smooth", block: "end" })` on the new reply turn after send, which is one source of bottom jumps. Cmd+Enter bridge messages now explicitly mark user-initiated sends so QuickNav binds the protection baseline to the current viewport instead of reusing stale state.
+
+| Area | Update |
+| --- | --- |
+| Native scroll source | The main-world guard continues intercepting ChatGPT's send-time `scrollTop` / `scrollTo` / `scrollIntoView` jumps at the source |
+| Cmd+Enter | Cmd+Enter send protection now carries a user-requested marker and preserves the current viewport baseline |
+| Route cleanup | Leaving chat routes clears stale anchors, route scroll expectations, and main-world lock state without changing the user's lock preference |
+| Regression checks | verify now covers the Cmd+Enter user marker and route cleanup guard |
+
+### Release 4.0.23
+
+This patch fixes a ChatGPT QuickNav scroll-lock regression where the protected viewport could occasionally drift upward during send protection windows. User-initiated sends now bind the protection baseline to the current viewport, and anchor fallback restoration is clamped so it cannot restore above the locked baseline.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Idle `Tab` direct-send now requires request, generation, or composer-clear confirmation; unconfirmed clicks fall back to queueing instead of swallowing the send |
+| QuickNav lock | `Tab`, `Cmd+Enter`, and send-button initiated protection now preserves the current viewport instead of reusing a stale `stablePos` |
+| Anchor fallback | Anchor restoration keeps its lower bound at the active lock baseline, avoiding excessive upward correction |
+| Tab Queue | Browser regression covered idle Tab direct-send and in-flight queued auto-send without adding active polling |
+
+### Release 4.0.22
+
+This patch further reduces performance and moderation-risk surface for heavy ChatGPT workflows. Tab Queue no longer uses active polling; idle `Tab` now sends through ChatGPT's own send button directly instead of briefly creating a queued item, while true in-flight queuing remains event-gated until the current stream finishes.
+
+| Area | Update |
+| --- | --- |
+| Tab Queue | Idle `Tab` now uses a direct-send path, avoiding transient queue UI, duplicate state, and false queued-message highlighting |
+| Force-send gate | The force button still respects active requests, stream state, and render settling, so it cannot race ahead of an unfinished reply |
+| Performance | Fetch Hub uses a pass-through stream tap when only completion hooks are registered, avoiding unnecessary `Response.clone()`; hot paths avoid large `innerText` reads |
+| QuickNav lock | Adds a scalar anchor fallback so Tab sends restore the visible turn first and rely less on fragile absolute `scrollTop` |
+| Regression evidence | Verified in real normal ChatGPT conversations: idle Tab direct send, in-flight queueing, no force-send race, and no bottom jump while locked |
+
+### Release 4.0.21
+
+This patch moves ChatGPT QuickNav scroll locking closer to source-level interception. When the refreshed ChatGPT UI creates the real chat scroller after send and writes directly to `scrollTop`, the main-world guard now adopts that real scroller immediately instead of trusting an early cached `HTML` scroller.
+
+| Area | Update |
+| --- | --- |
+| QuickNav lock | Fixes stale scroller caching after send, reducing visible jump-then-restore behavior |
+| Source gate | Recognizes ChatGPT `group/scroll-root` / `main` containers during send protection and blocks obvious downward programmatic `scrollTop` writes |
+| Regression guard | verify now requires real-scroller candidate adoption in the source guard |
+
+### Release 4.0.20
+
+This patch fixes ChatGPT composer newline expansion and hardens Tab Queue when the Follow up composer is open while the previous assistant turn is still unfinished.
+
+| Area | Update |
+| --- | --- |
+| Composer text reading | Adds semantic composer extraction that restores user-intended ProseMirror paragraph newlines instead of trusting `innerText` |
+| Tab Queue / Quick Deep Search | Uses the shared composer reader so multiline prompts are not sent with extra blank lines copied from the live DOM |
+| Tab Queue gate | Treats a latest assistant turn without completion actions as still active, even when the Follow up composer and send button are already available |
+| Regression guard | Covers both multi-`<p>` live composer and native restored single-block newline shapes |
 
 ### Release 4.0.19
 

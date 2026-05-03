@@ -125,7 +125,9 @@
 
   function readContentEditableText(el) {
     try {
-      return normalizeText(el?.innerText || el?.textContent || '');
+      const c = core();
+      if (c && typeof c.readContentEditableText === 'function') return normalizeText(c.readContentEditableText(el));
+      return normalizeText(el?.textContent || '');
     } catch {
       return '';
     }
@@ -135,7 +137,11 @@
     const editor = editorEl();
     if (editor) {
       if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) return normalizeText(editor.value || '');
-      if (editor.isContentEditable) return readContentEditableText(editor);
+      if (editor.isContentEditable) {
+        const c = core();
+        if (c && typeof c.readComposerText === 'function') return normalizeText(c.readComposerText(editor));
+        return readContentEditableText(editor);
+      }
     }
     const fallback = editorFallback();
     return fallback ? normalizeText(fallback.value || '') : '';

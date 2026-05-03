@@ -341,7 +341,13 @@
   function readContentEditableText(el) {
     try {
       if (!el) return '';
-      const text = typeof el.innerText === 'string' ? (el.innerText || '').trim() : '';
+      const c = core();
+      const text =
+        c && typeof c.readContentEditableText === 'function'
+          ? String(c.readContentEditableText(el) || '').trim()
+          : typeof el.textContent === 'string'
+            ? String(el.textContent || '').trim()
+            : '';
       if (!text) return '';
       const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder');
       const placeholderText = placeholderEl ? String(placeholderEl.textContent || '').trim() : '';
@@ -354,7 +360,11 @@
 
   function editorText() {
     const el = editorEl();
-    if (el) return readContentEditableText(el);
+    if (el) {
+      const c = core();
+      if (c && typeof c.readComposerText === 'function') return String(c.readComposerText(el) || '').trim();
+      return readContentEditableText(el);
+    }
     const fb = editorFallback();
     return fb && typeof fb.value === 'string' ? fb.value.trim() : '';
   }
@@ -362,7 +372,7 @@
   function isLongContent() {
     try {
       const el = editorEl();
-      if (el && typeof el.innerText === 'string') return el.innerText.length > LONG_CONTENT_THRESHOLD;
+      if (el) return String(editorText() || '').length > LONG_CONTENT_THRESHOLD;
     } catch {}
     try {
       const fb = editorFallback();

@@ -42,7 +42,7 @@
   }
 
   try {
-    const GUARD_VERSION = 12;
+    const GUARD_VERSION = 13;
     const ORIGINALS_KEY = '__quicknavMainScrollGuardOriginalsV1__';
 
     const prevVersion = Number(window.__quicknavMainScrollGuardVersion || 0);
@@ -627,12 +627,12 @@
     } catch {}
   }
 
-  function getCoreChatScroller() {
+  function getCoreChatScroller(force = false) {
     try {
       if (HOST !== 'chatgpt.com') return null;
       const core = window.__aichat_chatgpt_core_main_v1__ || null;
       if (!core || typeof core.getChatScrollContainer !== 'function') return null;
-      const sc = core.getChatScrollContainer(false);
+      const sc = core.getChatScrollContainer(force === true);
       return sc && sc.isConnected ? sc : null;
     } catch {
       return null;
@@ -662,7 +662,7 @@
     const t = now();
     if (__cachedScroller && __cachedScroller.isConnected && (t - __cachedScrollerAt) < 1200) {
       if (HOST === 'chatgpt.com' && isWindowScroller(__cachedScroller)) {
-        const coreScroller = getCoreChatScroller();
+        const coreScroller = getCoreChatScroller(STATE.sourceGateUntil && t < STATE.sourceGateUntil);
         if (coreScroller && !isWindowScroller(coreScroller)) {
           __cachedScroller = coreScroller;
           __cachedScrollerAt = t;
@@ -676,7 +676,7 @@
       return __cachedScroller;
     }
     __cachedScrollerAt = t;
-    let sc = getCoreChatScroller();
+    let sc = getCoreChatScroller(HOST === 'chatgpt.com' && STATE.sourceGateUntil && t < STATE.sourceGateUntil);
     if (!sc) sc = getGeminiScroller() || detectChatScrollerFallback();
     __cachedScroller = sc || null;
     try {
@@ -809,7 +809,11 @@
         document.querySelector?.('#prompt-textarea, textarea[name="prompt-textarea"], [contenteditable="true"][id="prompt-textarea"], [role="textbox"][id="prompt-textarea"]');
       if (!editor) return '';
       if ('value' in editor) return String(editor.value || '').trim();
-      return String(editor.innerText || editor.textContent || '').trim();
+      const core = window.__aichat_chatgpt_core_main_v1__ || null;
+      if (core && typeof core.readContentEditableText === 'function') {
+        return String(core.readContentEditableText(editor) || '').trim();
+      }
+      return String(editor.textContent || '').trim();
     } catch {
       return '';
     }
@@ -891,6 +895,34 @@
     return el.scrollTop || 0;
   }
 
+  function isLikelyChatgptChatScrollerCandidate(el) {
+    try {
+      if (HOST !== 'chatgpt.com') return false;
+      if (!(el instanceof Element) || isWindowScroller(el)) return false;
+      if (!isScrollableY(el)) return false;
+      const main = document.getElementById?.('main') || document.querySelector?.('main') || null;
+      if (main && el.contains?.(main)) return true;
+      const cls = String(el.className || '');
+      if (cls.includes('group/scroll-root')) return true;
+      if (el.querySelector?.('#thread-bottom, [data-testid^="conversation-turn-"]')) return true;
+    } catch {}
+    return false;
+  }
+
+  function adoptChatgptChatScrollerCandidate(el) {
+    try {
+      if (!isLikelyChatgptChatScrollerCandidate(el)) return null;
+      __cachedScroller = el;
+      __cachedScrollerAt = now();
+      __cachedScrollerRect = null;
+      __cachedScrollerRectAt = 0;
+      if (STATE.enabled) refreshScrollerMarker(el);
+      return el;
+    } catch {
+      return null;
+    }
+  }
+
   function readRectCached(el, ttl = 16) {
     if (!el || !el.getBoundingClientRect) return null;
     const ts = now();
@@ -945,10 +977,14 @@
 
   function shouldBlockElementScroll(el, nextTop) {
     if (shouldBypassNestedCodeScroll(el)) return false;
-    const cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    const ts = now();
+    let cached = __cachedScroller && __cachedScroller.isConnected ? __cachedScroller : null;
+    const sourceGateActive = HOST === 'chatgpt.com' && STATE.sourceGateUntil && ts < STATE.sourceGateUntil;
+    if (sourceGateActive && isLikelyChatgptChatScrollerCandidate(el) && (!cached || cached !== el || isWindowScroller(cached))) {
+      cached = adoptChatgptChatScrollerCandidate(el) || cached;
+    }
     if (cached && !isWindowScroller(cached) && el !== cached) return false;
 
-    const ts = now();
     // Occasionally refresh the cached scroller in case SPA navigation/hydration replaced it.
     // This also allows switching from an early window-scroller guess to the real nested chat scroller.
     if (!isChatgptHeavyStreaming() && cached && ts - (__cachedScrollerAt || 0) > 1200) {

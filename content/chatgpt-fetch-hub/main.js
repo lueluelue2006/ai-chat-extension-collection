@@ -423,6 +423,100 @@
       for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
     }
 
+    function notifyConversationDone(ctx) {
+      for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+    }
+
+    function tryMirrorResponseMetadata(target, source) {
+      if (!target || !source) return target;
+      for (const key of ['url', 'redirected', 'type']) {
+        try {
+          const value = source[key];
+          Object.defineProperty(target, key, {
+            configurable: true,
+            enumerable: false,
+            get: () => value
+          });
+        } catch {}
+      }
+      return target;
+    }
+
+    function tapConversationDoneResponse(response, ctx) {
+      try {
+        if (!responseLooksLikeSse(response)) {
+          ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'non-sse' };
+          notifyConversationDone(ctx);
+          return response;
+        }
+
+        const body = response?.body;
+        if (!body || typeof body.pipeThrough !== 'function' || typeof TransformStream !== 'function') {
+          return null;
+        }
+
+        const decoder = new TextDecoder();
+        let firstByteAt = null;
+        let sawDone = false;
+        let finalized = false;
+        let tail = '';
+
+        const finalize = (error = null) => {
+          if (finalized) return;
+          finalized = true;
+          ctx.stream = {
+            ...ctx.stream,
+            firstByteAt: ctx.stream.firstByteAt || firstByteAt,
+            doneAt: now(),
+            sawDone,
+            error
+          };
+          notifyConversationDone(ctx);
+        };
+
+        const stream = new TransformStream({
+          transform(chunk, controller) {
+            try {
+              if (!firstByteAt) firstByteAt = now();
+              if (chunk) {
+                let text = decoder.decode(chunk, { stream: true });
+                if (text.includes('\r')) text = text.replace(/\r/g, '');
+                tail += text;
+                if (tail.length > 4096) tail = tail.slice(-4096);
+                if (SSE_DONE_RE.test(tail)) sawDone = true;
+              }
+            } catch (e) {
+              finalize(e instanceof Error ? e : new Error(String(e)));
+            }
+            controller.enqueue(chunk);
+          },
+          flush() {
+            try {
+              const rest = decoder.decode();
+              if (rest) {
+                tail += rest.replace(/\r/g, '');
+                if (tail.length > 4096) tail = tail.slice(-4096);
+                if (SSE_DONE_RE.test(tail)) sawDone = true;
+              }
+            } catch {}
+            finalize(null);
+          }
+        });
+
+        const tappedBody = body.pipeThrough(stream);
+        const tapped = new Response(tappedBody, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers
+        });
+        return tryMirrorResponseMetadata(tapped, response);
+      } catch (e) {
+        ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: e instanceof Error ? e : new Error(String(e)) };
+        notifyConversationDone(ctx);
+        return response;
+      }
+    }
+
     async function wrappedFetch(input, init) {
       if (inOriginalFetchCall) {
         const fallbackFetch = state.nativeFetch || state.originalFetch;
@@ -546,19 +640,26 @@
         for (const h of state.hooks.conversationResponse) safeCall(h.fn, ctx);
       }
 
-      // Parse SSE in background (do NOT block page fetch)
+      // Observe the SSE lifecycle without duplicating the stream when only completion hooks are needed.
+      // Falling back to clone keeps older/unsupported browser paths working.
       if (isConversation && shouldParseConversationStream()) {
         try {
+          if (!shouldParseConversationStreamFully()) {
+            const tapped = tapConversationDoneResponse(response, ctx);
+            if (tapped) return tapped;
+          }
+
+          // Parse SSE in background (do NOT block page fetch)
           const clone = response?.clone?.();
           if (clone) {
             void (shouldParseConversationStreamFully() ? parseConversationSseStream(clone, ctx) : drainConversationSseStream(clone, ctx));
           } else {
             ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: null, contentType: 'no-clone' };
-            for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+            notifyConversationDone(ctx);
           }
         } catch (e) {
           ctx.stream = { ...ctx.stream, doneAt: now(), sawDone: false, error: e instanceof Error ? e : new Error(String(e)) };
-          for (const h of state.hooks.conversationDone) safeCall(h.fn, ctx);
+          notifyConversationDone(ctx);
         }
       }
 

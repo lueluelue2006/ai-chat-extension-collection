@@ -604,6 +604,7 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       this.textContent = text;
       this.innerText = text;
       this.children = [];
+      this.childNodes = this.children;
       this.parentElement = null;
       this.isConnected = true;
       this.scrollHeight = 1200;
@@ -615,6 +616,7 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       for (const child of children) {
         if (!child) continue;
         child.parentElement = this;
+        child.parentNode = this;
         this.children.push(child);
       }
       return this;
@@ -658,7 +660,7 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       const out = [];
       const walk = (node) => {
         for (const child of node.children || []) {
-          if (selectors.some((sel) => selectorMatches(child, sel))) out.push(child);
+          if (child?.nodeType === 1 && selectors.some((sel) => selectorMatches(child, sel))) out.push(child);
           walk(child);
         }
       };
@@ -672,6 +674,18 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
 
     click() {
       this.clicked = true;
+    }
+  }
+
+  class FakeText {
+    constructor(value) {
+      this.nodeType = 3;
+      this.nodeValue = String(value || '');
+      this.textContent = this.nodeValue;
+      this.parentElement = null;
+      this.parentNode = null;
+      this.children = [];
+      this.childNodes = this.children;
     }
   }
 
@@ -807,6 +821,28 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
     form.append(editor, attach, mode, send);
     document.body.append(form);
 
+    const blankLineEditor = new FakeElement('div', {
+      attrs: { contenteditable: 'true' },
+      className: 'ProseMirror'
+    });
+    const p1 = new FakeElement('p');
+    p1.append(new FakeText('A'));
+    const pBlank = new FakeElement('p');
+    pBlank.append(new FakeElement('br', { className: 'ProseMirror-trailingBreak' }));
+    const p2 = new FakeElement('p');
+    p2.append(new FakeText('B'));
+    const p3 = new FakeElement('p');
+    p3.append(new FakeText('C'));
+    blankLineEditor.append(p1, pBlank, p2, p3);
+
+    const restoredEditor = new FakeElement('div', {
+      attrs: { contenteditable: 'true' },
+      className: 'ProseMirror'
+    });
+    const restoredP = new FakeElement('p');
+    restoredP.append(new FakeText('A\n\nB\nC'));
+    restoredEditor.append(restoredP);
+
     const sandbox = {
       console,
       Date,
@@ -849,6 +885,15 @@ function verifyChatgptDomAdapterContract(runtimeDefs) {
       if (api.getModelSwitcherButton() !== mode) failures.push('adapter did not fall back to the composer model pill');
       if (api.readCurrentModelLabel() !== 'Extended Pro') failures.push('adapter did not read composer model label');
       if (api.readComposerModeLabel(editor) !== 'Extended Pro') failures.push('adapter did not read composer mode label');
+      if (typeof api.readComposerText !== 'function') failures.push('adapter is missing readComposerText');
+      else {
+        if (api.readComposerText(blankLineEditor) !== 'A\n\nB\nC') {
+          failures.push(`adapter did not preserve semantic ProseMirror paragraph newlines: ${JSON.stringify(api.readComposerText(blankLineEditor))}`);
+        }
+        if (api.readComposerText(restoredEditor) !== 'A\n\nB\nC') {
+          failures.push(`adapter did not preserve restored literal newlines: ${JSON.stringify(api.readComposerText(restoredEditor))}`);
+        }
+      }
       if (api.getConversationIdFromUrl() !== 'test-conversation') failures.push('adapter did not parse conversation id');
     }
   } catch (error) {
@@ -1029,7 +1074,10 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
     'item.highlightOnSend = !directTabSend',
     'canTreatTabQueueAttemptAsDirectSend',
     'shouldHighlightQueuedSend(head)',
-    'if (readSettings().quicknavMarkEnabled && shouldHighlightQueuedSend(head))'
+    'if (readSettings().quicknavMarkEnabled && shouldHighlightQueuedSend(head))',
+    "source: 'keydown-tab-direct-unconfirmed'",
+    "postQueuedSendProtectBridge(null, 'failed'",
+    'clearManualSendWarmup({ scheduleQueue: false })'
   ]) {
     if (!tabQueueSource.includes(required)) {
       failures.push(`content/chatgpt-tab-queue/main.js is missing direct-send highlight guard: ${required}`);
@@ -1116,6 +1164,34 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
     }
     if (direct({ queueLengthBefore: 0, activeRequestCount: 0, replyRenderWaitMs: 500 })) {
       failures.push('reply render settle wait should not be classified as a direct send');
+    }
+  }
+
+  if (!tabQueue || typeof tabQueue.shouldTreatAssistantThinkingAsGenerating !== 'function') {
+    failures.push('content/chatgpt-tab-queue/main.js must export shouldTreatAssistantThinkingAsGenerating');
+  } else {
+    const activeAssistant = tabQueue.shouldTreatAssistantThinkingAsGenerating;
+    if (
+      !activeAssistant({
+        hasCompletionAction: false,
+        hasCopyAction: false,
+        hasThinkingIndicator: false,
+        latestAssistantHasText: true,
+        latestAssistantIsLastTurn: false
+      })
+    ) {
+      failures.push('visible assistant text without completion actions should still block Tab direct-send in Follow up mode');
+    }
+    if (
+      activeAssistant({
+        hasCompletionAction: true,
+        hasCopyAction: true,
+        hasThinkingIndicator: false,
+        latestAssistantHasText: true,
+        latestAssistantIsLastTurn: true
+      })
+    ) {
+      failures.push('completed assistant actions should release Tab direct-send blocking');
     }
   }
 
@@ -2005,19 +2081,27 @@ function verifyChatgptQuicknavScrollLockReliability() {
     "scheduleScrollLockRestore('nav-unexpected-programmatic'",
     "scheduleScrollLockRestore('scroll-event'",
     "scheduleScrollLockRestore('mutation'",
-    "scheduleScrollLockRestore(reason, [0, 40, 100, 220, 420, 800, 1500",
+    "scheduleScrollLockRestore(reasonText, [0, 40, 100, 220, 420, 800, 1500",
     "60000])",
     'postScrollLockBaselineToMainWorld(scrollLockStablePos, true)',
     'TAB_QUEUE_BRIDGE_SEND_PROTECT',
     'CHATGPT_SEND_BRIDGE_SEND_PROTECT',
     'function armProgrammaticSendScrollLockGuard',
     'function handleChatgptSendScrollProtect',
+    'function suspendScrollLockForRouteCleanup',
+    "disposeConversation('non-chat-route'",
+    'scrollLockEnabled = false',
+    'userRequested: data.userRequested === true',
     'writeRuntimeGuardFlag(CHATGPT_TAB_QUEUE_BRIDGE_BOUND_KEY, CHATGPT_TAB_QUEUE_BRIDGE_BOUND_LEGACY_KEY, false)',
     "armProgrammaticSendScrollLockGuard('tab-hotkey-keydown'",
     "armProgrammaticSendScrollLockGuard('cmdenter-keydown'",
     'function scheduleProgrammaticSendScrollLockRestore',
+    'function isScrollLockAnchorStable',
+    'if (isScrollLockAnchorStable(sc))',
+    'function hasScrollLockBaselineMovedPastRestoreTarget',
+    'if (hasScrollLockBaselineMovedPastRestoreTarget(target)) return;',
     'cancelProgrammaticSendScrollLockRestoreSchedule',
-    'scheduleProgrammaticSendScrollLockRestore(reason, baseline)',
+    'scheduleProgrammaticSendScrollLockRestore(reasonText, baseline)',
     'quicknavScrollLockProtectReason',
     'scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, scrollLockLastMutationTs + 2000)',
     'const longGuardActive = (Number(scrollLockGuardUntil) || 0) - scrollLockLastMutationTs > 5000',
@@ -2037,6 +2121,7 @@ function verifyChatgptQuicknavScrollLockReliability() {
     'AISHORTCUTS_SCROLLLOCK_BASELINE',
     'QUICKNAV_SEND_PROTECT',
     'AISHORTCUTS_CHATGPT_SEND_PROTECT',
+    'userRequested: true',
     "preArmQuickNavScrollLockForChatgptSend(promptEl, 'cmdenter-before-send')"
   ]) {
     if (!cmdenterSource.includes(required)) {
@@ -2057,8 +2142,10 @@ function verifyChatgptQuicknavScrollLockReliability() {
     failures.push('content/chatgpt-quicknav.js scroll-lock restore must keep nav and code-block scroll intents allowed');
   }
   for (const required of [
-    'const GUARD_VERSION = 12',
+    'const GUARD_VERSION = 13',
     'function getCoreChatScroller',
+    'function isLikelyChatgptChatScrollerCandidate',
+    'function adoptChatgptChatScrollerCandidate',
     'function readNavExpectedFromDataset',
     'function isExpectedAllowedTarget',
     'isAllowed(ts, targetTop)',
@@ -2150,7 +2237,9 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   if (!quicknavSource.includes('shouldFreshTail') || !quicknavSource.includes('TAIL_RECALC_TURNS')) {
     failures.push('content/chatgpt-quicknav.js must reread tail previews from DOM so streaming partial text is finalized');
   }
-  if (!coreSource.includes('API_VERSION = 11') || !coreSource.includes('isLikelyConversationTurnElement') || !coreSource.includes('!isLikelyConversationTurnElement(turn)')) {
+  const coreVersionMatch = coreSource.match(/API_VERSION\s*=\s*(\d+)/);
+  const coreVersion = coreVersionMatch ? Number(coreVersionMatch[1]) : 0;
+  if (coreVersion < 11 || !coreSource.includes('isLikelyConversationTurnElement') || !coreSource.includes('!isLikelyConversationTurnElement(turn)')) {
     failures.push('content/chatgpt-core.js must reject empty ChatGPT conversation-turn shells and bump the core API version');
   }
   if (

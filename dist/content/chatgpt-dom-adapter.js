@@ -3,7 +3,7 @@
   'use strict';
 
   const API_KEY = '__aichat_chatgpt_dom_adapter_v1__';
-  const API_VERSION = 1;
+  const API_VERSION = 2;
 
   const TURN_HOST_SELECTOR = 'section[data-testid^="conversation-turn-"], article[data-testid^="conversation-turn-"]';
   const TURN_SELECTOR = `${TURN_HOST_SELECTOR}, [data-testid^="conversation-turn-"]`;
@@ -212,6 +212,113 @@
     } catch {
       return null;
     }
+  }
+
+  function isTextareaLike(el) {
+    if (!el || typeof el !== 'object') return false;
+    try {
+      if (typeof HTMLTextAreaElement !== 'undefined' && el instanceof HTMLTextAreaElement) return true;
+    } catch {}
+    try {
+      return String(el.tagName || '').toUpperCase() === 'TEXTAREA';
+    } catch {
+      return false;
+    }
+  }
+
+  function isTextNodeLike(node) {
+    try {
+      return node && node.nodeType === 3;
+    } catch {
+      return false;
+    }
+  }
+
+  function isElementNodeLike(node) {
+    try {
+      return node && node.nodeType === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  function getNodeTextValue(node) {
+    try {
+      return String(node?.nodeValue || '').replace(/\r/g, '');
+    } catch {
+      return '';
+    }
+  }
+
+  function isPlaceholderNode(node) {
+    try {
+      if (!isElementNodeLike(node)) return false;
+      if (node.matches?.('.placeholder, .ProseMirror-placeholder, .ProseMirror-widget')) return true;
+      const cls = String(node.className || '');
+      return /\bplaceholder\b/.test(cls) || /\bProseMirror-widget\b/.test(cls);
+    } catch {
+      return false;
+    }
+  }
+
+  function isBlockNode(node) {
+    if (!isElementNodeLike(node)) return false;
+    const tag = String(node.tagName || '').toUpperCase();
+    return /^(P|DIV|LI|PRE|BLOCKQUOTE|H[1-6])$/.test(tag);
+  }
+
+  function collectComposerNodeText(node) {
+    if (!node) return '';
+    if (isTextNodeLike(node)) return getNodeTextValue(node);
+    if (!isElementNodeLike(node)) return '';
+    if (isPlaceholderNode(node)) return '';
+    const tag = String(node.tagName || '').toUpperCase();
+    if (tag === 'BR') {
+      try {
+        if (/\bProseMirror-trailingBreak\b/.test(String(node.className || ''))) return '';
+      } catch {}
+      return '\n';
+    }
+    let out = '';
+    try {
+      for (const child of Array.from(node.childNodes || [])) out += collectComposerNodeText(child);
+    } catch {}
+    return out;
+  }
+
+  function readContentEditableText(el) {
+    try {
+      if (!el) return '';
+      const directChildren = Array.from(el.childNodes || []);
+      const blocks = directChildren.filter((node) => isBlockNode(node) || isTextNodeLike(node));
+      const text =
+        blocks.length > 1
+          ? blocks.map((node) => collectComposerNodeText(node)).join('\n')
+          : collectComposerNodeText(el);
+      const normalized = String(text || '').replace(/\r/g, '');
+      const placeholderEl = el.querySelector?.('.placeholder.ProseMirror-widget, .placeholder, .ProseMirror-placeholder');
+      const placeholderText = placeholderEl ? collectComposerNodeText(placeholderEl).trim() || String(placeholderEl.textContent || '').trim() : '';
+      if (placeholderText && normalized.trim() === placeholderText) return '';
+      return normalized;
+    } catch {
+      return '';
+    }
+  }
+
+  function readComposerText(editorEl) {
+    const editor = editorEl || getEditorEl();
+    if (!editor) return '';
+    if (isTextareaLike(editor)) {
+      try {
+        return String(editor.value || '').replace(/\r/g, '');
+      } catch {
+        return '';
+      }
+    }
+    try {
+      if (editor.isContentEditable || editor.getAttribute?.('contenteditable') === 'true') return readContentEditableText(editor);
+    } catch {}
+    return '';
   }
 
   function getModelSwitcherButton() {
@@ -530,7 +637,12 @@
     if (!force) {
       try {
         const cached = scrollCache.scroller;
-        if (cached && cached.isConnected !== false && ts - scrollCache.at < 1200) return cached;
+        if (cached && cached.isConnected !== false && ts - scrollCache.at < 1200) {
+          if (!isWindowScroller(cached)) return cached;
+          const main = document.getElementById?.('main') || document.querySelector('main');
+          const parent = main?.parentElement || null;
+          if (!isScrollableY(parent)) return cached;
+        }
       } catch {}
     }
     let next = null;
@@ -691,6 +803,8 @@
     getRoute,
     getEditorEl,
     getComposerForm,
+    readContentEditableText,
+    readComposerText,
     getModelSwitcherButton,
     getComposerModelButton,
     readCurrentModelLabel,

@@ -79,6 +79,9 @@
   const SCROLL_LOCK_CODE_INTENT_MS = 4200;
   const SCROLL_LOCK_UNKNOWN_SCROLL_IDLE_MS = 900;
   const SCROLL_LOCK_UNKNOWN_SCROLL_MUTATION_GRACE_MS = 1400;
+  const SCROLL_LOCK_ANCHOR_MIN_VISIBLE_PX = 24;
+  const SCROLL_LOCK_ANCHOR_MAX_CANDIDATES = 48;
+  const SCROLL_LOCK_ANCHOR_TTL_MS = 120000;
   const SCROLL_LOCK_CODE_INTENT_DATASET_KEY = 'quicknavCodeIntentUntil';
   const SCROLL_LOCK_NAV_EXPECTED_TOP_DATASET_KEY = 'quicknavNavExpectedTop';
   const SCROLL_LOCK_NAV_EXPECTED_UNTIL_DATASET_KEY = 'quicknavNavExpectedUntil';
@@ -107,6 +110,7 @@
   let scrollLockNavProgrammaticUntil = 0;
   let scrollLockNavExpectedTop = null;
   let scrollLockNavExpectedUntil = 0;
+  let scrollLockAnchor = null;
   let navAllowScrollDepth = 0;
   let navJumpSeq = 0;
   let navJumpStabilizerCtrl = null;
@@ -1971,6 +1975,37 @@
     __cgptChatScrollContainerTs = 0;
   }
 
+  function suspendScrollLockForRouteCleanup(reason = 'route-change') {
+    try {
+      cancelScrollLockRestoreSchedule();
+      cancelProgrammaticSendScrollLockRestoreSchedule();
+    } catch {}
+    scrollLockEnabled = false;
+    scrollLockGuardUntil = 0;
+    scrollLockLastProtectReason = '';
+    scrollLockPointerActive = false;
+    scrollLockLastUserIntentTs = 0;
+    scrollLockLastExplicitUserScrollTs = 0;
+    scrollLockNavIntentUntil = 0;
+    scrollLockNavProgrammaticUntil = 0;
+    scrollLockNavExpectedTop = null;
+    scrollLockNavExpectedUntil = 0;
+    scrollLockAnchor = null;
+    navAllowScrollDepth = 0;
+    try {
+      const docEl = document.documentElement;
+      if (docEl?.dataset) {
+        docEl.dataset.quicknavScrollLockEnabled = '0';
+        docEl.dataset.quicknavScrollLockProtectReason = String(reason || 'route-change');
+        docEl.dataset.quicknavAllowScrollUntil = '0';
+        docEl.dataset.quicknavAllowScrollReason = '';
+        delete docEl.dataset[SCROLL_LOCK_NAV_EXPECTED_TOP_DATASET_KEY];
+        delete docEl.dataset[SCROLL_LOCK_NAV_EXPECTED_UNTIL_DATASET_KEY];
+      }
+    } catch {}
+    postScrollLockStateToMainWorld();
+  }
+
   function disposePanelUi(nav, { removeNode = true } = {}) {
     const panel = nav || document.getElementById('cgpt-compact-nav');
     if (!panel) return;
@@ -2053,6 +2088,7 @@
     stopTreeAutoRestorePoll();
     cancelScrollLockRestoreSchedule();
     cancelProgrammaticSendScrollLockRestoreSchedule();
+    suspendScrollLockForRouteCleanup(reason);
     try {
       if (__quicknavMainGuardRetryTimer) cancelScopedTimeout(__quicknavMainGuardRetryTimer);
     } catch {}
@@ -2631,10 +2667,7 @@
   function init() {
     if (!isChatRoute()) {
       // 非聊天路由：避免在 Library/GPTs 等页面显示面板
-      try {
-        const nav = document.getElementById('cgpt-compact-nav');
-        if (nav) nav.remove();
-      } catch {}
+      disposeConversation('non-chat-route', { removePanel: true, recreateScope: true });
       return;
     }
     const existing = document.getElementById('cgpt-compact-nav');
@@ -4466,21 +4499,21 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 	          const n = parseFloat(String(v || '').trim());
 	          return Number.isFinite(n) ? n : null;
 	        };
-	
+
 	        const prev = state.manual || {};
 	        const topPx = toNum(nav.style.top);
 	        const leftPx = nav.style.left && nav.style.left !== 'auto' ? toNum(nav.style.left) : null;
 	        const rightPx = nav.style.right && nav.style.right !== 'auto' ? toNum(nav.style.right) : null;
-	
+
 	        const top = Number.isFinite(topPx) ? topPx : Number.isFinite(prev.top) ? prev.top : DEFAULT_NAV_TOP;
 	        let left = Number.isFinite(leftPx) ? leftPx : null;
 	        let right = Number.isFinite(rightPx) ? rightPx : null;
-	
+
 	        if (!Number.isFinite(left) && !Number.isFinite(right)) {
 	          if (Number.isFinite(prev.left)) left = prev.left;
 	          else right = Number.isFinite(prev.right) ? prev.right : DEFAULT_NAV_RIGHT;
 	        }
-	
+
 	        state.manual = { top, left, right };
 	      } catch {
 	        state.manual = { top: DEFAULT_NAV_TOP, left: null, right: DEFAULT_NAV_RIGHT };
@@ -7818,11 +7851,11 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return Number.isFinite(max) ? Math.min(max, clamped) : clamped;
   }
 
-  function setScrollPos(el, top) {
-    if (!el) return;
-    navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
-    try {
-      const value = Math.max(0, Math.round(top || 0));
+	  function setScrollPos(el, top) {
+	    if (!el) return;
+	    navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) + 1);
+	    try {
+	      const value = Math.max(0, Math.round(top || 0));
       if (isWindowScroller(el)) {
         window.scrollTo({ top: value, behavior: 'auto' });
       } else {
@@ -7830,11 +7863,199 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         catch { el.scrollTop = value; }
       }
     } finally {
-      navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
-    }
-  }
+	      navAllowScrollDepth = Math.max(0, (navAllowScrollDepth || 0) - 1);
+	    }
+	  }
 
-  function hasActiveNavExpectedTop(now = Date.now()) {
+	  function getScrollViewportRect(scroller) {
+	    try {
+	      if (isWindowScroller(scroller)) {
+	        return {
+	          top: 0,
+	          bottom: Math.max(0, Number(window.innerHeight) || 0)
+	        };
+	      }
+	      const rect = scroller?.getBoundingClientRect?.();
+	      if (!rect) return null;
+	      return {
+	        top: Number(rect.top) || 0,
+	        bottom: Number(rect.bottom) || 0
+	      };
+	    } catch {
+	      return null;
+	    }
+	  }
+
+	  function getTurnAnchorIdentity(turnEl, index = -1) {
+	    try {
+	      if (!(turnEl instanceof Element)) return null;
+	      return {
+	        messageId: String(turnEl.getAttribute?.('data-message-id') || '').trim(),
+	        testId: String(turnEl.getAttribute?.('data-testid') || '').trim(),
+	        id: String(turnEl.id || '').trim(),
+	        index: Number.isFinite(index) ? index : -1
+	      };
+	    } catch {
+	      return null;
+	    }
+	  }
+
+	  function findTurnByAttribute(attr, value) {
+	    const needle = String(value || '').trim();
+	    if (!needle) return null;
+	    try {
+	      const nodes = document.querySelectorAll(`[${attr}]`);
+	      for (let i = 0; i < nodes.length && i < 5000; i += 1) {
+	        const node = nodes[i];
+	        if (!(node instanceof Element)) continue;
+	        if (String(node.getAttribute?.(attr) || '').trim() !== needle) continue;
+	        const turn = node.matches?.(CHATGPT_TURN_SELECTOR) ? node : node.closest?.(CHATGPT_TURN_SELECTOR);
+	        if (turn instanceof HTMLElement) return turn;
+	        if (node instanceof HTMLElement) return node;
+	      }
+	    } catch {}
+	    return null;
+	  }
+
+	  function resolveScrollLockAnchorElement(anchor = scrollLockAnchor) {
+	    try {
+	      if (!anchor || typeof anchor !== 'object') return null;
+	      if (anchor.messageId) {
+	        const byMsg = findTurnByAttribute('data-message-id', anchor.messageId);
+	        if (byMsg) return byMsg;
+	      }
+	      if (anchor.id) {
+	        const byId = document.getElementById(anchor.id);
+	        const turn = byId?.matches?.(CHATGPT_TURN_SELECTOR) ? byId : byId?.closest?.(CHATGPT_TURN_SELECTOR);
+	        if (turn instanceof HTMLElement) return turn;
+	      }
+	      if (anchor.testId) {
+	        const byTest = findTurnByAttribute('data-testid', anchor.testId);
+	        if (byTest) return byTest;
+	      }
+	      const turns = qsTurns();
+	      const idx = Math.max(0, Math.round(Number(anchor.index) || 0));
+	      const byIndex = turns[idx];
+	      return byIndex instanceof HTMLElement ? byIndex : null;
+	    } catch {
+	      return null;
+	    }
+	  }
+
+	  function captureScrollLockAnchor(scroller = scrollLockScrollEl || getChatScrollContainer(), reason = '') {
+	    try {
+	      if (!scrollLockEnabled) return null;
+	      const sc = scroller || getChatScrollContainer();
+	      if (!sc) return null;
+	      const viewport = getScrollViewportRect(sc);
+	      if (!viewport || viewport.bottom <= viewport.top) return null;
+	      let turns = [];
+	      const shared = getVisibleTurnWindow(260);
+	      if (shared && Array.isArray(shared.turns) && shared.turns.length) turns = shared.turns;
+	      if (!turns.length) turns = qsTurns();
+	      if (!turns.length) return null;
+
+	      const max = Math.min(turns.length, SCROLL_LOCK_ANCHOR_MAX_CANDIDATES);
+	      let fallback = null;
+	      let fallbackIndex = -1;
+	      for (let i = 0; i < max; i += 1) {
+	        const turn = turns[i];
+	        if (!(turn instanceof HTMLElement) || !turn.isConnected) continue;
+	        const rect = turn.getBoundingClientRect?.();
+	        if (!rect) continue;
+	        const visible = Math.min(Number(rect.bottom) || 0, viewport.bottom) - Math.max(Number(rect.top) || 0, viewport.top);
+	        if (visible < SCROLL_LOCK_ANCHOR_MIN_VISIBLE_PX) continue;
+	        if (!fallback) {
+	          fallback = turn;
+	          fallbackIndex = i;
+	        }
+	        if ((Number(rect.top) || 0) >= viewport.top + 4) {
+	          fallback = turn;
+	          fallbackIndex = i;
+	          break;
+	        }
+	      }
+	      if (!fallback) return null;
+	      const rect = fallback.getBoundingClientRect();
+	      const identity = getTurnAnchorIdentity(fallback, fallbackIndex);
+	      if (!identity) return null;
+	      scrollLockAnchor = {
+	        ...identity,
+	        offsetTop: Math.round((Number(rect.top) || 0) - viewport.top),
+	        baseline: Math.max(0, Math.round(getScrollPos(sc))),
+	        capturedAt: Date.now(),
+	        reason: String(reason || '')
+	      };
+	      return scrollLockAnchor;
+	    } catch {
+	      return null;
+	    }
+	  }
+
+	  function readScrollLockAnchorState(scroller = scrollLockScrollEl || getChatScrollContainer()) {
+	    try {
+	      if (!scrollLockEnabled || !scrollLockAnchor) return null;
+	      if (Date.now() - (Number(scrollLockAnchor.capturedAt) || 0) > SCROLL_LOCK_ANCHOR_TTL_MS) return null;
+	      const sc = scroller || getChatScrollContainer();
+	      if (!sc) return null;
+	      const viewport = getScrollViewportRect(sc);
+	      if (!viewport || viewport.bottom <= viewport.top) return null;
+	      const anchorEl = resolveScrollLockAnchorElement(scrollLockAnchor);
+	      if (!(anchorEl instanceof HTMLElement) || !anchorEl.isConnected) return null;
+	      const rect = anchorEl.getBoundingClientRect?.();
+	      if (!rect) return null;
+	      const targetOffset = Number(scrollLockAnchor.offsetTop);
+	      if (!Number.isFinite(targetOffset)) return null;
+	      const currentOffset = (Number(rect.top) || 0) - viewport.top;
+	      return {
+	        scroller: sc,
+	        anchorEl,
+	        currentOffset,
+	        targetOffset,
+	        delta: currentOffset - targetOffset
+	      };
+	    } catch {
+	      return null;
+	    }
+	  }
+
+	  function isScrollLockAnchorStable(scroller = scrollLockScrollEl || getChatScrollContainer()) {
+	    const state = readScrollLockAnchorState(scroller);
+	    return !!state && Math.abs(Number(state.delta) || 0) <= SCROLL_LOCK_DRIFT;
+	  }
+
+	  function restoreScrollLockAnchor(scroller = scrollLockScrollEl || getChatScrollContainer(), reason = '') {
+	    try {
+	      const anchorState = readScrollLockAnchorState(scroller);
+	      if (!anchorState) return false;
+	      const sc = anchorState.scroller;
+	      const delta = Number(anchorState.delta);
+	      if (Math.abs(delta) <= SCROLL_LOCK_DRIFT) return false;
+	      const currentTop = getScrollPos(sc);
+	      let targetTop = normalizeScrollTopForTarget(sc, currentTop + delta);
+	      if (targetTop === null) return false;
+	      const stableBaseline = Number(scrollLockStablePos);
+	      if (Number.isFinite(stableBaseline) && stableBaseline >= 0 && targetTop < stableBaseline - SCROLL_LOCK_DRIFT) {
+	        targetTop = normalizeScrollTopForTarget(sc, stableBaseline);
+	        if (targetTop === null) return false;
+	      }
+	      if (Math.abs(targetTop - currentTop) <= 1) return false;
+	      scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, Date.now() + 900);
+	      scrollLockLastProtectReason = String(reason || scrollLockAnchor.reason || 'anchor-restore');
+	      try { document.documentElement.dataset.quicknavScrollLockProtectReason = scrollLockLastProtectReason; } catch {}
+	      setScrollPos(sc, targetTop);
+	      scrollLockStablePos = targetTop;
+	      scrollLockLastPos = targetTop;
+	      postScrollLockStateToMainWorld();
+	      postScrollLockBaselineToMainWorld(targetTop, true);
+	      captureScrollLockAnchor(sc, 'anchor-restored');
+	      return true;
+	    } catch {
+	      return false;
+	    }
+	  }
+
+	  function hasActiveNavExpectedTop(now = Date.now()) {
     return Number.isFinite(Number(scrollLockNavExpectedTop)) && now < (Number(scrollLockNavExpectedUntil) || 0);
   }
 
@@ -7900,6 +8121,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     }
   }
 
+  function hasScrollLockBaselineMovedPastRestoreTarget(target) {
+    const latestBaseline = Number(scrollLockStablePos);
+    const restoreTarget = Number(target);
+    return Number.isFinite(latestBaseline) && Number.isFinite(restoreTarget) && latestBaseline > restoreTarget + SCROLL_LOCK_DRIFT;
+  }
+
   function getNavAllowScrollUntil() {
     try {
       const v = document.documentElement?.dataset?.quicknavAllowScrollUntil;
@@ -7953,14 +8180,18 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     return current > baseline + SCROLL_LOCK_DRIFT;
   }
 
-  function restoreScrollLockPosition(reason = '') {
-    void reason;
-    if (!scrollLockEnabled) return false;
-    const sc = ensureScrollLockBindings();
-    if (!shouldRestoreScrollLockPosition(sc)) return false;
+	  function restoreScrollLockPosition(reason = '') {
+	    if (!scrollLockEnabled) return false;
+	    const sc = ensureScrollLockBindings();
+	    if (!shouldRestoreScrollLockPosition(sc)) return false;
+	    if (isScrollLockAnchorStable(sc)) {
+	      scrollLockLastPos = getScrollPos(sc);
+	      return false;
+	    }
+	    if (restoreScrollLockAnchor(sc, reason || 'restore')) return true;
 
-    const baseline = Math.max(0, Math.round(Number(scrollLockStablePos) || 0));
-    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, Date.now() + 900);
+	    const baseline = Math.max(0, Math.round(Number(scrollLockStablePos) || 0));
+	    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, Date.now() + 900);
     postScrollLockStateToMainWorld();
     postScrollLockBaselineToMainWorld(baseline, true);
     setScrollPos(sc, baseline);
@@ -7990,16 +8221,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       ) {
         return;
       }
+      if (hasScrollLockBaselineMovedPastRestoreTarget(target)) return;
       const sc = ensureScrollLockBindings();
       if (sc) {
         const current = getScrollPos(sc);
+        if (hasScrollLockBaselineMovedPastRestoreTarget(target)) return;
         scrollLockStablePos = target;
-        scrollLockLastPos = Math.min(Math.max(0, Math.round(Number(current) || 0)), target);
+        scrollLockLastPos = Math.max(0, Math.round(Number(current) || 0));
         postScrollLockStateToMainWorld();
         postScrollLockBaselineToMainWorld(target, true);
         if (Number.isFinite(current) && current > target + SCROLL_LOCK_DRIFT) {
-          setScrollPos(sc, target);
-          scrollLockLastPos = target;
+          if (isScrollLockAnchorStable(sc)) {
+            scrollLockLastPos = Math.max(0, Math.round(Number(current) || 0));
+          } else if (!restoreScrollLockAnchor(sc, reason || 'programmatic-send')) {
+            setScrollPos(sc, target);
+            scrollLockLastPos = target;
+          }
         }
       }
       index += 1;
@@ -8054,18 +8291,22 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     // 用户主动滚动：先更新基准，避免被“回弹”误伤
     const userLikely = navProgrammaticExpected || recentExplicitUserScroll || recentCodeBlockIntent || !!scrollLockPointerActive || (recentUserIntent && !navIntentActive && !allowNav);
     if (userLikely) {
+      cancelProgrammaticSendScrollLockRestoreSchedule();
       scrollLockLastUserTs = now;
       scrollLockStablePos = pos;
       scrollLockLastPos = pos;
       postScrollLockBaselineToMainWorld(pos);
+      captureScrollLockAnchor(sc, 'user-scroll');
       return;
     }
 
     if (shouldAcceptUnsignaledScrollAsUser(sc, pos, now)) {
+      cancelProgrammaticSendScrollLockRestoreSchedule();
       scrollLockLastUserTs = now;
       scrollLockStablePos = pos;
       scrollLockLastPos = pos;
       postScrollLockBaselineToMainWorld(pos, true);
+      captureScrollLockAnchor(sc, 'unsignaled-user-scroll');
       return;
     }
 
@@ -8204,10 +8445,12 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     const sc = ensureScrollLockBindings();
     if (!sc) return;
     const pos = getScrollPos(sc);
+    cancelProgrammaticSendScrollLockRestoreSchedule();
     scrollLockStablePos = pos;
     scrollLockLastPos = pos;
     scrollLockLastUserTs = Date.now();
     postScrollLockBaselineToMainWorld(pos, force);
+    captureScrollLockAnchor(sc, force ? 'baseline-force' : 'baseline');
   }
 
   function armScrollLockGuard(ms = 2000, reason = 'guard') {
@@ -8227,13 +8470,14 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         : Math.max(0, Math.round(current));
     scrollLockLastProtectReason = String(reason || 'guard');
     try { document.documentElement.dataset.quicknavScrollLockProtectReason = scrollLockLastProtectReason; } catch {}
-    scrollLockLastPos = pos;
-    scrollLockStablePos = pos;
-    postScrollLockStateToMainWorld();
+	    scrollLockLastPos = pos;
+	    scrollLockStablePos = pos;
+	    const capturedAnchor = captureScrollLockAnchor(sc, reason || 'guard');
+	    postScrollLockStateToMainWorld();
     postScrollLockBaselineToMainWorld(pos, true);
     ensureMainWorldScrollGuard();
     scheduleMainWorldScrollGuardRetry();
-    if (longGuardActive && current > pos + SCROLL_LOCK_DRIFT) {
+    if (longGuardActive && current > pos + SCROLL_LOCK_DRIFT && !capturedAnchor) {
       setScrollPos(sc, pos);
     }
     scheduleScrollLockRestore(
@@ -8242,38 +8486,56 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         ? [0, 40, 100, 220, 420, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]
         : [0, 80, 180, 360, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]
     );
-    if (longGuardActive) scheduleProgrammaticSendScrollLockRestore(reason || 'arm', pos);
-  }
+	    if (longGuardActive) scheduleProgrammaticSendScrollLockRestore(reason || 'arm', pos);
+	  }
 
-  function armProgrammaticSendScrollLockGuard(reason = 'programmatic-send', ms = 65000) {
-    if (!scrollLockEnabled) return;
-    const sc = ensureScrollLockBindings();
-    if (!sc) return;
-    const now = Date.now();
-    const current = getScrollPos(sc);
-    const previousStable = Number(scrollLockStablePos);
-    const hasStable = Number.isFinite(previousStable) && previousStable >= 0;
-    const baseline =
-      hasStable && current > previousStable + SCROLL_LOCK_DRIFT
-        ? Math.max(0, Math.round(previousStable))
-        : Math.max(0, Math.round(Number.isFinite(current) ? current : (hasStable ? previousStable : 0)));
+	  function isUserInitiatedSendProtectReason(reason = '') {
+	    const key = String(reason || '').trim().toLowerCase();
+	    if (!key) return false;
+	    return (
+	      key.includes('keydown') ||
+	      key.includes('send-button-click') ||
+	      key.includes('direct-tab-before-click') ||
+	      key === 'tab-queue-queued' ||
+	      key.endsWith('-queued')
+	    );
+	  }
 
-    scrollLockLastMutationTs = now;
-    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, now + Math.max(2400, Math.round(Number(ms) || 0)));
-    scrollLockLastProtectReason = String(reason || 'programmatic-send');
-    try { document.documentElement.dataset.quicknavScrollLockProtectReason = scrollLockLastProtectReason; } catch {}
-    scrollLockStablePos = baseline;
-    scrollLockLastPos = baseline;
-    postScrollLockStateToMainWorld();
-    postScrollLockBaselineToMainWorld(baseline, true);
-    ensureMainWorldScrollGuard();
-    scheduleMainWorldScrollGuardRetry();
-    if (Number.isFinite(current) && current > baseline + SCROLL_LOCK_DRIFT) {
-      setScrollPos(sc, baseline);
-    }
-    scheduleScrollLockRestore(reason, [0, 40, 100, 220, 420, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]);
-    scheduleProgrammaticSendScrollLockRestore(reason, baseline);
-  }
+	  function armProgrammaticSendScrollLockGuard(reason = 'programmatic-send', ms = 65000, opts = {}) {
+	    if (!scrollLockEnabled) return;
+	    const sc = ensureScrollLockBindings();
+	    if (!sc) return;
+	    const now = Date.now();
+	    const current = getScrollPos(sc);
+	    const previousStable = Number(scrollLockStablePos);
+	    const hasStable = Number.isFinite(previousStable) && previousStable >= 0;
+	    const reasonText = String(reason || 'programmatic-send');
+	    const userRequested = !!(opts && typeof opts === 'object' && opts.userRequested === true);
+	    const useCurrentAsBaseline = userRequested || isUserInitiatedSendProtectReason(reasonText);
+	    const baseline =
+	      useCurrentAsBaseline && Number.isFinite(current)
+	        ? Math.max(0, Math.round(current))
+	        : hasStable && current > previousStable + SCROLL_LOCK_DRIFT
+	        ? Math.max(0, Math.round(previousStable))
+	        : Math.max(0, Math.round(Number.isFinite(current) ? current : (hasStable ? previousStable : 0)));
+
+	    scrollLockLastMutationTs = now;
+	    scrollLockGuardUntil = Math.max(Number(scrollLockGuardUntil) || 0, now + Math.max(2400, Math.round(Number(ms) || 0)));
+	    scrollLockLastProtectReason = reasonText;
+	    try { document.documentElement.dataset.quicknavScrollLockProtectReason = scrollLockLastProtectReason; } catch {}
+		    scrollLockStablePos = baseline;
+		    scrollLockLastPos = baseline;
+		    const capturedAnchor = captureScrollLockAnchor(sc, reasonText);
+		    postScrollLockStateToMainWorld();
+	    postScrollLockBaselineToMainWorld(baseline, true);
+	    ensureMainWorldScrollGuard();
+	    scheduleMainWorldScrollGuardRetry();
+	    if (Number.isFinite(current) && current > baseline + SCROLL_LOCK_DRIFT && !capturedAnchor) {
+	      setScrollPos(sc, baseline);
+	    }
+	    scheduleScrollLockRestore(reasonText, [0, 40, 100, 220, 420, 800, 1500, 2600, 4200, 6500, 9500, 14000, 20000, 30000, 45000, 60000]);
+	    scheduleProgrammaticSendScrollLockRestore(reasonText, baseline);
+	  }
 
   function handleChatgptSendScrollProtect(data = {}) {
     try {
@@ -8284,7 +8546,9 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
       const cmdenter = source === 'cmdenter_send' || /^cmdenter(?:-|$)/i.test(phase);
       const prefix = cmdenter ? 'cmdenter' : (type === TAB_QUEUE_BRIDGE_SEND_PROTECT ? 'tab-queue' : 'send');
       const protectMs = cmdenter || phase === 'confirmed' ? 65000 : 45000;
-      armProgrammaticSendScrollLockGuard(`${prefix}-${phase || 'send'}`, protectMs);
+      armProgrammaticSendScrollLockGuard(`${prefix}-${phase || 'send'}`, protectMs, {
+        userRequested: data.userRequested === true
+      });
     } catch {}
   }
 
@@ -8489,11 +8753,23 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
           !e.altKey &&
           !e.ctrlKey &&
           !e.metaKey;
-        if (editableTarget && isPlainTab) {
-          const text = String(t.value || t.innerText || t.textContent || '').trim();
-          if (text) armProgrammaticSendScrollLockGuard('tab-hotkey-keydown', 65000);
-          return;
-        }
+	        if (editableTarget && isPlainTab) {
+	          let text = '';
+	          try {
+	            if (t && 'value' in t) text = String(t.value || '');
+	            else {
+	              const core = getChatgptCoreApi();
+	              text =
+	                core && typeof core.readContentEditableText === 'function'
+	                  ? String(core.readContentEditableText(t) || '')
+	                  : String(t?.textContent || '');
+	            }
+	          } catch {
+	            text = '';
+	          }
+	          if (text) armProgrammaticSendScrollLockGuard('tab-hotkey-keydown', 65000);
+	          return;
+	        }
         if (editableTarget) return;
         const k = e.key;
         if (k === 'PageDown' || k === 'PageUp' || k === 'End' || k === 'Home' || k === 'ArrowDown' || k === 'ArrowUp' || k === ' ') {

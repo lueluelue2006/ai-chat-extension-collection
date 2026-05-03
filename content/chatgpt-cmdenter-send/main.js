@@ -203,7 +203,8 @@
       dispatchQuickNavBridgeMessage('AISHORTCUTS_SCROLLLOCK_BASELINE', { top });
       dispatchQuickNavBridgeMessage(QUICKNAV_SEND_PROTECT, {
         phase: String(reason || 'cmdenter'),
-        source: 'cmdenter_send'
+        source: 'cmdenter_send',
+        userRequested: true
       });
       return true;
     } catch {
@@ -270,6 +271,22 @@
     return String(input || '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function readElementLabelText(el, maxChars = 400) {
+    try {
+      if (!el) return '';
+      const cap = Math.max(24, Number(maxChars) || 400);
+      return normalizeText(
+        [
+          String(el.textContent || '').slice(0, cap),
+          el.getAttribute?.('aria-label') || '',
+          el.getAttribute?.('title') || ''
+        ].join(' ')
+      );
+    } catch {
+      return '';
+    }
   }
 
   function isVisibleElement(el) {
@@ -458,8 +475,8 @@
       const byTextarea = target.closest('textarea');
       const article = byTextarea?.closest?.('article');
       const buttons = article ? Array.from(article.querySelectorAll('button')) : [];
-      const hasCancel = buttons.some((btn) => /^(cancel|取消)$/i.test(String(btn.innerText || btn.textContent || '').trim()));
-      const hasSend = buttons.some((btn) => /^(send|发送)$/i.test(String(btn.innerText || btn.textContent || '').trim()));
+      const hasCancel = buttons.some((btn) => /^(cancel|取消)$/i.test(readElementLabelText(btn)));
+      const hasSend = buttons.some((btn) => /^(send|发送)$/i.test(readElementLabelText(btn)));
       if (byTextarea && article && hasCancel && hasSend) return byTextarea;
     } catch {}
 
@@ -720,7 +737,7 @@
       const response = byTextarea.closest('[id^="response-"]');
       const hasEditControls = !!response?.querySelector('button');
       const controls = hasEditControls
-        ? Array.from(response.querySelectorAll('button')).map((btn) => normalizeText(btn.innerText || btn.textContent || btn.getAttribute?.('aria-label') || ''))
+        ? Array.from(response.querySelectorAll('button')).map((btn) => readElementLabelText(btn))
         : [];
       const hasCancel = controls.some((text) => /^(cancel|取消)$/i.test(text));
       const hasSave = controls.some((text) => /^(save|send|保存|发送)$/i.test(text));
@@ -739,7 +756,7 @@
     const buttons = Array.from(scope.querySelectorAll('button'));
     for (const button of buttons) {
       if (!isButtonLikeElement(button) || isElementDisabled(button)) continue;
-      const label = normalizeText(button.innerText || button.textContent || button.getAttribute?.('aria-label') || '');
+      const label = readElementLabelText(button);
       if (!/^(save|send|保存|发送)$/i.test(label)) continue;
       return button;
     }
@@ -1203,8 +1220,15 @@
       if (isTextareaLikeElement(promptEl)) return String(promptEl.value || '');
     } catch {}
     try {
-      // Prefer innerText for contenteditable; fall back to textContent.
-      return String(promptEl.innerText || promptEl.textContent || '');
+      if (SITE === 'chatgpt') {
+        const core = getChatgptCore();
+        if (core && typeof core.readContentEditableText === 'function') {
+          return String(core.readContentEditableText(promptEl) || '');
+        }
+      }
+    } catch {}
+    try {
+      return String(promptEl.textContent || '');
     } catch {
       return '';
     }
@@ -1364,7 +1388,7 @@
         for (const candidate of candidates) {
           if (!isButtonLikeElement(candidate) || candidate.disabled) continue;
           if (isStopButton(candidate)) continue;
-          const label = String(candidate.innerText || candidate.textContent || '').trim();
+          const label = readElementLabelText(candidate);
           if (!/^(send|发送)$/i.test(label)) continue;
           return candidate;
         }

@@ -1,39 +1,41 @@
 :root {
   color-scheme: light dark;
-  --bg-color: #edf3f8;
+  --bg-color: #f3eee6;
   --bg-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.38)),
-    radial-gradient(circle at top left, rgba(84, 213, 255, 0.12), transparent 28%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 250, 243, 0.62)),
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.1), transparent 28%),
+    linear-gradient(90deg, rgba(87, 74, 61, 0.026) 1px, transparent 1px),
+    linear-gradient(rgba(87, 74, 61, 0.026) 1px, transparent 1px);
   --bg-grid-size: 24px 24px;
-  --panel: rgba(255, 255, 255, 0.94);
-  --panelSoft: rgba(247, 250, 252, 0.98);
-  --panelInset: rgba(240, 246, 250, 0.98);
-  --panelStrong: #ffffff;
-  --border: rgba(15, 23, 42, 0.08);
-  --border-strong: rgba(15, 23, 42, 0.16);
-  --border-outline: rgba(15, 23, 42, 0.12);
-  --text: #0f172a;
-  --muted: #667085;
-  --accent: #54d5ff;
-  --accentSoft: rgba(84, 213, 255, 0.12);
-  --accentStrong: #0f95b8;
-  --ink: #09111b;
-  --btn: rgba(255, 255, 255, 0.98);
+  --panel: rgba(255, 252, 247, 0.92);
+  --panelSoft: rgba(255, 255, 252, 0.92);
+  --panelInset: rgba(248, 243, 235, 0.9);
+  --panelStrong: #fffdf9;
+  --border: rgba(101, 86, 70, 0.16);
+  --border-strong: rgba(91, 78, 65, 0.28);
+  --border-outline: rgba(62, 51, 43, 0.12);
+  --text: #1f2933;
+  --muted: #756b63;
+  --accent: #0f8a7d;
+  --accentSoft: rgba(15, 118, 110, 0.115);
+  --accentStrong: #0b6f67;
+  --ink: #111827;
+  --btn: rgba(255, 253, 249, 0.96);
   --btnHover: #ffffff;
-  --btnActive: rgba(238, 244, 248, 1);
-  --btnSecondaryBg: #111b26;
-  --btnSecondaryHover: #182532;
-  --btnSecondaryText: #edf8ff;
-  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 14px 34px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 26px 56px rgba(15, 23, 42, 0.12);
-  --focusRing: 0 0 0 3px rgba(84, 213, 255, 0.2);
+  --btnActive: rgba(247, 241, 232, 1);
+  --btnSecondaryBg: #0f766e;
+  --btnSecondaryHover: #0b665f;
+  --btnSecondaryText: #f8fffc;
+  --shadow-sm: 0 1px 2px rgba(80, 63, 45, 0.06);
+  --shadow-md: 0 12px 30px rgba(80, 63, 45, 0.08);
+  --shadow-lg: 0 24px 52px rgba(80, 63, 45, 0.12);
+  --focusRing: 0 0 0 3px rgba(15, 118, 110, 0.2);
   --card-radius: 8px;
   --btn-radius: 10px;
   --trans-smooth: 180ms ease;
-  --ok: #059669;
-  --warn: #c97712;
-  --err: #b91c1c;
+  --ok: #0f766e;
+  --warn: #b7791f;
+  --err: #b42318;
   --font-sans:
     -apple-system,
     BlinkMacSystemFont,
@@ -140,7 +142,7 @@ body {
 body {
   background-color: var(--bg-color);
   background-image: var(--bg-image);
-  background-size: auto, auto;
+  background-size: auto, auto, var(--bg-grid-size), var(--bg-grid-size);
   background-attachment: fixed;
   color: var(--text);
   font: 14.5px/1.55 var(--font-sans);
@@ -1347,7 +1349,7 @@ textarea.codeBox {
   border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--btnSecondaryBg) 80%);
   border-radius: var(--btn-radius);
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--btnSecondaryBg) 86%), var(--btnSecondaryBg));
-  color: var(--accentStrong);
+  color: var(--btnSecondaryText);
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -1365,7 +1367,8 @@ textarea.codeBox {
 }
 
 .btn:active {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--btnActive) 84%), var(--btnActive));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--btnSecondaryHover) 80%), var(--btnSecondaryHover));
+  transform: translateY(1px);
 }
 
 .btn.secondary {

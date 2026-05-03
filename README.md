@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.24-74c0fc" alt="Current version 4.0.24">
+  <img src="https://img.shields.io/badge/current-4.0.32-74c0fc" alt="Current version 4.0.32">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,65 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.0.32 补丁
+
+这个补丁降低 ChatGPT QuickNav 面板被站点前端事件链路观察到的概率。QuickNav 本体仍不做后台请求；这次进一步把面板内部的点击、滚轮和键盘事件隔离在扩展 UI 内，并停止给 ChatGPT 原生消息节点写入 `data-cgpt-turn` 标记。
+
+| 方向 | 更新 |
+| --- | --- |
+| 低可见性 | QuickNav 面板内部事件在面板根部截断冒泡，减少被页面全局 bubble 监听记录 |
+| DOM 痕迹 | 不再向 ChatGPT 原生 turn 写入 `data-cgpt-turn`，改用原生选择器与已有 core 快照定位 |
+| 风控边界 | 保持 QuickNav 无主动网络请求；Tree 等会话读取能力仍只在用户触发时工作 |
+
+### 4.0.31 补丁
+
+这个补丁把配置页浅色主题从冷蓝灰调回 v2.6.0 到 v3.2.0 时期的暖白/米色气质，同时保留 4.x 的紧凑卡片、搜索和设置密度。
+
+| 方向 | 更新 |
+| --- | --- |
+| 浅色主题 | 恢复暖纸色背景、奶白面板和更柔和的边框阴影 |
+| 视觉层次 | 使用茶青 accent 保持功能识别，避免整页变成单一米色 |
+| 兼容性 | 只调整配置页浅色 token，不改变深色主题和交互逻辑 |
+
+### 4.0.30 补丁
+
+这个补丁修复配置页语言切换的中英文混杂问题：切到英文后再切回中文时，已经被本地化成英文的静态 DOM 会正确还原成中文；同时把配置页初始 HTML 里的几个硬编码英文眉标改成中文底稿。
+
+| 方向 | 更新 |
+| --- | --- |
+| 配置页语言 | i18n 支持英文文案反向还原中文 |
+| 中文底稿 | 配置页标题、眉标、无障碍文案改为中文源文本 |
+| 回归验证 | verify 增加双向本地化防回退检查 |
+
+### 4.0.29 补丁
+
+这个补丁继续清理 ChatGPT Conversation Tree 的旧入口痕迹：QuickNav 里不再保留用于隐藏旧 standalone Tree 按钮的兜底 CSS。Tree 入口现在只存在于 QuickNav 的 🌳 控制里。
+
+| 方向 | 更新 |
+| --- | --- |
+| 旧入口清理 | 删除 QuickNav 中针对旧 Tree standalone toggle 的遗留隐藏规则 |
+| UI 口径 | 对话树入口只保留 QuickNav 🌳 |
+
+### 4.0.28 补丁
+
+这个补丁移除了 ChatGPT Conversation Tree 的旧 standalone 大按钮。对话树现在只通过 QuickNav 面板里的 🌳 入口打开，避免页面上残留一个被裁切的 “Conversation Tree” 浮层按钮。
+
+| 方向 | 更新 |
+| --- | --- |
+| Tree 入口 | 移除旧 standalone toggle，保留 QuickNav 🌳 入口 |
+| UI 稳定性 | 避免加载竞态下出现重复/裁切的 Conversation Tree 按钮 |
+| 回归验证 | verify 增加旧 standalone toggle 禁止项 |
+
+### 4.0.27 补丁
+
+这个补丁对 ChatGPT Plus 新模型菜单做最小防误触修复：`Cmd+O` 只负责切换 Thinking / Pro 的推理强度，模型菜单里的 `Instant` 不再会被当成强度选项，也不会被 `Cmd+O` 误点。
+
+| 方向 | 更新 |
+| --- | --- |
+| Plus 模型菜单 | 屏蔽 `Instant` / `model-switcher-*` 这类模型项参与 `Cmd+O` |
+| 最小改动 | 保留旧版主流程，只接入已有的模型行 effort action |
+| 回归验证 | verify 增加模型行误判防护检查 |
 
 ### 4.0.24 补丁
 
@@ -432,6 +491,65 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.0.32
+
+This patch reduces the chance that ChatGPT's own frontend event chain can observe QuickNav panel interactions. QuickNav itself still performs no background network requests; this update further isolates panel click, wheel, and keyboard events inside the extension UI and stops writing `data-cgpt-turn` markers to ChatGPT's native message nodes.
+
+| Area | Update |
+| --- | --- |
+| Low visibility | Stop QuickNav panel events at the panel root, reducing exposure to page-level bubble listeners |
+| DOM footprint | Stop writing `data-cgpt-turn` onto native ChatGPT turns; rely on native selectors and existing core snapshots instead |
+| Risk boundary | Keep QuickNav network-free; conversation-reading features such as Tree remain user-triggered |
+
+### Release 4.0.31
+
+This patch brings the Options light theme back toward the warm ivory / beige feel from the v2.6.0 to v3.2.0 era while keeping the tighter 4.x cards, search, and settings density.
+
+| Area | Update |
+| --- | --- |
+| Light theme | Restore a warm paper background, creamy panels, and softer borders/shadows |
+| Visual hierarchy | Keep a teal accent so the page does not collapse into a one-note beige palette |
+| Compatibility | Only adjust Options light-theme tokens; dark theme and behavior stay unchanged |
+
+### Release 4.0.30
+
+This patch fixes mixed Chinese/English text in the Options page. After switching to English and then back to Chinese, static DOM that was already localized to English is now restored to Chinese; the Options HTML source also uses Chinese text for its main headings and accessibility labels.
+
+| Area | Update |
+| --- | --- |
+| Options language | Add reverse localization from English text back to Chinese |
+| Chinese source copy | Use Chinese source text for Options titles, eyebrows, and labels |
+| Regression checks | Add verify coverage for bidirectional localization |
+
+### Release 4.0.29
+
+This patch removes the remaining QuickNav fallback CSS that used to hide the obsolete standalone Conversation Tree toggle. The tree entry now exists only as the 🌳 control inside QuickNav.
+
+| Area | Update |
+| --- | --- |
+| Legacy cleanup | Remove the QuickNav hide rule for the old standalone Tree toggle |
+| UI contract | Conversation Tree is exposed only through QuickNav 🌳 |
+
+### Release 4.0.28
+
+This patch removes the obsolete standalone ChatGPT Conversation Tree button. The tree now opens through the 🌳 control inside QuickNav only, preventing the clipped duplicate “Conversation Tree” floating button from appearing on the page.
+
+| Area | Update |
+| --- | --- |
+| Tree entry | Remove the old standalone toggle and keep the QuickNav 🌳 entry |
+| UI stability | Avoid duplicate/clipped Conversation Tree buttons during load races |
+| Regression checks | verify now rejects the obsolete standalone toggle |
+
+### Release 4.0.27
+
+This patch adds a minimal guard for the new ChatGPT Plus model menu. `Cmd+O` is only meant to switch Thinking / Pro reasoning effort; `Instant` and other `model-switcher-*` model rows are no longer treated as effort targets or clicked by the shortcut.
+
+| Area | Update |
+| --- | --- |
+| Plus model menu | Block `Instant` / `model-switcher-*` rows from `Cmd+O` effort targeting |
+| Minimal change | Keep the old flow and reuse the existing model-row effort action |
+| Regression checks | verify now covers model-row mis-detection protection |
 
 ### Release 4.0.24
 

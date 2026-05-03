@@ -37,6 +37,22 @@
   const NATIVE_OUTLINE_MIN_BUTTONS = 4;
   const NATIVE_OUTLINE_HIDE_SCAN_DELAY_MS = 60;
   const NATIVE_OUTLINE_HIDE_RETRY_DELAYS = [0, 120, 360, 900, 1800, 3200];
+  const QUICKNAV_LOW_VISIBILITY_ENABLED = true;
+  const QUICKNAV_EVENT_FIREWALL_TYPES = [
+    'pointerdown',
+    'pointerup',
+    'mousedown',
+    'mouseup',
+    'click',
+    'dblclick',
+    'contextmenu',
+    'auxclick',
+    'wheel',
+    'keydown',
+    'keyup',
+    'touchstart',
+    'touchend'
+  ];
   const DEBUG = false;
   const TAIL_RECALC_TURNS = 2; // 仅重算末尾预览（流式输出期间变化最多）
   const CHAT_ROUTE_LOADING_GRACE_MS = 15000;
@@ -3439,6 +3455,10 @@
     } catch {}
   }
 
+  function clearLegacyQuickNavTurnMarker(el) {
+    try { el?.removeAttribute?.('data-cgpt-turn'); } catch {}
+  }
+
   function getTurnMessageId(turnEl, previewEl) {
     try {
       if (!turnEl) return '';
@@ -3645,9 +3665,7 @@
     try {
       if (!el.id) el.id = `cgpt-turn-${i + 1}`;
     } catch {}
-    try {
-      if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-    } catch {}
+    clearLegacyQuickNavTurnMarker(el);
     try {
       setBoundedTurnPos(el.id, i);
     } catch {}
@@ -3718,9 +3736,7 @@
         const itemId = getRecordBackedTurnId(record, i, el, msgKey);
         if (el) {
           if (!el.id) el.id = itemId;
-          try {
-            if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-          } catch {}
+          clearLegacyQuickNavTurnMarker(el);
           try {
             setBoundedTurnPos(el.id, i);
           } catch {}
@@ -3967,9 +3983,7 @@
         const itemId = getRecordBackedTurnId(record, i, el, msgKey);
         if (el) {
           if (!el.id) el.id = itemId;
-          try {
-            if (el.getAttribute('data-cgpt-turn') !== '1') el.setAttribute('data-cgpt-turn', '1');
-          } catch {}
+          clearLegacyQuickNavTurnMarker(el);
           try {
             setBoundedTurnPos(el.id, i);
           } catch {}
@@ -4021,6 +4035,21 @@
     lastAssistantSeq = a;
     cacheBaseIndex = base;
     return base;
+  }
+
+  function installQuickNavEventFirewall(nav) {
+    if (!QUICKNAV_LOW_VISIBILITY_ENABLED || !nav || nav.__aichatQuicknavEventFirewallInstalled) return;
+    try { nav.__aichatQuicknavEventFirewallInstalled = true; } catch {}
+    const isolate = (event) => {
+      try { markQuicknavUiInteraction(1400); } catch {}
+      try { event.stopPropagation(); } catch {}
+    };
+    for (const type of QUICKNAV_EVENT_FIREWALL_TYPES) {
+      try { nav.addEventListener(type, isolate, { passive: true }); }
+      catch {
+        try { nav.addEventListener(type, isolate); } catch {}
+      }
+    }
   }
 
   function createPanel() {
@@ -4177,8 +4206,6 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
 }
 
 #cgpt-compact-nav { position: fixed; top: 1px; right: 1px; width: var(--cgpt-nav-width, auto); min-width: 80px; max-width: var(--cgpt-nav-width, 210px); z-index: 2147483647 !important; font-family: var(--cgpt-nav-font); font-size: 13px; pointer-events: auto; background: transparent; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color: transparent; color: var(--cgpt-nav-text-strong); color-scheme: light dark; display:flex; flex-direction:column; align-items:stretch; box-sizing:border-box; --cgpt-nav-gutter: 0px; }
-/* Tree 已集成到 QuickNav 顶部按钮：隐藏独立悬浮入口，避免打扰 */
-#__aichat_chatgpt_message_tree_toggle_v1__ { display:none !important; }
 #cgpt-compact-nav.cgpt-has-scrollbar { --cgpt-nav-gutter: clamp(4px, calc(var(--cgpt-nav-width, 210px) / 32), 8px); }
 #cgpt-compact-nav * { -webkit-user-select:none; user-select:none; box-sizing:border-box; }
 #cgpt-compact-nav > .compact-header,
@@ -4413,6 +4440,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
     `;
     // Apply saved position before attaching to DOM to avoid sync layout work during startup.
     const appliedPosition = applySavedPosition(nav);
+    installQuickNavEventFirewall(nav);
     document.body.appendChild(nav);
     // 分支悬浮提示（固定定位，不受列表 overflow 影响）
     try {
@@ -9109,11 +9137,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
   function findTurnFromNode(node) {
     if (!node || node.nodeType !== 1) node = node?.parentElement || null;
     if (!node) return null;
-    let el = node.closest('[data-cgpt-turn="1"]');
-    if (el) return el;
-    // 兜底：尝试已知选择器
-    el = node.closest(`${CHATGPT_TURN_SELECTOR},div[data-message-id],div[class*="group"][data-testid]`);
-    return el;
+    return node.closest(`${CHATGPT_TURN_SELECTOR},div[data-message-id],div[class*="group"][data-testid]`);
   }
 
   function caretRangeFromPoint(x, y) {
@@ -9600,7 +9624,7 @@ body[data-color-scheme='light'] #cgpt-compact-nav {
         for (const el of stack) {
           if (!el) continue;
           if (el.id === 'cgpt-compact-nav' || (el.closest && el.closest('#cgpt-compact-nav'))) continue;
-          const t = el.closest && el.closest('[data-cgpt-turn="1"]');
+          const t = findTurnFromNode(el);
           if (t) { activeEl = t; break; }
         }
         if (activeEl) break;

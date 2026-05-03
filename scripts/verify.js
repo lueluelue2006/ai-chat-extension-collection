@@ -936,10 +936,13 @@ function verifyChatgptModelDetectionHardening() {
       failures.push(`content/chatgpt-tab-queue/main.js still hard-codes ${staleLiteral}`);
     }
   }
-  for (const required of ['extractGptVersionPriority', 'findGptModelSelectorTrigger']) {
+  for (const required of ['extractGptVersionPriority', 'findGptModelSelectorTrigger', 'menuLooksLikeModelMenu', 'menuHasEffortAction']) {
     if (!thinkingToggleSource.includes(required)) {
       failures.push(`content/chatgpt-thinking-toggle/main.js is missing ${required}`);
     }
+  }
+  if (!thinkingToggleSource.includes("testId.startsWith('model-switcher-')")) {
+    failures.push('content/chatgpt-thinking-toggle/main.js must block model-switcher rows from Cmd+O effort targets');
   }
   for (const required of [
     'el instanceof HTMLButtonElement && isVisibleElement(el)',
@@ -2214,6 +2217,12 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   if (!quicknavSource.includes('armInitialIndexCatchup') || !quicknavSource.includes('stopInitialIndexCatchup') || !quicknavSource.includes('rawCount > (Array.isArray(cacheBaseIndex)')) {
     failures.push('content/chatgpt-quicknav.js is missing initial/reload catchup when turns exist but the QuickNav index is empty or short');
   }
+  if (!quicknavSource.includes('QUICKNAV_LOW_VISIBILITY_ENABLED') || !quicknavSource.includes('QUICKNAV_EVENT_FIREWALL_TYPES') || !quicknavSource.includes('function installQuickNavEventFirewall') || !quicknavSource.includes('installQuickNavEventFirewall(nav)')) {
+    failures.push('content/chatgpt-quicknav.js is missing low-visibility QuickNav event isolation');
+  }
+  if (quicknavSource.includes("setAttribute('data-cgpt-turn'") || quicknavSource.includes('setAttribute("data-cgpt-turn"')) {
+    failures.push('content/chatgpt-quicknav.js must not write data-cgpt-turn markers onto native ChatGPT turns');
+  }
   if (!quicknavSource.includes('renderedHasPlaceholder') || !quicknavSource.includes("list.querySelectorAll('.compact-text, .pin-label')")) {
     failures.push('content/chatgpt-quicknav.js must full-rebuild rendered placeholder rows instead of only tail-patching');
   }
@@ -2424,6 +2433,8 @@ function verifyChatgptTreeExportHardening() {
   const graphSource = readText('content/chatgpt-conversation-graph.js');
   const mappingClientSource = readText('content/chatgpt-mapping-client/main.js');
   const registrySource = readText('shared/registry.ts');
+  const optionsSource = readText('options/options.js');
+  const i18nSource = readText('shared/i18n.js');
   const failures = [];
 
   for (const required of [
@@ -2456,11 +2467,22 @@ function verifyChatgptTreeExportHardening() {
     'installBranchSwitcherWatcher',
     'onTurnsChange',
     'onRouteChange',
-    'MAX_MAPPING_JSON_BYTES'
+    'MAX_MAPPING_JSON_BYTES',
+    'removeStandaloneToggle',
+    'updateToggleVisibility'
   ]) {
     if (!treeSource.includes(required)) {
       failures.push(`content/chatgpt-message-tree/main.js is missing ${required}`);
     }
+  }
+  if (/toggle\.textContent\s*=\s*t\('panelTitle'\)/.test(treeSource)) {
+    failures.push('content/chatgpt-message-tree/main.js must not render the obsolete standalone Conversation Tree toggle');
+  }
+  if (treeSource.includes('toggleTitle') || treeSource.includes(`#\${TOGGLE_ID}{`)) {
+    failures.push('content/chatgpt-message-tree/main.js must not keep obsolete standalone toggle label/styles');
+  }
+  if (optionsSource.includes('在右下角会出现 “Tree” 按钮') || i18nSource.includes('a “Tree” button appears at the bottom-right')) {
+    failures.push('ChatGPT Message Tree options copy must point users to the QuickNav 🌳 entry, not the obsolete standalone toggle');
   }
 
   for (const required of [
@@ -3105,7 +3127,10 @@ function verifyOptionsSearchRedesign() {
   for (const required of [
     "'查找设置': 'Find settings'",
     "'搜索全部设置、脚本、快捷键…': 'Search all settings, scripts, hotkeys…'",
-    "'没有匹配结果': 'No matching results'"
+    "'没有匹配结果': 'No matching results'",
+    'EXACT_TEXT_REVERSE_MAP',
+    'REGEX_REVERSE_REPLACEMENTS',
+    'if (!root) return;'
   ]) {
     if (!i18nSource.includes(required)) {
       failures.push(`shared/i18n.js is missing options search translation: ${required}`);

@@ -6,7 +6,7 @@
 
   const STATE_KEY = '__aichat_chatgpt_message_tree_state__';
   const STATE_VERSION = 2;
-  const STYLE_VERSION = 27;
+  const STYLE_VERSION = 28;
 
   // Legacy key used by early versions (non-configurable). Keep only for best-effort cleanup.
   const LEGACY_KEY = '__aichat_chatgpt_message_tree_v1__';
@@ -22,7 +22,6 @@
   const MAX_MAPPING_JSON_BYTES = 6 * 1024 * 1024;
   const MESSAGES = Object.freeze({
     panelTitle: { zh: '对话树', en: 'Conversation Tree' },
-    toggleTitle: { zh: '对话树', en: 'Conversation tree' },
     simpleTitle: { zh: '隐藏系统/工具/内部节点（简洁）', en: 'Hide system / tool / internal nodes (simple view)' },
     simpleLabel: { zh: '简洁', en: 'Simple' },
     guidesTitle: { zh: '彩色对齐竖线（类似 VSCode 缩进线）', en: 'Colored alignment guides (similar to VSCode indent guides)' },
@@ -411,7 +410,6 @@
     refreshQueuedAfterPromise: false,
     hrefWatchTimer: 0,
     panelEl: null,
-    toggleEl: null,
     treeEl: null,
     statusEl: null,
     statsEl: null,
@@ -790,26 +788,6 @@
     state.guideDepth = 0;
 
     const styleText = `
-        #${TOGGLE_ID}{
-          position: fixed;
-          right: 12px;
-          bottom: 96px;
-          z-index: 2147483647;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 42px;
-          height: 42px;
-          border-radius: 14px;
-          background: rgba(17,17,17,0.92);
-          color: rgba(255,255,255,0.92);
-          box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-          cursor: pointer;
-          user-select: none;
-        }
-        #${TOGGLE_ID}:hover{ background: rgba(17,17,17,0.98); }
-        #${TOGGLE_ID}[data-hidden="1"]{ display:none !important; }
-
         #${PANEL_ID}{
           position: fixed;
           right: 12px;
@@ -1564,24 +1542,7 @@
     const docEl = document.documentElement;
     if (!docEl) return;
 
-    let toggle = document.getElementById(TOGGLE_ID);
-    if (!toggle) {
-      toggle = document.createElement('div');
-      toggle.id = TOGGLE_ID;
-      toggle.setAttribute('role', 'button');
-      toggle.setAttribute('tabindex', '0');
-      toggle.title = t('toggleTitle');
-      toggle.textContent = t('panelTitle');
-      toggle.addEventListener('click', () => setOpen(!state.open));
-      toggle.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          setOpen(!state.open);
-        }
-      });
-      docEl.appendChild(toggle);
-    }
-    state.toggleEl = toggle;
+    removeStandaloneToggle();
 
     let panel = document.getElementById(PANEL_ID);
     if (!panel) {
@@ -1620,15 +1581,14 @@
     state.treeEl = panel.querySelector('.tree');
 
     applyPrefsToUi();
-    updateToggleVisibility();
+  }
+
+  function removeStandaloneToggle() {
+    try { document.getElementById(TOGGLE_ID)?.remove?.(); } catch {}
   }
 
   function updateToggleVisibility() {
-    try {
-      const hasQuickNav = !!document.getElementById('cgpt-compact-nav');
-      const hidden = hasQuickNav ? '1' : '0';
-      state.toggleEl?.setAttribute('data-hidden', hidden);
-    } catch {}
+    removeStandaloneToggle();
   }
 
   function hasSafeInitialUiMount() {
@@ -1781,9 +1741,6 @@
   function setUiHidden(hidden) {
     ensureUi();
     const v = hidden ? '1' : '0';
-    try {
-      state.toggleEl?.setAttribute('data-hidden', v);
-    } catch {}
     try {
       state.panelEl?.setAttribute('data-hidden', v);
     } catch {}
@@ -3084,7 +3041,6 @@
     } catch {}
 
     state.panelEl = null;
-    state.toggleEl = null;
     state.treeEl = null;
     state.statusEl = null;
     state.statsEl = null;

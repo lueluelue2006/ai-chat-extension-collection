@@ -1027,11 +1027,28 @@ button.${PULSE_CLASS} {
     return !!thinking && !!pro;
   }
 
+  function menuLooksLikeModelMenu(menu) {
+    if (!(menu instanceof Element)) return false;
+    const items = Array.from(menu.querySelectorAll("[role='menuitemradio'],[role='menuitem']")).filter(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
+    return items.some((item) => {
+      const testId = normalizeText(item.getAttribute('data-testid') || '');
+      const t = normalizeText(`${testId} ${item.getAttribute('aria-label') || ''} ${item.textContent || ''}`);
+      return testId.startsWith('model-switcher-') || /\b(?:instant|thinking|pro|gpt)\b/.test(t);
+    });
+  }
+
+  function menuHasEffortAction(menu) {
+    return findEffortActionInModelMenu(menu, 'thinking') instanceof HTMLElement || findEffortActionInModelMenu(menu, 'pro') instanceof HTMLElement;
+  }
+
   function menuHasEffortOptions(menu) {
     if (!(menu instanceof Element)) return false;
     if (menuHasThinkingProMode(menu)) return false;
     const { items, low, high } = getEffortItems(menu);
     if (items.length < 2 || items.length > 4) return false;
+    if (menuLooksLikeModelMenu(menu)) return false;
     return !!(low && high);
   }
 
@@ -1691,7 +1708,7 @@ button.${PULSE_CLASS} {
         /** @type {Element|null} */
         openedMenu = await waitForValue(() => {
           const candidate = findMenuForPill(pill);
-          if (candidate && (menuHasEffortOptions(candidate) || menuHasThinkingProMode(candidate))) return candidate;
+          if (candidate && (menuHasEffortOptions(candidate) || menuHasEffortAction(candidate) || menuHasThinkingProMode(candidate))) return candidate;
           return null;
         }, 520, 20);
         if (!openedMenu) {
@@ -1701,6 +1718,10 @@ button.${PULSE_CLASS} {
 
         if (menuHasEffortOptions(openedMenu)) {
           effortMenu = openedMenu;
+        } else if (menuHasEffortAction(openedMenu)) {
+          activeMode = detectCurrentModelMode();
+          if (activeMode !== 'thinking' && activeMode !== 'pro') activeMode = menuSelectedMode(openedMenu);
+          effortMenu = await openEffortMenuFromModelMenu(openedMenu, activeMode || '');
         } else if (menuHasThinkingProMode(openedMenu)) {
           activeMode = menuSelectedMode(openedMenu);
           if (activeMode !== 'thinking' && activeMode !== 'pro') {

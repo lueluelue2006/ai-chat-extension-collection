@@ -946,7 +946,7 @@
     const locale = resolveUiLocale();
     const isZh = /^zh/i.test(String(locale || ''));
     if (elLocaleToggle) {
-      const label = isZh ? 'Switch UI language to English' : '切换界面语言到中文';
+      const label = isZh ? '切换界面语言到英文' : 'Switch UI language to Chinese';
       elLocaleToggle.setAttribute('aria-label', label);
       elLocaleToggle.title = label;
     }
@@ -957,8 +957,10 @@
       btnLocaleToggleZh.setAttribute('aria-pressed', active ? 'true' : 'false');
       btnLocaleToggleZh.title =
         mode === LOCALE_MODE_AUTO
-          ? (isZh ? 'Auto mode · currently Chinese' : '切换为简体中文')
-          : (active ? '当前：简体中文' : '切换为简体中文');
+          ? (isZh ? '自动模式 · 当前中文' : 'Switch to Simplified Chinese')
+          : (active
+              ? (isZh ? '当前：简体中文' : 'Current: Simplified Chinese')
+              : (isZh ? '切换为简体中文' : 'Switch to Simplified Chinese'));
     }
 
     if (btnLocaleToggleEn) {
@@ -967,8 +969,8 @@
       btnLocaleToggleEn.setAttribute('aria-pressed', active ? 'true' : 'false');
       btnLocaleToggleEn.title =
         mode === LOCALE_MODE_AUTO
-          ? (!isZh ? 'Auto mode · currently English' : 'Switch to English')
-          : (active ? 'Current: English' : 'Switch to English');
+          ? (!isZh ? 'Auto mode · currently English' : '切换为英文')
+          : (active ? (isZh ? '当前：英文' : 'Current: English') : (isZh ? '切换为英文' : 'Switch to English'));
     }
   }
 
@@ -4446,7 +4448,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '使用方式：在右下角会出现 “Tree” 按钮。点开后显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。若要导出完整树，请在扩展菜单中执行“导出完整树为 JSON”。';
+      '使用方式：通过 ChatGPT QuickNav 面板顶部的 “🌳” 按钮打开。面板会显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。若要导出完整树，请在扩展菜单中执行“导出完整树为 JSON”。';
     elModuleSettings.appendChild(hint);
   }
 

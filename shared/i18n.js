@@ -15,7 +15,11 @@
 
   const EXACT_TEXT_MAP = Object.freeze({
     'AI捷径 设置': 'AI Shortcuts Settings',
+    'AI捷径 logo': 'AI Shortcuts logo',
     '搜索、启停和配置所有 AI 网站脚本。': 'Search, toggle, and configure scripts for all AI sites.',
+    '扩展': 'Extension',
+    '查找': 'Find',
+    '脚本控制': 'Script Control',
     '脚本菜单': 'Script menu',
     '作者': 'Author',
     '版本': 'Version',
@@ -49,6 +53,14 @@
     '界面语言': 'Interface language',
     '语言与界面文案': 'Language and interface copy',
     '简体中文': 'Simplified Chinese',
+    '切换为英文': 'Switch to English',
+    '切换为简体中文': 'Switch to Simplified Chinese',
+    '切换界面语言到英文': 'Switch UI language to English',
+    '切换界面语言到中文': 'Switch UI language to Chinese',
+    '自动模式 · 当前中文': 'Auto mode · currently Chinese',
+    '自动模式 · 当前英文': 'Auto mode · currently English',
+    '当前：英文': 'Current: English',
+    '当前：简体中文': 'Current: Simplified Chinese',
     '自动': 'Auto',
     '我有 Meta 键': 'I have a Meta key',
     '我没有 Meta 键': 'I do not have a Meta key',
@@ -95,6 +107,8 @@
     '安装路径必须是 dist/ 目录；如果误加载源码根目录，可能出现“注入失败 / Receiving end does not exist”。': 'The install path must be the dist/ directory. Loading the repository root by mistake can cause injection failures or “Receiving end does not exist”.',
     '安装路径应为 dist/ 目录。': 'The install path should be the dist/ directory.',
     '安装路径应为 ': 'The install path should be ',
+    '安装路径应为': 'The install path should be',
+    '目录。': 'directory.',
     ' 目录。': ' directory.',
     '安装路径必须是': 'The install path must be',
     '安装路径必须是 ': 'The install path must be ',
@@ -370,7 +384,7 @@
     '为用户消息增加一个“分叉编辑”按钮（可与原生编辑共存）。': 'Add a “fork edit” button to user messages, while still coexisting with native edit.',
     '使用方式：在用户消息下面会多出一个 QuickNav 铅笔按钮（在 ChatGPT 原生“编辑”左侧）；点击后会把原文（以及原图，如有）填入输入框。此时你可以继续编辑，并可新增/粘贴图片（Cmd+V）或用“添加文件/图片”上传，然后直接发送。发送时会自动改写 parent_message_id，实现真正的“分叉编辑”；若对方还在回复，点一次发送会自动结束当前回复并继续分叉发送。若想恢复正常发送，点提示条里的“取消”。': 'Usage: a QuickNav pencil button appears below each user message (to the left of ChatGPT’s native Edit button). Clicking it fills the composer with the original text and image, if present. You can keep editing, paste or add more images (Cmd+V), or upload via “Add files/photos”, then send directly. Sending rewrites parent_message_id so this becomes a true fork edit. If the assistant is still replying, sending once stops the current reply and continues with the fork send. To go back to normal sending, click “Cancel” in the notice bar.',
     '显示当前对话的完整消息树/分支结构（不切换主界面分支），并支持导出完整树 JSON。': 'Show the full message tree / branch structure for the current conversation without switching the main-thread branch, and support full-tree JSON export.',
-    '使用方式：在右下角会出现 “Tree” 按钮。点开后显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。若要导出完整树，请在扩展菜单中执行“导出完整树为 JSON”。': 'Usage: a “Tree” button appears at the bottom-right. Open it to see the current conversation tree (including all branches) with the current path highlighted. “Simple” (hide system/tool/thoughts nodes) and “Guides” (VSCode-like guide lines) are enabled by default and can be toggled in the panel header. This module does not switch branches or focus messages in the main chat area; it is only for inspecting the structure. To export the full tree, use “Export full tree as JSON” from the extension menu.',
+    '使用方式：通过 ChatGPT QuickNav 面板顶部的 “🌳” 按钮打开。面板会显示当前对话的消息树（包含所有分支）并高亮当前分支路径；默认开启“简洁”（隐藏 system/tool/thoughts 等内部节点）和“彩线”（类似 VSCode 的缩进对齐竖线），可在面板顶部一键切换。该模块不会驱动主聊天区切换分支/定位消息；只用于查看结构。若要导出完整树，请在扩展菜单中执行“导出完整树为 JSON”。': 'Usage: open it from the “🌳” button in the ChatGPT QuickNav panel header. The panel shows the current conversation tree (including all branches) with the current path highlighted. “Simple” (hide system/tool/thoughts nodes) and “Guides” (VSCode-like guide lines) are enabled by default and can be toggled in the panel header. This module does not switch branches or focus messages in the main chat area; it is only for inspecting the structure. To export the full tree, use “Export full tree as JSON” from the extension menu.',
     '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。': 'Only active on image-generation pages: open Settings automatically and switch to 2K quality.',
     '说明：该模块只在 https://www.genspark.ai/agents?type=moa_generate_image 生效；会尽量通过按钮文本/aria-label/弹窗选项等启发式方式打开设置并选择 2K。若关闭模块，已打开页面可能需要刷新才会完全停用。': 'This module is active only on https://www.genspark.ai/agents?type=moa_generate_image. It tries to open the settings dialog and select 2K through button text, aria-labels, and other heuristics. If you disable it, already-open pages may need a refresh to fully stop it.',
     '悬停页面上的小蓝点显示积分余量信息；支持折叠/展开、强制刷新、每分钟自动刷新。': 'Hover the blue dot to view remaining credits; supports collapse/expand, force refresh, and automatic refresh every minute.',
@@ -480,6 +494,13 @@
     '浅色': 'Light',
     '深色': 'Dark'
   });
+  const EXACT_TEXT_REVERSE_MAP = Object.freeze(
+    Object.entries(EXACT_TEXT_MAP).reduce((acc, [zh, en]) => {
+      const key = String(en || '').trim();
+      if (key) acc[key] = zh;
+      return acc;
+    }, {})
+  );
 
   const REGEX_REPLACEMENTS = [
     [/^已清理 (\d+) 条过期检查点（>30天）$/, 'Cleared $1 expired checkpoints (>30 days)'],
@@ -565,6 +586,7 @@
     [/^关闭（扩展总开关已关闭）$/, 'Off (extension disabled)'],
     [/^关闭（URL 列表为空）$/, 'Off (URL list is empty)'],
     [/^关闭$/, 'Off'],
+    [/^(.+)（([^（）]+) 前）$/, '$1($2 ago)'],
     [/^（(.+) 前）$/, '($1 ago)'],
     [/^(.+) 前$/, '$1 ago'],
     [/^当前配置按“无 Meta 键”处理。强制开启后，若你的键盘没有可用的 Meta 键或映射，⌘O \/ ⌘J 仍可能无法使用。\n\n确定继续强制开启吗？$/, 'The current configuration treats this keyboard as having no Meta key. If you force-enable it, ⌘O / ⌘J may still fail if your keyboard has no usable Meta mapping.\n\nContinue anyway?'],
@@ -585,6 +607,27 @@
     [/^已完成检测$/, 'Check complete'],
     [/^已保存监控列表$/, 'Monitor list saved'],
     [/^（失败）(.+)$/, '(failed) $1']
+  ];
+  const REGEX_REVERSE_REPLACEMENTS = [
+    [/^Hotkeys: (.+)$/, '快捷键：$1'],
+    [/^(\d+) queued$/, '已排队 $1 条'],
+    [/^(\d+) more queued items$/, '还有 $1 条待发送'],
+    [/^Queue paused: the previous queued message is still being sent\.$/, '队列已暂停：上一条排队消息仍在发出。'],
+    [/^Queue paused: return to the original conversation to resume auto-send\.$/, '队列已暂停：请回到原对话后继续自动发送。'],
+    [/^Queue paused: you are not in the original conversation\.$/, '队列已暂停：当前不在原对话里。'],
+    [/^Queue paused: the composer contains attachments that are not queued\.$/, '队列已暂停：输入框里有未排队附件。'],
+    [/^Queue paused: the composer contains a manual draft\.$/, '队列已暂停：输入框里有手动草稿。'],
+    [/^Queue paused: the previous reply is still wrapping up\.$/, '队列已暂停：上一条回复仍在收尾。'],
+    [/^(.+)\(([^()]+) ago\)$/, '$1（$2 前）'],
+    [/^\(([^()]+) ago\)$/, '（$1 前）'],
+    [/^(\d+) sites matched\.$/, '筛出 $1 个网站。'],
+    [/^(.+) · (\d+)\/(\d+) scripts matched$/, '$1 · $2/$3 个脚本匹配'],
+    [/^(.+): (\d+)\/(\d+) sites, (\d+)\/(\d+) scripts\.$/, '$1：$2/$3 个网站，$4/$5 个脚本。'],
+    [/^(.+) has no scripts matching the current search and filters\.$/, '$1 没有符合当前搜索和筛选条件的脚本。'],
+    [/^Read failed: (.+)$/, '读取失败：$1'],
+    [/^Load failed: (.+)$/, '加载失败：$1'],
+    [/^Failed to save module settings: (.+)$/, '模块设置保存失败：$1'],
+    [/^Failed to read module settings: (.+)$/, '读取模块设置失败：$1']
   ];
 
   function normalizeLocaleMode(input, fallback = LOCALE_MODE_AUTO) {
@@ -648,7 +691,21 @@
 
   function translateText(text, locale, vars) {
     const raw = String(text ?? '');
-    if (!raw || isChineseLocale(locale)) return formatTemplate(raw, vars);
+    if (!raw) return formatTemplate(raw, vars);
+    if (isChineseLocale(locale)) {
+      let out = raw;
+      if (Object.prototype.hasOwnProperty.call(EXACT_TEXT_REVERSE_MAP, out)) {
+        out = EXACT_TEXT_REVERSE_MAP[out];
+      } else {
+        for (const [pattern, replacement] of REGEX_REVERSE_REPLACEMENTS) {
+          if (pattern.test(out)) {
+            out = out.replace(pattern, replacement);
+            break;
+          }
+        }
+      }
+      return formatTemplate(out, vars);
+    }
     let out = raw;
     if (Object.prototype.hasOwnProperty.call(EXACT_TEXT_MAP, out)) {
       out = EXACT_TEXT_MAP[out];
@@ -675,7 +732,7 @@
   }
 
   function localizeTree(root, locale) {
-    if (!root || isChineseLocale(locale)) return;
+    if (!root) return;
     const seen = new Set();
 
     function visitNode(target) {

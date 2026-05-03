@@ -2217,12 +2217,6 @@ function verifyChatgptQuicknavTurnCandidateHardening() {
   if (!quicknavSource.includes('armInitialIndexCatchup') || !quicknavSource.includes('stopInitialIndexCatchup') || !quicknavSource.includes('rawCount > (Array.isArray(cacheBaseIndex)')) {
     failures.push('content/chatgpt-quicknav.js is missing initial/reload catchup when turns exist but the QuickNav index is empty or short');
   }
-  if (!quicknavSource.includes('QUICKNAV_LOW_VISIBILITY_ENABLED') || !quicknavSource.includes('QUICKNAV_EVENT_FIREWALL_TYPES') || !quicknavSource.includes('function installQuickNavEventFirewall') || !quicknavSource.includes('installQuickNavEventFirewall(nav)')) {
-    failures.push('content/chatgpt-quicknav.js is missing low-visibility QuickNav event isolation');
-  }
-  if (quicknavSource.includes("setAttribute('data-cgpt-turn'") || quicknavSource.includes('setAttribute("data-cgpt-turn"')) {
-    failures.push('content/chatgpt-quicknav.js must not write data-cgpt-turn markers onto native ChatGPT turns');
-  }
   if (!quicknavSource.includes('renderedHasPlaceholder') || !quicknavSource.includes("list.querySelectorAll('.compact-text, .pin-label')")) {
     failures.push('content/chatgpt-quicknav.js must full-rebuild rendered placeholder rows instead of only tail-patching');
   }

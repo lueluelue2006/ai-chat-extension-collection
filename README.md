@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.0.32-74c0fc" alt="Current version 4.0.32">
+  <img src="https://img.shields.io/badge/current-4.1.0-74c0fc" alt="Current version 4.1.0">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.1.0 发布
+
+这个版本回退 4.0.32 的 ChatGPT QuickNav 低可见性实验，QuickNav 恢复到 4.0.31 的原始 turn 标记和面板事件行为。配置页暖色主题、语言修复、Tree 旧按钮清理等 4.0.27 到 4.0.31 的改动保留。
+
+| 方向 | 更新 |
+| --- | --- |
+| QuickNav 回退 | 移除 4.0.32 的面板事件隔离实验 |
+| Turn 识别 | 恢复 `data-cgpt-turn` 标记路径，避免 QuickNav 识别与跳转行为偏离旧版本 |
+| 发布策略 | 以 `v4.1.0` 正式发布，不改写已发布的 `v4.0.32` 历史 |
 
 ### 4.0.32 补丁
 
@@ -491,6 +501,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.1.0
+
+This release reverts the ChatGPT QuickNav low-visibility experiment from 4.0.32. QuickNav now uses the same turn-marking and panel event behavior as 4.0.31. The Options warm light theme, language fix, Tree legacy-button cleanup, and other 4.0.27 to 4.0.31 changes remain in place.
+
+| Area | Update |
+| --- | --- |
+| QuickNav revert | Remove the 4.0.32 panel event-isolation experiment |
+| Turn detection | Restore the `data-cgpt-turn` marking path to preserve the older QuickNav recognition and jump behavior |
+| Release policy | Publish as `v4.1.0` instead of rewriting the already-published `v4.0.32` history |
 
 ### Release 4.0.32
 

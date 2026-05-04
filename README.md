@@ -37,425 +37,92 @@
 
 ## 中文说明
 
+### 当前版本
+
+当前最新版本：`4.1.1`。
+
+这是目前发布给用户安装的稳定版本。README 只介绍当前版本、安装方式和开发入口；历史更新记录请以 GitHub Releases 为准。
+
 ### 项目定位
 
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
 
-### 4.1.1 发布
-
-这个版本发布当前本地实测更稳的最佳版：ChatGPT Tab Queue 增加视觉完成兜底，避免回复已经完成但队列仍卡在“等待当前回复”；Genspark 绘图入口默认切到 GPT Image 2 / 4K / Medium 并关闭 Auto Prompt。
-
-| 方向 | 更新 |
-| --- | --- |
-| ChatGPT Tab Queue | 增加本地视觉完成兜底，漏掉传输完成信号时也能安全释放陈旧发送门 |
-| 风控边界 | 不增加 ChatGPT 轮询或额外后台请求，仍基于被动事件和本地 DOM 状态 |
-| Genspark 绘图 | 新绘图入口默认 GPT Image 2、4K、Medium，并关闭 Auto Prompt |
-
-### 4.1.0 发布
-
-这个版本回退 4.0.32 的 ChatGPT QuickNav 低可见性实验，QuickNav 恢复到 4.0.31 的原始 turn 标记和面板事件行为。配置页暖色主题、语言修复、Tree 旧按钮清理等 4.0.27 到 4.0.31 的改动保留。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 回退 | 移除 4.0.32 的面板事件隔离实验 |
-| Turn 识别 | 恢复 `data-cgpt-turn` 标记路径，避免 QuickNav 识别与跳转行为偏离旧版本 |
-| 发布策略 | 以 `v4.1.0` 正式发布，不改写已发布的 `v4.0.32` 历史 |
-
-### 4.0.32 补丁
-
-这个补丁降低 ChatGPT QuickNav 面板被站点前端事件链路观察到的概率。QuickNav 本体仍不做后台请求；这次进一步把面板内部的点击、滚轮和键盘事件隔离在扩展 UI 内，并停止给 ChatGPT 原生消息节点写入 `data-cgpt-turn` 标记。
-
-| 方向 | 更新 |
-| --- | --- |
-| 低可见性 | QuickNav 面板内部事件在面板根部截断冒泡，减少被页面全局 bubble 监听记录 |
-| DOM 痕迹 | 不再向 ChatGPT 原生 turn 写入 `data-cgpt-turn`，改用原生选择器与已有 core 快照定位 |
-| 风控边界 | 保持 QuickNav 无主动网络请求；Tree 等会话读取能力仍只在用户触发时工作 |
-
-### 4.0.31 补丁
-
-这个补丁把配置页浅色主题从冷蓝灰调回 v2.6.0 到 v3.2.0 时期的暖白/米色气质，同时保留 4.x 的紧凑卡片、搜索和设置密度。
-
-| 方向 | 更新 |
-| --- | --- |
-| 浅色主题 | 恢复暖纸色背景、奶白面板和更柔和的边框阴影 |
-| 视觉层次 | 使用茶青 accent 保持功能识别，避免整页变成单一米色 |
-| 兼容性 | 只调整配置页浅色 token，不改变深色主题和交互逻辑 |
-
-### 4.0.30 补丁
-
-这个补丁修复配置页语言切换的中英文混杂问题：切到英文后再切回中文时，已经被本地化成英文的静态 DOM 会正确还原成中文；同时把配置页初始 HTML 里的几个硬编码英文眉标改成中文底稿。
-
-| 方向 | 更新 |
-| --- | --- |
-| 配置页语言 | i18n 支持英文文案反向还原中文 |
-| 中文底稿 | 配置页标题、眉标、无障碍文案改为中文源文本 |
-| 回归验证 | verify 增加双向本地化防回退检查 |
-
-### 4.0.29 补丁
-
-这个补丁继续清理 ChatGPT Conversation Tree 的旧入口痕迹：QuickNav 里不再保留用于隐藏旧 standalone Tree 按钮的兜底 CSS。Tree 入口现在只存在于 QuickNav 的 🌳 控制里。
-
-| 方向 | 更新 |
-| --- | --- |
-| 旧入口清理 | 删除 QuickNav 中针对旧 Tree standalone toggle 的遗留隐藏规则 |
-| UI 口径 | 对话树入口只保留 QuickNav 🌳 |
-
-### 4.0.28 补丁
-
-这个补丁移除了 ChatGPT Conversation Tree 的旧 standalone 大按钮。对话树现在只通过 QuickNav 面板里的 🌳 入口打开，避免页面上残留一个被裁切的 “Conversation Tree” 浮层按钮。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tree 入口 | 移除旧 standalone toggle，保留 QuickNav 🌳 入口 |
-| UI 稳定性 | 避免加载竞态下出现重复/裁切的 Conversation Tree 按钮 |
-| 回归验证 | verify 增加旧 standalone toggle 禁止项 |
-
-### 4.0.27 补丁
-
-这个补丁对 ChatGPT Plus 新模型菜单做最小防误触修复：`Cmd+O` 只负责切换 Thinking / Pro 的推理强度，模型菜单里的 `Instant` 不再会被当成强度选项，也不会被 `Cmd+O` 误点。
-
-| 方向 | 更新 |
-| --- | --- |
-| Plus 模型菜单 | 屏蔽 `Instant` / `model-switcher-*` 这类模型项参与 `Cmd+O` |
-| 最小改动 | 保留旧版主流程，只接入已有的模型行 effort action |
-| 回归验证 | verify 增加模型行误判防护检查 |
-
-### 4.0.24 补丁
-
-这个补丁继续修 ChatGPT QuickNav 自动滚动锁：真实页面打点确认，ChatGPT 在发送后会对新回复 turn 调用 `scrollIntoView({ behavior: "smooth", block: "end" })`，这就是发送后被拉到底部的源头之一。QuickNav 现在会把 Cmd+Enter 桥接明确标记为用户发起发送，避免被当成普通程序化保护并复用旧基线。
-
-| 方向 | 更新 |
-| --- | --- |
-| 原生滚动源头 | 主世界 guard 继续在 `scrollTop` / `scrollTo` / `scrollIntoView` 源头拦截 ChatGPT 的发送后跳底 |
-| Cmd+Enter | Cmd+Enter 发送桥接新增用户触发标记，保护基线绑定当前视口 |
-| 路由清理 | 离开聊天路由时清掉旧 anchor、route scroll 期望和 MAIN-world 锁状态，避免非聊天页面/新聊天页继承过期锁 |
-| 回归验证 | verify 覆盖 Cmd+Enter 用户触发标记与 route cleanup guard |
-
-### 4.0.23 补丁
-
-这个补丁修复 ChatGPT QuickNav 自动滚动锁在发送保护窗口内偶发“往上跑”的问题：用户用 `Tab`、`Cmd+Enter` 或发送按钮触发发送时，锁定基线会优先绑定当前视口，而不是沿用可能过期的旧基线；锚点恢复也不会再把页面拉到锁定基线以上。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 空闲 `Tab` 直发必须等到请求、生成态或输入框清空等本地证据确认；未确认时会回退入队，避免偶发吞掉发送 |
-| QuickNav 锁 | 用户发起发送时以当前视口作为保护基线，避免旧 `stablePos` 把页面拉回上方 |
-| Anchor fallback | 锚点恢复增加基线下限，保留“防跳底”的同时避免过度向上修正 |
-| Tab Queue | 回归测试覆盖空闲 `Tab` 直发与回复中 `Tab` 入队自动续发，未恢复任何主动轮询 |
-
-### 4.0.22 补丁
-
-这个补丁继续压低 ChatGPT 重度使用时的性能和风控风险：Tab Queue 不再依赖任何主动轮询；空闲时按 `Tab` 会直接走官网发送按钮，不再先闪一下“已排队”；真正回复中入队时仍由事件门控等待当前流结束。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 空闲 `Tab` 改为直发路径，避免临时队列闪烁、重复状态和误判黄色队列标记 |
-| 强发门控 | “强发”按钮也必须尊重 active request / stream / render settle，不会在上一条仍在生成时抢发 |
-| 性能 | Fetch Hub 在只有完成事件消费者时使用 pass-through stream tap，避免不必要的 `Response.clone()`；热路径去掉大块 `innerText` 读取 |
-| QuickNav 锁 | 新增标量锚点 fallback，Tab 发送后优先按当前可见 turn 恢复视口，减少长对话里绝对 scrollTop 漂移 |
-| 回归验证 | 已在真实 ChatGPT 正常对话里验证空闲 Tab 直发、回复中入队、强发不抢发、QuickNav 锁定不跳底 |
-
-### 4.0.21 补丁
-
-这个补丁把 ChatGPT QuickNav 自动滚动锁进一步往源头拦截推进：当新版 ChatGPT 在发送后新建真实滚动容器并直接写入 `scrollTop` 时，主世界 guard 会立即认领这个真实 scroller，而不是继续相信早期缓存的 `HTML` scroller。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 锁 | 修复发送后真实滚动容器晚出现时的 stale scroller 缓存，减少先跳到底部再被拉回的抽搐 |
-| Source gate | 在 send/source-gate 保护窗口内，直接识别 ChatGPT `group/scroll-root` / `main` 容器并拦截明显向底部的程序化 `scrollTop` 写入 |
-| 回归保护 | verify 要求新版 source guard 具备真实 scroller 候选认领逻辑 |
-
-### 4.0.20 补丁
-
-这个补丁修复 ChatGPT 输入框多段 DOM 导致的换行膨胀，并加固 Tab Queue 在 Follow up 输入框已开放但上一条仍未完成时的等待判定。
-
-| 方向 | 更新 |
-| --- | --- |
-| Composer 文本读取 | 新增语义化 composer 读取：按 ProseMirror 段落恢复用户实际换行，避免 `innerText` 把一个空行读成多个空行 |
-| Tab Queue / 快捷深度搜索 | 改用共享 composer 读取路径，发送多行 prompt 时不再复制 ChatGPT live DOM 的额外空行 |
-| Tab Queue 门控 | 最新 assistant turn 尚未出现完成动作区时，即使 Follow up 输入框和发送按钮可用，也继续视为上一条仍在进行，避免 Tab 抢发补充消息 |
-| 回归保护 | verify 覆盖多段 `<p>` 与原生恢复单段 newline 两种 composer 形态 |
-
-### 4.0.19 补丁
-
-这个补丁优化 ChatGPT Tab Queue 与 QuickNav 的联动：用户在空闲状态把 `Tab` 当普通发送键使用时，不再被 QuickNav 标成黄色队列消息；真正生成中入队的 Tab 消息仍会保留黄色标记。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 新增 direct Tab send 判别：空闲、无 pending gate、无 active request、无生成态时按 `Tab` 发送会被视为普通直接发送 |
-| QuickNav | 黄色队列标记只保留给真正排队后自动发送的消息，避免把用户主动发送误标为队列消息 |
-| 回归保护 | verify 增加 `highlightOnSend` 与 direct-send 分类检查，防止后续改动把两种路径重新混在一起 |
-
-### 4.0.18 补丁
-
-这个补丁加固 ChatGPT Pro 下 Tab Queue 的完成门控，避免偶发漏掉流完成事件后队列一直等待。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 新增本地视觉完成门控：当 Pro 回复已经停止生成、输入框恢复、assistant 回复出现并稳定时，可补齐漏掉的 transport done 状态 |
-| 风控安全 | 不新增任何后端状态请求，不恢复 `/stream_status` 轮询 |
-| 性能安全 | 保持 bounded render signature，不读取完整长回复文本 |
-
-### 4.0.17 补丁
-
-这个补丁适配 ChatGPT 新版顶栏布局，避免右上角临时对话、群聊、分享等原生按钮被 QuickNav 面板遮住。
-
-| 方向 | 更新 |
-| --- | --- |
-| Header Fix | 新版 UI 下不再依赖旧 topbar 模型选择器搬移按钮，改为根据 QuickNav 实际占位给右上按钮组预留空间 |
-| QuickNav 兼容 | 保持 QuickNav 默认右上位置不变，只移动 ChatGPT 原生右上按钮组 |
-| 回退安全 | 旧 topbar 搬移逻辑保留为 legacy fallback，但当前新版 UI 走新的 reserve 路径 |
-
-### 4.0.16 补丁
-
-这个补丁拆分 ChatGPT `Cmd+Enter` 与 Tab Queue 的滚动锁保护通道，避免正常快捷发送被标记成 Tab Queue 路径。
-
-| 方向 | 更新 |
-| --- | --- |
-| Cmd+Enter | 改用通用 ChatGPT send-protect bridge，不再复用 Tab Queue bridge |
-| QuickNav | 根据 `source/phase` 区分 `cmdenter-*` 和 `tab-queue-*` 保护原因，并暴露滚动锁调试状态 |
-| 滚动锁 | 短 click/submit guard 不再覆盖已有长发送保护窗口，避免脚本间互相缩短保护时间 |
-
-### 4.0.15 补丁
-
-这个补丁修复 Tab Queue 发送路径下 QuickNav 自动滚动锁偶发失效的问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 按下 `Tab` 且输入框有文本时，会在进入异步排队前先发出本地滚动锁预保护事件 |
-| QuickNav | 会话路由重建时同步重置 Tab Queue bridge 哨兵，避免新对话后漏绑发送保护监听 |
-
-### 4.0.14 补丁
-
-这个补丁移除 ChatGPT Thinking Toggle 在新版 composer 上过于显眼的悬浮文字提示，避免 `Thinking` / `Pro` 小气泡像原生控件一样卡在输入框上方。
-
-| 方向 | 更新 |
-| --- | --- |
-| Thinking Toggle | 模型/强度切换后不再绘制悬浮文字 badge，只保留轻量按钮闪烁 |
-| 热重载清理 | 新脚本加载时会清理旧版 `Thinking` / `Pro` 提示残留的 class 和属性 |
-
-### 4.0.13 补丁
-
-这个补丁适配 ChatGPT 新版 composer 模型选择器，恢复 `⌘J` Thinking / Pro 切换和 `⌘O` 推理强度切换。
-
-| 方向 | 更新 |
-| --- | --- |
-| 模型选择器 | 共享 ChatGPT core / DOM adapter 现在能识别 composer 内的模型 pill，例如 `Heavy`、`Extended Pro`、`Pro • Extended` |
-| Thinking Toggle | `⌘J` 会从新版模型菜单读取当前选中项，再切换 Thinking / Pro；`⌘O` 会打开新版菜单里的隐藏 Effort 子菜单并在 Light/Heavy 或 Standard/Extended 之间切换 |
-| Reply Timer | Pro 判断兼容 `Extended Pro` 和 `Pro • Extended`，避免新版文案导致 Pro 回复计时误开启 |
-| 验证 | verify fixture 改为覆盖新版 composer pill，而不是继续把旧 topbar model selector 当成唯一正确结构 |
-
-### 4.0.12 补丁
-
-这个补丁移除 ChatGPT Tab Queue 的主动 `stream_status` 请求，避免队列功能产生规律性后端状态探测；同时修复 MV3 动态 content script 在同一路径更新后仍可能执行旧脚本的问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 默认路径不再请求 `/backend-api/conversation/:id/stream_status`，改用 fetch-hub 已观察到的真实发送/完成事件和 DOM 状态推进队列 |
-| MV3 注册 | 动态 content script 注册 ID 带版本后缀，并在 bootstrap 即时注入时回映射原始脚本 ID，确保发布或本地重新加载后页面拿到新文件内容 |
-| 诊断 | 扩展页可读取当前动态 content script 注册清单，便于确认真实 Chrome 是否仍跑旧脚本 |
-
-### 4.0.11 补丁
-
-这个补丁修复 ChatGPT Tab Queue 默认路径对后端状态接口的依赖，准备移除主动 `stream_status` 请求，并加固动态 content script 刷新。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 队列推进开始改用本地 DOM/Fetch Hub 状态，降低对主动后端状态探测的依赖 |
-| MV3 注册 | service worker 启动后的首次动态 content script 注册会强制刷新 |
-
-### 4.0.10 补丁
-
-这个补丁继续加固 ChatGPT QuickNav 防自动滚动锁，重点处理页面尚未稳定时使用 Cmd+Enter 发送导致锁失效的问题，并让锁的开关状态更醒目。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav | Cmd+Enter 发送前会预先同步锁状态和当前滚动 baseline，让 main-world scroll guard 在发送第一帧前生效 |
-| QuickNav | 锁按钮改为开锁/闭锁图标、高对比 active 状态和 `aria-pressed`，减少“到底开没开”的误判 |
-
-### 4.0.9 补丁
-
-这个补丁修复 ChatGPT Tab Queue 在 GPT 5.5 Pro 图像/长 thinking 回复完成后，可能因为 `stream_status` 请求挂起而短暂或持续卡住的问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| Tab Queue | 为 ChatGPT `stream_status` 检查增加超时，避免视觉上已完成但队列仍卡在上一条回复收尾 |
-| Tab Queue | 保留 DOM 侧完成判断：无 stop 按钮、发送按钮就绪、回复渲染稳定时允许队列继续推进 |
-
-### 4.0.8 补丁
-
-这个补丁把 ChatGPT 快捷深度搜索从硬编码热键/硬编码提示词，升级为可配置的轻量工作流。
-
-| 方向 | 更新 |
-| --- | --- |
-| 快捷深度搜索 | 设置页新增搜索快捷键字母配置，默认仍是 `Ctrl+S` |
-| 快捷深度搜索 | 设置页新增搜索插入文本配置，支持 `{input}` 占位符来控制原输入放置位置 |
-| 设置/存储 | per-module 设置支持受控字符串字段，并加入验证规则防止配置桥接回退 |
-
-### 4.0.7 补丁
-
-这个补丁继续清理 ChatGPT 请求模型风险，确认 Google Search 问 GPT 不会改写模型，并移除另一个旧 Pro 模型兜底。
-
-| 方向 | 更新 |
-| --- | --- |
-| Google Search 问 GPT | 静态复核转发链路：只写入 ChatGPT 输入框并点击发送，不改写 `payload.model` / `thinking_effort` |
-| Thinking Toggle | 特殊 Pro 发送不再在无法识别当前模型时硬塞 `gpt-5-4-pro`，避免旧模型兜底风险 |
-| 快捷深度搜索 | 修正设置页旧文案，并增加验证规则防止 `gpt-5` 强制改写逻辑回归 |
-
-### 4.0.6 补丁
-
-这个补丁修复 ChatGPT 快捷深度搜索热键在 GPT 5.5 Thinking / Heavy 场景下可能“已发送但不响应”的问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| 快捷深度搜索 | 不再把发送请求强制改写为旧 `gpt-5`，保留用户当前选择的 GPT 5.5 Thinking / Pro 模型与 effort |
-| 快捷深度搜索 | 改用 ChatGPT core 的发送按钮点击路径，移除发送前禁用原生按钮的脆弱逻辑 |
-| 验证 | 新对话中复现旧版请求挂起；对照普通发送确认 `gpt-5-5-thinking + max` 正常返回 |
-
-### 4.0.5 补丁
-
-这个补丁修复临时对话和已打开页面里 QuickNav 滚动锁仍可能守错滚动容器的问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 滚动锁 | MAIN-world scroll guard 升级到 v11，已打开页面也能热升级到新的拦截逻辑 |
-| QuickNav 滚动锁 | ChatGPT 场景优先使用 core 返回的真实 `DIV` 滚动容器，避免临时对话首条消息后仍标记 `HTML` |
-| 验证 | 真实临时对话和普通 `/c/...` 对话中，锁定到中段后用真实 `Tab` 入队自动发送，生成完成后 `scrollTop` 保持在锁定基线 |
-
-### 4.0.4 补丁
-
-这个补丁继续修复临时对话里的 QuickNav 滚动锁基线问题。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 滚动锁 | 临时对话首条消息后如果滚动容器重建，会重新确认当前容器，避免锁还绑定在旧容器上 |
-| QuickNav 滚动锁 | 对输入框聚焦、键盘滚动、系统辅助滚动等没有 `wheel` 信号的可见滚动，非生成/非突变窗口内会同步为新的锁定基线 |
-| Tab Queue | Tab Queue 自动发送仍保留发送期保护，不会把发送触发的原生跳底部误认为用户滚动 |
-
-### 4.0.3 补丁
-
-这个补丁继续加固 QuickNav 滚动锁和 Tab Queue 自动发送池之间的边界。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 滚动锁 | Tab 入队后、composer 被清空前就同步通知 QuickNav 保护锁定基线，避免 queued message 发送时仍触发 ChatGPT 原生跳底部 |
-| Tab Queue | 保护信号改为同步 `dispatchEvent` + 异步 `postMessage` 双通道，覆盖入队、写回 composer、程序化点击发送和确认发送阶段 |
-| 验证 | 在真实 ChatGPT 对话中锁定到中段位置后用真实 `Tab` 入队并等待自动发送完成：队列清空、锁定开启、`scrollTop=2800`、baseline=2800 |
-
-### 4.0.2 补丁
-
-这个补丁修复 QuickNav 滚动锁与 Tab Queue 自动发送池之间的协作缺口。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 滚动锁 | Tab Queue 自动发送前会通知 QuickNav 保护当前锁定基线，避免 queued message 发送时把视口拉到底部 |
-| Tab Queue | 自动发送生命周期新增 `prepare` / `before-click` / `confirmed` 保护信号，覆盖写回 composer 和程序化点击发送两段风险窗口 |
-| 验证 | 在真实 ChatGPT 对话中用 `Tab` 入队并等待自动发送完成：队列清空、回复出现、锁定开启、`scrollTop=0`、baseline=0 |
-
-### 4.0.1 补丁
-
-这个补丁把 4.0.0 发布后继续验证出的最终状态同步到 GitHub。
-
-| 方向 | 更新 |
-| --- | --- |
-| QuickNav 滚动锁 | 加固锁定时的基线恢复，覆盖 `scrollTop`、`scrollTo`、`scrollIntoView` 和真实流式回复期间的自动跳底部 |
-| Tab Queue | 清空队列后同步清理隐藏预览 DOM，避免旧队列文本继续留在页面内存里；同时补强可视队列 overflow 行标记 |
-| 诊断包 | 复核诊断包脱敏行为：ChatGPT 对话 URL 折叠为 `/c/:id`，不导出原始队列文本、输入框文本或对话正文 |
-| 设置页 | 复核全局搜索、快捷键过滤、Tab Queue 跳转、无结果状态和 `Cmd+K` 聚焦路径 |
-
-### 4.0.0 重点
-
-这版不是一次普通 selector 维护，而是围绕新版 ChatGPT UI 做了一轮系统性重构和回归修复。
-
-| 方向 | 更新 |
-| --- | --- |
-| ChatGPT UI 适配 | 新增共享 DOM adapter / core 恢复链，适配新版会话结构、composer、send button、model switcher、SPA 切换与刷新后的延迟加载 |
-| 长对话性能 | 重写 `chatgpt_perf` 为低风险性能协调器：公式/长代码压力探测、热路径降载、composer 输入减载、隐藏页/空闲释放缓存 |
-| 内存控制 | Tab Queue、Quote、Perf、Core、QuickNav、Tree 都补了缓存裁剪和 release path，减少长会话里 DOM、文本快照和调试状态的长期保留 |
-| Tab Queue | 修复多条 `Tab` 队列抢发、Thinking 中连续排队、`Option/Alt + ↑` 取回后再 `Tab` 误触发强制发送等问题 |
-| QuickNav / Tree | 修复刷新后加载不及时、placeholder 省略号、锁定状态仍跳到底部、可见 fork 切换、树面板按钮和 `Lines` 状态显示 |
-| Quote / TeX | 重构为 ask-multi 风格：选中回复文本后用轻量 Quote 按钮追加 Markdown `>` 引用，同时保留 KaTeX/LaTeX 还原和可配置双击复制 |
-| 模型与推理操作 | 加固 `⌘O / ⌘J`，减少模型菜单抽搐；新增默认开启的禁用 `⌘P` 选项，同时保留 `⌘⇧P` / `⌘⌥P` Pro send |
-| 用量与模型探测 | 加入 GPT 5.5 Thinking / Pro 用量池映射，移除 GPT 5 Thinking Mini；OpenAI 资源探测改为只有 HTTP 2xx 才算可用 |
-| 跨站维护 | 重新测试和修复 DeepSeek、Google Search、Qwen、Kimi、Gemini、Grok、Genspark、Z.ai、Meta AI 等站点的关键路径 |
-
-### ChatGPT 核心能力
+### ChatGPT 能力
 
 | 能力 | 说明 |
 | --- | --- |
-| QuickNav | 对话级导航、跳转、收藏、图钉、锁定滚动、防自动跳底部 |
-| Conversation Tree | 显示当前对话的消息树、分支和可见路径，并支持导出完整树 JSON |
-| Tab Queue | 用 `Tab` 把输入排进队列，按顺序串行发送；`Option/Alt + ↑` 可取回最近排队草稿并重新排队 |
-| Cmd+Enter | `⌘Enter / Ctrl+Enter` 发送，普通 Enter / Shift+Enter 保持换行策略 |
-| Cmd+O / Cmd+J | `⌘O` 切换推理强度，`⌘J` 切换 Thinking / Pro，并提供顶部模型族 badge / toggle |
-| Performance Coordinator | 针对长公式、长代码、长上下文和输入热路径做降载；默认启用极致性能模式 |
-| TeX Copy & Quote | 选区 Quote、多段引用、KaTeX LaTeX 还原、悬停提示、双击复制开关 |
-| Export / Fork Edit | 按当前可见分支导出 Markdown / HTML；用户消息可进行分叉编辑并补图/文件 |
-| Usage / Timer / Status | ChatGPT 用量记录、回复计时器、OpenAI 新模型监控横幅 |
-| UI Fixes | 顶栏按钮布局修复、文件下载修复、反馈按钮隐藏、粗体高亮、Canvas ID 辅助显示 |
+| QuickNav | 对话导航、跳转、收藏、图钉、滚动锁和防自动滚动 |
+| Conversation Tree | 当前对话树、分支路径显示、完整树 JSON 导出 |
+| Tab Queue | 用 `Tab` 排队发送草稿，串行发送，并用 `Option/Alt + Up` 取回最近一条 |
+| Cmd+Enter | `⌘Enter / Ctrl+Enter` 发送，同时保留正常换行行为 |
+| Cmd+O / Cmd+J | `⌘O` 切换推理强度，`⌘J` 切换 Thinking / Pro，顶部模型族提示 |
+| Performance Coordinator | 面向长公式、长代码、长上下文和输入框热路径的性能协调 |
+| TeX Copy & Quote | 多引用、选中文本 Markdown 引用、KaTeX/LaTeX 恢复、悬停提示、双击复制选项 |
+| Export / Fork Edit | 当前可见分支导出 Markdown / HTML，编辑用户消息并可附带图片/文件 |
+| Usage / Timer / Status | ChatGPT 用量统计、回复计时、OpenAI 模型观察横幅 |
+| UI Fixes | 顶栏布局修复、文件下载修复、反馈按钮隐藏、加粗高亮、Canvas ID 辅助 |
 
 ### 支持站点
 
-#### 主战场
+#### 重点站点
 
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| ChatGPT (`chatgpt.com`) | QuickNav、Tree、Tab Queue、性能协调器、Quote / TeX、导出、分叉编辑、`⌘O / ⌘J`、用量统计、下载修复、顶栏修复 | 最高优先级 |
-| Google 搜索 | 搜索页一键问 GPT，并跳到 ChatGPT 继续联网搜索工作流 | 最高优先级 |
+| ChatGPT (`chatgpt.com`) | QuickNav、Tree、Tab Queue、性能协调、Quote / TeX、导出、fork edit、`⌘O / ⌘J`、用量统计、下载修复、顶栏修复 | 最高优先级 |
+| Google Search | 从 Google 搜索结果转发到 ChatGPT 并继续网页搜索工作流 | 最高优先级 |
 
-#### 维护覆盖
+#### 持续维护
 
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| Genspark | QuickNav、`⌘Enter`、绘图默认 GPT Image 2 / 4K / Medium、积分余量、长代码折叠、编辑上传修复、Sonnet thinking 兼容 | 持续维护 |
+| Genspark | QuickNav、`⌘Enter`、GPT Image 2 / 4K / Medium 绘图默认设置、积分余量、长代码折叠、编辑上传修复、Sonnet thinking 兼容 | 持续维护 |
 | Grok | QuickNav、`⌘Enter`、额度显示、废纸篓一键清空 | 持续维护 |
 | Gemini App | QuickNav、`⌘Enter` | 持续维护 |
 | Kimi | QuickNav、`⌘Enter` | 持续维护 |
 | Qwen | QuickNav、`⌘Enter`、`⌘O / ⌘J` 模型/推理切换 | 持续维护 |
 | DeepSeek | QuickNav、`⌘Enter` | 持续维护 |
-| 文心一言 | QuickNav、`⌘Enter` | 持续维护 |
-| Meta AI | Prompt 页 QuickNav、`⌘Enter`，并覆盖 Create / Muse 输入场景 | 持续维护 |
+| ERNIE Bot | QuickNav、`⌘Enter` | 持续维护 |
+| Meta AI | Prompt 页面 QuickNav 与 `⌘Enter`，覆盖 Create / Muse 输入区域 | 持续维护 |
 | GLM (`z.ai`) | QuickNav、`⌘Enter` | 持续维护 |
 
-完整脚本、注入时机、作者和上游来源请看 [Scripts Inventory](./docs/scripts-inventory.md) 与 [Credits](./CREDITS.md)。
+完整注入细节、作者、上游来源和许可说明见 [Scripts Inventory](./docs/scripts-inventory.md) 与 [Credits](./CREDITS.md)。
 
 ### 安装
 
 1. 打开 [GitHub Releases](https://github.com/lueluelue2006/ai-chat-extension-collection/releases) 下载最新 `dist.zip`。
 2. 先解压，得到固定目录 `AI-Shortcuts-dist`。
 3. 打开 `chrome://extensions`。
-4. 开启开发者模式。
-5. 点击“加载未打包的扩展程序”。
-6. 选择解压后的 `AI-Shortcuts-dist`。
+4. 开启 Developer Mode。
+5. 点击 Load unpacked。
+6. 选择解压后的 `AI-Shortcuts-dist` 目录。
 
-仓库根目录故意不提供可直接加载的 `manifest.json`，避免误加载源码目录。
+仓库根目录故意不提供可直接加载的 `manifest.json`，避免误把源码目录当成扩展加载。
 
 ### 更新
 
-不要在 Chrome 里移除扩展。原有设置和本地状态通常会保留。
+不要在 Chrome 里删除扩展。保留同一个 `AI-Shortcuts-dist` 路径并替换目录内容，通常可以保留已有设置和本地状态。
 
 1. 从 Releases 下载新的 `dist.zip`。
-2. 先解压。
-3. 保持原来的 `AI-Shortcuts-dist` 路径不变。
-4. 用新版本文件替换这个目录里的旧文件。
+2. 解压新包。
+3. 保持原 `AI-Shortcuts-dist` 路径不变。
+4. 用新文件替换旧目录里的文件。
 5. 打开 `chrome://extensions`。
-6. 对当前扩展实例点一次“重新加载”。
+6. 点击当前扩展实例的 Reload。
 
-不要对另一份目录再次点击“加载未打包的扩展程序”，否则 Chrome 会把它当成第二个扩展实例。
+不要对第二个目录再次点击 Load unpacked，否则 Chrome 会把它当成另一个扩展实例。
 
-### 设置页与弹窗
+### 配置页
 
 | 入口 | 作用 |
 | --- | --- |
-| Popup (`popup/`) | 识别当前站点、开关页面相关模块、执行部分菜单动作、检查更新 |
-| Options (`options/`) | 管理站点/模块开关、键盘策略、主题/语言、OpenAI 新模型监控、导入导出、恢复出厂 |
+| Popup (`popup/`) | 检测当前站点，切换当前页面相关模块，执行菜单动作，检查更新 |
+| Options (`options/`) | 管理站点/模块设置、键盘行为、主题/语言、OpenAI 模型观察、导入导出和恢复出厂 |
 
-OpenAI 新模型监控是可配置能力，不再内置默认探测 URL。只有 HTTP 2xx 会被判定为可用；403、404、5xx 和请求失败都不会触发可用提醒。
+OpenAI 模型观察是可配置能力，默认不内置探测 URL。只有 HTTP 2xx 视为可用；403、404、5xx 和请求失败都不会触发可用提醒。
 
-### 开发者工作流
-
-仅在需要改代码或打包时使用：
+### 开发
 
 ```bash
 npm ci
@@ -463,42 +130,22 @@ npm run verify
 npm run package:dist
 ```
 
-常用命令：
-
-| 命令 | 说明 |
+| 命令 | 作用 |
 | --- | --- |
 | `npm run build` | 生成 `dist/` |
-| `npm run check` | 运行仓库内建静态校验 |
-| `npm run typecheck` | 运行 TypeScript 校验 |
-| `npm run verify` | 同步 manifest、重生成脚本清单、校验并构建 |
+| `npm run check` | 运行仓库静态检查 |
+| `npm run typecheck` | 运行 TypeScript 检查 |
+| `npm run verify` | 同步 manifest、生成脚本清单、检查并构建 |
 | `npm run package:dist` | 基于 `dist/` 打包发布 zip |
 
-真相源：
-
-| 路径 | 说明 |
+| 路径 | 作用 |
 | --- | --- |
 | `manifest.source.json` | 源 manifest |
 | `shared/registry.ts` | 模块元数据 |
 | `shared/injections.ts` | 注入定义 |
-| `docs/scripts-inventory.md` | 由注册表和注入定义生成的公开脚本清单 |
-| `dist/` | 面向最终用户的可加载运行目录 |
+| `docs/scripts-inventory.md` | 生成的公开脚本清单 |
+| `dist/` | 用户可加载的运行时目录 |
 | `release/` | 本地发布包输出目录 |
-
-### 目录结构
-
-| 路径 | 说明 |
-| --- | --- |
-| `background/` | Service Worker 与后台逻辑 |
-| `content/` | 各站点模块、站点内核与页面桥接 |
-| `options/` | 设置页 |
-| `popup/` | 扩展弹窗 |
-| `shared/` | 注册表、注入定义与共享工具 |
-| `dist/` | 面向非开发者的可加载运行目录 |
-| `docs/` | 公开文档 |
-| `icons/` | 图标资源 |
-| `third_party/` | 第三方静态资源 |
-| `release/` | 本地打包输出目录 |
-| `scripts/` | 维护脚本 |
 
 ### 反馈
 
@@ -506,348 +153,17 @@ npm run package:dist
 
 ## English
 
+### Latest Version
+
+Current latest version: `4.1.1`.
+
+This is the stable build users should install from GitHub Releases. The README only describes the current version, installation path, and developer entry points; historical release notes live in GitHub Releases.
+
 ### Project Focus
 
 AI Shortcuts is now explicitly ChatGPT-first.
 
-The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
-
-### Release 4.1.1
-
-This release publishes the currently tested best local build: ChatGPT Tab Queue now has a visual-completion fallback so a stale send gate can be released when the visible reply has finished, and the Genspark image entry defaults to GPT Image 2 / 4K / Medium with Auto Prompt off.
-
-| Area | Update |
-| --- | --- |
-| ChatGPT Tab Queue | Add a local visual-ready fallback for stale send gates when transport completion is missed |
-| Request safety | Keep the queue network-safe with no added ChatGPT polling or background requests |
-| Genspark image defaults | Default the new image entry to GPT Image 2, 4K, Medium, and Auto Prompt off |
-
-### Release 4.1.0
-
-This release reverts the ChatGPT QuickNav low-visibility experiment from 4.0.32. QuickNav now uses the same turn-marking and panel event behavior as 4.0.31. The Options warm light theme, language fix, Tree legacy-button cleanup, and other 4.0.27 to 4.0.31 changes remain in place.
-
-| Area | Update |
-| --- | --- |
-| QuickNav revert | Remove the 4.0.32 panel event-isolation experiment |
-| Turn detection | Restore the `data-cgpt-turn` marking path to preserve the older QuickNav recognition and jump behavior |
-| Release policy | Publish as `v4.1.0` instead of rewriting the already-published `v4.0.32` history |
-
-### Release 4.0.32
-
-This patch reduces the chance that ChatGPT's own frontend event chain can observe QuickNav panel interactions. QuickNav itself still performs no background network requests; this update further isolates panel click, wheel, and keyboard events inside the extension UI and stops writing `data-cgpt-turn` markers to ChatGPT's native message nodes.
-
-| Area | Update |
-| --- | --- |
-| Low visibility | Stop QuickNav panel events at the panel root, reducing exposure to page-level bubble listeners |
-| DOM footprint | Stop writing `data-cgpt-turn` onto native ChatGPT turns; rely on native selectors and existing core snapshots instead |
-| Risk boundary | Keep QuickNav network-free; conversation-reading features such as Tree remain user-triggered |
-
-### Release 4.0.31
-
-This patch brings the Options light theme back toward the warm ivory / beige feel from the v2.6.0 to v3.2.0 era while keeping the tighter 4.x cards, search, and settings density.
-
-| Area | Update |
-| --- | --- |
-| Light theme | Restore a warm paper background, creamy panels, and softer borders/shadows |
-| Visual hierarchy | Keep a teal accent so the page does not collapse into a one-note beige palette |
-| Compatibility | Only adjust Options light-theme tokens; dark theme and behavior stay unchanged |
-
-### Release 4.0.30
-
-This patch fixes mixed Chinese/English text in the Options page. After switching to English and then back to Chinese, static DOM that was already localized to English is now restored to Chinese; the Options HTML source also uses Chinese text for its main headings and accessibility labels.
-
-| Area | Update |
-| --- | --- |
-| Options language | Add reverse localization from English text back to Chinese |
-| Chinese source copy | Use Chinese source text for Options titles, eyebrows, and labels |
-| Regression checks | Add verify coverage for bidirectional localization |
-
-### Release 4.0.29
-
-This patch removes the remaining QuickNav fallback CSS that used to hide the obsolete standalone Conversation Tree toggle. The tree entry now exists only as the 🌳 control inside QuickNav.
-
-| Area | Update |
-| --- | --- |
-| Legacy cleanup | Remove the QuickNav hide rule for the old standalone Tree toggle |
-| UI contract | Conversation Tree is exposed only through QuickNav 🌳 |
-
-### Release 4.0.28
-
-This patch removes the obsolete standalone ChatGPT Conversation Tree button. The tree now opens through the 🌳 control inside QuickNav only, preventing the clipped duplicate “Conversation Tree” floating button from appearing on the page.
-
-| Area | Update |
-| --- | --- |
-| Tree entry | Remove the old standalone toggle and keep the QuickNav 🌳 entry |
-| UI stability | Avoid duplicate/clipped Conversation Tree buttons during load races |
-| Regression checks | verify now rejects the obsolete standalone toggle |
-
-### Release 4.0.27
-
-This patch adds a minimal guard for the new ChatGPT Plus model menu. `Cmd+O` is only meant to switch Thinking / Pro reasoning effort; `Instant` and other `model-switcher-*` model rows are no longer treated as effort targets or clicked by the shortcut.
-
-| Area | Update |
-| --- | --- |
-| Plus model menu | Block `Instant` / `model-switcher-*` rows from `Cmd+O` effort targeting |
-| Minimal change | Keep the old flow and reuse the existing model-row effort action |
-| Regression checks | verify now covers model-row mis-detection protection |
-
-### Release 4.0.24
-
-This patch continues hardening ChatGPT QuickNav scroll lock. Real-page instrumentation confirmed that ChatGPT calls `scrollIntoView({ behavior: "smooth", block: "end" })` on the new reply turn after send, which is one source of bottom jumps. Cmd+Enter bridge messages now explicitly mark user-initiated sends so QuickNav binds the protection baseline to the current viewport instead of reusing stale state.
-
-| Area | Update |
-| --- | --- |
-| Native scroll source | The main-world guard continues intercepting ChatGPT's send-time `scrollTop` / `scrollTo` / `scrollIntoView` jumps at the source |
-| Cmd+Enter | Cmd+Enter send protection now carries a user-requested marker and preserves the current viewport baseline |
-| Route cleanup | Leaving chat routes clears stale anchors, route scroll expectations, and main-world lock state without changing the user's lock preference |
-| Regression checks | verify now covers the Cmd+Enter user marker and route cleanup guard |
-
-### Release 4.0.23
-
-This patch fixes a ChatGPT QuickNav scroll-lock regression where the protected viewport could occasionally drift upward during send protection windows. User-initiated sends now bind the protection baseline to the current viewport, and anchor fallback restoration is clamped so it cannot restore above the locked baseline.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Idle `Tab` direct-send now requires request, generation, or composer-clear confirmation; unconfirmed clicks fall back to queueing instead of swallowing the send |
-| QuickNav lock | `Tab`, `Cmd+Enter`, and send-button initiated protection now preserves the current viewport instead of reusing a stale `stablePos` |
-| Anchor fallback | Anchor restoration keeps its lower bound at the active lock baseline, avoiding excessive upward correction |
-| Tab Queue | Browser regression covered idle Tab direct-send and in-flight queued auto-send without adding active polling |
-
-### Release 4.0.22
-
-This patch further reduces performance and moderation-risk surface for heavy ChatGPT workflows. Tab Queue no longer uses active polling; idle `Tab` now sends through ChatGPT's own send button directly instead of briefly creating a queued item, while true in-flight queuing remains event-gated until the current stream finishes.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Idle `Tab` now uses a direct-send path, avoiding transient queue UI, duplicate state, and false queued-message highlighting |
-| Force-send gate | The force button still respects active requests, stream state, and render settling, so it cannot race ahead of an unfinished reply |
-| Performance | Fetch Hub uses a pass-through stream tap when only completion hooks are registered, avoiding unnecessary `Response.clone()`; hot paths avoid large `innerText` reads |
-| QuickNav lock | Adds a scalar anchor fallback so Tab sends restore the visible turn first and rely less on fragile absolute `scrollTop` |
-| Regression evidence | Verified in real normal ChatGPT conversations: idle Tab direct send, in-flight queueing, no force-send race, and no bottom jump while locked |
-
-### Release 4.0.21
-
-This patch moves ChatGPT QuickNav scroll locking closer to source-level interception. When the refreshed ChatGPT UI creates the real chat scroller after send and writes directly to `scrollTop`, the main-world guard now adopts that real scroller immediately instead of trusting an early cached `HTML` scroller.
-
-| Area | Update |
-| --- | --- |
-| QuickNav lock | Fixes stale scroller caching after send, reducing visible jump-then-restore behavior |
-| Source gate | Recognizes ChatGPT `group/scroll-root` / `main` containers during send protection and blocks obvious downward programmatic `scrollTop` writes |
-| Regression guard | verify now requires real-scroller candidate adoption in the source guard |
-
-### Release 4.0.20
-
-This patch fixes ChatGPT composer newline expansion and hardens Tab Queue when the Follow up composer is open while the previous assistant turn is still unfinished.
-
-| Area | Update |
-| --- | --- |
-| Composer text reading | Adds semantic composer extraction that restores user-intended ProseMirror paragraph newlines instead of trusting `innerText` |
-| Tab Queue / Quick Deep Search | Uses the shared composer reader so multiline prompts are not sent with extra blank lines copied from the live DOM |
-| Tab Queue gate | Treats a latest assistant turn without completion actions as still active, even when the Follow up composer and send button are already available |
-| Regression guard | Covers both multi-`<p>` live composer and native restored single-block newline shapes |
-
-### Release 4.0.19
-
-This patch improves the ChatGPT Tab Queue and QuickNav integration: when users press `Tab` as a normal send shortcut while ChatGPT is idle, QuickNav no longer marks that user turn as a yellow queued message. Real Tab Queue auto-sends during generation are still highlighted.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Adds direct Tab send classification for idle states with no pending gate, active request, or generation state |
-| QuickNav | Keeps the yellow queue marker only for messages that were genuinely queued and later auto-sent |
-| Regression guard | Adds verify checks for `highlightOnSend` and direct-send classification |
-
-### Release 4.0.18
-
-This patch hardens the ChatGPT Pro Tab Queue completion gate so queued messages do not wait forever if a stream completion event is missed.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Adds a local visual completion gate: when Pro has stopped generating, the composer is ready, and the assistant reply has appeared and settled, the queue can complete a missed transport-done state |
-| Risk control | Adds no backend status request and does not restore `/stream_status` polling |
-| Performance | Keeps the bounded render signature path and avoids full long-reply text reads |
-
-### Release 4.0.17
-
-This patch adapts the ChatGPT header layout refresh so native top-right actions such as temporary chat, group chat, and sharing are not covered by the QuickNav panel.
-
-| Area | Update |
-| --- | --- |
-| Header Fix | Uses the live QuickNav footprint to reserve space for current ChatGPT header actions instead of depending on the old topbar model selector relocation |
-| QuickNav compatibility | Keeps QuickNav's default top-right position and moves only ChatGPT's native action group |
-| Safe fallback | Keeps the old topbar relocation as a legacy fallback while current ChatGPT UI uses the reserve path |
-
-### Release 4.0.16
-
-This patch separates ChatGPT `Cmd+Enter` scroll-lock protection from the Tab Queue bridge, so normal shortcut sends are no longer labeled as Tab Queue sends.
-
-| Area | Update |
-| --- | --- |
-| Cmd+Enter | Uses a generic ChatGPT send-protect bridge instead of reusing the Tab Queue bridge |
-| QuickNav | Classifies protection reasons from `source/phase` as `cmdenter-*` or `tab-queue-*`, and exposes scroll-lock debug state |
-| Scroll lock | Short click/submit guards no longer shorten an existing long send-protection window |
-
-### Release 4.0.15
-
-This patch fixes an intermittent QuickNav scroll-lock miss when sending through Tab Queue.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Pressing `Tab` with composer text now emits a local scroll-lock pre-protect event before async queue processing starts |
-| QuickNav | Conversation-route cleanup resets the Tab Queue bridge sentinel, so send-protect listeners are rebound after new-chat / route transitions |
-
-### Release 4.0.14
-
-This patch removes the overly visible floating text hint from ChatGPT Thinking Toggle on the new composer UI, so `Thinking` / `Pro` no longer appears as a native-looking badge above the composer.
-
-| Area | Update |
-| --- | --- |
-| Thinking Toggle | Model / effort switches no longer draw a floating text badge; only a light button pulse remains |
-| Hot-reload cleanup | New injections remove stale hint classes and attributes left by older builds |
-
-### Release 4.0.13
-
-This patch adapts to ChatGPT's new composer model selector and restores `Cmd+J` Thinking / Pro switching plus `Cmd+O` reasoning-effort switching.
-
-| Area | Update |
-| --- | --- |
-| Model selector | Shared ChatGPT core / DOM adapter can now recognize the composer model pill, including labels such as `Heavy`, `Extended Pro`, and `Pro • Extended` |
-| Thinking Toggle | `Cmd+J` reads the selected item from the new model menu before switching Thinking / Pro; `Cmd+O` opens the new hidden Effort submenu and toggles Light/Heavy or Standard/Extended |
-| Reply Timer | Pro detection now handles `Extended Pro` and `Pro • Extended`, preventing the timer from turning on for Pro replies under the new labels |
-| Verification | The verify fixture now covers the new composer pill instead of treating the old topbar model selector as the only valid structure |
-
-### Release 4.0.12
-
-This patch removes ChatGPT Tab Queue's active `stream_status` request path, avoiding regular backend status probes from the queue feature. It also fixes MV3 dynamic content-script refresh so unchanged script paths do not keep running stale file contents after an extension reload.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Stops requesting `/backend-api/conversation/:id/stream_status` in the default path; the queue now advances from fetch-hub's observed send/done events plus DOM state |
-| MV3 registration | Adds versioned dynamic content-script IDs and maps runtime IDs back to source IDs during bootstrap injection, so updated files are actually used |
-| Diagnostics | Lets extension pages read the current dynamic content-script registration list, making stale-script checks reproducible in real Chrome |
-
-### Release 4.0.11
-
-This patch prepared ChatGPT Tab Queue to drop active `stream_status` checks and hardened dynamic content-script refresh.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Moves queue progress toward local DOM / Fetch Hub state instead of active backend status probes |
-| MV3 registration | Forces the first dynamic content-script registration after service-worker startup to refresh registered scripts |
-
-### Release 4.0.10
-
-This patch further hardens ChatGPT QuickNav's anti-auto-scroll lock, especially when Cmd+Enter sends a message before the page has fully settled, and makes the lock state visually clearer.
-
-| Area | Update |
-| --- | --- |
-| QuickNav | Pre-arms the scroll lock and current baseline before Cmd+Enter sends, so the main-world scroll guard is active before the first send-time autoscroll |
-| QuickNav | Changes the lock control to clear locked/unlocked icons, high-contrast active styling, and `aria-pressed` state |
-
-### Release 4.0.9
-
-This patch fixes a ChatGPT Tab Queue stall after GPT 5.5 Pro image or long-thinking replies, where a hanging `stream_status` request could keep the queue waiting even after the UI had visibly finished.
-
-| Area | Update |
-| --- | --- |
-| Tab Queue | Adds a timeout to ChatGPT `stream_status` checks so queued sends are not blocked by a stuck status request |
-| Tab Queue | Keeps the DOM-side completion gate: no stop button, ready send button, and stable reply rendering allow the queue to continue |
-
-### Release 4.0.8
-
-This patch makes ChatGPT Quick Deep Search configurable instead of keeping the search hotkey and inserted instruction hardcoded.
-
-| Area | Update |
-| --- | --- |
-| Quick deep search | Adds an options-page search hotkey letter setting; the default remains `Ctrl+S` |
-| Quick deep search | Adds an options-page inserted-text setting, including `{input}` placeholder support for exact prompt layout |
-| Settings / storage | Allows controlled string fields in per-module settings and adds regression checks for the config bridge |
-
-### Release 4.0.7
-
-This patch continues the ChatGPT request-model audit, confirms Google Search Ask GPT does not rewrite ChatGPT payload models, and removes another stale Pro-model fallback.
-
-| Area | Update |
-| --- | --- |
-| Google Search Ask GPT | Static audit confirms the handoff only writes the ChatGPT composer and clicks send; it does not rewrite `payload.model` or `thinking_effort` |
-| Thinking Toggle | Special Pro send no longer falls back to hardcoded `gpt-5-4-pro` when the current model cannot be derived |
-| Quick deep search | Fixes stale settings copy and adds verification guards against reintroducing forced `gpt-5` payload rewrites |
-
-### Release 4.0.6
-
-This patch fixes the ChatGPT quick deep search hotkeys sometimes leaving a sent message stuck without an assistant response on GPT 5.5 Thinking / Heavy.
-
-| Area | Update |
-| --- | --- |
-| Quick deep search | Stops force-overriding conversation payloads to the stale `gpt-5` model, preserving the user's selected GPT 5.5 Thinking / Pro model and effort |
-| Quick deep search | Uses the shared ChatGPT core send-button click path and removes the fragile pre-send native button disabling |
-| Verification | Reproduced the old pending request in a fresh chat; normal GPT 5.5 Thinking Heavy payloads returned successfully as the control |
-
-### Release 4.0.5
-
-This patch fixes a remaining QuickNav scroll-lock container mismatch in temporary chats and already-open pages.
-
-| Area | Update |
-| --- | --- |
-| QuickNav scroll lock | Upgrades the MAIN-world scroll guard to v11 so open ChatGPT tabs can hot-upgrade the interceptor |
-| QuickNav scroll lock | Prefers ChatGPT core's real `DIV` chat scroller over a stale `HTML` fallback after temporary-chat hydration |
-| Verification | In real temporary and normal `/c/...` chats, real `Tab` queue sends preserved the locked mid-thread `scrollTop` through send and response completion |
-
-### Release 4.0.4
-
-This patch further fixes QuickNav scroll-lock baseline tracking in temporary chats.
-
-| Area | Update |
-| --- | --- |
-| QuickNav scroll lock | Revalidates the active chat scroller after temporary-chat hydration replaces the initial scroll root |
-| QuickNav scroll lock | Treats visible keyboard/accessibility scrolls as user baseline updates when ChatGPT is not generating and no recent conversation mutation is active |
-| Tab Queue | Keeps the automatic-send guard active, so send-triggered native jump-to-bottom behavior is still restored instead of accepted as user intent |
-
-### Release 4.0.3
-
-This patch further hardens the boundary between QuickNav scroll lock and the Tab Queue automatic send pool.
-
-| Area | Update |
-| --- | --- |
-| QuickNav scroll lock | Tab Queue now synchronously notifies QuickNav after queueing and before clearing the composer, preventing queued sends from triggering ChatGPT's native jump-to-bottom behavior |
-| Tab Queue | Send-protection delivery now uses both synchronous `dispatchEvent` and asynchronous `postMessage`, covering queueing, composer write-back, programmatic send clicks, and send confirmation |
-| Verification | Tested in a real ChatGPT conversation from a mid-thread locked position with real `Tab` queueing and automatic send completion: queue emptied, lock stayed enabled, `scrollTop=2800`, baseline=2800 |
-
-### Release 4.0.2
-
-This patch fixes the coordination gap between QuickNav scroll lock and the Tab Queue automatic send pool.
-
-| Area | Update |
-| --- | --- |
-| QuickNav scroll lock | Tab Queue now notifies QuickNav before automatic sends so the locked baseline is preserved instead of jumping to the bottom |
-| Tab Queue | Automatic send lifecycle now emits `prepare`, `before-click`, and `confirmed` protection signals for composer write-back and programmatic send clicks |
-| Verification | Tested in a real ChatGPT conversation with real `Tab` queueing and automatic send completion: queue emptied, reply appeared, lock stayed enabled, `scrollTop=0`, baseline=0 |
-
-### Release 4.0.1
-
-This patch publishes the final verified state after the 4.0.0 release.
-
-| Area | Update |
-| --- | --- |
-| QuickNav scroll lock | Hardened locked-position recovery across `scrollTop`, `scrollTo`, `scrollIntoView`, and real streaming replies |
-| Tab Queue | Clears hidden preview DOM after queue clear so old queued text is not retained in page memory; also marks overflow rows explicitly |
-| Diagnostics | Re-verified redaction: ChatGPT conversation URLs collapse to `/c/:id`, and raw queue text, composer text, and conversation text are not exported |
-| Options | Re-verified global search, hotkey filtering, Tab Queue jump, no-results state, and `Cmd+K` search focus |
-
-### Release 4.0.0
-
-This release is a broad rebuild around the current ChatGPT UI, not a small selector patch.
-
-| Area | Update |
-| --- | --- |
-| ChatGPT UI adaptation | Shared DOM adapter and core recovery paths for the current conversation structure, composer, send button, model switcher, SPA navigation, and delayed hydration |
-| Long-thread performance | Reworked `chatgpt_perf` into a low-risk coordinator with math/code pressure detection, hot-path throttling, composer input relief, and hidden/idle memory release |
-| Memory behavior | Cache trimming and release paths across Tab Queue, Quote, Perf, Core, QuickNav, and Tree |
-| Tab Queue | Fixed multi-message queue races, Thinking-time stacking, and `Option/Alt + Up` restore-then-Tab premature sending |
-| QuickNav / Tree | Fixed stale loading, placeholder rows, locked-scroll jump-to-bottom behavior, visible fork switching, and panel control readability |
-| Quote / TeX | Rebuilt selected-text Quote into an ask-multi-style Markdown blockquote flow while keeping KaTeX/LaTeX restoration and configurable double-click copy |
-| Model / reasoning controls | Hardened `⌘O / ⌘J`, reduced model menu flapping, and added a default-on plain `⌘P` blocker while preserving Pro-send shortcuts |
-| Usage / model watch | Added GPT 5.5 Thinking / Pro usage mapping, removed GPT 5 Thinking Mini from active display, and changed model resource probing so only HTTP 2xx is available |
-| Cross-site maintenance | Re-tested and adjusted key paths on DeepSeek, Google Search, Qwen, Kimi, Gemini, Grok, Genspark, Z.ai, and Meta AI |
+The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported as maintained coverage for reusable navigation and input features.
 
 ### ChatGPT Capabilities
 
@@ -858,7 +174,7 @@ This release is a broad rebuild around the current ChatGPT UI, not a small selec
 | Tab Queue | Queue drafts with `Tab`, send them serially, and restore the latest queued draft with `Option/Alt + Up` |
 | Cmd+Enter | `⌘Enter / Ctrl+Enter` sending while preserving newline behavior |
 | Cmd+O / Cmd+J | `⌘O` reasoning effort switching, `⌘J` Thinking / Pro switching, and topbar model-family badge / toggle |
-| Performance Coordinator | Default-on extreme mode for long math, long code, long context, and composer input hot paths |
+| Performance Coordinator | Coordination for long math, long code, long context, and composer input hot paths |
 | TeX Copy & Quote | Multi-quote, selected-text Markdown blockquotes, KaTeX LaTeX restoration, hover hint, and double-click copy option |
 | Export / Fork Edit | Export the current visible branch to Markdown / HTML; fork-edit user messages with optional image/file attachment |
 | Usage / Timer / Status | ChatGPT usage recording, reply timer, and OpenAI model-watch banner |
@@ -938,8 +254,6 @@ npm run verify
 npm run package:dist
 ```
 
-Common commands:
-
 | Command | Purpose |
 | --- | --- |
 | `npm run build` | Generate `dist/` |
@@ -947,8 +261,6 @@ Common commands:
 | `npm run typecheck` | Run TypeScript checking |
 | `npm run verify` | Sync manifest, regenerate scripts inventory, check, and build |
 | `npm run package:dist` | Package a release zip from `dist/` |
-
-Source of truth:
 
 | Path | Purpose |
 | --- | --- |
@@ -959,28 +271,6 @@ Source of truth:
 | `dist/` | End-user loadable runtime directory |
 | `release/` | Local release package output |
 
-### Directory Layout
-
-| Path | Purpose |
-| --- | --- |
-| `background/` | Service Worker and background logic |
-| `content/` | Site modules, site cores, and page bridges |
-| `options/` | Options page |
-| `popup/` | Extension popup |
-| `shared/` | Registry, injection definitions, and shared utilities |
-| `dist/` | End-user loadable runtime directory |
-| `docs/` | Public docs |
-| `icons/` | Icon assets |
-| `third_party/` | Third-party static assets |
-| `release/` | Local packaging output directory |
-| `scripts/` | Maintenance scripts |
-
 ### Feedback
 
 Issues and PRs are welcome. For bug reports, please include the site, reproduction steps, expected result, actual result, and browser version.
-
----
-
-README 由 GPT-5.5 重写；仓库作者尚未审阅。
-
-README rewritten by GPT-5.5; the repository author has not reviewed it yet.

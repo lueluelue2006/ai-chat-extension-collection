@@ -218,9 +218,10 @@
         siteId: "genspark",
         moduleId: "genspark_moa_image_autosettings",
         matches: gensparkAll,
-        js: [...ISOLATED_BRIDGE_FILES, "content/genspark-moa-image-autosettings/main.js"],
+        js: [...MAIN_BRIDGE_FILES, "content/genspark-moa-image-autosettings/main.js"],
         runAt: "document_start",
-        allFrames: true
+        allFrames: true,
+        world: "MAIN"
       });
       defs.push({
         id: "quicknav_genspark_credit_balance",

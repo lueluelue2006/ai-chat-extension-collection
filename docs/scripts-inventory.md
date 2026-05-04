@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.1.0
-- Generated: 2026-05-04 00:14
+- Version: 4.1.1
+- Generated: 2026-05-04 13:54
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -134,10 +134,10 @@
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-cmdenter-send/main.js`
-- `genspark_moa_image_autosettings`: Genspark 绘图默认设置 — 进入绘图页自动打开 Setting，并选择 2K 画质
+- `genspark_moa_image_autosettings`: Genspark 绘图默认设置 — 进入绘图页自动选择 GPT Image 2、4K、Medium，并关闭 Auto Prompt
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
-  - 注入: document_start / ISOLATED (allFrames): `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/genspark-moa-image-autosettings/main.js`
+  - 注入: document_start / MAIN (allFrames): `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/genspark-moa-image-autosettings/main.js`
 - `genspark_credit_balance`: Genspark 积分余量 — 悬停小蓝点显示积分信息（可刷新/折叠/拖动）
   - 作者: 悟空(linux.do)
   - 许可证: 许可证未声明

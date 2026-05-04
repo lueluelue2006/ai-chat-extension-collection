@@ -1196,6 +1196,136 @@ function verifyChatgptTabQueueRestoreRequeueGuard() {
     ) {
       failures.push('completed assistant actions should release Tab direct-send blocking');
     }
+    if (
+      activeAssistant({
+        hasCompletionAction: false,
+        hasCopyAction: false,
+        hasThinkingIndicator: false,
+        latestAssistantHasText: true,
+        transportDone: true,
+        sendButtonReady: true
+      })
+    ) {
+      failures.push('transport DONE plus a ready send button should release soft assistant-text blocking');
+    }
+    if (
+      !activeAssistant({
+        hasCompletionAction: false,
+        hasCopyAction: false,
+        hasThinkingIndicator: true,
+        latestAssistantHasText: true,
+        transportDone: true,
+        sendButtonReady: true
+      })
+    ) {
+      failures.push('explicit thinking indicators should keep blocking even after transport DONE');
+    }
+  }
+
+  if (!tabQueue || typeof tabQueue.canRepairActiveResponseFromVisualCompletion !== 'function') {
+    failures.push('content/chatgpt-tab-queue/main.js must export canRepairActiveResponseFromVisualCompletion');
+  } else {
+    const repair = tabQueue.canRepairActiveResponseFromVisualCompletion;
+    if (
+      !repair({
+        queueLength: 1,
+        activeRequestCount: 1,
+        explicitGenerating: false,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        replyRenderWaitMs: 0,
+        idleForMs: 2400,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('visually settled queued active requests should be repairable after a missed DONE event');
+    }
+    if (
+      repair({
+        queueLength: 1,
+        activeRequestCount: 1,
+        explicitGenerating: true,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        replyRenderWaitMs: 0,
+        idleForMs: 2400,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('explicit generating signals must block active-response visual repair');
+    }
+    if (
+      repair({
+        queueLength: 1,
+        activeRequestCount: 0,
+        cachedStreamActive: false,
+        explicitGenerating: false,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        replyRenderWaitMs: 0,
+        idleForMs: 2400,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('active-response visual repair should require an active request or active cached stream');
+    }
+  }
+
+  if (!tabQueue || typeof tabQueue.canReleaseStalePendingGateFromVisualReady !== 'function') {
+    failures.push('content/chatgpt-tab-queue/main.js must export canReleaseStalePendingGateFromVisualReady');
+  } else {
+    const releaseStaleGate = tabQueue.canReleaseStalePendingGateFromVisualReady;
+    if (
+      !releaseStaleGate({
+        hasPendingSendGate: true,
+        explicitGenerating: false,
+        generatingNow: false,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        sawGenerating: true,
+        nonGeneratingForMs: 1200,
+        replyRenderWaitMs: 0,
+        idleForMs: 4300,
+        gateAgeMs: 4300,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('visually ready stale pending gate should release after the local watchdog age');
+    }
+    if (
+      releaseStaleGate({
+        hasPendingSendGate: true,
+        explicitGenerating: true,
+        generatingNow: false,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        sawGenerating: true,
+        nonGeneratingForMs: 1200,
+        replyRenderWaitMs: 0,
+        idleForMs: 4300,
+        gateAgeMs: 4300,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('explicit generating signals must block stale pending gate release');
+    }
+    if (
+      releaseStaleGate({
+        hasPendingSendGate: true,
+        explicitGenerating: false,
+        generatingNow: false,
+        sendButtonReady: true,
+        hasAssistantTurn: true,
+        sawGenerating: true,
+        nonGeneratingForMs: 1200,
+        replyRenderWaitMs: 0,
+        idleForMs: 4300,
+        gateAgeMs: 2000,
+        settleMs: 2400
+      })
+    ) {
+      failures.push('stale pending gate release should wait for the local watchdog age, not only visual settle');
+    }
   }
 
   return {

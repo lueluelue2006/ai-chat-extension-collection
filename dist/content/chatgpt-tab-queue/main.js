@@ -1237,6 +1237,8 @@
     if (options.hasCompletionAction === true) return false;
     if (options.hasCopyAction === true) return false;
     if (options.hasThinkingIndicator === true) return true;
+    if (options.transportDone === true && options.sendButtonReady === true) return false;
+    if (options.allowTextFallback === false) return false;
     return options.latestAssistantHasText === true;
   }
 
@@ -1262,7 +1264,7 @@
     return '';
   }
 
-  function hasActiveAssistantThinkingTurn() {
+  function hasActiveAssistantThinkingTurn(options = {}) {
     const turns = getTurnArticles();
     const latestAssistantTurn = (() => {
       for (let i = turns.length - 1; i >= 0; i -= 1) {
@@ -1287,14 +1289,16 @@
         hasCompletionAction,
         hasThinkingIndicator,
         latestAssistantHasText,
-        sendButtonReady: isReadySendButton(null, getEditorEl())
+        sendButtonReady: isReadySendButton(null, getEditorEl()),
+        transportDone: options.transportDone === true,
+        allowTextFallback: options.allowTextFallback !== false
       });
     } catch {
       return false;
     }
   }
 
-  function isGeneratingNow() {
+  function hasExplicitGeneratingSignal() {
     try {
       const core = getCore();
       if (core && typeof core.isGenerating === 'function' && core.isGenerating(getEditorEl())) return true;
@@ -1302,8 +1306,24 @@
     try {
       if (document.querySelector('button[data-testid="stop-button"]')) return true;
     } catch {}
+    try {
+      if (document.querySelector('button[aria-label*="Stop" i], button[aria-label*="停止" i]')) return true;
+    } catch {}
     if (hasGeneratingLiveAnnouncement()) return true;
-    if (hasActiveAssistantThinkingTurn()) return true;
+    if (hasActiveAssistantThinkingTurn({ allowTextFallback: false })) return true;
+    return false;
+  }
+
+  function isGeneratingNow() {
+    if (hasExplicitGeneratingSignal()) return true;
+    if (
+      hasActiveAssistantThinkingTurn({
+        transportDone: isCachedCurrentConversationStreamDone(),
+        allowTextFallback: true
+      })
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -1876,6 +1896,13 @@
     return isConversationStreamActiveStatus(state.streamStatus.value);
   }
 
+  function isCachedCurrentConversationStreamDone(conversationId = getConversationBindingId()) {
+    const id = String(conversationId || '').trim();
+    if (!id) return false;
+    if (state.streamStatus.conversationId !== id) return false;
+    return normalizeConversationStreamStatus(state.streamStatus.value) === 'DONE';
+  }
+
   function getManualSendInterlockReason() {
     if (!isManualSendInterlockActive() && !isManualSendWarmupActive()) return '';
     return t('manualSendPaused');
@@ -1957,6 +1984,126 @@
     return Math.max(0, Number(options.idleForMs) || 0) >= settleMs;
   }
 
+  function canReleaseStalePendingGateFromVisualReady(options = {}) {
+    if (options.hasPendingSendGate !== true) return false;
+    if (options.explicitGenerating === true) return false;
+    if (options.generatingNow === true) return false;
+    if (options.sendButtonReady !== true) return false;
+    if (options.hasAssistantTurn !== true) return false;
+    if ((Number(options.replyRenderWaitMs) || 0) > 0) return false;
+    if (options.sawGenerating === true) {
+      const nonGeneratingForMs = Math.max(0, Number(options.nonGeneratingForMs) || 0);
+      if (nonGeneratingForMs < Math.max(0, Number(CONFIG.postStopNonGeneratingMs) || 0)) return false;
+    }
+    const settleMs = Math.max(0, Number(options.settleMs) || 0);
+    if (Math.max(0, Number(options.idleForMs) || 0) < settleMs) return false;
+    const minGateAgeMs = Math.max(settleMs, Number(CONFIG.eventGateWatchdogMs) || 0);
+    return Math.max(0, Number(options.gateAgeMs) || 0) >= minGateAgeMs;
+  }
+
+  function releaseStalePendingGateFromVisualReady(source = '', metrics = null) {
+    const gate = state.pendingSendGate;
+    if (!gate) return false;
+    refreshReplyRenderSampling();
+    const generatingNow = metrics && typeof metrics === 'object' && 'generatingNow' in metrics ? metrics.generatingNow === true : isGeneratingNow();
+    const explicitGenerating =
+      metrics && typeof metrics === 'object' && 'explicitGenerating' in metrics
+        ? metrics.explicitGenerating === true
+        : hasExplicitGeneratingSignal();
+    const replyRenderWaitMs =
+      metrics && typeof metrics === 'object' && Number.isFinite(metrics.replyRenderWaitMs)
+        ? Math.max(0, Number(metrics.replyRenderWaitMs) || 0)
+        : getLiveReplyRenderWaitMs();
+    const assistantTurnCount =
+      metrics && typeof metrics === 'object' && Number.isFinite(metrics.assistantTurnCount)
+        ? Math.max(0, Number(metrics.assistantTurnCount) || 0)
+        : collectAssistantTurns().length;
+    const nonGeneratingForMs =
+      metrics && typeof metrics === 'object' && Number.isFinite(metrics.nonGeneratingForMs)
+        ? Math.max(0, Number(metrics.nonGeneratingForMs) || 0)
+        : generatingNow
+          ? 0
+          : Math.max(0, now() - (Number(state.lastGeneratingChangeAt) || 0));
+    const idleForMs = Math.max(0, now() - (Number(state.lastTurnsChangeAt) || 0));
+    const hasAssistantTurn = assistantTurnCount > 0 || hasText(state.replyRender.signature);
+
+    if (
+      !canReleaseStalePendingGateFromVisualReady({
+        hasPendingSendGate: true,
+        explicitGenerating,
+        generatingNow,
+        sendButtonReady: isReadySendButton(null, getEditorEl()),
+        hasAssistantTurn,
+        sawGenerating: gate.sawGenerating === true,
+        nonGeneratingForMs,
+        replyRenderWaitMs,
+        idleForMs,
+        gateAgeMs: now() - (Number(gate.sentAt) || 0),
+        settleMs: Math.max(0, Number(CONFIG.visualTransportMissSettleMs) || CONFIG.postStopVisualSettleMs)
+      })
+    ) {
+      return false;
+    }
+
+    gate.transportDone = true;
+    gate.streamStatus = `VISUAL_READY_${String(source || 'pending-gate').trim() || 'pending-gate'}`;
+    gate.streamStatusCheckedAt = now();
+    if (state.activeRequests.size > 0) state.activeRequests.clear();
+    markCurrentConversationStreamStatus('DONE', `visual-ready-${String(source || 'pending-gate').trim() || 'pending-gate'}`);
+    clearAwaitingConversationStart();
+    clearPendingSendGate();
+    scheduleMaybeProcessQueue(0);
+    return true;
+  }
+
+  function canRepairActiveResponseFromVisualCompletion(options = {}) {
+    if ((Number(options.queueLength) || 0) <= 0) return false;
+    if (options.hasPendingSendGate === true) return false;
+    if ((Number(options.activeRequestCount) || 0) <= 0 && options.cachedStreamActive !== true) return false;
+    if (options.explicitGenerating === true) return false;
+    if (options.sendButtonReady !== true) return false;
+    if (options.hasAssistantTurn !== true) return false;
+    if ((Number(options.replyRenderWaitMs) || 0) > 0) return false;
+    const settleMs = Math.max(0, Number(options.settleMs) || 0);
+    return Math.max(0, Number(options.idleForMs) || 0) >= settleMs;
+  }
+
+  function repairActiveResponseFromVisualCompletion(source = '') {
+    if (!state.queue.length || state.pendingSendGate) return false;
+    const currentConversationId = getConversationBindingId();
+    const activeRequestCount = state.activeRequests.size;
+    const cachedStreamActive = isCachedCurrentConversationStreamActive(currentConversationId);
+    if (activeRequestCount <= 0 && !cachedStreamActive) return false;
+    const replyRenderWaitMs = getLiveReplyRenderWaitMs();
+    if (
+      !canRepairActiveResponseFromVisualCompletion({
+        queueLength: state.queue.length,
+        hasPendingSendGate: !!state.pendingSendGate,
+        activeRequestCount,
+        cachedStreamActive,
+        explicitGenerating: hasExplicitGeneratingSignal(),
+        sendButtonReady: isReadySendButton(null, getEditorEl()),
+        hasAssistantTurn: hasText(state.replyRender.signature),
+        replyRenderWaitMs,
+        idleForMs: now() - (Number(state.lastTurnsChangeAt) || 0),
+        settleMs: Math.max(0, Number(CONFIG.visualTransportMissSettleMs) || CONFIG.postStopVisualSettleMs)
+      })
+    ) {
+      return false;
+    }
+
+    if (state.activeRequests.size > 0) state.activeRequests.clear();
+    markCurrentConversationStreamStatus('DONE', `visual-completion-${String(source || 'queue').trim() || 'queue'}`);
+    clearAwaitingConversationStart();
+    if (state.lastGenerating) {
+      state.lastGenerating = false;
+      state.lastGeneratingChangeAt = now();
+    }
+    markQueueActivity();
+    refreshReplyRenderSampling();
+    return true;
+  }
+
   function isPendingGateVisuallySettled(options = {}) {
     return canReleasePendingGateOnVisualSettle({
       generatingNow: isGeneratingNow(),
@@ -2013,6 +2160,18 @@
       replyRenderWaitMs,
       assistantTurnCount
     });
+
+    if (
+      releaseStalePendingGateFromVisualReady('pending-gate', {
+        generatingNow,
+        explicitGenerating: hasExplicitGeneratingSignal(),
+        nonGeneratingForMs,
+        replyRenderWaitMs,
+        assistantTurnCount
+      })
+    ) {
+      return true;
+    }
 
     const decision = getPendingSendGateState(gate, {
       generatingNow,
@@ -2689,6 +2848,7 @@
     if (!state.queue.length) return false;
     refreshReplyRenderSampling();
     void maybeReleasePendingSendGate();
+    repairActiveResponseFromVisualCompletion('preview-tick');
     if (
       !shouldRepairQueueProgress({
         queueLength: state.queue.length,
@@ -2981,6 +3141,7 @@
   function canSendQueueHead(options = {}) {
     const force = options.force === true;
     if (!state.queue.length) return false;
+    repairActiveResponseFromVisualCompletion('can-send');
     if (isManualSendWarmupActive()) return false;
     if (isManualSendInterlockActive()) return false;
     if (state.activeRequests.size > 0) return false;
@@ -3008,6 +3169,7 @@
   function getQueueRetryDelay(options = {}) {
     const force = options.force === true;
     if (!state.queue.length) return 0;
+    repairActiveResponseFromVisualCompletion('retry');
     if (isManualSendWarmupActive()) {
       return Math.max(0, Number(state.manualSendWarmupUntil || 0) - now()) || CONFIG.sendCooldownMs;
     }
@@ -3038,6 +3200,7 @@
     markQueueActivity();
     refreshPreview();
     showToast(t('forceSendQueued'));
+    releaseStalePendingGateFromVisualReady('force-send');
     void maybeProcessQueue({ force: true, allowSyncImmediate: true });
     return true;
   }
@@ -4215,6 +4378,8 @@
     module.exports = {
       canUseImmediateComposerSend,
       canUseHomeImmediateButtonSubmit,
+      canRepairActiveResponseFromVisualCompletion,
+      canReleaseStalePendingGateFromVisualReady,
       canReleasePendingGateOnVisualSettle,
       didQueuedSendStart,
       getHotkeyAction,

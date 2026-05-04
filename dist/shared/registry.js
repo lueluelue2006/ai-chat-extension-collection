@@ -360,7 +360,7 @@
     genspark_moa_image_autosettings: {
       id: "genspark_moa_image_autosettings",
       name: "Genspark \u7ED8\u56FE\u9ED8\u8BA4\u8BBE\u7F6E",
-      sub: "\u8FDB\u5165\u7ED8\u56FE\u9875\u81EA\u52A8\u6253\u5F00 Setting\uFF0C\u5E76\u9009\u62E9 2K \u753B\u8D28",
+      sub: "\u8FDB\u5165\u7ED8\u56FE\u9875\u81EA\u52A8\u9009\u62E9 GPT Image 2\u30014K\u3001Medium\uFF0C\u5E76\u5173\u95ED Auto Prompt",
       hotkeys: [],
       authors: ["lueluelue2006"],
       license: "GPL-3.0-or-later"

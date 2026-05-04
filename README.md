@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.1.0-74c0fc" alt="Current version 4.1.0">
+  <img src="https://img.shields.io/badge/current-4.1.1-74c0fc" alt="Current version 4.1.1">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -42,6 +42,16 @@
 AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 这个扩展优先服务重度 ChatGPT 用户：长对话、复杂公式、长代码、Thinking / Pro 工作流、重复发送、分支查看、引用整理、用量统计和模型切换。其他 AI 站点仍然维护，但定位是把已经稳定的导航与输入能力复用过去，而不是把每个网站都做成同等深度的主战场。
+
+### 4.1.1 发布
+
+这个版本发布当前本地实测更稳的最佳版：ChatGPT Tab Queue 增加视觉完成兜底，避免回复已经完成但队列仍卡在“等待当前回复”；Genspark 绘图入口默认切到 GPT Image 2 / 4K / Medium 并关闭 Auto Prompt。
+
+| 方向 | 更新 |
+| --- | --- |
+| ChatGPT Tab Queue | 增加本地视觉完成兜底，漏掉传输完成信号时也能安全释放陈旧发送门 |
+| 风控边界 | 不增加 ChatGPT 轮询或额外后台请求，仍基于被动事件和本地 DOM 状态 |
+| Genspark 绘图 | 新绘图入口默认 GPT Image 2、4K、Medium，并关闭 Auto Prompt |
 
 ### 4.1.0 发布
 
@@ -398,7 +408,7 @@ AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 
 | 站点 | 代表能力 | 状态 |
 | --- | --- | --- |
-| Genspark | QuickNav、`⌘Enter`、绘图默认 2K、积分余量、长代码折叠、编辑上传修复、Sonnet thinking 兼容 | 持续维护 |
+| Genspark | QuickNav、`⌘Enter`、绘图默认 GPT Image 2 / 4K / Medium、积分余量、长代码折叠、编辑上传修复、Sonnet thinking 兼容 | 持续维护 |
 | Grok | QuickNav、`⌘Enter`、额度显示、废纸篓一键清空 | 持续维护 |
 | Gemini App | QuickNav、`⌘Enter` | 持续维护 |
 | Kimi | QuickNav、`⌘Enter` | 持续维护 |
@@ -501,6 +511,16 @@ npm run package:dist
 AI Shortcuts is now explicitly ChatGPT-first.
 
 The extension is designed for heavy ChatGPT usage: long conversations, complex math, long code blocks, Thinking / Pro workflows, repeated sending, branch inspection, quote collection, usage tracking, and model switching. Other AI sites remain supported, but they are maintained coverage for reusable navigation and input features rather than equal-depth primary targets.
+
+### Release 4.1.1
+
+This release publishes the currently tested best local build: ChatGPT Tab Queue now has a visual-completion fallback so a stale send gate can be released when the visible reply has finished, and the Genspark image entry defaults to GPT Image 2 / 4K / Medium with Auto Prompt off.
+
+| Area | Update |
+| --- | --- |
+| ChatGPT Tab Queue | Add a local visual-ready fallback for stale send gates when transport completion is missed |
+| Request safety | Keep the queue network-safe with no added ChatGPT polling or background requests |
+| Genspark image defaults | Default the new image entry to GPT Image 2, 4K, Medium, and Auto Prompt off |
 
 ### Release 4.1.0
 
@@ -857,7 +877,7 @@ This release is a broad rebuild around the current ChatGPT UI, not a small selec
 
 | Site | Representative capabilities | Status |
 | --- | --- | --- |
-| Genspark | QuickNav, `⌘Enter`, 2K image defaults, credit balance, long-code folding, edit upload fix, Sonnet thinking compatibility | Maintained |
+| Genspark | QuickNav, `⌘Enter`, GPT Image 2 / 4K / Medium image defaults, credit balance, long-code folding, edit upload fix, Sonnet thinking compatibility | Maintained |
 | Grok | QuickNav, `⌘Enter`, quota display, one-click trash cleanup | Maintained |
 | Gemini App | QuickNav, `⌘Enter` | Maintained |
 | Kimi | QuickNav, `⌘Enter` | Maintained |

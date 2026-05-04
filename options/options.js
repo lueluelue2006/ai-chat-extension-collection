@@ -4453,7 +4453,7 @@
   }
 
   function renderGensparkMoaImageAutosettingsModuleSettings(siteId) {
-    addModuleHeader('genspark_moa_image_autosettings', 'Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动打开 Setting，并自动选择 2K 画质。');
+    addModuleHeader('genspark_moa_image_autosettings', 'Genspark 绘图默认设置', '仅在绘图页面生效：进入页面自动选择 GPT Image 2、4K、Medium，并关闭 Auto Prompt。');
 
     const rowInject = document.createElement('label');
     rowInject.className = 'formRow';
@@ -4478,7 +4478,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '说明：该模块只在 https://www.genspark.ai/agents?type=moa_generate_image 生效；会尽量通过按钮文本/aria-label/弹窗选项等启发式方式打开设置并选择 2K。若关闭模块，已打开页面可能需要刷新才会完全停用。';
+      '说明：该模块在新版 AI Image 入口和旧绘图入口生效；会尽量通过按钮文本、aria-label、弹窗选项等启发式方式选择 GPT Image 2、4K、Medium，并关闭 Auto Prompt。若关闭模块，已打开页面可能需要刷新才会完全停用。';
     elModuleSettings.appendChild(hint);
   }
 

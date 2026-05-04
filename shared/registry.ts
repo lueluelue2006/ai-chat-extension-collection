@@ -365,7 +365,7 @@
     genspark_moa_image_autosettings: {
       id: 'genspark_moa_image_autosettings',
       name: 'Genspark 绘图默认设置',
-      sub: '进入绘图页自动打开 Setting，并选择 2K 画质',
+      sub: '进入绘图页自动选择 GPT Image 2、4K、Medium，并关闭 Auto Prompt',
       hotkeys: [],
       authors: ['lueluelue2006'],
       license: 'GPL-3.0-or-later'

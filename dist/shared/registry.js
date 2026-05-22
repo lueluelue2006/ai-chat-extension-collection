@@ -155,7 +155,7 @@
     chatgpt_thinking_toggle: {
       id: "chatgpt_thinking_toggle",
       name: "ChatGPT \u63A8\u7406\u5F3A\u5EA6/\u6A21\u578B \u5FEB\u6377\u5207\u6362",
-      sub: "\u2318O \u63A8\u7406\u5F3A\u5EA6 / \u2318J \u6A21\u578B\u5207\u6362 / \u7981\u7528 \u2318P / \u2318\u21E7P Light Pro \u53D1\u9001 / \u2318\u2325P Heavy Pro \u53D1\u9001",
+      sub: "\u2318O Medium/High / \u2318J High/Pro / \u53EF\u9009 High\u2192max / \u7981\u7528 \u2318P / \u2318\u21E7P Light Pro \u53D1\u9001 / \u2318\u2325P Heavy Pro \u53D1\u9001",
       defaultEnabled: true,
       hotkeys: ["\u2318O", "\u2318J", "\u2318P", "\u2318\u21E7P", "\u2318\u2325P"],
       hotkeyControls: [

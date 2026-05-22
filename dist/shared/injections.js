@@ -35,6 +35,7 @@
       chatgpt_thinking_toggle_hotkey_model: true,
       chatgpt_thinking_toggle_hotkey_send_light_pro: true,
       chatgpt_thinking_toggle_hotkey_send_max_pro: true,
+      chatgpt_thinking_toggle_high_to_max: false,
       chatgpt_thinking_toggle_hotkeys_force: false,
       chatgpt_quick_deep_search_hotkeys: true,
       chatgpt_quick_deep_search_hotkeys_force: false,

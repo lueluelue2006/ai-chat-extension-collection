@@ -150,7 +150,7 @@
     chatgpt_tab_queue: 'tab queue queued visual queue pool 排队 队列 可视化 堆叠 force send now 强发 取回 清空',
     chatgpt_tex_copy_quote: 'quote tex latex math formula copy double click 引用 公式 复制 双击 多引用',
     chatgpt_perf: 'performance perf memory lag formula code virtualization 性能 内存 卡顿 公式 代码 长代码',
-    chatgpt_thinking_toggle: 'thinking pro model switch cmd j cmd o cmd p effort 推理 模型 切换 禁用打印',
+    chatgpt_thinking_toggle: 'thinking pro model switch cmd j cmd o cmd p effort high max 推理 模型 切换 禁用打印',
     chatgpt_usage_monitor: 'usage quota limit stats export import 用量 额度 统计 导出 导入',
     chatgpt_message_tree: 'tree fork branch conversation 对话树 分支 fork',
     chatgpt_reply_timer: 'timer latency duration reply 耗时 计时 回复',
@@ -2443,7 +2443,7 @@
     addModuleHeader(
       'chatgpt_thinking_toggle',
       'ChatGPT 推理强度/模型 快捷切换',
-      '在 chatgpt.com：⌘O 切换推理强度（Light/Heavy 或 Standard/Extended）；⌘J 在当前 GPT 5.x thinking ↔ pro 之间切换。'
+      '在 chatgpt.com：⌘O 在 Medium / High 间切换；⌘J 在 High / Pro 间切换。'
     );
 
     const rowInject = document.createElement('label');
@@ -2511,6 +2511,26 @@
     rowHotkeyJ.appendChild(inputHotkeyJ);
     elModuleSettings.appendChild(rowHotkeyJ);
 
+    const rowHighToMax = document.createElement('label');
+    rowHighToMax.className = 'formRow';
+    const leftHighToMax = document.createElement('span');
+    leftHighToMax.textContent = 'High 发送时改写 thinking_effort=max';
+    const inputHighToMax = document.createElement('input');
+    inputHighToMax.type = 'checkbox';
+    inputHighToMax.checked = getSiteModuleSetting(siteId, 'chatgpt_thinking_toggle_high_to_max', false);
+    inputHighToMax.addEventListener('change', () => {
+      const checked = !!inputHighToMax.checked;
+      patchQuickNavSettings((next) => {
+        next.siteModules = next.siteModules && typeof next.siteModules === 'object' ? next.siteModules : {};
+        next.siteModules[siteId] =
+          next.siteModules[siteId] && typeof next.siteModules[siteId] === 'object' ? next.siteModules[siteId] : {};
+        next.siteModules[siteId].chatgpt_thinking_toggle_high_to_max = checked;
+      });
+    });
+    rowHighToMax.appendChild(leftHighToMax);
+    rowHighToMax.appendChild(inputHighToMax);
+    elModuleSettings.appendChild(rowHighToMax);
+
     const rowDisableCmdP = document.createElement('label');
     rowDisableCmdP.className = 'formRow';
     const leftDisableCmdP = document.createElement('span');
@@ -2558,7 +2578,7 @@
     const hint = document.createElement('div');
     hint.className = 'smallHint';
     hint.textContent =
-      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J（可分别关闭），并默认拦截 ⌘P，避免误开浏览器打印；发送成功后右下角弹窗显示实际使用的 thinking_effort（以及 model）。关闭模块后已打开页面可能需要刷新才会完全停用。若你把键盘能力设为“无 Meta 键”，这里只会保留模块注入，⌘O/⌘J 默认停用。';
+      '提示：该模块会在页面主世界（MAIN world）监听 ⌘O/⌘J（可分别关闭），并默认拦截 ⌘P，避免误开浏览器打印；可选的 High→max 会在发送请求前把 High 对应的 thinking_effort 改为 max。关闭模块后已打开页面可能需要刷新才会完全停用。若你把键盘能力设为“无 Meta 键”，这里只会保留模块注入，⌘O/⌘J 默认停用。';
     elModuleSettings.appendChild(hint);
   }
 

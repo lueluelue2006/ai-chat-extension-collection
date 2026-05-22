@@ -160,7 +160,7 @@
     chatgpt_thinking_toggle: {
       id: 'chatgpt_thinking_toggle',
       name: 'ChatGPT 推理强度/模型 快捷切换',
-      sub: '⌘O 推理强度 / ⌘J 模型切换 / 禁用 ⌘P / ⌘⇧P Light Pro 发送 / ⌘⌥P Heavy Pro 发送',
+      sub: '⌘O Medium/High / ⌘J High/Pro / 可选 High→max / 禁用 ⌘P / ⌘⇧P Light Pro 发送 / ⌘⌥P Heavy Pro 发送',
       defaultEnabled: true,
       hotkeys: ['⌘O', '⌘J', '⌘P', '⌘⇧P', '⌘⌥P'],
       hotkeyControls: [

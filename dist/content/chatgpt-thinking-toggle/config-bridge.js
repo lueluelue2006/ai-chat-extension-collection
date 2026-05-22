@@ -153,12 +153,14 @@
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
   const HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_light_pro_v1__';
   const HOTKEY_SEND_MAX_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_max_pro_v1__';
+  const HIGH_TO_MAX_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_high_to_max_v1__';
 
   const DS_EFFORT_KEY = 'aichatHotkeyEffortEnabled';
   const DS_MODEL_KEY = 'aichatHotkeyModelEnabled';
   const DS_SEND_LIGHT_PRO_KEY = 'aichatHotkeySendLightProEnabled';
   const DS_SEND_MAX_PRO_KEY = 'aichatHotkeySendMaxProEnabled';
   const DS_DISABLE_CMD_P_KEY = 'aichatHotkeyDisableCmdPEnabled';
+  const DS_HIGH_TO_MAX_KEY = 'aichatHighToMaxEnabled';
 
   const pending = {
     effort: true,
@@ -166,6 +168,7 @@
     sendLightPro: true,
     sendMaxPro: true,
     disableCmdP: true,
+    highToMax: false,
     timer: 0,
     tries: 0
   };
@@ -203,6 +206,15 @@
     return false;
   }
 
+  function writeBoolLocalStorage(key, val) {
+    if (disposed) return false;
+    try {
+      localStorage.setItem(String(key || ''), val ? '1' : '0');
+      return true;
+    } catch {}
+    return false;
+  }
+
   function cleanupLegacyLocalStorage() {
     try { localStorage.removeItem(HOTKEY_EFFORT_ENABLED_KEY); } catch {}
     try { localStorage.removeItem(HOTKEY_MODEL_ENABLED_KEY); } catch {}
@@ -224,7 +236,9 @@
       const ok3 = writeBoolDataset(DS_SEND_LIGHT_PRO_KEY, pending.sendLightPro);
       const ok4 = writeBoolDataset(DS_SEND_MAX_PRO_KEY, pending.sendMaxPro);
       const ok5 = writeBoolDataset(DS_DISABLE_CMD_P_KEY, pending.disableCmdP);
-      if (ok1 && ok2 && ok3 && ok4 && ok5) {
+      const ok6 = writeBoolDataset(DS_HIGH_TO_MAX_KEY, pending.highToMax);
+      const ok7 = writeBoolLocalStorage(HIGH_TO_MAX_ENABLED_KEY, pending.highToMax);
+      if (ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7) {
         pending.tries = 0;
         return;
       }
@@ -264,6 +278,8 @@
           : true;
       const disableCmdPSetting =
         typeof mods?.chatgpt_thinking_toggle_disable_cmd_p === 'boolean' ? mods.chatgpt_thinking_toggle_disable_cmd_p : true;
+      const highToMaxSetting =
+        typeof mods?.chatgpt_thinking_toggle_high_to_max === 'boolean' ? mods.chatgpt_thinking_toggle_high_to_max : false;
       const force = typeof mods?.chatgpt_thinking_toggle_hotkeys_force === 'boolean' ? mods.chatgpt_thinking_toggle_hotkeys_force : false;
       const hasMetaKey = resolveHasMetaKey(settings);
       cleanupLegacyLocalStorage();
@@ -272,6 +288,7 @@
       pending.sendLightPro = !!sendLightProSetting && (!!hasMetaKey || !!force);
       pending.sendMaxPro = !!sendMaxProSetting && (!!hasMetaKey || !!force);
       pending.disableCmdP = !!disableCmdPSetting;
+      pending.highToMax = !!highToMaxSetting;
       flushPending();
     } catch {}
   }
@@ -288,7 +305,8 @@
           'data-aichat-hotkey-model-enabled',
           'data-aichat-hotkey-send-light-pro-enabled',
           'data-aichat-hotkey-send-max-pro-enabled',
-          'data-aichat-hotkey-disable-cmd-p-enabled'
+          'data-aichat-hotkey-disable-cmd-p-enabled',
+          'data-aichat-high-to-max-enabled'
         ]
       });
     } catch {}

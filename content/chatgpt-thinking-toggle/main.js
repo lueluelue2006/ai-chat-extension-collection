@@ -33,6 +33,7 @@
   const HOTKEY_MODEL_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_model_v1__';
   const HOTKEY_SEND_LIGHT_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_light_pro_v1__';
   const HOTKEY_SEND_MAX_PRO_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_hotkey_send_max_pro_v1__';
+  const HIGH_TO_MAX_ENABLED_KEY = '__aichat_chatgpt_thinking_toggle_high_to_max_v1__';
   const PUBLIC_API_KEY = '__aichat_chatgpt_thinking_toggle_api_v1__';
   const TOPBAR_TOGGLE_EVENT = '__aichat_chatgpt_topbar_model_toggle_v2__';
   const TOAST_STYLE_ID = '__tm_thinking_toggle_toast_style';
@@ -50,6 +51,7 @@
   const DS_SEND_LIGHT_PRO_KEY = 'aichatHotkeySendLightProEnabled';
   const DS_SEND_MAX_PRO_KEY = 'aichatHotkeySendMaxProEnabled';
   const DS_DISABLE_CMD_P_KEY = 'aichatHotkeyDisableCmdPEnabled';
+  const DS_HIGH_TO_MAX_KEY = 'aichatHighToMaxEnabled';
 
   let busy = false;
   let hotkeyDrainRunning = false;
@@ -337,7 +339,7 @@ button.${PULSE_CLASS} {
       if (!(target instanceof HTMLElement) || !document.contains(target)) {
         const root = getComposerRoot();
         const pills = Array.from(root.querySelectorAll('button.__composer-pill'));
-        target = pills.find((p) => /thinking|pro/i.test((p.textContent || '').trim())) || pills[0] || null;
+        target = pills.find((p) => /thinking|pro|instant|medium|high/i.test((p.textContent || '').trim())) || pills[0] || null;
       }
       if (!target) return;
       cleanupLegacyHintArtifacts();
@@ -375,7 +377,7 @@ button.${PULSE_CLASS} {
 
   function isHighEffort(effort) {
     const e = normalizeText(effort);
-    return e === 'max' || e === 'heavy' || e === 'extended';
+    return e === 'max' || e === 'high' || e === 'heavy' || e === 'extended';
   }
 
   function effortForMode(mode, high) {
@@ -455,6 +457,7 @@ button.${PULSE_CLASS} {
     const e = normalizeText(effort);
     if (/\bthinking\b/.test(e) || e.includes('思考') || e.includes('推理')) return 'thinking';
     if (/\bpro\b/.test(e) || e.includes('专业')) return 'pro';
+    if (e.startsWith('instant') || e.startsWith('medium') || e.startsWith('high')) return 'thinking';
     if (e === 'min' || e === 'max') return 'thinking';
     // ChatGPT can show standalone effort names like "Extended" after selecting Thinking.
     // They describe effort, not the Thinking/Pro model family, so do not infer mode from them.
@@ -546,6 +549,28 @@ button.${PULSE_CLASS} {
     return { applied: true, model: payload.model || '', effort: payload.thinking_effort || '' };
   }
 
+  function isHighToMaxRewriteEnabled() {
+    return readBoolDataset(DS_HIGH_TO_MAX_KEY, readBoolLS(HIGH_TO_MAX_ENABLED_KEY, false));
+  }
+
+  function applyHighToMaxOverrideToPayload(payload) {
+    if (!isHighToMaxRewriteEnabled()) return { applied: false, reason: 'disabled' };
+    if (!payload || typeof payload !== 'object') return { applied: false, reason: 'bad_payload' };
+
+    const action = normalizeText(payload.action || '');
+    if (action && action !== 'next') return { applied: false, reason: 'non_next_action' };
+
+    const model = typeof payload.model === 'string' ? payload.model : '';
+    const effort = normalizeText(payload.thinking_effort || '');
+    const isProModel = /\bpro\b/i.test(model);
+    if (isProModel) return { applied: false, reason: 'pro_model' };
+    if (detectCurrentModelMode() === 'pro') return { applied: false, reason: 'current_pro' };
+    if (effort !== 'high' && effort !== 'extended') return { applied: false, reason: 'not_high' };
+
+    payload.thinking_effort = 'max';
+    return { applied: true, model: payload.model || '', effort: payload.thinking_effort || '' };
+  }
+
   function sniffEffortInfo(payload) {
     if (!payload || typeof payload !== 'object') return null;
     const model = typeof payload.model === 'string' ? payload.model : '';
@@ -555,8 +580,8 @@ button.${PULSE_CLASS} {
     let mode = 'unknown';
     if (/\bpro\b/i.test(model)) mode = 'pro';
     else if (/\bthinking\b/i.test(model)) mode = 'thinking';
-    else if (effort === 'min' || effort === 'max') mode = 'thinking';
-    else if (effort === 'standard' || effort === 'extended') mode = 'pro';
+    else if (effort === 'min' || effort === 'max' || effort === 'medium' || effort === 'high' || effort === 'extended') mode = 'thinking';
+    else if (effort === 'standard') mode = 'pro';
 
     return { mode, model, effort };
   }
@@ -647,6 +672,10 @@ button.${PULSE_CLASS} {
             const target = pendingModelOverride;
             const override = applyModelOverrideToPayload(payload, target);
             if (override.applied) pendingModelOverride = null;
+          }
+
+          if (payload && !proSendLabel) {
+            applyHighToMaxOverrideToPayload(payload);
           }
 
           effortInfo = sniffEffortInfo(payload);
@@ -785,7 +814,14 @@ button.${PULSE_CLASS} {
         const aria = String(button.getAttribute('aria-label') || '').trim();
         const combined = normalizeText(`${text} ${aria}`);
         if (!combined) continue;
-        if (combined.includes('thinking') || combined.includes('思考') || combined.includes('推理') || combined.includes('instant')) return text || aria;
+        if (
+          combined.includes('thinking') ||
+          combined.includes('思考') ||
+          combined.includes('推理') ||
+          combined.includes('instant') ||
+          combined.includes('medium') ||
+          combined.includes('high')
+        ) return text || aria;
         if (combined === 'pro' || combined.startsWith('pro ') || combined.includes(' extended pro') || combined.includes(' standard pro')) return text || aria;
       }
     } catch (_) {
@@ -981,6 +1017,42 @@ button.${PULSE_CLASS} {
     return { items, checkedIndex, light, standard, extended, heavy, low, high, proLow, proHigh };
   }
 
+  function getUnifiedEffortItems(menu) {
+    const items = Array.from(menu?.querySelectorAll?.("[role='menuitemradio']") || []).filter(
+      (el) => el instanceof HTMLElement && isVisibleElement(el)
+    );
+    /** @type {Element|null} */
+    let instant = null;
+    /** @type {Element|null} */
+    let medium = null;
+    /** @type {Element|null} */
+    let high = null;
+    /** @type {Element|null} */
+    let pro = null;
+
+    for (const item of items) {
+      const label = normalizeText([
+        item.getAttribute('aria-label') || '',
+        item.getAttribute('data-value') || '',
+        item.textContent || ''
+      ].join(' '));
+      const compact = label.replace(/\s+/g, '');
+      if (!instant && (compact.startsWith('instant') || compact.startsWith('即时'))) instant = item;
+      if (!medium && (compact.startsWith('medium') || compact.startsWith('中等'))) medium = item;
+      if (!high && (compact.startsWith('high') || compact.startsWith('高'))) high = item;
+      if (!pro && (compact.startsWith('pro') || compact.startsWith('专业'))) pro = item;
+    }
+
+    const selected = items.find((item) => item.getAttribute('aria-checked') === 'true') || null;
+    return { items, instant, medium, high, pro, selected };
+  }
+
+  function menuHasUnifiedEffortOptions(menu) {
+    if (!(menu instanceof Element)) return false;
+    const { medium, high, pro } = getUnifiedEffortItems(menu);
+    return !!(medium && high && pro);
+  }
+
   function getMenuItemLabel(item, fallback = '') {
     if (!(item instanceof Element)) return fallback;
     const text = String(item.textContent || item.getAttribute('aria-label') || '').trim();
@@ -1035,7 +1107,7 @@ button.${PULSE_CLASS} {
     return items.some((item) => {
       const testId = normalizeText(item.getAttribute('data-testid') || '');
       const t = normalizeText(`${testId} ${item.getAttribute('aria-label') || ''} ${item.textContent || ''}`);
-      return testId.startsWith('model-switcher-') || /\b(?:instant|thinking|pro|gpt)\b/.test(t);
+      return testId.startsWith('model-switcher-') || /\b(?:instant|medium|high|thinking|pro|gpt)\b/.test(t);
     });
   }
 
@@ -1151,6 +1223,8 @@ button.${PULSE_CLASS} {
     if (t === 'thinking' || t.startsWith('thinking')) return true;
     if (t === 'pro' || t.startsWith('pro')) return true;
     if (t === 'instant' || t.startsWith('instant')) return true;
+    if (t === 'medium' || t.startsWith('medium')) return true;
+    if (t === 'high' || t.startsWith('high')) return true;
     if (t.startsWith('思考') || t.startsWith('推理') || t.startsWith('专业')) return true;
     if (/\bgpt[-\s]?\d/.test(t)) return true;
     if (/\b\d(?:\.\d)+\b/.test(t)) return true;
@@ -1279,6 +1353,14 @@ button.${PULSE_CLASS} {
     return null;
   }
 
+  function findVisibleUnifiedEffortMenu() {
+    const menus = listVisibleMenus();
+    for (const menu of menus) {
+      if (menuHasUnifiedEffortOptions(menu)) return menu;
+    }
+    return null;
+  }
+
   function findVisibleByTestId(testId) {
     try {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="${CSS.escape(testId)}"]`));
@@ -1318,11 +1400,23 @@ button.${PULSE_CLASS} {
     return null;
   }
 
+  function findVisibleUnifiedModeItem(mode) {
+    if (mode !== 'thinking' && mode !== 'pro') return null;
+    const menus = listVisibleMenus();
+    for (const menu of menus) {
+      if (!menuHasUnifiedEffortOptions(menu)) continue;
+      const items = getUnifiedEffortItems(menu);
+      const item = mode === 'pro' ? items.pro : items.high;
+      if (item instanceof HTMLElement && isVisibleElement(item)) return item;
+    }
+    return null;
+  }
+
   function detectCurrentModelMode() {
     const fromComposer = guessModeFromEffort(readComposerModeLabel());
     if (fromComposer === 'thinking' || fromComposer === 'pro') return fromComposer;
 
-    const menu = findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent();
+    const menu = findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent();
     const selected = menuSelectedMode(menu);
     if (selected === 'thinking' || selected === 'pro') return selected;
 
@@ -1359,7 +1453,7 @@ button.${PULSE_CLASS} {
 
     const composerPill = listComposerPills().find((pill) => {
       const text = normalizeText(`${pill.textContent || ''} ${pill.getAttribute('aria-label') || ''}`);
-      return /\b(?:instant|thinking|pro|light|heavy|standard|extended|latest)\b/.test(text);
+      return /\b(?:instant|medium|high|thinking|pro|light|heavy|standard|extended|latest)\b/.test(text);
     });
     return composerPill instanceof HTMLElement ? composerPill : null;
   }
@@ -1422,7 +1516,7 @@ button.${PULSE_CLASS} {
           !haystack.includes('chatgpt') &&
           !haystack.includes('gpt') &&
           !haystack.includes('composer-pill') &&
-          !/\b(?:instant|thinking|pro|light|heavy|standard|extended|latest)\b/.test(haystack)
+          !/\b(?:instant|medium|high|thinking|pro|light|heavy|standard|extended|latest)\b/.test(haystack)
         ) {
           continue;
         }
@@ -1479,14 +1573,16 @@ button.${PULSE_CLASS} {
     if (!(action instanceof HTMLElement)) return null;
     clickLikeUser(action);
     return waitForValue(() => {
-      const menus = listVisibleMenus().filter((menu) => menu !== modelMenu && menuHasEffortOptions(menu));
+      const menus = listVisibleMenus().filter(
+        (menu) => menu !== modelMenu && (menuHasUnifiedEffortOptions(menu) || menuHasEffortOptions(menu))
+      );
       return menus[menus.length - 1] || null;
     }, 620, 20);
   }
 
   async function findThinkingProTrigger() {
     // 优先：已经有菜单打开
-    const existingMenu = findVisibleThinkingProMenu();
+    const existingMenu = findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu();
     if (existingMenu) return null;
 
     const candidates = listMaybeThinkingProTriggers();
@@ -1494,7 +1590,7 @@ button.${PULSE_CLASS} {
       // 尝试一次点击打开
       clickLikeUser(el);
       for (let i = 0; i < 10; i++) {
-        const menu = findVisibleThinkingProMenu();
+        const menu = findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu();
         if (menu) return el;
         await sleep(40);
       }
@@ -1502,7 +1598,7 @@ button.${PULSE_CLASS} {
       // 有些按钮第一次不生效：再点一次
       clickLikeUser(el);
       for (let i = 0; i < 10; i++) {
-        const menu = findVisibleThinkingProMenu();
+        const menu = findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu();
         if (menu) return el;
         await sleep(40);
       }
@@ -1512,6 +1608,11 @@ button.${PULSE_CLASS} {
 
   function menuSelectedIsHigh(menu) {
     if (!(menu instanceof Element)) return null;
+    if (menuHasUnifiedEffortOptions(menu)) {
+      const { selected, high, pro } = getUnifiedEffortItems(menu);
+      if (selected === high || selected === pro) return true;
+      if (selected) return false;
+    }
     const checked = Array.from(menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")).find(
       (el) => el instanceof HTMLElement && isVisibleElement(el)
     );
@@ -1524,6 +1625,11 @@ button.${PULSE_CLASS} {
 
   function menuSelectedMode(menu) {
     if (!(menu instanceof Element)) return null;
+    if (menuHasUnifiedEffortOptions(menu)) {
+      const { selected, pro } = getUnifiedEffortItems(menu);
+      if (selected === pro) return 'pro';
+      if (selected) return 'thinking';
+    }
     const checked = Array.from(menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")).find(
       (el) => el instanceof HTMLElement && isVisibleElement(el)
     );
@@ -1547,7 +1653,7 @@ button.${PULSE_CLASS} {
       ordered.push(active);
     }
 
-    const likely = pills.filter((p) => /thinking|pro/i.test((p.textContent || '').trim()));
+    const likely = pills.filter((p) => /thinking|pro|instant|medium|high/i.test((p.textContent || '').trim()));
     for (const p of likely) if (!ordered.includes(p)) ordered.push(p);
     for (const p of pills) if (!ordered.includes(p)) ordered.push(p);
 
@@ -1556,9 +1662,9 @@ button.${PULSE_CLASS} {
       if (!opened) continue;
 
       /** @type {Element|null} */
-      const menu = await waitForValue(() => findMenuForPill(pill), 260, 20);
+      const menu = await waitForValue(() => findMenuForPill(pill) || findVisibleUnifiedEffortMenu(), 260, 20);
 
-      if (menu && menuHasEffortOptions(menu)) return pill;
+      if (menu && (menuHasUnifiedEffortOptions(menu) || menuHasEffortOptions(menu))) return pill;
 
       // 不是推理强度菜单：关掉再继续试下一个
       clickLikeUser(pill);
@@ -1573,7 +1679,7 @@ button.${PULSE_CLASS} {
       if (!(pill instanceof HTMLButtonElement)) return false;
       if (pill.getAttribute('aria-expanded') === 'true') return true;
       if (pill.getAttribute('data-state') === 'open') return true;
-      const menu = findMenuForPill(pill);
+      const menu = findMenuForPill(pill) || findVisibleUnifiedEffortMenu();
       return menu instanceof HTMLElement && isVisibleElement(menu);
     };
 
@@ -1707,8 +1813,14 @@ button.${PULSE_CLASS} {
       try {
         /** @type {Element|null} */
         openedMenu = await waitForValue(() => {
-          const candidate = findMenuForPill(pill);
-          if (candidate && (menuHasEffortOptions(candidate) || menuHasEffortAction(candidate) || menuHasThinkingProMode(candidate))) return candidate;
+          const candidate = findMenuForPill(pill) || findVisibleUnifiedEffortMenu();
+          if (
+            candidate &&
+            (menuHasUnifiedEffortOptions(candidate) ||
+              menuHasEffortOptions(candidate) ||
+              menuHasEffortAction(candidate) ||
+              menuHasThinkingProMode(candidate))
+          ) return candidate;
           return null;
         }, 520, 20);
         if (!openedMenu) {
@@ -1716,7 +1828,26 @@ button.${PULSE_CLASS} {
           return;
         }
 
-        if (menuHasEffortOptions(openedMenu)) {
+        if (menuHasUnifiedEffortOptions(openedMenu)) {
+          const unified = getUnifiedEffortItems(openedMenu);
+          const target = unified.selected === unified.high ? unified.medium : unified.high;
+          if (!(target instanceof Element)) {
+            warn('Could not determine the target reasoning effort item.');
+            return;
+          }
+
+          clickLikeUser(target);
+          didToggle = true;
+          const label = getMenuItemLabel(target, target === unified.high ? 'High' : 'Medium');
+          info(`Reasoning effort switched successfully (unified-medium-high -> ${label})`);
+          try {
+            pill.title = label;
+          } catch (_) {
+            // ignore
+          }
+          schedulePulse(pill, target === unified.high);
+          return;
+        } else if (menuHasEffortOptions(openedMenu)) {
           effortMenu = openedMenu;
         } else if (menuHasEffortAction(openedMenu)) {
           activeMode = detectCurrentModelMode();
@@ -1793,7 +1924,7 @@ button.${PULSE_CLASS} {
         schedulePulse(pill, isHigh, label);
       } finally {
         // Always collapse on failures as well (missing items / transient menus / CF mitigation)
-        await ensureMenuCollapsed(pill, () => findMenuForPill(pill));
+        await ensureMenuCollapsed(pill, () => findMenuForPill(pill) || findVisibleUnifiedEffortMenu());
         if (didToggle) await restoreComposerFocusToEnd();
       }
     } catch (err) {
@@ -1829,17 +1960,21 @@ button.${PULSE_CLASS} {
         const findTargetItem = () =>
           (() => {
             if (targetMode !== 'thinking' && targetMode !== 'pro') {
-              const selectedMode = menuSelectedMode(findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent());
+              const selectedMode = menuSelectedMode(
+                findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent()
+              );
               if (selectedMode === 'thinking' || selectedMode === 'pro') {
                 resolvedTargetMode = selectedMode === 'pro' ? 'thinking' : 'pro';
               }
             }
             return (
+              findVisibleUnifiedModeItem(resolvedTargetMode) ||
               findVisibleModelSwitcherItemBySuffix(resolvedTargetMode === 'pro' ? '-pro' : 'thinking') ||
               findVisibleThinkingProItem(resolvedTargetMode)
             );
           })();
-        const getMenu = () => findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
+        const getMenu = () =>
+          findVisibleUnifiedEffortMenu() || findVisibleThinkingProMenu() || findVisibleThinkingProMenuByContent() || findMenuForTrigger(trigger);
 
         const targetItem = await waitForModelSwitcherTarget({
           trigger,
@@ -1873,6 +2008,7 @@ button.${PULSE_CLASS} {
       if (cachedThinkingProTrigger instanceof HTMLElement) {
         await ensureMenuCollapsed(cachedThinkingProTrigger, () => {
           return (
+            findVisibleUnifiedEffortMenu() ||
             findVisibleThinkingProMenu() ||
             findVisibleThinkingProMenuByContent() ||
             findMenuForTrigger(cachedThinkingProTrigger)

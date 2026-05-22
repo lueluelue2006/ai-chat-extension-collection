@@ -969,8 +969,11 @@ function verifyChatgptModelDetectionHardening() {
     if (source.includes('GPT 5.2 thinking') || source.includes('GPT 5.2 pro')) {
       failures.push(`${relPath} still contains stale GPT 5.2 thinking/pro copy`);
     }
-    if (!source.includes('当前 GPT 5.x thinking ↔ pro') && !source.includes('current GPT 5.x Thinking and Pro variants')) {
-      failures.push(`${relPath} is missing the GPT 5.x thinking/pro wording`);
+    const hasLegacyCopy =
+      source.includes('当前 GPT 5.x thinking ↔ pro') || source.includes('current GPT 5.x Thinking and Pro variants');
+    const hasUnifiedCopy = source.includes('Medium / High') && source.includes('High / Pro');
+    if (!hasLegacyCopy && !hasUnifiedCopy) {
+      failures.push(`${relPath} is missing the ChatGPT model/effort switching wording`);
     }
   }
 

@@ -12,7 +12,7 @@
   <a href="https://github.com/lueluelue2006/ai-chat-extension-collection/releases/latest">
     <img src="https://img.shields.io/github/v/release/lueluelue2006/ai-chat-extension-collection?display_name=tag&label=release" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/current-4.1.1-74c0fc" alt="Current version 4.1.1">
+  <img src="https://img.shields.io/badge/current-4.1.2-74c0fc" alt="Current version 4.1.2">
   <img src="https://img.shields.io/badge/focus-chatgpt.com-8ce99a" alt="ChatGPT first">
   <img src="https://img.shields.io/badge/platform-Chrome%20MV3-ffd43b" alt="Chrome MV3">
   <img src="https://img.shields.io/badge/targets-11%20sites%20%2B%20common-b197fc" alt="Targets">
@@ -39,7 +39,7 @@
 
 ### 当前版本
 
-当前最新版本：`4.1.1`。
+当前最新版本：`4.1.2`。
 
 这是目前发布给用户安装的稳定版本。README 只介绍当前版本、安装方式和开发入口；历史更新记录请以 GitHub Releases 为准。
 
@@ -57,7 +57,7 @@ AI捷径现在的战略重心已经明确转向 `chatgpt.com`。
 | Conversation Tree | 当前对话树、分支路径显示、完整树 JSON 导出 |
 | Tab Queue | 用 `Tab` 排队发送草稿，串行发送，并用 `Option/Alt + Up` 取回最近一条 |
 | Cmd+Enter | `⌘Enter / Ctrl+Enter` 发送，同时保留正常换行行为 |
-| Cmd+O / Cmd+J | `⌘O` 切换推理强度，`⌘J` 切换 Thinking / Pro，顶部模型族提示 |
+| Cmd+O / Cmd+J | `⌘O` 在 Medium / High 间切换，`⌘J` 在 High / Pro 间切换，可选 High→max 请求改写 |
 | Performance Coordinator | 面向长公式、长代码、长上下文和输入框热路径的性能协调 |
 | TeX Copy & Quote | 多引用、选中文本 Markdown 引用、KaTeX/LaTeX 恢复、悬停提示、双击复制选项 |
 | Export / Fork Edit | 当前可见分支导出 Markdown / HTML，编辑用户消息并可附带图片/文件 |
@@ -155,7 +155,7 @@ npm run package:dist
 
 ### Latest Version
 
-Current latest version: `4.1.1`.
+Current latest version: `4.1.2`.
 
 This is the stable build users should install from GitHub Releases. The README only describes the current version, installation path, and developer entry points; historical release notes live in GitHub Releases.
 
@@ -173,7 +173,7 @@ The extension is designed for heavy ChatGPT usage: long conversations, complex m
 | Conversation Tree | Current conversation tree, branch path display, and full tree JSON export |
 | Tab Queue | Queue drafts with `Tab`, send them serially, and restore the latest queued draft with `Option/Alt + Up` |
 | Cmd+Enter | `⌘Enter / Ctrl+Enter` sending while preserving newline behavior |
-| Cmd+O / Cmd+J | `⌘O` reasoning effort switching, `⌘J` Thinking / Pro switching, and topbar model-family badge / toggle |
+| Cmd+O / Cmd+J | `⌘O` switches Medium / High, `⌘J` switches High / Pro, with optional High→max request rewrite |
 | Performance Coordinator | Coordination for long math, long code, long context, and composer input hot paths |
 | TeX Copy & Quote | Multi-quote, selected-text Markdown blockquotes, KaTeX LaTeX restoration, hover hint, and double-click copy option |
 | Export / Fork Edit | Export the current visible branch to Markdown / HTML; fork-edit user messages with optional image/file attachment |

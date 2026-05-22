@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.1.1
-- Generated: 2026-05-04 13:54
+- Version: 4.1.2
+- Generated: 2026-05-22 11:07
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -46,7 +46,7 @@
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-perf/content.js`, `content/chatgpt-perf/content.css`
-- `chatgpt_thinking_toggle`: ChatGPT 推理强度/模型 快捷切换 — ⌘O 推理强度 / ⌘J 模型切换 / 禁用 ⌘P / ⌘⇧P Light Pro 发送 / ⌘⌥P Heavy Pro 发送
+- `chatgpt_thinking_toggle`: ChatGPT 推理强度/模型 快捷切换 — ⌘O Medium/High / ⌘J High/Pro / 可选 High→max / 禁用 ⌘P / ⌘⇧P Light Pro 发送 / ⌘⌥P Heavy Pro 发送
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-thinking-toggle/config-bridge.js`

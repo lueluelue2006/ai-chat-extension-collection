@@ -314,14 +314,6 @@
       world: "MAIN"
     });
     defs.push({
-      id: "quicknav_chatgpt_cmdenter_send",
-      siteId: "chatgpt",
-      moduleId: "cmdenter_send",
-      matches: chatgpt,
-      js: [...ISOLATED_BRIDGE_FILES, ...CHATGPT_CORE_FILES, "content/chatgpt-cmdenter-send/main.js"],
-      runAt: "document_start"
-    });
-    defs.push({
       id: "quicknav_chatgpt_sidebar_header_fix",
       siteId: "chatgpt",
       moduleId: "chatgpt_sidebar_header_fix",

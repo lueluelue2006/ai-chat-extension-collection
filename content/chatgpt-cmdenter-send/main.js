@@ -1679,6 +1679,10 @@
     const qwenIntent = SITE === 'qwen' ? getQwenEnterIntent(event) : 'ignore';
     const wantsSend = SITE === 'qwen' ? qwenIntent === 'send' : event.metaKey || event.ctrlKey;
 
+    if (SITE === 'chatgpt' && wantsSend) {
+      return;
+    }
+
     // Important: On some sites the UI maps Cmd/Ctrl+Enter to "Stop generating" even when the composer
     // is not focused. We never want a "stop" shortcut (users reported accidental stops on Kimi/Gemini).
     // So when the site is currently generating, swallow Cmd/Ctrl+Enter globally.

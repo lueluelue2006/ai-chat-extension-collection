@@ -2806,7 +2806,6 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
   };
 
   for (const required of [
-    'quicknav_chatgpt_cmdenter_send',
     'quicknav_chatgpt_sidebar_header_fix',
     'quicknav_chatgpt_readaloud_speed_controller',
     'quicknav_chatgpt_reply_timer',
@@ -2824,9 +2823,12 @@ function verifyChatgptSmallFeatureHardening(runtimeDefs) {
     }
   }
 
-  expectDef('quicknav_chatgpt_cmdenter_send', {
-    js: ['content/chatgpt-dom-adapter.js', 'content/chatgpt-core.js', 'content/chatgpt-cmdenter-send/main.js']
-  });
+  if (injectionsSource.includes('quicknav_chatgpt_cmdenter_send')) {
+    failures.push('shared/injections.ts must not inject cmdenter_send on ChatGPT');
+  }
+  if (byId.has('quicknav_chatgpt_cmdenter_send')) {
+    failures.push('CONTENT_SCRIPT_DEFS must not register cmdenter_send on ChatGPT');
+  }
   expectDef('quicknav_chatgpt_sidebar_header_fix', {
     js: ['content/chatgpt-dom-adapter.js', 'content/chatgpt-core.js', 'content/chatgpt-sidebar-header-fix/main.js']
   });

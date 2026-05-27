@@ -1,8 +1,8 @@
 # Scripts Inventory (MV3)
 
 - Name: AI捷径 (AI Shortcuts)
-- Version: 4.1.2
-- Generated: 2026-05-22 11:07
+- Version: 4.1.3
+- Generated: 2026-05-27 15:15
 - Source of truth: `shared/registry.ts` (metadata) + `shared/injections.ts` (injection defs)
 - Runtime output: mirror build transpiles them to `dist/shared/registry.js` + `dist/shared/injections.js`
 
@@ -51,10 +51,6 @@
   - 许可证: GPL-3.0-or-later
   - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-thinking-toggle/config-bridge.js`
   - 注入: document_start / MAIN: `shared/i18n.js`, `content/aishortcuts-scope-main.js`, `content/aishortcuts-bridge-main.js`, `content/aishortcuts-i18n-main.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core-main.js`, `content/chatgpt-fetch-hub/main.js`, `content/chatgpt-fetch-hub/consumer-base.js`, `content/chatgpt-thinking-toggle/main.js`
-- `cmdenter_send`: ⌘Enter 发送（Enter 换行） — Enter/Shift+Enter 换行（强制）
-  - 作者: lueluelue2006
-  - 许可证: GPL-3.0-or-later
-  - 注入: document_start / ISOLATED: `shared/i18n.js`, `content/aishortcuts-locale-bridge.js`, `content/aishortcuts-scope.js`, `content/aishortcuts-bridge.js`, `content/chatgpt-dom-adapter.js`, `content/chatgpt-core.js`, `content/chatgpt-cmdenter-send/main.js`
 - `chatgpt_readaloud_speed_controller`: ChatGPT 朗读速度控制器 — 控制 ChatGPT 朗读音频播放速度（0.01–100x）
   - 作者: lueluelue2006
   - 许可证: GPL-3.0-or-later

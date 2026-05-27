@@ -18,7 +18,6 @@
         'openai_new_model_banner',
         'chatgpt_perf',
         'chatgpt_thinking_toggle',
-        'cmdenter_send',
         'chatgpt_readaloud_speed_controller',
         'chatgpt_usage_monitor',
         'chatgpt_reply_timer',
